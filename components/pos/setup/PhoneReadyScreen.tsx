@@ -201,7 +201,7 @@ export function PhoneReadyScreen() {
 
       {Platform.OS === 'ios' && tapToPay.applies && canTake ? (
         <View style={styles.lines}>
-          {/* The app's own Tap to Pay on iPhone set-up and "How to use", as in More (Apple's checklist). */}
+          {/* The app's own Tap to Pay on iPhone set-up and "How to use", as in Booking settings (Apple's checklist). */}
           <Card padded={false}>
             <TapToPaySettings />
           </Card>

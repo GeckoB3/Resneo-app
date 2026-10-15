@@ -93,7 +93,7 @@ export function TapToPaySettings() {
           </>
         ) : needsAdmin ? (
           <Text variant="bodySmall" tone="muted">
-            {`${TAP_TO_PAY_ON_IPHONE} is not turned on for your venue yet. Ask an admin to turn it on here. Only an admin can accept Apple's terms.`}
+            {`${TAP_TO_PAY_ON_IPHONE} is not turned on for your venue yet. Ask an admin to turn it on in Booking settings. Only an admin can accept Apple's terms.`}
           </Text>
         ) : (
           <Text variant="bodySmall" tone="muted">

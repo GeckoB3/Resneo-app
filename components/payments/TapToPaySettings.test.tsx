@@ -79,7 +79,7 @@ describe('TapToPaySettings', () => {
     mockCtx.isAdmin = false;
     await render(<TapToPaySettings />);
 
-    expect(screen.getByText(/Ask an admin to turn it on here/)).toBeTruthy();
+    expect(screen.getByText(/Ask an admin to turn it on in Booking settings\./)).toBeTruthy();
     expect(screen.queryByText('Set up Tap to Pay on iPhone')).toBeNull();
   });
 

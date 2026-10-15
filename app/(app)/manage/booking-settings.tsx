@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 
+import { BookingSettingsPayments } from '@/components/payments/InPersonPayments';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -1109,6 +1110,11 @@ export default function BookingSettingsScreen() {
             isLast
           />
         </Card>
+
+        {/* Taking payment in person (the web's group of the same name, Appointments plans only):
+            the in-person card switch, the card reader, Tap to Pay on iPhone and the Checkout
+            switch. Moved here from More (owner, 2026-10-15). */}
+        {appointmentsPlan ? <BookingSettingsPayments /> : null}
 
         {appointmentsPlan && resolvedFlags && rawFlags ? (
           <FeatureFlagsCard

@@ -569,3 +569,43 @@ export function offerDoorOpen(input: {
     !input.hiddenHere
   );
 }
+
+// ─── The Checkout switch in Booking settings (the web's CheckoutSwitchSection) ───
+
+export interface BookingSettingsSwitch {
+  /** Checkout is on (the switches' word, not the venue's). */
+  on: boolean;
+  /** The switch can be moved: off needs nothing, on needs the offer. */
+  canToggle: boolean;
+  /** The amber line: why it cannot come on, or that ResNeo manages it. */
+  note: string | null;
+  /** The plan needs attention: the note carries a link to Plan & payments. */
+  billingLink: boolean;
+}
+
+/**
+ * What the Checkout card in Booking settings shows, or null for a venue ResNeo has not offered
+ * Checkout to (gate G0: nothing changes for it). The same rules as the web's
+ * `CheckoutSwitchSection`: switching off is always allowed (the sheet says what must be finished
+ * first); switching on needs the offer; a Checkout ResNeo switched on without offering it is read,
+ * with no switch.
+ */
+export function bookingSettingsSwitch(
+  res: PosFeatureSwitchesResponse | null | undefined,
+  venueName: string,
+): BookingSettingsSwitch | null {
+  const pos = res?.switches?.pos_enabled;
+  if (!res || !pos) return null;
+  const on = pos.effective;
+  if (!pos.offered && !on) return null;
+  const canToggle = pos.offered && (on || pos.can_switch_on);
+  let note: string | null = null;
+  if (!on && !pos.can_switch_on) {
+    if (res.environment_off) note = swT('sw.na.env');
+    else if (pos.platform_state === 'blocked' || pos.unavailable_reason === 'blocked') note = pausedSentence(venueName, pos.public_reason);
+    else note = extraReasonSentence(pos.unavailable_reason, venueName) ?? swT('sw.na.other', { venue: venueName });
+  } else if (on && !pos.offered) {
+    note = swT('sw.bs.managed', { venue: venueName });
+  }
+  return { on, canToggle, note, billingLink: !on && !pos.can_switch_on && pos.unavailable_reason === 'billing' && !res.environment_off && pos.platform_state !== 'blocked' };
+}

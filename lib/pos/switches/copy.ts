@@ -182,6 +182,20 @@ export const SWITCH_COPY = {
   'app.sw.gate.paused': 'ResNeo has paused it for your business: {publicReason} Contact ResNeo support if you have any questions.',
   'app.sw.gate.pausedNoReason': 'ResNeo has paused it for your business. Contact ResNeo support if you have any questions.',
 
+  // The Checkout switch in Booking settings, under "Take card payments at your venue" (the web's
+  // Settings, Booking Settings). Its title and description are the web's landing and offer lines.
+  'sw.landing.title': 'Take payments at your desk',
+  'sw.offer.body': "Check clients out in two taps, take cash or cards, sell products and send receipts. It's included in your plan.",
+  'sw.bs.eyebrow': 'Checkout',
+  'sw.bs.switch': 'Use Checkout',
+  'sw.bs.off.help': 'Switching on asks you to confirm, then helps you set it up. You can switch it off whenever you like. Nothing is deleted.',
+  // The web's sw.bs.on.help names Settings, Checkout; in the app that place is Checkout settings.
+  'app.sw.bs.on.help': 'Gift vouchers, the loyalty card, the online shop and the rest of Checkout are set up in Checkout settings.',
+  'sw.bs.settings': 'Open Checkout settings',
+  'sw.bs.managed': 'ResNeo manages Checkout for {venue} at the moment. Contact ResNeo support to change it.',
+  // (app) The link after app.sw.na.billing (the web's sw.na.billing.link is "Settings, Plan").
+  'app.sw.na.billing.link': 'Open Plan & payments',
+
   // (app) The way back while Checkout is off (design section 7.2).
   'app.sw.salesHistory.hint': 'Past sales and refunds',
 

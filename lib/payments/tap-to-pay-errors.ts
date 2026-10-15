@@ -151,7 +151,7 @@ export function tapToPayFailureMessage(reason: TapToPayFailureReason, isAdmin: b
     case 'terms_not_accepted':
       return isAdmin
         ? `${TAP_TO_PAY_ON_IPHONE} is not turned on yet. Turn it on to accept Apple's terms and take the payment.`
-        : `${TAP_TO_PAY_ON_IPHONE} is not turned on for your venue yet. Ask an admin to turn it on in the More tab, under ${TAP_TO_PAY_ON_IPHONE}. Only an admin can accept Apple's terms.`;
+        : `${TAP_TO_PAY_ON_IPHONE} is not turned on for your venue yet. Ask an admin to turn it on in Booking settings, under ${TAP_TO_PAY_ON_IPHONE}. Only an admin can accept Apple's terms.`;
     case 'terms_cancelled':
       return `${TAP_TO_PAY_ON_IPHONE} was not turned on, because Apple's terms were not accepted.`;
     case 'icloud_required':

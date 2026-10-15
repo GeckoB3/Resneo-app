@@ -1,15 +1,16 @@
 /**
- * More tab — the in-person payments master switch (Tap to Pay §6.7).
+ * More tab: what is left of in-person payments here (Tap to Pay §6.7).
  *
- * The venue flag was web-only, so an admin who installed the app found no
- * payment surface, no toggle, and nothing explaining why — they had to reach for
- * a laptop to flip one checkbox. This covers the gating that makes putting it in
- * the app safe: admins only, the "Stripe not connected yet" caveat, and a
- * rollback so a failed PATCH can't leave the switch lying about venue state.
+ * The switch, the card reader and Tap to Pay on iPhone moved to Booking settings,
+ * "Taking payment in person", for admins of an Appointments-plan venue (owner,
+ * 2026-10-15; the switch's own tests are booking-settings.in-person-payments).
+ * Team members cannot open Booking settings, so they keep the card reader row
+ * here once the venue has it on; an admin sees none of it in More, and the
+ * Booking settings row says payments are there.
  *
  * jest hoists mock factories above imports, so closed-over vars are `mock*`.
  */
-import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { render, screen } from '@testing-library/react-native';
 
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 // Announcements have their own tests.
@@ -63,124 +64,91 @@ jest.mock('@/lib/queries/useStaffMe', () => ({
 }));
 
 let mockEnabled = false;
-let mockStripeAccount: string | null = 'acct_123';
+let mockTier = 'appointments';
 jest.mock('@/providers/VenueProvider', () => ({
   useVenueContext: () => ({
     venue: {
       id: 'venue-1',
-      pricing_tier: 'appointments',
+      pricing_tier: mockTier,
       booking_model: 'unified_scheduling',
       active_booking_models: ['unified_scheduling'],
       enabled_models: [],
       feature_flags: { resolved: {}, raw: {} },
       in_person_payments_enabled: mockEnabled,
-      stripe_connected_account_id: mockStripeAccount,
+      stripe_connected_account_id: 'acct_123',
     },
     name: 'Test Venue',
     isLoading: false,
   }),
 }));
 
-const mockUpdateVenue = jest.fn(async (_input: Record<string, unknown>) => ({}));
-jest.mock('@/lib/queries/useVenueSettings', () => ({
-  useUpdateVenue: () => ({ mutateAsync: mockUpdateVenue }),
+let mockTapToPayApplies = false;
+jest.mock('@/providers/TapToPayProvider', () => ({ useTapToPay: () => ({ applies: mockTapToPayApplies }) }));
+jest.mock('@/components/payments/TapToPaySettings', () => ({
+  TapToPaySettings: () => {
+    const { Text } = jest.requireActual<typeof import('react-native')>('react-native');
+    return <Text>Tap to Pay settings</Text>;
+  },
 }));
+jest.mock('@/components/bookings/ReaderSettingsSheet', () => ({ ReaderSettingsSheet: () => null }));
 
 import MoreScreen from '@/app/(app)/(tabs)/settings';
 
 const SWITCH = 'Take card payments at your venue';
+const READER = 'Bluetooth card reader';
 
 beforeEach(() => {
   mockRole = 'admin';
   mockEnabled = false;
-  mockStripeAccount = 'acct_123';
-  mockUpdateVenue.mockClear();
-  mockToast.success.mockClear();
-  mockToast.error.mockClear();
+  mockTier = 'appointments';
+  mockTapToPayApplies = false;
 });
 
-describe('More tab — in-person payments switch', () => {
-  it('lets an admin turn it on, sending only that field', async () => {
-    await render(<MoreScreen />);
-    await act(async () => {
-      fireEvent(screen.getByLabelText(SWITCH), 'valueChange', true);
-    });
-    expect(mockUpdateVenue).toHaveBeenCalledWith({ in_person_payments_enabled: true });
-    expect(mockToast.success).toHaveBeenCalledWith('In-person payments turned on.');
+describe('More tab: in-person payments', () => {
+  it('never shows the switch: it is in Booking settings now', async () => {
+    for (const role of ['admin', 'staff']) {
+      mockRole = role;
+      mockEnabled = true;
+      await render(<MoreScreen />);
+      expect(screen.queryByLabelText(SWITCH)).toBeNull();
+      expect(screen.queryByText(/Connect Stripe first/)).toBeNull();
+      expect(screen.queryByText(/always your team's choice/)).toBeNull();
+    }
   });
 
-  it('lets an admin turn it back off', async () => {
+  it('shows an admin none of it, and says Booking settings has payments', async () => {
     mockEnabled = true;
+    mockTapToPayApplies = true;
     await render(<MoreScreen />);
-    await act(async () => {
-      fireEvent(screen.getByLabelText(SWITCH), 'valueChange', false);
-    });
-    expect(mockUpdateVenue).toHaveBeenCalledWith({ in_person_payments_enabled: false });
-    expect(mockToast.success).toHaveBeenCalledWith('In-person payments turned off.');
+    expect(screen.queryByText(READER)).toBeNull();
+    expect(screen.queryByText('Tap to Pay settings')).toBeNull();
+    expect(screen.queryByText('In-person payments')).toBeNull();
+    expect(screen.getByText('Booking types, guest accounts and payments')).toBeTruthy();
   });
 
-  it('hides the switch from non-admins, matching the route’s own admin gate', async () => {
+  it('keeps the card reader and Tap to Pay for a team member once the venue has it on', async () => {
     mockRole = 'staff';
     mockEnabled = true;
+    mockTapToPayApplies = true;
     await render(<MoreScreen />);
-    expect(screen.queryByLabelText(SWITCH)).toBeNull();
-    // …but staff can still reach the reader once the venue has it on, so they
-    // are not blocked from pairing hardware.
-    expect(screen.getByText('Bluetooth card reader')).toBeTruthy();
+    expect(screen.getByText(READER)).toBeTruthy();
+    expect(screen.getByText('Tap to Pay on iPhone')).toBeTruthy();
+    expect(screen.getByText('Tap to Pay settings')).toBeTruthy();
   });
 
-  it('shows nothing at all to a non-admin whose venue has it off', async () => {
+  it('shows a team member nothing while the venue has it off', async () => {
     mockRole = 'staff';
     mockEnabled = false;
     await render(<MoreScreen />);
+    expect(screen.queryByText(READER)).toBeNull();
+    expect(screen.queryByText('In-person payments')).toBeNull();
+  });
+
+  it("keeps the card reader in More for an admin whose plan has no Booking settings group", async () => {
+    mockTier = 'restaurant';
+    mockEnabled = true;
+    await render(<MoreScreen />);
+    expect(screen.getByText(READER)).toBeTruthy();
     expect(screen.queryByLabelText(SWITCH)).toBeNull();
-    expect(screen.queryByText('Bluetooth card reader')).toBeNull();
-  });
-
-  it('warns when Stripe is not connected, because the flag alone does nothing', async () => {
-    // card_present_ready is `enabled && stripe_connected_account_id`, so a venue
-    // without an account can switch this on and still collect nothing.
-    mockEnabled = true;
-    mockStripeAccount = null;
-    await render(<MoreScreen />);
-    expect(screen.getByText(/Connect Stripe first/)).toBeTruthy();
-  });
-
-  it('does not nag about Stripe when the venue is connected', async () => {
-    mockEnabled = true;
-    mockStripeAccount = 'acct_123';
-    await render(<MoreScreen />);
-    expect(screen.queryByText(/Connect Stripe first/)).toBeNull();
-  });
-
-  it('keeps the reader row hidden until the venue flag is actually on', async () => {
-    // Only the SERVER value may reveal the reader — an optimistic switch must not
-    // offer pairing for a venue whose PATCH has not landed (or failed).
-    mockEnabled = false;
-    await render(<MoreScreen />);
-    expect(screen.getByLabelText(SWITCH)).toBeTruthy();
-    expect(screen.queryByText('Bluetooth card reader')).toBeNull();
-  });
-
-  it('rolls the switch back and says so when the save fails', async () => {
-    mockUpdateVenue.mockRejectedValueOnce(new Error('network'));
-    await render(<MoreScreen />);
-    const toggle = screen.getByLabelText(SWITCH);
-    expect(toggle.props.value).toBe(false);
-    await act(async () => {
-      fireEvent(toggle, 'valueChange', true);
-    });
-    // Back to the venue's real state rather than stranded on a lie.
-    expect(screen.getByLabelText(SWITCH).props.value).toBe(false);
-    expect(mockToast.error).toHaveBeenCalled();
-    expect(mockToast.success).not.toHaveBeenCalled();
-  });
-
-  it('reassures staff that collecting is never compulsory', async () => {
-    // The frictionless-off guarantee (§1.3) is a promise to staff; an admin
-    // turning this on should see it stated, not have to trust it.
-    mockEnabled = true;
-    await render(<MoreScreen />);
-    expect(screen.getByText(/always your team's choice/)).toBeTruthy();
   });
 });

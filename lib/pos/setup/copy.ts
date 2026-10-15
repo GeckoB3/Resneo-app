@@ -107,7 +107,7 @@ export const SETUP_COPY = {
   'app.setup.cards.thisPhone.button': 'Get this phone ready',
   'app.setup.cards.team.title': "Your team's phones",
   'app.setup.cards.team.help': 'Your team can take cards on their own phones too. They install the ResNeo app and sign in.',
-  'setup.cards.phone.step2.iphone': 'On an iPhone, open More and set up Tap to Pay on iPhone. You only do this once.',
+  'setup.cards.phone.step2.iphone': 'On an iPhone, open More, then Booking settings, and set up Tap to Pay on iPhone. You only do this once.',
   'setup.cards.phone.step2.android': "On Android, you're ready as soon as you've signed in.",
   'setup.cards.phone.waiting': 'Waiting for a phone',
   'setup.cards.phone.ready': "{name}'s {device} is ready to take cards",
