@@ -1,5 +1,6 @@
 import { parseMoneyInput } from '@/lib/pos/sale-math';
 import { presetMap, matchingPreset, type PresetId } from '@/lib/pos/settings-capabilities';
+import type { ShopAdminView } from '@/lib/pos/settings-more/types';
 import type { PosFeatureSwitchesResponse, PosSwitchExtraKey } from '@/types/pos-switches';
 import type { PosSetupAnswers } from '@/types/pos-setup';
 import type {
@@ -358,12 +359,74 @@ export function emptyQuickRow(key: string): QuickRow {
   return { key, name: '', option: '', price: '' };
 }
 
-/** The body `POST /api/venue/retail/products` takes for a quick-added product. */
-export function quickProductBody(product: QuickProduct): Record<string, unknown> {
+/**
+ * The body `POST /api/venue/retail/products` takes for a quick-added product; `online` puts it in
+ * the online shop too ("Sell these in my online shop too", while the shop is on).
+ */
+export function quickProductBody(product: QuickProduct, opts: { online?: boolean } = {}): Record<string, unknown> {
   return {
     name: product.name,
     usage: 'retail',
     sold_in_store: true,
+    ...(opts.online ? { sold_online: true } : {}),
     variants: product.variants.map((v) => ({ option_name: v.option_name, price_pence: v.price_pence, sort_order: v.sort_order, barcodes: [] })),
   };
+}
+
+// ─── W10: opening the online shop (owner, 2026-10-17) ───────────────────────
+
+/** Each policy's column and its template in the shop's view, in the checklist's order. */
+const SHOP_POLICIES = [
+  ['returns_policy', 'returns'],
+  ['cancellation_policy', 'cancellation'],
+  ['delivery_policy', 'delivery'],
+  ['terms_of_sale', 'terms'],
+] as const;
+
+/** A "[your ...]" gap our templates leave for a detail not given yet (the web's `policyPlaceholder`). */
+const POLICY_PLACEHOLDER = /\[\s*your\s[^\]\n]{0,60}\]/i;
+
+export type ShopView = Pick<ShopAdminView, 'settings' | 'readiness' | 'templates'>;
+
+const unwritten = (view: ShopView) => SHOP_POLICIES.filter(([column]) => !view.settings[column]?.trim());
+
+/**
+ * "Use our templates" is offered while a policy is still unwritten and the templates have no
+ * "[your ...]" gap left in them: a gap keeps the shop shut until someone writes over it, so those
+ * templates are left to Online shop settings, where the owner reads them.
+ */
+export function shopTemplatesOffered(view: ShopView): boolean {
+  return (
+    unwritten(view).length > 0 &&
+    SHOP_POLICIES.every(([, template]) => {
+      const text = view.templates?.[template];
+      return typeof text === 'string' && !POLICY_PLACEHOLDER.test(text);
+    })
+  );
+}
+
+/**
+ * Whether "Yes, open my shop" can be chosen: the shop is shut and every line of its checklist holds,
+ * the policies by the templates when the owner keeps them ticked (a policy already written with a
+ * "[your ...]" gap in it still needs writing over).
+ */
+export function shopCanOpenNow(view: ShopView, useTemplates: boolean): boolean {
+  if (view.settings.shop_open) return false;
+  const c = view.readiness.checks;
+  const policies = c.policies || (useTemplates && shopTemplatesOffered(view) && (view.readiness.placeholders ?? []).length === 0);
+  return c.legal && policies && c.cards && c.plan && c.products && c.fulfilment;
+}
+
+/**
+ * What W10 sends to the shop's own settings route in one save: the templates for the policies not
+ * written yet, and `shop_open` when the owner chose to open now and the shop can. The server checks
+ * the shop as it will be after the save, so an opening it cannot take is refused, never half done.
+ */
+export function shopSettingsWrite(view: ShopView, choice: { useTemplates: boolean; open: boolean }): Record<string, string | boolean> {
+  const out: Record<string, string | boolean> = {};
+  if (choice.useTemplates && shopTemplatesOffered(view)) {
+    for (const [column, template] of unwritten(view)) out[column] = view.templates[template];
+  }
+  if (choice.open && shopCanOpenNow(view, choice.useTemplates)) out.shop_open = true;
+  return out;
 }

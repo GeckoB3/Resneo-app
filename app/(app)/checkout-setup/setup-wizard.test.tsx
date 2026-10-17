@@ -11,6 +11,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 
 import { SetupWizardScreen } from '@/components/pos/setup/SetupWizard';
+import { ApiError } from '@/lib/api/client';
 import { setupSettings, setupStatus, setupSteps, setupVenue } from '@/lib/pos/setup/test-fixtures';
 import { onResponse } from '@/lib/pos/switches/test-fixtures';
 import { queryKeys } from '@/lib/queries/keys';
@@ -521,6 +522,31 @@ describe('W7, products', () => {
     expect(mockPush).toHaveBeenLastCalledWith('/checkout-setup/practice');
   });
 
+  it('while the online shop is on, puts the products added here in it too, unless unticked', async () => {
+    mockVenue = setupVenue({ resolved: { pos_online_shop_enabled: true } });
+    mockSaveProduct.mockResolvedValue({ id: 'p1' });
+    await show('products');
+    expect(screen.getByText('You can change this for each product later.')).toBeTruthy();
+    await type('Name', 'Sea Salt Spray');
+    await type('Price', '16');
+    await press('Add 1 product');
+    expect(mockSaveProduct).toHaveBeenLastCalledWith(
+      expect.objectContaining({ body: expect.objectContaining({ name: 'Sea Salt Spray', sold_online: true }) }),
+    );
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText(/^Sell these in my online shop too/));
+    });
+    await type('Name', 'Wide Comb');
+    await type('Price', '4');
+    await press('Add 1 product');
+    expect(mockSaveProduct).toHaveBeenLastCalledWith(expect.objectContaining({ body: expect.not.objectContaining({ sold_online: true }) }));
+  });
+
+  it('offers no online tick while the shop is off', async () => {
+    await show('products');
+    expect(screen.queryByText('Sell these in my online shop too')).toBeNull();
+  });
+
   it('says what a row is missing', async () => {
     await show('products');
     await type('Name', 'Wax');
@@ -630,17 +656,117 @@ describe('W9, the loyalty card', () => {
 });
 
 describe('W10, the online shop', () => {
-  it("shows the shop's checklist, opens its settings, and Later skips", async () => {
-    mockQueries['/api/venue/shop/settings'] = {
-      readiness: { checks: { legal: true, policies: false, cards: true, plan: true, products: false, fulfilment: true }, canOpen: false, open: false },
-      shop_url: null,
+  const SHOP = '/api/venue/shop/settings';
+  const TEMPLATES = {
+    returns: 'Returns at Bloom Hair Studio. Email hello@bloom.example within 30 days.',
+    cancellation: 'You can cancel within 14 days of receiving your order.',
+    delivery: 'We deliver across the UK.',
+    terms: 'These terms are between you and Bloom Hair Studio.',
+  };
+  const POLICIES = {
+    returns_policy: TEMPLATES.returns,
+    cancellation_policy: TEMPLATES.cancellation,
+    delivery_policy: TEMPLATES.delivery,
+    terms_of_sale: TEMPLATES.terms,
+  };
+  type Checks = { legal: boolean; policies: boolean; cards: boolean; plan: boolean; products: boolean; fulfilment: boolean };
+  function shopView(over: { checks?: Partial<Checks>; settings?: Record<string, unknown> } = {}) {
+    const checks: Checks = { legal: true, policies: false, cards: true, plan: true, products: false, fulfilment: true, ...over.checks };
+    const settings: Record<string, unknown> = {
+      shop_open: false,
+      returns_policy: null,
+      cancellation_policy: null,
+      delivery_policy: null,
+      terms_of_sale: null,
+      version: 5,
+      ...over.settings,
     };
+    const canOpen = Object.values(checks).every(Boolean);
+    return {
+      settings,
+      readiness: { checks, canOpen, open: canOpen && settings.shop_open === true, placeholders: [] },
+      templates: TEMPLATES,
+      shop_url: 'https://reserve-ni.example/shop/bloom',
+      zones: [],
+    };
+  }
+  const yes = () => screen.getByLabelText(/^Yes, open my shop\./);
+  const notYet = () => screen.getByLabelText(/^Not yet\./);
+
+  it("shows the shop's checklist, opens its settings, says where to open it later, and Skip skips", async () => {
+    mockQueries[SHOP] = shopView();
     await show('shop');
     expect(screen.getByText('Card payments set up')).toBeTruthy();
     await press('Set up my shop');
     expect(mockPush).toHaveBeenCalledWith('/checkout-settings/shop');
-    await press('Later');
+    // No product sells online yet, so the shop cannot open from here.
+    expect(yes().props.accessibilityState).toEqual({ checked: false, disabled: true });
+    expect(screen.getByText('You can choose this once everything above is ticked.')).toBeTruthy();
+    expect(notYet().props.accessibilityState).toEqual({ checked: true, disabled: false });
+    expect(screen.getByText('You can open your shop any time in Checkout settings, Online shop.')).toBeTruthy();
+    await press('Skip for now');
     expect(mockSaveProgress).toHaveBeenCalledWith({ step: { id: 'shop', state: 'skipped' } });
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
+  it('opens the shop, writing the policies from our templates in the same save', async () => {
+    mockQueries[SHOP] = shopView({ checks: { products: true } });
+    mockSend.mockResolvedValue(shopView({ checks: { products: true, policies: true }, settings: { ...POLICIES, shop_open: true, version: 6 } }));
+    await show('shop');
+    expect(screen.getByText("Use our templates for your shop's policies")).toBeTruthy();
+    expect(yes().props.accessibilityState).toEqual({ checked: true, disabled: false });
+    expect(screen.getByText('Customers can order from your shop as soon as you continue.')).toBeTruthy();
+    await press('Continue');
+    expect(mockSend).toHaveBeenCalledWith(SHOP, 'PATCH', { ...POLICIES, shop_open: true, version: 5 });
+    expect(mockToast.success).toHaveBeenCalledWith('Your shop is open.');
+    expect(mockPush).toHaveBeenLastCalledWith('/checkout-setup/practice');
+  });
+
+  it('"Not yet" keeps the templates and leaves the shop shut', async () => {
+    mockQueries[SHOP] = shopView({ checks: { products: true } });
+    mockSend.mockResolvedValue(shopView({ checks: { products: true, policies: true }, settings: { ...POLICIES, version: 6 } }));
+    await show('shop');
+    await act(async () => {
+      fireEvent.press(notYet());
+    });
+    expect(yes().props.accessibilityState).toEqual({ checked: false, disabled: false });
+    await press('Continue');
+    expect(mockSend).toHaveBeenCalledWith(SHOP, 'PATCH', { ...POLICIES, version: 5 });
+    expect(mockToast.success).not.toHaveBeenCalled();
+    expect(mockPush).toHaveBeenLastCalledWith('/checkout-setup/practice');
+  });
+
+  it('unticking the templates leaves the policies to write, so nothing is saved and the shop stays shut', async () => {
+    mockQueries[SHOP] = shopView({ checks: { products: true } });
+    await show('shop');
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText(/^Use our templates for your shop's policies/));
+    });
+    expect(yes().props.accessibilityState).toEqual({ checked: false, disabled: true });
+    await press('Continue');
+    expect(mockSend).not.toHaveBeenCalled();
+    expect(mockPush).toHaveBeenLastCalledWith('/checkout-setup/practice');
+  });
+
+  it("shows the server's refusal and stays", async () => {
+    mockQueries[SHOP] = shopView({ checks: { products: true } });
+    const sentence = 'Add these before you open your shop: card payments.';
+    mockSend.mockRejectedValue(new ApiError(sentence, 409, { error: sentence, code: 'SHOP_LEGAL_DETAILS_MISSING' }));
+    await show('shop');
+    await press('Continue');
+    expect(screen.getByText(sentence)).toBeTruthy();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('once the shop is open, says so and goes on without asking or saving', async () => {
+    mockQueries[SHOP] = shopView({ checks: { products: true, policies: true }, settings: { ...POLICIES, shop_open: true } });
+    await show('shop');
+    expect(screen.getByText('Your shop is open.')).toBeTruthy();
+    expect(screen.queryByText('Open your shop now?')).toBeNull();
+    expect(screen.queryByText('Skip for now')).toBeNull();
+    await press('Continue');
+    expect(mockSend).not.toHaveBeenCalled();
+    expect(mockPush).toHaveBeenLastCalledWith('/checkout-setup/practice');
   });
 });
 

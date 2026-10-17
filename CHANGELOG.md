@@ -15,6 +15,18 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ---
 
+## Unreleased OTA: open the online shop from set-up (iOS 1.2.0 / Android 1.1.2)
+
+### Open the online shop from Checkout set-up (owner, 2026-10-17)
+
+Set-up's "Your online shop" screen now asks "Open your shop now?", as the web's does. "Yes, open
+my shop" can be chosen once every line of the shop's checklist is ticked, and is chosen for the
+owner then; "Not yet" says where to open it later (Checkout settings, Online shop). Policies not
+written yet can come from our templates, saved with the opening in one go through
+`PATCH /api/venue/shop/settings`. "Skip for now" replaces "Later". While the shop is on, "Add your
+products" offers "Sell these in my online shop too" (ticked), so the products added there are sold
+online. No native change; the web routes it uses are already in production.
+
 ## Unreleased OTA: POS app step 1 (iOS 1.2.0 / Android 1.1.2)
 
 ### Commission splits (owner, 2026-10-14)

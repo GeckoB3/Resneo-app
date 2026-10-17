@@ -5,6 +5,7 @@ import { StyleSheet, View } from 'react-native';
 import { ChoiceCard, ChoiceGroup, SetupSection } from '@/components/pos/setup/parts';
 import { SetupButtons, SetupFrame, type SetupData } from '@/components/pos/setup/SetupFrame';
 import { useStepRunner } from '@/components/pos/setup/useStepRunner';
+import { TickRow } from '@/components/pos/switches/parts';
 import { useProductsAiAvailability } from '@/components/retail/ai-import/api';
 import { ProductsAiEntry } from '@/components/retail/ai-import/ProductsAiEntry';
 import { Button } from '@/components/ui/Button';
@@ -13,6 +14,7 @@ import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
 import { newPaymentAttemptId } from '@/lib/payments/attempt-id';
 import { posErrorMessage } from '@/lib/pos/api';
+import { isShopEnabled } from '@/lib/pos/pos-enabled';
 import { emptyQuickRow, quickAddProducts, quickProductBody, type QuickRow } from '@/lib/pos/setup/answers';
 import { setupT } from '@/lib/pos/setup/copy';
 import { currencySymbol } from '@/lib/pos/settings-form';
@@ -34,6 +36,8 @@ export const PRODUCT_IMPORT_HREF = '/stock/import';
  * `/stock/ai-import`, shown only while the server offers the reader), and whether ResNeo should
  * count stock ("Yes" turns on Track stock for every existing product, as the Features switch does;
  * "Not now" leaves it as it is). Coming back from the import or the AI flow reads the count again.
+ * While the online shop is on, "Sell these in my online shop too" (ticked) adds the quick-added
+ * products as sold online, so W10 can open the shop with them (owner, 2026-10-17, as the web).
  */
 export function ProductsStep({ data }: { data: SetupData }) {
   const router = useRouter();
@@ -61,6 +65,8 @@ export function ProductsStep({ data }: { data: SetupData }) {
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
   const [stock, setStock] = useState<boolean | null>(() => data.status.answers.track_stock ?? (settings.track_stock_enabled ? true : null));
+  const shopOn = isShopEnabled(data.venue);
+  const [online, setOnline] = useState(true);
 
   const total = productsQuery.data?.pages[0]?.total ?? null;
   // Every row with something typed counts, so pressing Add says what a row is missing.
@@ -90,7 +96,11 @@ export function ProductsStep({ data }: { data: SetupData }) {
     let added = 0;
     for (const product of current.products) {
       try {
-        await saveProduct.mutateAsync({ kind: 'create', body: quickProductBody(product), clientRequestId: newPaymentAttemptId() });
+        await saveProduct.mutateAsync({
+          kind: 'create',
+          body: quickProductBody(product, { online: shopOn && online }),
+          clientRequestId: newPaymentAttemptId(),
+        });
         added += 1;
         // Rows saved are taken off, so trying again sends only what is left.
         const name = product.name.toLowerCase();
@@ -217,6 +227,15 @@ export function ProductsStep({ data }: { data: SetupData }) {
           onPress={() => setRows((list) => [...list, emptyQuickRow(`row-${nextKey.current++}`)])}
           disabled={busy}
         />
+        {shopOn ? (
+          <TickRow
+            title={setupT('setup.products.quick.online')}
+            detail={setupT('setup.products.quick.online.note')}
+            checked={online}
+            onChange={setOnline}
+            disabled={busy}
+          />
+        ) : null}
         {addError ? (
           <Text variant="bodySmall" tone="danger" accessibilityRole="alert">
             {addError}

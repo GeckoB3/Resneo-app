@@ -18,7 +18,10 @@ import {
   rateFromText,
   sellProductsFact,
   sellProductsOn,
+  shopCanOpenNow,
   shopNeedsProducts,
+  shopSettingsWrite,
+  shopTemplatesOffered,
   teamPresetFrom,
   teamSettingsFor,
   tipRuleFrom,
@@ -26,6 +29,7 @@ import {
   tipsSettingsFor,
   usageAnswerFrom,
   extraStateOf,
+  type ShopView,
 } from '@/lib/pos/setup/answers';
 import { switchesResponse } from '@/lib/pos/switches/test-fixtures';
 import type { PosSettingsPaymentType } from '@/types/pos-settings';
@@ -244,5 +248,72 @@ describe('W7: quick-add products', () => {
     ]);
     expect(plan.errors).toEqual({ a: 'name', b: 'price' });
     expect(plan.products).toEqual([]);
+  });
+});
+
+describe('W7: products added here while the online shop is on', () => {
+  it('go in the shop too when the tick stays on', () => {
+    const product = { name: 'Sea Salt Spray', variants: [{ option_name: null, price_pence: 1600, sort_order: 0 }] };
+    expect(quickProductBody(product, { online: true })).toMatchObject({ name: 'Sea Salt Spray', sold_online: true });
+    expect(quickProductBody(product, { online: false })).not.toHaveProperty('sold_online');
+    expect(quickProductBody(product)).not.toHaveProperty('sold_online');
+  });
+});
+
+describe('W10: opening the online shop (owner, 2026-10-17)', () => {
+  type Checks = ShopView['readiness']['checks'];
+  const TEMPLATES = {
+    returns: 'Returns at Bloom Hair Studio. Email hello@bloom.example within 30 days.',
+    cancellation: 'You can cancel within 14 days of receiving your order.',
+    delivery: 'We deliver across the UK.',
+    terms: 'These terms are between you and Bloom Hair Studio.',
+  };
+  function view(over: { checks?: Partial<Checks>; settings?: Record<string, unknown>; placeholders?: { policy: string; placeholder: string }[] } = {}): ShopView {
+    const checks: Checks = { legal: true, policies: false, cards: true, plan: true, products: true, fulfilment: true, ...over.checks };
+    return {
+      settings: {
+        shop_open: false,
+        returns_policy: null,
+        cancellation_policy: null,
+        delivery_policy: null,
+        terms_of_sale: null,
+        version: 5,
+        ...over.settings,
+      } as unknown as ShopView['settings'],
+      readiness: { checks, canOpen: Object.values(checks).every(Boolean), open: false, placeholders: over.placeholders ?? [] },
+      templates: TEMPLATES,
+    };
+  }
+
+  it('offers the templates while a policy is unwritten and the templates have no gap in them', () => {
+    expect(shopTemplatesOffered(view())).toBe(true);
+    const written = { returns_policy: 'Ours', cancellation_policy: 'Ours', delivery_policy: 'Ours', terms_of_sale: 'Ours' };
+    expect(shopTemplatesOffered(view({ settings: written }))).toBe(false);
+    // A detail not given yet would leave "[your email]" in a template, keeping the shop shut.
+    expect(shopTemplatesOffered({ ...view(), templates: { ...TEMPLATES, returns: 'Email [your email] to return it.' } })).toBe(false);
+  });
+
+  it('can open once every line holds, the policies by the templates when they stay ticked', () => {
+    expect(shopCanOpenNow(view(), true)).toBe(true);
+    expect(shopCanOpenNow(view(), false)).toBe(false);
+    expect(shopCanOpenNow(view({ checks: { products: false } }), true)).toBe(false);
+    expect(shopCanOpenNow(view({ checks: { policies: true } }), false)).toBe(true);
+    // A written policy still holding a gap needs writing over: the templates fill only the empty ones.
+    expect(shopCanOpenNow(view({ placeholders: [{ policy: 'terms', placeholder: '[your address]' }] }), true)).toBe(false);
+    // Already switched on, there is nothing to open.
+    expect(shopCanOpenNow(view({ checks: { policies: true }, settings: { shop_open: true } }), true)).toBe(false);
+  });
+
+  it('writes the templates for the empty policies only, and the opening only when it can', () => {
+    const some = view({ settings: { returns_policy: 'Our own returns.', terms_of_sale: '  ' } });
+    expect(shopSettingsWrite(some, { useTemplates: true, open: true })).toEqual({
+      cancellation_policy: TEMPLATES.cancellation,
+      delivery_policy: TEMPLATES.delivery,
+      terms_of_sale: TEMPLATES.terms,
+      shop_open: true,
+    });
+    expect(shopSettingsWrite(some, { useTemplates: false, open: true })).toEqual({});
+    expect(shopSettingsWrite(some, { useTemplates: true, open: false })).not.toHaveProperty('shop_open');
+    expect(shopSettingsWrite(view({ checks: { products: false } }), { useTemplates: true, open: true })).not.toHaveProperty('shop_open');
   });
 });

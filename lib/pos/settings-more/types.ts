@@ -213,6 +213,8 @@ export interface ShopReadiness {
   canOpen: boolean;
   open: boolean;
   missing?: string[];
+  /** Policies written but still holding a template gap such as "[your address]". */
+  placeholders?: { policy: string; placeholder: string }[];
 }
 
 export interface ShopAdminView {

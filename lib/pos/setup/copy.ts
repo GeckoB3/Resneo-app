@@ -241,6 +241,9 @@ export const SETUP_COPY = {
   'setup.products.quick.added.one': '1 product added. You can sell it at the till now.',
   'setup.products.quick.badPrice': 'Enter a price, like 12.50.',
   'setup.products.quick.needName': 'Give the product a name.',
+  // While the online shop is on, the products added here go in it too (owner, 2026-10-17).
+  'setup.products.quick.online': 'Sell these in my online shop too',
+  'setup.products.quick.online.note': 'You can change this for each product later.',
   'app.setup.products.quick.partFailed': 'We added {added} of {count}. {error}',
   'app.setup.products.count': 'You have {count} products.',
   'app.setup.products.count.one': 'You have 1 product.',
@@ -307,11 +310,22 @@ export const SETUP_COPY = {
   // W10. Your online shop.
   'setup.shop.title': 'Your online shop',
   'setup.shop.body': 'Your shop opens when these are done. You can do them now or later.',
+  'setup.shop.ready': 'Everything is ready for your shop to open.',
   'setup.shop.go': 'Set up my shop',
-  'setup.shop.later': 'Later',
   'setup.shop.collective':
     "Your booking page hands over to the {collective} page. Once your shop is open, its Shop tab links to it. You can share your own link too: {link}",
   'app.setup.shop.open': 'Your shop is open.',
+  // Opening the shop from set-up, or where to open it later (owner, 2026-10-17). The web names
+  // "Settings, Checkout, Online shop"; the app's place is Checkout settings, Online shop.
+  'setup.shop.templates': "Use our templates for your shop's policies",
+  'app.setup.shop.templates.note':
+    "We'll fill in the ones you haven't written, with your details. They're a starting point: read them in Checkout settings, Online shop, and change anything that doesn't fit how you work.",
+  'setup.shop.open.title': 'Open your shop now?',
+  'setup.shop.open.yes': 'Yes, open my shop',
+  'setup.shop.open.yes.note': 'Customers can order from your shop as soon as you continue.',
+  'setup.shop.open.yes.notReady': 'You can choose this once everything above is ticked.',
+  'setup.shop.open.no': 'Not yet',
+  'app.setup.shop.open.no.note': 'You can open your shop any time in Checkout settings, Online shop.',
 
   // W11. Try a practice sale (the sale screen's practice mode is its own builder's).
   'setup.practice.title': 'Try a practice sale',
