@@ -1,5 +1,107 @@
 # Go-live check — Resneo app
 
+## Run 2026-10-17: commission splits and Booking settings payments, iOS 1.2.0 and Android 1.1.2, from `cce8da8`
+
+**Scope:** `c328667..cce8da8`, two commits:
+- `453b66d`: commission splits, with clearer set-up, statements and reports (web `a07b741c`,
+  `2fe7f6f8`);
+- `cce8da8`: Booking settings gains "Taking payment in person" and the Checkout switch (web
+  `32aca461`).
+
+`CHANGELOG.md` has no entry for these two yet. Both have been on the Android preview channel since
+2026-10-17 15:24 UTC (group `c62b9d37`).
+
+**Verdict: cleared to publish, one update per platform (§6).** One thing is left for the owner:
+`20270405120000_commission_rates_same_day` only drops an index, so it cannot be seen from outside
+(§4).
+
+### 1. Version and reach
+
+| Check | Result |
+|---|---|
+| Published tip | `c328667` on both, "Commission splits; card reader explains why it cannot start": group `cf173d37` (Android, runtime 1.1.2, 2026-10-14 20:40 UTC) and `f6fcda31` (iOS, runtime 1.2.0, 20:28 UTC). Full rollouts; the channel is not paused |
+| Runtimes | `expo-updates runtimeversion:resolve`: iOS **1.2.0** (root `version`), Android **1.1.2** (`android.version`); `appVersion` policy |
+| Store binaries | iOS 1.2.0 build 25 from `15a8e96` (App Store GB 1.2.0, released 2026-10-07 22:28 UTC); Android 1.1.2 build 18 from `287a871` |
+| Update prompt | production `app-version.json`: iOS latest 1.2.0 / minimum 1.1.0, Android latest 1.1.2 / minimum 1.1.0. iOS 1.1.2 installs do not get this update and are asked to update |
+
+### 2. Nothing native moved
+
+`git diff` over `package.json`, `package-lock.json`, `app.json`, `app.config.js`, `eas.json`,
+`metro.config.js`, `babel.config.js`, `modules`, `patches` and `plugins`:
+- **iOS (`15a8e96`):** empty.
+- **Android (`287a871`):** only the iOS-only set already cleared on 2026-10-07: the entitlements and
+  `APPLE_TEAM_ID`, the `tap-to-pay-education` module (its JS returns null off iOS), and the two
+  `patches/expo-modules-*` (only `ios/` and `apple/` sources).
+
+Installed packages match the lock: 1,244 checked, **0 drift**.
+
+### 3. Verified on this machine
+
+- `tsc --noEmit`: clean. `jest`: **541 suites / 5,129 tests pass**. `expo lint`: 0 errors, 507
+  warnings.
+- EAS `production` environment (`eas env:list`): `EXPO_PUBLIC_API_URL` www.resneo.com,
+  `EXPO_PUBLIC_SUPABASE_URL` njualfobtudvlugqkqho (live), the live publishable key, the `pk_live_`
+  Stripe key and the Sentry DSN, all PUBLIC. No `TERMINAL_SIMULATED`, `ALLOW_SCREENSHOTS` or
+  `TAP_TO_PAY_IOS`.
+- `NODE_ENV` is unset at process, user and machine level. There is no `.env` or `.env.local`, and no
+  PowerShell profile.
+- Cleared-cache export under `eas env:exec production`, both Hermes bundles (iOS 14.3 MB, Android
+  14.5 MB):
+
+| Marker | iOS | Android |
+|---|---|---|
+| `njualfobtudvlugqkqho.supabase.co` (live) / live publishable key | present / present | present / present |
+| `zkppmyyvkjvbsvemakbb` (dev) / dev publishable key | none / none | none / none |
+| `www.resneo.com` | present | present |
+| full `pk_live_` key / `pk_test_` | present / none | present / none |
+| full Sentry DSN | present | present |
+| `192.168.` / `10.0.2.2` | none / none | none / none |
+| `reserve-ni.vercel.app` | once: the `getWebUrl()` fallbacks (settings, orders, Checkout home links, packing slip, assistant links), which cannot be reached while the API URL is set | same |
+| `localhost:3000` | once: expo-router's `head/url.js` fallback | none |
+| `localhost:8081` | once: React Native's `getDevServer` fallback | same |
+| `TERMINAL_SIMULATED` / `ALLOW_SCREENSHOTS` / `TAP_TO_PAY_IOS` / `SENTRY_DSN` names | inlined away | inlined away |
+| New code: "See what is owed in Reports", "Payer keeps", "Use Checkout", "Open Checkout settings", the card payments line | present | present |
+
+### 4. Web
+
+- Web `main` and `staging` are the same commit, `92898bb1` (#229, 2026-10-17 15:16 UTC), which
+  carries the web halves of this batch. Vercel's Production deployment of it: `success`, 15:18 UTC.
+- **Routes:** every route the batch uses answers 401 or 405 on www.resneo.com. That covers
+  `/api/venue`, `feature-switches`, `pos/setup-status`, `reports`, `reports/measures`, the
+  `commission/*` reads and writes, and the per-split actions. The new `/api/help/search-docs`
+  answers 200, so production serves #229. A made-up route answers 404.
+- **Live database** (PostgREST, publishable key, `limit=0`, no rows read): migrations `20270323` to
+  `20270405`.
+  - All **7 new tables** exist: `venue_feature_switches`, `venue_feature_switch_events`,
+    `pos_setup_progress`, `commission_person_labels`, `revenue_splits`, `revenue_split_terms` and
+    `revenue_split_settlements`.
+  - All **6 added columns** exist.
+  - Controls: a made-up table answers `PGRST205` and a made-up column `42703`.
+- **Not visible from outside:** the function-only and index-only migrations in that range. The one
+  this batch leans on is `20270405120000_commission_rates_same_day`. It drops
+  `commission_rates_scope_uq` so that a rate dated today can replace one from earlier today, and the
+  rate sheet now starts on today. Owner to confirm with `npx supabase migration list --linked` in
+  `C:\Resneo`.
+
+### 5. Device testing
+
+- Android preview: group `c62b9d37` from `cce8da8`, published 2026-10-17 15:24 UTC, for the owner's
+  testing.
+- iOS: not rehearsed on a preview build (no 1.2.0 preview update exists).
+
+### 6. Publish
+
+```
+npx eas-cli update --channel production --platform ios --environment production --clear-cache --message "Commission splits set-up and statements; card payments and Checkout in Booking settings"
+npx eas-cli update --channel production --platform android --environment production --clear-cache --message "Commission splits set-up and statements; card payments and Checkout in Booking settings"
+```
+
+Rolling back returns each platform to the previous group:
+`npx eas-cli update:republish --group f6fcda31-0698-45b4-91bc-4281734d25d1 --platform ios` and
+`npx eas-cli update:republish --group cf173d37-791e-48cc-a4fb-19cef2891e2b --platform android`.
+
+---
+
 ## Run 2026-10-10: the POS app, iOS 1.2.0 and Android 1.1.2, from `d05319c`
 
 **Scope:** `5aeb548..d05319c`, 68 commits: the `pos` branch (POS app steps 1 to 5, checkout set-up,
