@@ -60,9 +60,8 @@ release.
 ### 5. Store copy
 
 In `CHANGELOG.md`, under the 1.3.0 entry: Play **457/500**, App Store **1,696/4,000**. Both lead
-with Checkout "for venues using ResNeo Checkout". If Checkout's self-serve dial (`pos_self_serve`
-in `platform_settings`) still offers it to nobody or to invited venues only, the owner may prefer
-Reports to lead instead.
+with Checkout "for venues using ResNeo Checkout". The owner confirmed the same day that Checkout is
+open to venues, so the copy stands as written.
 
 ### 6. Build, test and submit
 
