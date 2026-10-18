@@ -15,7 +15,121 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ---
 
-## Unreleased OTA: open the online shop from set-up (iOS 1.2.0 / Android 1.1.2)
+## Unreleased: iOS 1.3.0 / Android 1.3.0
+
+A store release on both platforms. It is built from the code already live as the last update on
+each platform (`e0873d2`: group `2752e453` on iOS 1.2.0 and `62526862` on Android 1.1.2), plus this
+version bump. Both platforms are on the same version again: iOS moves up from 1.2.0 and Android
+from 1.1.2. The build-day checks are in the 2026-10-18 readiness run in `Docs/GO_LIVE_CHECK.md`.
+
+**Why a store build, when nothing native changed.** Against iOS 1.2.0 (`15a8e96`) the native diff
+is empty. Against Android 1.1.2 (`287a871`) it holds only the iOS-only set: the Tap to Pay
+entitlement, `modules/tap-to-pay-education` and the two Apple-only `patches/`. What the build
+changes is the bundle inside the app. A new install, and any rollback to the embedded bundle, now
+starts on code from before Checkout (and on Android, from before the update prompt). From 1.3.0 it
+starts on what everyone already runs.
+
+**The runtime moves to 1.3.0 on both platforms.** `app.json` root `version` and `android.version`
+are both 1.3.0, under the same `appVersion` policy.
+- From this commit on, updates from `main` reach 1.3.0 installs only. Publish nothing to production
+  until both stores have released 1.3.0.
+- iOS 1.2.0 and Android 1.1.2 installs keep the 2026-10-18 update. A fix that must still reach
+  them is published from a branch cut at `e0873d2`.
+
+**After each store releases it:** raise that platform's `latest` to `1.3.0` in the website's
+`public/app-version.json` (web `staging`, then `main`), keeping `minimum` at `1.1.0`. With a Play
+staged rollout, wait for 100%, or people outside it are sent to a listing with no update. Installs
+that have the update prompt are then asked to update: iOS 1.2.0, and iOS or Android 1.1.2 that took
+an update from 2026-10-07 on. 1.1.1 and older never got the prompt.
+
+**What 1.3.0 brings over the last store builds.** All of it reached users over the air first, and
+the sections below describe it in full:
+- **Both platforms:** the web's POS Pass 0 follow-ups; the POS app (Checkout, card payments, gift
+  vouchers and account credit, products and stock, cash-up, online orders, Checkout settings);
+  commission splits; opening the online shop from set-up.
+- **Android only**, since iOS 1.2.0 already carries it: the first 1.1.2 update (R44 calendars, the
+  Android sheets fix, compliance Checkboxes answers, the update prompt).
+
+Shipped over the air without an entry of their own until now:
+- **Checkout:** a new client from the till's client sheet (`6544ebb`); client mode for the tip and
+  the card (`86ba2e4`); voucher discounts, credit for a custom item and online sales (`ce0e87b`);
+  Take payment as a clear choice, the amount first and methods as tiles (`d170efd`); Checkout home
+  fitted to the person (`8d20d48`); admins switch Checkout and its extras on and off (`c5cc1bd`);
+  the set-up wizard and the practice sale (`d13d605`); tips on pay links and how long pay links
+  work (`c9a7e05`); card payments and the Checkout switch in Booking settings (`cce8da8`).
+- **Products:** Add products with AI from photos, a price list, a file or typed text (`3a49cd7`).
+- **Reports:** SMS segments this period (`0192073`); the figures first under one range line
+  (`cffb069`); booked value by venue, till reports at every venue and a one-calendar filter
+  (`c05cf9a`); a linked business, a collective or everyone together, and compare periods
+  (`274c898`); key measures, busiest times, client retention and a Team tab (`de4b6d0`).
+- **Commission splits:** clearer set-up, statements and reports (`453b66d`).
+- **Calendar:** the colour key and a client search behind one More button (`8605fb8`); a linked
+  venue's closures drawn by cause (`0c0269d`).
+- **Bookings:** the "Booked through" filter for bookings made through a collective page
+  (`149a53c`).
+- **Today and More:** the Till and Low stock cards (`a9684e6`); ResNeo's platform announcements
+  (`be3f7d6`).
+- **Services:** "Staff bookings only" (`19fe645`); the collective tools (`21213cd`); members
+  suggest services to the host (`0b0deb2`).
+- **Set-up:** the ResNeo marketplace card on the booking page (`7694edf`); Checkout messages
+  switches in Communications (`f14ad51`); the trial breakdown, and Plan & payments read only for
+  staff (`b609836`, `11f574f`); the data import wizard for clients and bookings from another
+  system (`b57fe23`).
+- **Orders:** select several orders and print their packing slips (`47d5abf`).
+- **Client mode:** the loyalty card on Home (`23fc275`).
+- **Card readers:** ResNeo's reason when a reader cannot start (`c328667`); Tap to Pay on Android
+  on a dark screen in ResNeo teal (`8f7f5a8`).
+- **Sheets:** on Android, Back with the keyboard up only hides the keyboard (`6224501`).
+
+### Play Store: "What's new" (457/500)
+
+```
+Checkout in the app, for venues using ResNeo Checkout: sales, card payments on your phone or a reader, cash, gift vouchers and pay links, with clients choosing their own tip. Plus products and stock, cash-up and online orders.
+
+Reports: compare periods, key measures, busiest times and a Team tab.
+
+Commission splits for your team and for businesses you work with.
+
+Also: import clients and bookings from another system, and find a client from the calendar.
+```
+
+### App Store: "What's new" (1,696/4,000)
+
+```
+Checkout in the app
+
+For venues using ResNeo Checkout, the till now works in the app as well as on the web. Check out a booking or start a new sale, add services and products (scan a barcode with the camera), apply discounts, and take payment with Tap to Pay on iPhone, a Bluetooth card reader, cash, a gift voucher, a pay link or QR code, or a saved card. When you take tips, hand your iPhone to the client to choose their tip and pay. Admins can switch Checkout on, run its set-up and change its settings in the app.
+
+Products, stock and online orders
+
+Keep products and stock levels up to date, run stocktakes, order from suppliers and receive deliveries. Add products with AI from photos, a price list or a file. Prepare, hand over and send online shop orders, with pickup codes and packing slips.
+
+Cash-up
+
+Open and close the till, record cash paid in and out with a photo of the receipt, and see X and Z reports and your end of day.
+
+Reports
+
+Show your figures for a linked business, a collective or everyone together, and compare one period with another. New key measures, busiest times, client retention and a Team tab. Checkout venues also get Takings, Sales and Vouchers.
+
+Commission splits
+
+Set commission rates for your team, and agree shares of a calendar's takings with the businesses you work with, with statements and reports.
+
+Also new
+
+- Import clients and bookings from another booking system's export.
+- Find a client from the calendar, and see what the calendar's colours mean.
+- Mark a service "Staff bookings only" so the team can book it but clients online can't.
+- Members of a collective can suggest services to the host.
+- Clients can see their loyalty card in the app.
+```
+
+---
+
+## OTA on iOS 1.2.0 / Android 1.1.2 — 2026-10-18: open the online shop from set-up
+
+Published as groups `2752e453` (iOS) and `62526862` (Android), from `e0873d2`.
 
 ### Open the online shop from Checkout set-up (owner, 2026-10-17)
 
@@ -27,7 +141,17 @@ written yet can come from our templates, saved with the opening in one go throug
 products" offers "Sell these in my online shop too" (ticked), so the products added there are sold
 online. No native change; the web routes it uses are already in production.
 
-## Unreleased OTA: POS app step 1 (iOS 1.2.0 / Android 1.1.2)
+## OTA on iOS 1.2.0 / Android 1.1.2 — 2026-10-10 to 2026-10-17: the POS app
+
+Published in five pairs of groups (iOS first, then Android):
+- `328db579` / `0fa88c45` from `e8f69eb` (2026-10-10), "ResNeo POS app: Checkout, stock, orders
+  and data import";
+- `7dd6ed75` / `bbd92d92` from `c73100e` (2026-10-10), the send-to-phone fix;
+- `45f39d21` / `937d8332` from `9115778` (2026-10-10), the client's tip, the Send to a phone pop-up
+  and the delivery zones;
+- `27f6fa34` / `fd8fbd21` from `de4b6d0` (2026-10-13), Reports and Checkout set-up;
+- `f6fcda31` / `cf173d37` from `c328667` (2026-10-14), then `6e723b7e` / `db1c0e5b` from
+  `a8a2621` (2026-10-17), commission splits and Booking settings payments.
 
 ### Commission splits (owner, 2026-10-14)
 
@@ -469,9 +593,10 @@ and Pass LC for app step 4) on the server.
 
 ---
 
-## Unreleased OTA: the web's POS Pass 0 (iOS 1.2.0 / Android 1.1.2)
+## OTA on iOS 1.2.0 / Android 1.1.2 — 2026-10-08: the web's POS Pass 0
 
-JavaScript only, for both runtimes. Each change is additive: against a server without POS Pass 0
+Published as groups `e835441e` (iOS) and `57d774dc` (Android), from `5aeb548`, "ResNeo POS Pass 0
+follow-ups". JavaScript only, for both runtimes. Each change is additive: against a server without POS Pass 0
 the app behaves exactly as before.
 
 - **Cash and other payments carry a key.** Take payment sends `client_request_id` when recording
@@ -490,7 +615,9 @@ the app behaves exactly as before.
 
 ---
 
-## Unreleased: iOS 1.2.0 (Android stays on 1.1.2)
+## iOS 1.2.0 — 2026-10-07 (Android stays on 1.1.2)
+
+Built from `15a8e96` (iOS build 25) and released in the App Store on 2026-10-07 at 22:28 UTC.
 
 A native iOS release for **Tap to Pay on iPhone**, now that Apple has granted the distribution
 entitlement (2026-10-01). Android is not rebuilt: it keeps runtime 1.1.2 and its updates.

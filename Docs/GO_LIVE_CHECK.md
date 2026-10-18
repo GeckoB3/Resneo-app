@@ -1,5 +1,121 @@
 # Go-live check — Resneo app
 
+## Run 2026-10-18: 1.3.0 readiness, both platforms, on `main` above `e0873d2`
+
+**Scope:** a store release on both platforms to **1.3.0**, from iOS 1.2.0 and Android 1.1.2. It is
+built from the code already live as the last update on each platform, plus the version bump. The
+user-facing lines and the store copy are the "Unreleased: iOS 1.3.0 / Android 1.3.0" entry in
+`CHANGELOG.md`.
+
+**Verdict: ready to build for production.** Nothing native moved (§3), so the binaries are the same
+native code as iOS build 25 and Android preview build 18, both already compiled on EAS. What is
+owed is a smoke test of the store builds before release (§6), then the web's version file (§8).
+
+### 1. Where production stood
+
+`eas update:list --branch production` on the day: the latest groups are `2752e453` (iOS, runtime
+1.2.0, 2026-10-18 10:54 UTC) and `62526862` (Android, runtime 1.1.2, 10:56 UTC), "Open the online
+shop from Checkout set-up", both from `e0873d2`. That is the commit below this one, so nothing on
+`main` was waiting to go out to 1.2.0 or 1.1.2 when the version moved. The three changelog entries
+for the updates since the store builds are retitled as published, with their groups.
+
+### 2. Version and reach
+
+| Check | Result |
+|---|---|
+| iOS / Android version | iOS 1.2.0 and Android 1.1.2 to **1.3.0** on both (`app.json` `version` and `android.version`) |
+| `runtimeVersion.policy` | `appVersion`, unchanged. `expo-updates runtimeversion:resolve` gives **1.3.0** on both platforms |
+| Older installs | iOS 1.2.0 and Android 1.1.2 keep groups `2752e453` and `62526862`. A fix for them must be published from a branch off `e0873d2` |
+| Build numbers | `eas build:version:get`: Android versionCode 18, iOS buildNumber 25; `autoIncrement` makes the production builds **Android 19** and **iOS 26** |
+| Production profile (`eas config`) | `version` 1.3.0 on both; `environment: production`, `channel: production`, `autoIncrement: true`; iOS `image` `macos-tahoe-26.5-xcode-26.6` |
+
+### 3. Nothing native moved
+
+`git diff` over `package.json`, `package-lock.json`, `app.json`, `app.config.js`, `eas.json`,
+`metro.config.js`, `babel.config.js`, `modules`, `patches` and `plugins`:
+- **iOS (`15a8e96`, build 25):** only the two version strings.
+- **Android (`287a871`, build 18):** the version strings and the iOS-only set already compiled for
+  Android by preview build 18 (from `a96bc3a`, built 2026-10-10): the iOS entitlements and `APPLE_TEAM_ID`,
+  `modules/tap-to-pay-education`, and the two `patches/expo-modules-*` (only `ios/` and `apple/`
+  sources).
+
+Installed packages match the lock: 1,244 checked, **0 drift**, so `npm ci` is not needed first.
+
+**Left out on purpose:** `expo-doctor` now fails one check, because 15 SDK 57 packages are a patch
+or two behind (`expo` 57.0.25 against ~57.0.30, `expo-router` 57.0.23 against ~57.0.28,
+`expo-updates` 57.0.23 against ~57.0.26, `expo-notifications`, `expo-camera`, `expo-constants` and
+nine others, and `jest-expo`). Taking them would change native code, and then this release would
+need preview builds and a full device pass. They are the first candidate for the next native
+release.
+
+### 4. Verified on this machine
+
+- `tsc --noEmit`: clean. `jest`: **541 suites / 5,140 tests pass**. `expo lint`: 0 errors, 507
+  warnings.
+- The JavaScript is the same as the 2026-10-18 update below: only `app.json`, `CHANGELOG.md` and this
+  file changed since `c14031b`. That run's cleared-cache production export found only live hosts
+  and keys in both Hermes bundles. The store build makes its bundle on EAS, from the profile's
+  `env` and the EAS `production` environment; the four keys they share are identical.
+
+### 5. Store copy
+
+In `CHANGELOG.md`, under the 1.3.0 entry: Play **457/500**, App Store **1,696/4,000**. Both lead
+with Checkout "for venues using ResNeo Checkout". If Checkout's self-serve dial (`pos_self_serve`
+in `platform_settings`) still offers it to nobody or to invited venues only, the owner may prefer
+Reports to lead instead.
+
+### 6. Build, test and submit
+
+Run from `C:\Resneo-app` on `main`, level with `origin/main`:
+
+```
+npx eas-cli build --platform all --profile production
+npx eas-cli submit --platform ios --profile production --latest
+npx eas-cli submit --platform android --profile production --latest
+```
+
+Before releasing either build, check on TestFlight and on the Play internal track:
+- a fresh install signs in, and an update over 1.2.0 or 1.1.2 keeps the session;
+- Settings shows 1.3.0;
+- a Checkout sale paid by Tap to Pay (live, a small amount refunded after) and by cash;
+- a new-booking push arrives and opens the booking;
+- the app takes no update on first launch, since nothing is published to 1.3.0 yet.
+
+Then release with an App Store phased release and a Play staged rollout if wanted. **Publish
+nothing to production until both stores have released 1.3.0.**
+
+### 7. Who is asked to update
+
+| Installed | Prompted once `latest` is 1.3.0 |
+|---|---|
+| iOS 1.2.0 | yes, the prompt is in the build |
+| iOS 1.1.2, Android 1.1.2 | yes, if the install took an update from 2026-10-07 on (group `8897905b` or later) |
+| 1.1.1 and older | no: no update with the prompt was ever published to 1.1.1 |
+
+### 8. After each store releases 1.3.0: the web's version file
+
+In `C:\Resneo`, on `staging`, change `public/app-version.json` for the platform that has been
+released, then merge `staging` to `main`:
+
+```json
+{
+  "ios": { "latest": "1.3.0", "minimum": "1.1.0" },
+  "android": { "latest": "1.3.0", "minimum": "1.1.0" }
+}
+```
+
+- Only once that store has **released** 1.3.0. A Play staged rollout must reach 100% first;
+  otherwise people outside it are sent to a listing with no update. An App Store phased release
+  does not hold this up, because anyone can update by hand at once.
+- Not before: `staging` goes to `main` whole, so a bump left on `staging` would ship with the next
+  unrelated web merge.
+- `minimum` stays `1.1.0`, so the prompt can be put off ("Not now" lasts three days). A
+  `"message"` of up to 300 characters is optional.
+- Check: `https://www.resneo.com/app-version.json` serves the new values (it may be cached for up to
+  5 minutes), and an install on an older version shows the prompt within the hour.
+
+---
+
 ## Run 2026-10-18: open the online shop from Checkout set-up, iOS 1.2.0 and Android 1.1.2, from `c14031b`
 
 **Scope:** `a8a2621..c14031b`, one commit:
