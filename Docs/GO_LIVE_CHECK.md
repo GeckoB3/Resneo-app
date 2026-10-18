@@ -1,5 +1,98 @@
 # Go-live check — Resneo app
 
+## Run 2026-10-18: open the online shop from Checkout set-up, iOS 1.2.0 and Android 1.1.2, from `c14031b`
+
+**Scope:** `a8a2621..c14031b`, one commit:
+- `c14031b`: Checkout set-up's "Your online shop" asks "Open your shop now?", can save the policy
+  templates with the opening in one `PATCH /api/venue/shop/settings`, and "Add your products" offers
+  "Sell these in my online shop too" (web #230, `435d9b93`).
+
+`CHANGELOG.md` has it under "Unreleased OTA: open the online shop from set-up". It is the last OTA
+planned for these runtimes before both platforms move to **1.3.0**: once `app.json` says 1.3.0,
+nothing published from `main` reaches iOS 1.2.0 or Android 1.1.2 again.
+
+**Verdict: cleared to publish, one update per platform (§6).** Nothing is left for the owner to
+confirm. The commit was not rehearsed on a preview build (§5).
+
+### 1. Version and reach
+
+| Check | Result |
+|---|---|
+| Published tip | `a8a2621` on both, "Commission splits set-up and statements; card payments and Checkout in Booking settings": group `6e723b7e` (iOS, runtime 1.2.0, 2026-10-17 15:51 UTC) and `db1c0e5b` (Android, runtime 1.1.2, 15:48 UTC), `gitCommitHash` read from `update:view`. Full rollouts; the channel maps one branch and is not paused |
+| Runtimes | `expo-updates runtimeversion:resolve`: iOS **1.2.0** (root `version`), Android **1.1.2** (`android.version`); `appVersion` policy |
+| Store binaries | iOS 1.2.0 build 25 from `15a8e96`; Android 1.1.2 build 18 from `287a871` |
+| Update prompt | production `app-version.json`: iOS latest 1.2.0 / minimum 1.1.0, Android latest 1.1.2 / minimum 1.1.0, unchanged. iOS 1.1.2 installs do not get this update and are asked to update |
+
+### 2. Nothing native moved
+
+`git diff` over `package.json`, `package-lock.json`, `app.json`, `app.config.js`, `eas.json`,
+`metro.config.js`, `babel.config.js`, `modules`, `patches` and `plugins`:
+- **Since the last update (`a8a2621`):** empty.
+- **iOS (`15a8e96`):** empty.
+- **Android (`287a871`):** the same iOS-only set as the 2026-10-17 run: the entitlements and
+  `APPLE_TEAM_ID`, the `tap-to-pay-education` module, and the two `patches/expo-modules-*` (only
+  `ios/` and `apple/` sources).
+
+Installed packages match the lock: 1,244 checked, **0 drift**.
+
+### 3. Verified on this machine
+
+- `tsc --noEmit`: clean. `jest`: **541 suites / 5,140 tests pass**. `expo lint`: 0 errors, 507
+  warnings.
+- EAS `production` environment (`eas env:list`): `EXPO_PUBLIC_API_URL` www.resneo.com,
+  `EXPO_PUBLIC_SUPABASE_URL` njualfobtudvlugqkqho (live), the live publishable key, the `pk_live_`
+  Stripe key and the Sentry DSN, all PUBLIC. No `TERMINAL_SIMULATED`, `ALLOW_SCREENSHOTS` or
+  `TAP_TO_PAY_IOS`.
+- `NODE_ENV` is unset at process, user and machine level. There is no `.env` or `.env.local`.
+- Cleared-cache export under `eas env:exec production`, both Hermes bundles (iOS 14.3 MB, Android
+  14.5 MB):
+
+| Marker | iOS | Android |
+|---|---|---|
+| `njualfobtudvlugqkqho.supabase.co` (live) / live publishable key | present / present | present / present |
+| `zkppmyyvkjvbsvemakbb` (dev) / dev publishable key | none / none | none / none |
+| `www.resneo.com` | present | present |
+| full `pk_live_` key / `pk_test_` | present / none | present / none |
+| full Sentry DSN | present | present |
+| `192.168.` / `10.0.2.2` | none / none | none / none |
+| `reserve-ni.vercel.app` | once: the `getWebUrl()` fallbacks, which cannot be reached while the API URL is set | same |
+| `localhost:3000` | once: expo-router's `head/url.js` fallback | none |
+| `localhost:8081` | once: React Native's `getDevServer` fallback | same |
+| `TERMINAL_SIMULATED` / `ALLOW_SCREENSHOTS` / `TAP_TO_PAY_IOS` / `SENTRY_DSN` names | inlined away | inlined away |
+| New code: "Open your shop now?", "Yes, open my shop", "Sell these in my online shop too", "Your shop is open.", "Skip for now" | present | present |
+
+### 4. Web
+
+- Web `main` and `staging` are the same commit, `435d9b93` (#230, 2026-10-18 10:26 UTC), the web
+  half of this commit. Vercel's Production deployment of it: `success`, 10:29 UTC. #230 changed only
+  the web's own set-up screens; the routes below were already in production.
+- **Routes:** `GET` and `PATCH /api/venue/shop/settings`, `POST /api/venue/retail/products` and
+  `GET /api/venue/pos/setup-status` answer 401 on www.resneo.com. A made-up route answers 404.
+  `GET shop/settings` on web `main` returns the `templates` and `readiness.placeholders` the new
+  screen reads (`src/lib/shop/admin.ts`, `src/lib/shop/settings.ts`).
+- **Live database** (PostgREST, publishable key, `limit=0`, no rows read): `venue_pos_settings`
+  `shop_open`, `returns_policy`, `cancellation_policy`, `delivery_policy`, `terms_of_sale` and
+  `version`, and `retail_products.sold_online`, all exist (`42501`). Controls: a made-up table
+  answers `PGRST205` and a made-up column `42703`. No migration came with #230.
+
+### 5. Device testing
+
+- Not rehearsed: the preview channel's latest is `c62b9d37` from `cce8da8`, and nothing from
+  `c14031b` has been published there. Covered by `setup-wizard.test.tsx` and `answers.test.ts`.
+
+### 6. Publish
+
+```
+npx eas-cli update --channel production --platform ios --environment production --clear-cache --message "Open the online shop from Checkout set-up"
+npx eas-cli update --channel production --platform android --environment production --clear-cache --message "Open the online shop from Checkout set-up"
+```
+
+Rolling back returns each platform to the previous group:
+`npx eas-cli update:republish --group 6e723b7e-64f7-40a7-8f89-79e7d45d6100 --platform ios` and
+`npx eas-cli update:republish --group db1c0e5b-455a-4d4a-9138-cf6c486fdf65 --platform android`.
+
+---
+
 ## Run 2026-10-17: commission splits and Booking settings payments, iOS 1.2.0 and Android 1.1.2, from `cce8da8`
 
 **Scope:** `c328667..cce8da8`, two commits:
