@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { Badge } from '@/components/ui/Badge';
@@ -7,6 +7,7 @@ import { Chip } from '@/components/ui/Chip';
 import { SectionCard } from '@/components/ui/SectionCard';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
+import { SELECT_TEXT_ON_FOCUS_PROP, selectAllOnFocus } from '@/components/ui/selectAllOnFocus';
 import { ApiError } from '@/lib/api/client';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
@@ -395,6 +396,7 @@ function LeadTimeField({
   const { colors } = useTheme();
   const [text, setText] = useState(value == null ? '' : String(value));
   const [seed, setSeed] = useState(value);
+  const inputRef = useRef<TextInput>(null);
   // Render-time reseed when the persisted value changes (after a patch resolves).
   if (value !== seed) {
     setText(value == null ? '' : String(value));
@@ -410,12 +412,14 @@ function LeadTimeField({
 
   return (
     <TextInput
+      ref={inputRef}
       value={text}
       onChangeText={setText}
+      onFocus={() => selectAllOnFocus(inputRef.current, text)}
       onBlur={commit}
       editable={!disabled}
       keyboardType="number-pad"
-      selectTextOnFocus
+      selectTextOnFocus={SELECT_TEXT_ON_FOCUS_PROP}
       placeholder="None"
       placeholderTextColor={colors.textMuted}
       accessibilityLabel="Lead time in hours before the appointment"
@@ -455,6 +459,7 @@ function AddRequirementSheet({
   const [onlineCollection, setOnlineCollection] =
     useState<ComplianceOnlineCollection>('confirmation_link');
   const [leadTime, setLeadTime] = useState('');
+  const leadTimeRef = useRef<TextInput>(null);
 
   // Reset the picker each time the sheet opens (render-time guard).
   const [wasVisible, setWasVisible] = useState(false);
@@ -526,10 +531,12 @@ function AddRequirementSheet({
           Lead time (hours before the appointment)
         </Text>
         <TextInput
+          ref={leadTimeRef}
           value={leadTime}
           onChangeText={setLeadTime}
+          onFocus={() => selectAllOnFocus(leadTimeRef.current, leadTime)}
           keyboardType="number-pad"
-          selectTextOnFocus
+          selectTextOnFocus={SELECT_TEXT_ON_FOCUS_PROP}
           placeholder="None"
           placeholderTextColor={colors.textMuted}
           accessibilityLabel="Lead time in hours before the appointment"

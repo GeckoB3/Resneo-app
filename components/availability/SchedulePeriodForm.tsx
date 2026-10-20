@@ -9,7 +9,7 @@
  * hours of each week are edited with the same rows as the standard weekly
  * hours ({@link WeeklyHoursFields}).
  */
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import {
@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/Button';
 import { DatePickerField } from '@/components/ui/DatePickerField';
 import { Segmented } from '@/components/ui/Segmented';
 import { Text } from '@/components/ui/Text';
+import { SELECT_TEXT_ON_FOCUS_PROP, selectAllOnFocus } from '@/components/ui/selectAllOnFocus';
 import {
   ROTA_MAX_CYCLES,
   ROTA_MAX_WEEKS,
@@ -411,6 +412,7 @@ function CountRow({
   // The draft is text so a half-typed value never snaps; it commits on blur.
   const [draft, setDraft] = useState(String(value));
   const [seenValue, setSeenValue] = useState(value);
+  const inputRef = useRef<TextInput>(null);
   if (seenValue !== value) {
     setSeenValue(value);
     setDraft(String(value));
@@ -441,14 +443,16 @@ function CountRow({
       </Pressable>
       <View style={styles.countValue}>
         <TextInput
+          ref={inputRef}
           value={draft}
           onChangeText={setDraft}
+          onFocus={() => selectAllOnFocus(inputRef.current, draft)}
           onBlur={commitDraft}
           onSubmitEditing={commitDraft}
           editable={!disabled}
           keyboardType="number-pad"
           returnKeyType="done"
-          selectTextOnFocus
+          selectTextOnFocus={SELECT_TEXT_ON_FOCUS_PROP}
           accessibilityLabel={label}
           style={[
             styles.countInput,

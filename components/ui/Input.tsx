@@ -1,4 +1,4 @@
-import { forwardRef, type ReactNode } from 'react';
+import { forwardRef, useCallback, useRef, type ReactNode } from 'react';
 import {
   StyleSheet,
   TextInput,
@@ -15,6 +15,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { Text } from '@/components/ui/Text';
+import { SELECT_TEXT_ON_FOCUS_PROP, selectAllOnFocus } from '@/components/ui/selectAllOnFocus';
 import { useReduceMotion } from '@/lib/motion';
 import { minTouchTarget, motion, radius, spacing, typography } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -73,6 +74,7 @@ export const Input = forwardRef<TextInput, InputProps>(function Input(
     containerStyle,
     onFocus,
     onBlur,
+    selectTextOnFocus,
     ...props
   },
   ref,
@@ -80,6 +82,18 @@ export const Input = forwardRef<TextInput, InputProps>(function Input(
   const { colors } = useTheme();
   const reduceMotion = useReduceMotion();
   const focus = useSharedValue(0);
+  // A number field often opens pre-filled ("35.00"); a tap selects it, so typing 5 gives 5, not
+  // 35.005. A screen can still pass selectTextOnFocus={false}.
+  const selectOnFocus = selectTextOnFocus ?? isNumericKeyboard(props.keyboardType, props.inputMode);
+  const inputRef = useRef<TextInput | null>(null);
+  const setRefs = useCallback(
+    (node: TextInput | null) => {
+      inputRef.current = node;
+      if (typeof ref === 'function') ref(node);
+      else if (ref) ref.current = node;
+    },
+    [ref],
+  );
 
   const animatedBorder = useAnimatedStyle(() => ({
     borderColor: error
@@ -90,6 +104,7 @@ export const Input = forwardRef<TextInput, InputProps>(function Input(
   const handleFocus: NonNullable<TextInputProps['onFocus']> = (e) => {
     // Reduce-motion: flip the focus ring instantly; otherwise fade it in.
     focus.set(reduceMotion ? 1 : withTiming(1, { duration: motion.fast }));
+    if (selectOnFocus) selectAllOnFocus(inputRef.current, props.value ?? props.defaultValue);
     onFocus?.(e);
   };
 
@@ -118,12 +133,10 @@ export const Input = forwardRef<TextInput, InputProps>(function Input(
       <Animated.View style={[styles.field, { backgroundColor: colors.surface }, animatedBorder]}>
         {leftIcon ? <View style={styles.icon}>{leftIcon}</View> : null}
         <TextInput
-          ref={ref}
+          ref={setRefs}
           placeholderTextColor={colors.textMuted}
           style={[styles.input, { color: colors.text }, style]}
-          // A number field often opens pre-filled ("35.00"); a tap selects it, so typing 5 gives 5,
-          // not 35.005. A screen can still pass selectTextOnFocus={false}.
-          selectTextOnFocus={isNumericKeyboard(props.keyboardType, props.inputMode)}
+          selectTextOnFocus={selectOnFocus && SELECT_TEXT_ON_FOCUS_PROP}
           // The visible label names the field for screen readers too; a caller can still pass its own.
           accessibilityLabel={typeof label === 'string' ? label : undefined}
           {...props}
