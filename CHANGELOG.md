@@ -15,7 +15,9 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ---
 
-## Unreleased OTA: number fields keep their first digit (iOS 1.3.0 / Android 1.3.0)
+## OTA on iOS 1.3.0 / Android 1.3.0 — 2026-10-20: number fields keep their first digit
+
+Published as groups `e73c8739` (iOS) and `d764df29` (Android), from `4b335f5`.
 
 ### Typing into an empty number field (owner, 2026-10-20)
 
