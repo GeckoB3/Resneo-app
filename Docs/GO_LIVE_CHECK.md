@@ -1,5 +1,111 @@
 # Go-live check — Resneo app
 
+## Run 2026-10-20: number fields keep their first digit, iOS 1.3.0 and Android 1.3.0, from `514dc13`
+
+**Scope:** `7a5de9a..514dc13`, one commit:
+- `514dc13`: number fields select their value from onFocus (`components/ui/selectAllOnFocus.ts`)
+  instead of React Native's `selectTextOnFocus`. On Android that prop also selected at the field's
+  first layout after focus, which an empty field gets from its first keystroke, so the second digit
+  replaced the first (1 then 0 gave 0, in the discount sheet and every empty number field since
+  `3e42643`, 2026-10-09). `Input` and the three raw number fields (schedule-period weeks, the two
+  compliance lead times) are changed.
+
+`CHANGELOG.md` has it under "Unreleased OTA: number fields keep their first digit". It is the
+first update on runtime 1.3.0. The same bug is live on iOS 1.2.0 and Android 1.1.2, which this
+update does not reach (§1).
+
+**Verdict: cleared to publish, one update per platform (§6).** Both stores have released 1.3.0
+(§1), so the readiness run's hold on publishing to 1.3.0 is lifted. Tested on an Android phone
+before and after the fix (§5); not on an iPhone, where the worst case is no selection on tap, as
+before.
+
+### 1. Version and reach
+
+| Check | Result |
+|---|---|
+| Published tip | Nothing on runtime 1.3.0 yet. `channel:view production` and `update:list`: the latest groups are `62526862` (Android, 1.1.2) and `2752e453` (iOS, 1.2.0) from `e0873d2`, as the readiness run recorded |
+| Store binaries | `build:list`: iOS 1.3.0 **build 27** and Android 1.3.0 **versionCode 19**, both from `7a5de9a` (2026-10-18), runtime 1.3.0, channel `production`. iOS is build 27, not the 26 the readiness run expected |
+| Released | App Store: 1.3.0, released 2026-10-19 06:07 UTC (iTunes lookup, gb/ie/us). Google Play listing: 1.3.0, updated 2026-10-18. Whether a Play staged rollout is at 100% cannot be seen from outside |
+| Runtimes | `expo-updates runtimeversion:resolve`: **1.3.0** on both (`appVersion` policy) |
+| Older installs | iOS 1.2.0 and Android 1.1.2 keep `2752e453` and `62526862`, and the bug. A fix for them would be published from a branch off `e0873d2`; otherwise they get it by updating to 1.3.0 |
+| Update prompt | production `app-version.json` still says iOS latest 1.2.0, Android latest 1.1.2, minimum 1.1.0. Nobody is asked to move to 1.3.0 until the web raises `latest` (readiness run §8) |
+
+### 2. Nothing native moved
+
+`git diff 7a5de9a 514dc13` over `package.json`, `package-lock.json`, `app.json`, `app.config.js`,
+`eas.json`, `metro.config.js`, `babel.config.js`, `modules`, `patches` and `plugins`: **empty**. The
+commit touches five files under `components/`. Installed packages match the lock: 1,244 checked,
+**0 drift**.
+
+`TextInput.setSelection` is React Native's own JS method over the `setTextAndSelection` command,
+already in the binaries. On iOS the command returns early on a stale event count and skips
+positions out of range, so it cannot do worse than not select.
+
+### 3. Verified on this machine
+
+- `tsc --noEmit`: clean. `jest`: **542 suites / 5,146 tests pass** (6 new in `Input.test.tsx`).
+  `expo lint`: 0 errors, 507 warnings.
+- EAS `production` environment (`eas env:list`): `EXPO_PUBLIC_API_URL` www.resneo.com,
+  `EXPO_PUBLIC_SUPABASE_URL` njualfobtudvlugqkqho (live), the live publishable key, the `pk_live_`
+  Stripe key and the Sentry DSN, all PUBLIC. No `TERMINAL_SIMULATED`, `ALLOW_SCREENSHOTS` or
+  `TAP_TO_PAY_IOS`.
+- `NODE_ENV` is unset at process, user and machine level. There is no `.env` or `.env.local`.
+- Cleared-cache export under `eas env:exec production`, both Hermes bundles (iOS 14.3 MB, Android
+  14.5 MB). Full values were counted, not prefixes:
+
+| Marker | iOS | Android |
+|---|---|---|
+| live Supabase URL / live publishable key / `www.resneo.com` | present / present / present | present / present / present |
+| `zkppmyyvkjvbsvemakbb` (dev) / dev publishable key | none / none | none / none |
+| full `pk_live_` key / `pk_test_` | present / none | present / none |
+| full Sentry DSN | present | present |
+| `192.168.` / `10.0.2.2` | none / none | none / none |
+| `reserve-ni.vercel.app` | once: the `getWebUrl()` fallbacks | same |
+| `localhost:3000` | once: expo-router's `head/url.js` fallback | none |
+| `localhost:8081` | once: React Native's `getDevServer` fallback | same |
+| `TERMINAL_SIMULATED` / `ALLOW_SCREENSHOTS` names | none | none |
+| `TAP_TO_PAY_IOS` | once: the code constant `TAP_TO_PAY_IOS_ENABLED` (`tap-to-pay-build-support.ts`, since `30a19e8`), not the old variable | same |
+| `EXPO_PUBLIC_*` names left | `EXPO_PUBLIC_API_URL` (prose in `lib/api/client.ts`) and `EXPO_PUBLIC_USE_RN_FETCH_PREVIEW_ENABLED` | same |
+| New code: `selectAllOnFocus`, `SELECT_TEXT_ON_FOCUS_PROP` | present | present |
+
+`EXPO_PUBLIC_USE_RN_FETCH_PREVIEW_ENABLED` is a name with no value: an optional flag read at run
+time and unset, so it is `undefined`. It is in no tracked file at `7a5de9a` or `514dc13` and not in
+the web bundle, so it comes from a native-side dependency, and the dependencies are identical to
+the 1.3.0 build's. The store binaries' embedded bundle has it too.
+
+### 4. Web
+
+Nothing to check: the commit calls no route and reads no new column. The web half of 1.3.0 is only
+the version file (§1).
+
+### 5. Device testing
+
+On the owner's Samsung S23 Ultra (SM-S918B), Expo Go, the local bundle against staging, signed in
+as sept19 (Admin), the discount sheet of open Sale 6:
+- **Before the fix:** empty Percent field, 1 then 0 gave **0**, with the 1 highlighted after the
+  first keystroke. Reproduced as reported.
+- **After the fix (cold restart, fresh bundle):** 1 then 0 gave **10**; tapped out and back in, the
+  10 was selected; 5 gave **5**. Amount field, 25 then 7 typed fast: **257**.
+- Sale 6 was left as found: £18.00, no discount applied.
+- Not tested: an iPhone, the three raw fields (same helper), and the 1.3.0 store binaries. There is
+  no 1.3.0 preview build, so the preview channel cannot rehearse this.
+
+### 6. Publish
+
+```
+npx eas-cli update --channel production --platform ios --environment production --clear-cache --message "Number fields keep their first digit"
+npx eas-cli update --channel production --platform android --environment production --clear-cache --message "Number fields keep their first digit"
+```
+
+There is no earlier update on 1.3.0, so rolling back means the bundle embedded in the store build:
+`npx eas-cli update:roll-back-to-embedded --channel production --runtime-version 1.3.0 --platform ios`
+and the same with `--platform android`.
+
+After publishing, retitle the changelog entry "OTA on iOS 1.3.0 / Android 1.3.0 — 2026-10-20" with
+the two groups.
+
+---
+
 ## Run 2026-10-18: 1.3.0 readiness, both platforms, on `main` above `e0873d2`
 
 **Scope:** a store release on both platforms to **1.3.0**, from iOS 1.2.0 and Android 1.1.2. It is

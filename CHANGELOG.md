@@ -15,7 +15,23 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ---
 
-## Unreleased: iOS 1.3.0 / Android 1.3.0
+## Unreleased OTA: number fields keep their first digit (iOS 1.3.0 / Android 1.3.0)
+
+### Typing into an empty number field (owner, 2026-10-20)
+
+On Android, the first digit typed into an empty number field was selected as soon as it appeared,
+so the second digit replaced it: 1 then 0 in the discount sheet's Percent field gave 0. It came
+with the 2026-10-09 change that makes a tap select a pre-filled amount, through React Native's
+`selectTextOnFocus`, which on Android selects again at the field's first layout after the tap, and
+an empty field is laid out again by its first keystroke. Number fields now select their value once,
+as the tap focuses them, so typing over "35.00" still gives 5 while an empty field types normally.
+On iPhone a tap now selects the pre-filled amount too; React Native's prop did that only when the
+code focused the field. The first update on 1.3.0. No native change, and no web change is needed.
+
+## iOS 1.3.0 / Android 1.3.0 — 2026-10-18
+
+Built from `7a5de9a` (iOS build 27, Android versionCode 19). Released in the App Store on 2026-10-19
+at 06:07 UTC; the Google Play listing shows 1.3.0, updated 2026-10-18.
 
 A store release on both platforms. It is built from the code already live as the last update on
 each platform (`e0873d2`: group `2752e453` on iOS 1.2.0 and `62526862` on Android 1.1.2), plus this
