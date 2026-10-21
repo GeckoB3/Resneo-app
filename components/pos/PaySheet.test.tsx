@@ -59,7 +59,10 @@ let mockTapToPay = true;
 jest.mock('@/lib/payments/tap-to-pay-build-support', () => ({ buildSupportsTapToPay: () => mockTapToPay }));
 // What the Android probe said about this device (false: a tablet without NFC; null: unknown).
 let mockDeviceTapToPay: boolean | null = null;
-jest.mock('@/lib/payments/tap-to-pay-device-support', () => ({ useTapToPayDeviceSupport: () => mockDeviceTapToPay }));
+jest.mock('@/lib/payments/tap-to-pay-device-support', () => ({
+  useTapToPayDeviceSupport: () => mockDeviceTapToPay,
+  loadTapToPayDeviceSupport: async () => mockDeviceTapToPay,
+}));
 jest.mock('@/components/pos/SavedCards', () => {
   const { Text } = jest.requireActual<typeof import('react-native')>('react-native');
   return { SavedCardMethods: () => <Text>saved-cards</Text>, SavedCardCharge: () => <Text>saved-charge</Text> };
@@ -220,17 +223,14 @@ describe('PaySheet', () => {
     });
   });
 
-  it('offers a card only where the app can take one, and says so in the card tile where it cannot', async () => {
+  it('offers a card only where the app can take one, and Send to a phone where it cannot', async () => {
     await renderSheet({ cardAvailable: false });
-    // The venue takes cards in the app, this phone can't, and there is no counter reader.
-    expect(screen.getByText('Card')).toBeTruthy();
-    expect(screen.getByText('Not on this phone')).toBeTruthy();
-    expect(screen.getByText('Take cash or another way, or use the web till')).toBeTruthy();
-    // Nothing to press: the collector never opens, and the old footnote is gone.
+    // The venue takes cards in the app, this phone can't, and there is no counter reader: a team
+    // member's phone takes it (the web till's rule), so there is no dead card tile.
     expect(screen.queryByRole('button', { name: 'Card' })).toBeNull();
-    await act(async () => {
-      fireEvent.press(screen.getByText('Card'));
-    });
+    expect(screen.queryByText('Not on this phone')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Send to a phone' })).toBeTruthy();
+    // The collector never opens, and the old footnote is gone.
     expect(screen.queryByText('card-collector')).toBeNull();
     expect(screen.queryByText("Card payments can't be taken on this phone. Take cash or another way, or use the web till.")).toBeNull();
   });
@@ -455,11 +455,11 @@ describe('PaySheet', () => {
       expect(screen.getByRole('button', { name: 'Gift voucher' })).not.toBeDisabled();
     });
 
-    it("tells staff to send a pay link when the phone can't take cards and links are on", async () => {
+    it("offers Send to a phone, not a dead card tile, where this phone can't take cards and there is no counter reader", async () => {
+      // As the web till does: the panel then says if nobody's phone can take it, and how to set one up.
       await renderSheet({ cardAvailable: false, bootstrap: bootstrap({ card_methods: { card_app: true, pay_link: true } }) });
-      expect(screen.getByText('Not on this phone')).toBeTruthy();
-      expect(screen.getByText('Send a pay link, or use the web till')).toBeTruthy();
-      expect(screen.getByLabelText('Card. Not on this phone. Send a pay link, or use the web till')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Send to a phone' })).toBeTruthy();
+      expect(screen.queryByText('Not on this phone')).toBeNull();
     });
 
     it('shows no card tile at a venue that takes no cards in the app', async () => {
@@ -561,10 +561,17 @@ describe('PaySheet', () => {
       expect(screen.getByRole('button', { name: 'Card' })).toBeTruthy();
     });
 
-    it('still says the card is not on this phone when nobody has a phone that can take one', async () => {
-      await renderSheet({ cardAvailable: false, bootstrap: phoneBoot({ card_app: true, send_to_phone: false }) });
+    it('leaves it to the counter reader when nobody has a phone that can take a card', async () => {
+      mockDeviceTapToPay = false;
+      await renderSheet({ cardAvailable: true, bootstrap: phoneBoot({ card_app: true, send_to_phone: false, card_reader: true }) });
       expect(screen.queryByRole('button', { name: 'Send to a phone' })).toBeNull();
-      expect(screen.getByText('Not on this phone')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Card reader' })).toBeTruthy();
+    });
+
+    it('is offered on a tablet without NFC even before anyone has a phone that can take cards', async () => {
+      mockDeviceTapToPay = false;
+      await renderSheet({ cardAvailable: true, bootstrap: phoneBoot({ card_app: true, send_to_phone: false }) });
+      expect(screen.getByRole('button', { name: 'Send to a phone' })).toBeTruthy();
     });
 
     it('is not offered to a login that cannot take payments', async () => {

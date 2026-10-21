@@ -1,10 +1,18 @@
+import * as Device from 'expo-device';
 import * as SecureStore from 'expo-secure-store';
 import { useSyncExternalStore } from 'react';
 import { Platform } from 'react-native';
 
 /**
- * Whether THIS Android device can use Tap to Pay, once Stripe's support probe has said so for
- * certain, remembered across launches.
+ * Whether THIS Android device can use Tap to Pay: no when Android says the device has no NFC
+ * hardware (most tablets), else once Stripe's support probe has said so for certain, remembered
+ * across launches.
+ *
+ * Android's own feature list comes first because Stripe's probe cannot be relied on to say no: with
+ * Developer options on (as on any device used for testing) it refuses with
+ * `TAP_TO_PAY_INSECURE_ENVIRONMENT` before it looks at the hardware, which reads as "unknown".
+ * Found on a Lenovo Tab P11 (TB-J616F, Android 12, no NFC) on 2026-10-21, which kept offering Tap to
+ * Pay and never offered "Send to a phone" after the probe was added.
  *
  * Android has no launch warm-up (that is iOS, `TapToPayProvider`), so until now the app only asked
  * the SDK when the card screen opened, and an answer it could not classify read as "unknown",
@@ -61,9 +69,27 @@ export function rememberTapToPayDeviceSupport(supported: boolean): void {
   }
 }
 
+/** Android's name for NFC hardware (`PackageManager.FEATURE_NFC`). */
+export const ANDROID_NFC_FEATURE = 'android.hardware.nfc';
+
 /**
- * Reads the stored answer once (later calls share the first). An answer given on another Android
- * version is ignored, so the probe asks again after an update.
+ * Android's own word on NFC hardware: false when the device has none, true when it has, null when
+ * it can't say. An empty feature list means the call is missing, not a device without features.
+ */
+export async function androidHasNfcHardware(): Promise<boolean | null> {
+  try {
+    const features = await Device.getPlatformFeaturesAsync();
+    if (!Array.isArray(features) || features.length === 0) return null;
+    return features.includes(ANDROID_NFC_FEATURE);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Reads the answer once (later calls share the first): no Tap to Pay on an Android device without
+ * NFC hardware, else the stored probe answer. A stored answer given on another Android version is
+ * ignored, so the probe asks again after an update.
  */
 export function loadTapToPayDeviceSupport(): Promise<boolean | null> {
   if (loaded) return Promise.resolve(answer);
@@ -71,12 +97,16 @@ export function loadTapToPayDeviceSupport(): Promise<boolean | null> {
   loading = (async () => {
     let stored: boolean | null = null;
     if (Platform.OS === 'android') {
-      try {
-        const raw = await SecureStore.getItemAsync(STORAGE_KEY);
-        const parsed = raw ? (JSON.parse(raw) as Partial<Stored>) : null;
-        if (parsed && typeof parsed.supported === 'boolean' && parsed.os === osVersion()) stored = parsed.supported;
-      } catch {
-        stored = null;
+      if ((await androidHasNfcHardware()) === false) {
+        stored = false;
+      } else {
+        try {
+          const raw = await SecureStore.getItemAsync(STORAGE_KEY);
+          const parsed = raw ? (JSON.parse(raw) as Partial<Stored>) : null;
+          if (parsed && typeof parsed.supported === 'boolean' && parsed.os === osVersion()) stored = parsed.supported;
+        } catch {
+          stored = null;
+        }
       }
     }
     // A probe that answered while the store was being read wins.

@@ -52,13 +52,17 @@ describe('cardMethodsOffered', () => {
     expect(cardMethodsOffered(all, { guest })).toEqual({ cardReader: false, payLink: false, savedCards: false, sendToPhone: false });
   });
 
-  it('offers Send to a phone when in-person cards are on and someone has a phone that can take one', () => {
-    expect(cardMethodsOffered(boot({ card_methods: { card_app: true, send_to_phone: true } }), { guest }).sendToPhone).toBe(true);
-    // Nobody has a phone that can take cards, or a server before Pass 2.
-    expect(cardMethodsOffered(boot({ card_methods: { card_app: true, send_to_phone: false } }), { guest }).sendToPhone).toBe(false);
-    expect(cardMethodsOffered(boot({ card_methods: { card_app: true } }), { guest }).sendToPhone).toBe(false);
+  it('offers Send to a phone under the web till rule: someone has a phone, or there is no counter reader', () => {
+    const offered = (card_methods: PosBootstrap['card_methods']) => cardMethodsOffered(boot({ card_methods }), { guest }).sendToPhone;
+    expect(offered({ card_app: true, send_to_phone: true })).toBe(true);
+    expect(offered({ card_app: true, send_to_phone: true, card_reader: true })).toBe(true);
+    // Nobody has a phone yet and there is no counter reader: offered, and the panel says why.
+    expect(offered({ card_app: true, send_to_phone: false })).toBe(true);
+    expect(offered({ card_app: true })).toBe(true);
+    // Nobody has a phone, but the counter reader is there.
+    expect(offered({ card_app: true, send_to_phone: false, card_reader: true })).toBe(false);
     // In-person cards switched off.
-    expect(cardMethodsOffered(boot({ card_methods: { card_app: false, send_to_phone: true } }), { guest }).sendToPhone).toBe(false);
+    expect(offered({ card_app: false, send_to_phone: true })).toBe(false);
   });
 
   it('needs charge_saved_card, cards on file and a client for saved cards', () => {

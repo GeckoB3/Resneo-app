@@ -1,13 +1,16 @@
 /**
- * Whether this Android device can use Tap to Pay, remembered across launches: only definite
- * answers, kept with the Android version they were given on, shared with every reader, and never
- * on iOS (whose support comes from the model and the warm-up).
+ * Whether this Android device can use Tap to Pay: no when Android lists no NFC hardware (a tablet),
+ * else the probe's definite answers, kept with the Android version they were given on, shared with
+ * every reader, and never on iOS (whose support comes from the model and the warm-up).
  *
  * jest hoists mock factories above imports, so every closed-over variable is prefixed `mock*`.
  */
 import { act, renderHook } from '@testing-library/react-native';
 import { Platform } from 'react-native';
 
+// Android's feature list for this device: NFC by default, as on a phone.
+let mockFeatures: string[] = ['android.hardware.nfc', 'android.hardware.wifi'];
+jest.mock('expo-device', () => ({ getPlatformFeaturesAsync: jest.fn(async () => mockFeatures) }));
 const mockStore = new Map<string, string>();
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async (key: string) => mockStore.get(key) ?? null),
@@ -18,6 +21,7 @@ jest.mock('expo-secure-store', () => ({
 
 import {
   __resetTapToPayDeviceSupportForTests,
+  androidHasNfcHardware,
   loadTapToPayDeviceSupport,
   rememberTapToPayDeviceSupport,
   tapToPayDeviceSupport,
@@ -35,6 +39,7 @@ function on(os: string, version: string | number) {
 
 beforeEach(() => {
   mockStore.clear();
+  mockFeatures = ['android.hardware.nfc', 'android.hardware.wifi'];
   __resetTapToPayDeviceSupportForTests();
   on('android', 34);
 });
@@ -88,6 +93,31 @@ describe('the Tap to Pay answer for this device', () => {
       rememberTapToPayDeviceSupport(false);
     });
     expect(result.current).toBe(false);
+  });
+
+  it('says no for an Android device without NFC hardware, whatever Stripe could or could not say', async () => {
+    // The Lenovo Tab P11 (TB-J616F): 77 features, none of them NFC, Developer options on.
+    mockFeatures = ['android.hardware.wifi', 'android.hardware.bluetooth', 'android.hardware.touchscreen'];
+    expect(await androidHasNfcHardware()).toBe(false);
+    expect(await loadTapToPayDeviceSupport()).toBe(false);
+    expect(tapToPayDeviceSupport()).toBe(false);
+  });
+
+  it('lets the missing hardware outrank a stored yes', async () => {
+    mockFeatures = ['android.hardware.wifi'];
+    mockStore.set(KEY, JSON.stringify({ supported: true, os: '34' }));
+    expect(await loadTapToPayDeviceSupport()).toBe(false);
+  });
+
+  it('reads an empty feature list as "can\'t tell", never as a device without NFC', async () => {
+    mockFeatures = [];
+    expect(await androidHasNfcHardware()).toBeNull();
+    expect(await loadTapToPayDeviceSupport()).toBeNull();
+  });
+
+  it('leaves a device with NFC to the probe', async () => {
+    expect(await androidHasNfcHardware()).toBe(true);
+    expect(await loadTapToPayDeviceSupport()).toBeNull();
   });
 
   it('is never kept or read on iOS', async () => {

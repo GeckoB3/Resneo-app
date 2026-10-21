@@ -31,9 +31,11 @@ export interface CardMethodsOffered {
   /** Cards on file (`saved_card`): the setting on, `charge_saved_card`, and a client on the sale. */
   savedCards: boolean;
   /**
-   * Send to a phone (`card_app` with `collect_on`): in-person cards on and someone has a phone that
-   * can take one (`send_to_phone`). The sheet offers it only on a device that can't take the card
-   * itself (a tablet without NFC, an iPad), so a request never goes to the device that sent it.
+   * Send to a phone (`card_app` with `collect_on`), under the web till's rule
+   * (`src/components/pos/pay-methods.ts`): in-person cards on, and someone has a phone that can take
+   * one (`send_to_phone`) or the venue has no counter reader (the panel then says nobody can take it
+   * and how to set a phone up, rather than the option going missing). The sheet offers it only on a
+   * device that can't tap a card itself (a tablet without NFC, an iPad).
    */
   sendToPhone: boolean;
 }
@@ -51,7 +53,10 @@ export function cardMethodsOffered(
       bootstrap?.settings?.card_on_file_enabled === true &&
       canPos(bootstrap, 'charge_saved_card') &&
       Boolean(sale.guest?.id),
-    sendToPhone: take && bootstrap?.card_methods?.card_app === true && bootstrap?.card_methods?.send_to_phone === true,
+    sendToPhone:
+      take &&
+      bootstrap?.card_methods?.card_app === true &&
+      (bootstrap?.card_methods?.send_to_phone === true || bootstrap?.card_methods?.card_reader !== true),
   };
 }
 

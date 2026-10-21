@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Switch, View } from 'react-native';
 
 import { PayLinkPanel } from '@/components/pos/PayLinkPanel';
@@ -29,7 +29,7 @@ import { Text } from '@/components/ui/Text';
 import { apiErrorCode } from '@/lib/api/client';
 import { newPaymentAttemptId } from '@/lib/payments/attempt-id';
 import { buildSupportsTapToPay } from '@/lib/payments/tap-to-pay-build-support';
-import { useTapToPayDeviceSupport } from '@/lib/payments/tap-to-pay-device-support';
+import { loadTapToPayDeviceSupport, useTapToPayDeviceSupport } from '@/lib/payments/tap-to-pay-device-support';
 import { tapToPayButtonLabel } from '@/lib/payments/tap-to-pay-copy';
 import { isRequestReused } from '@/lib/pos/api';
 import type { SaleCardResult } from '@/lib/payments/useSaleCardPayment';
@@ -122,6 +122,10 @@ function PaySheetBody({
   const t = usePosT();
   const { colors } = useTheme();
   const deviceTapToPay = useTapToPayDeviceSupport();
+  // Android: no NFC hardware means no Tap to Pay, read once (the capability report usually has).
+  useEffect(() => {
+    void loadTapToPayDeviceSupport();
+  }, []);
   const tips = useMemo(() => tipConfig(bootstrap.tip_settings), [bootstrap.tip_settings]);
   const balance = Math.max(0, sale.balance_due_pence);
   const max = bootstrap.settings.max_payment_pence ?? null;
