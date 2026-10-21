@@ -249,6 +249,7 @@ export const queryKeys = {
     guestCards: (accessToken?: string | null, guestId?: string | null) =>
       [...queryKeys.pos.all(), 'guest-cards', keyScope(accessToken), guestId ?? null] as const,
     collectRequests: (accessToken?: string | null) => [...queryKeys.pos.all(), 'collect-requests', keyScope(accessToken)] as const,
+    collectPhones: (accessToken?: string | null) => [...queryKeys.pos.all(), 'collect-phones', keyScope(accessToken)] as const,
     payouts: (accessToken?: string | null, query?: string | null) =>
       [...queryKeys.pos.all(), 'payouts', keyScope(accessToken), query ?? null] as const,
     payoutDetail: (accessToken?: string | null, query?: string | null, payoutId?: string | null) =>

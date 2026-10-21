@@ -9,6 +9,7 @@ import { PaySheet } from '@/components/pos/PaySheet';
 import { isPracticeSale } from '@/components/pos/practice/model';
 import { PracticeSale } from '@/components/pos/practice/PracticeSale';
 import { ReaderPayPanel } from '@/components/pos/ReaderPayPanel';
+import { SendToPhonePanel } from '@/components/pos/SendToPhonePanel';
 import { SavedCardDeclinedNotice } from '@/components/pos/SavedCards';
 import {
   AddItemsSheet,
@@ -324,26 +325,21 @@ function SaleBody({
           </Card>
         ) : savedDeclined ? (
           <SavedCardDeclinedNotice sale={sale} payment={savedDeclined} send={send} canTakePayment={can('take_payment')} />
+        ) : collectPending && can('take_payment') ? (
+          // Sent to a team member's phone, from here or the web till: who has it, the time left, Cancel.
+          <Card>
+            <SendToPhonePanel
+              key={collectPending.id}
+              sale={sale}
+              send={send}
+              amountPence={collectPending.amount_pence}
+              pendingPaymentId={collectPending.id}
+              onPaid={() => setReceiptNote(null)}
+              onBack={() => undefined}
+            />
+          </Card>
         ) : collectPending ? (
-          <Notice
-            tone="warning"
-            action={
-              can('take_payment')
-                ? {
-                    label: t('app.sale.cancelCard'),
-                    loading: busy === 'cancelCard',
-                    onPress: () =>
-                      void act('cancelCard', {
-                        action: 'cancel',
-                        path: posPaths.collectCancel(collectPending.id),
-                        money: true,
-                        body: {},
-                      }),
-                  }
-                : undefined
-            }>
-            {t('app.sale.cardWaiting')}
-          </Notice>
+          <Notice tone="warning">{t('app.sale.cardWaiting')}</Notice>
         ) : pendingCard ? (
           <Notice
             tone="warning"

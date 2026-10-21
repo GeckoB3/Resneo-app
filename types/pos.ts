@@ -909,6 +909,23 @@ export interface PosClaimResponse {
   same_device: boolean;
 }
 
+/** A device a team member can take a card on (web `PhoneKind`). */
+export type PosCardPhoneKind = 'iphone' | 'android' | 'wisepad';
+
+/** One person with a phone that can take cards now (`GET /api/venue/pos/collect-phones`, web `CardPhone`). */
+export interface PosCardPhone {
+  staff_id: string;
+  name: string;
+  devices: PosCardPhoneKind[];
+  /** When the newest of their phones last registered with ResNeo (the app's launch or sign-in). */
+  last_seen_at?: string | null;
+}
+
+export interface PosCollectPhonesResponse {
+  phones: PosCardPhone[];
+  can_take_cards: boolean;
+}
+
 /** One row of `GET /api/venue/pos/collect-requests?mine=1` ("Waiting for you"). */
 export interface PosCollectRequest {
   payment_id: string;

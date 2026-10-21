@@ -24,6 +24,8 @@ export const PAY_ICONS = {
   /** The card on this phone: Apple's Tap to Pay symbol, the only one it allows on that button. */
   tapToPay: TAP_TO_PAY_SYMBOL,
   reader: { ios: 'creditcard', android: 'point_of_sale', web: 'point_of_sale' },
+  /** Send to a phone: a team member's phone takes the card. */
+  phone: { ios: 'iphone.radiowaves.left.and.right', android: 'send_to_mobile', web: 'send_to_mobile' },
   notHere: { ios: 'iphone.slash', android: 'mobile_off', web: 'mobile_off' },
   cash: { ios: 'banknote', android: 'payments', web: 'payments' },
   link: { ios: 'qrcode', android: 'qr_code_2', web: 'qr_code_2' },

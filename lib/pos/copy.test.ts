@@ -238,6 +238,37 @@ describe('POS copy', () => {
     expect(posCopy('ord.cancel.title', { orderNo: 42, amount: '£36.00' })).toBe('Cancel Order 42 and refund £36.00?');
   });
 
+  it("keeps the web till's Send to a phone words for a device that can't take cards (UX spec §23)", () => {
+    const ids = [
+      'pay.method.phone',
+      'phone.title',
+      'phone.who',
+      'phone.any',
+      'phone.notListed',
+      'phone.send',
+      'phone.none.title',
+      'phone.waiting',
+      'phone.waiting.any',
+      'phone.expiresIn',
+      'phone.claimed',
+      'phone.collecting',
+      'phone.paid',
+      'phone.declined',
+      'phone.cancelled',
+      'phone.expired',
+      'phone.timedOut',
+      'phone.needsPin',
+      'phone.failed',
+      'phone.sendAgain',
+      'phone.another',
+      'phone.lastSeen',
+      'app.pay.tile.phone',
+    ] as const;
+    for (const id of ids) expect(POS_COPY[id]).toBeTruthy();
+    expect(posCopy('phone.send', { amount: '£35.50' })).toBe('Send £35.50');
+    expect(posCopy('phone.paid', { staffName: 'Jess' })).toBe("Paid on Jess's phone");
+  });
+
   it('fills placeholders and leaves unknown ones for a test to spot', () => {
     expect(fillCopy('{amount} to pay', { amount: '£5.00' })).toBe('£5.00 to pay');
     expect(fillCopy('{missing} here')).toBe('{missing} here');

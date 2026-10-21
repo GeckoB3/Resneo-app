@@ -44,6 +44,16 @@ jest.mock('@/components/pos/ReaderPayPanel', () => {
   const { Text } = jest.requireActual<typeof import('react-native')>('react-native');
   return { ReaderPayPanel: (props: { amountPence: number }) => <Text>{`reader-panel ${props.amountPence}`}</Text> };
 });
+const mockPhoneProps = jest.fn();
+jest.mock('@/components/pos/SendToPhonePanel', () => {
+  const { Text } = jest.requireActual<typeof import('react-native')>('react-native');
+  return {
+    SendToPhonePanel: (props: { amountPence: number }) => {
+      mockPhoneProps(props);
+      return <Text>{`phone-panel ${props.amountPence}`}</Text>;
+    },
+  };
+});
 // Whether this build and phone may offer Tap to Pay (the card tile's line says so).
 let mockTapToPay = true;
 jest.mock('@/lib/payments/tap-to-pay-build-support', () => ({ buildSupportsTapToPay: () => mockTapToPay }));
@@ -103,6 +113,7 @@ async function openPart() {
 
 beforeEach(() => {
   mockCardProps.mockReset();
+  mockPhoneProps.mockReset();
   mockTapToPay = true;
 });
 
@@ -466,6 +477,79 @@ describe('PaySheet', () => {
       mockTapToPay = false;
       await renderSheet({ cardAvailable: true });
       expect(screen.getByText('With your Bluetooth card reader')).toBeTruthy();
+    });
+  });
+
+  describe('Send to a phone, on a device that cannot take cards', () => {
+    const phoneBoot = (card_methods: PosBootstrap['card_methods']) => bootstrap({ card_methods });
+
+    it('comes first, in navy, in place of the card tile when someone has a phone that can take cards', async () => {
+      await renderSheet({ cardAvailable: false, bootstrap: phoneBoot({ card_app: true, send_to_phone: true, card_reader: true }) });
+      expect(screen.getByRole('button', { name: 'Send to a phone' })).toHaveStyle({ backgroundColor: '#003B6F' });
+      expect(screen.getByText("Take it on a team member's phone")).toBeTruthy();
+      expect(screen.queryByText('Not on this phone')).toBeNull();
+      const order = screen.getAllByRole('button').map((b) => b.props.accessibilityLabel as string);
+      expect(order.indexOf('Send to a phone')).toBeLessThan(order.indexOf('Card reader'));
+      expect(order.indexOf('Card reader')).toBeLessThan(order.indexOf('Cash'));
+    });
+
+    it('opens the panel with the amount, and a pay link and the counter reader to fall back on', async () => {
+      await renderSheet({
+        cardAvailable: false,
+        bootstrap: phoneBoot({ card_app: true, send_to_phone: true, card_reader: true, pay_link: true }),
+      });
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: 'Send to a phone' }));
+      });
+      expect(screen.getByText('phone-panel 3550')).toBeTruthy();
+      const props = mockPhoneProps.mock.calls.at(-1)![0] as { onUseLink?: () => void; onUseReader?: () => void };
+      expect(props.onUseLink).toBeInstanceOf(Function);
+      expect(props.onUseReader).toBeInstanceOf(Function);
+    });
+
+    it('sends the part typed, not the whole bill', async () => {
+      await renderSheet({ cardAvailable: false, bootstrap: phoneBoot({ card_app: true, send_to_phone: true }) });
+      await openPart();
+      await act(async () => {
+        fireEvent.changeText(screen.getByLabelText('Amount to pay now'), '20');
+      });
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: 'Send to a phone' }));
+      });
+      expect(screen.getByText('phone-panel 2000')).toBeTruthy();
+    });
+
+    it('closes the sheet once the phone has taken it', async () => {
+      const { onPaid, onClose } = await renderSheet({ cardAvailable: false, bootstrap: phoneBoot({ card_app: true, send_to_phone: true }) });
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: 'Send to a phone' }));
+      });
+      const props = mockPhoneProps.mock.calls.at(-1)![0] as { onPaid: () => void };
+      await act(async () => {
+        props.onPaid();
+      });
+      expect(onPaid).toHaveBeenCalledWith({ changePence: 0, method: 'card_app' });
+      expect(onClose).toHaveBeenCalled();
+    });
+
+    it('is not offered on a device that takes the card itself', async () => {
+      await renderSheet({ cardAvailable: true, bootstrap: phoneBoot({ card_app: true, send_to_phone: true }) });
+      expect(screen.queryByRole('button', { name: 'Send to a phone' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Card' })).toBeTruthy();
+    });
+
+    it('still says the card is not on this phone when nobody has a phone that can take one', async () => {
+      await renderSheet({ cardAvailable: false, bootstrap: phoneBoot({ card_app: true, send_to_phone: false }) });
+      expect(screen.queryByRole('button', { name: 'Send to a phone' })).toBeNull();
+      expect(screen.getByText('Not on this phone')).toBeTruthy();
+    });
+
+    it('is not offered to a login that cannot take payments', async () => {
+      await renderSheet({
+        cardAvailable: false,
+        bootstrap: bootstrap({ card_methods: { card_app: true, send_to_phone: true }, capabilities: {} }),
+      });
+      expect(screen.queryByRole('button', { name: 'Send to a phone' })).toBeNull();
     });
   });
 });

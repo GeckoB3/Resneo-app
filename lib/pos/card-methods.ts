@@ -1,9 +1,12 @@
 import { canPos } from '@/lib/pos/pos-enabled';
 import { tipConfig } from '@/lib/pos/sale-math';
+import { lastSeenText } from '@/lib/pos/settings-more/readers-copy';
 import type { PosCopyId, PosT } from '@/lib/pos/copy';
 import type {
   PosBootstrap,
+  PosCardPhone,
   PosCollectScreen,
+  PosCollectState,
   PosPayLink,
   PosPayment,
   PosPayoutStatus,
@@ -27,6 +30,12 @@ export interface CardMethodsOffered {
   payLink: boolean;
   /** Cards on file (`saved_card`): the setting on, `charge_saved_card`, and a client on the sale. */
   savedCards: boolean;
+  /**
+   * Send to a phone (`card_app` with `collect_on`): in-person cards on and someone has a phone that
+   * can take one (`send_to_phone`). The sheet offers it only on a device that can't take the card
+   * itself (a tablet without NFC, an iPad), so a request never goes to the device that sent it.
+   */
+  sendToPhone: boolean;
 }
 
 export function cardMethodsOffered(
@@ -42,6 +51,7 @@ export function cardMethodsOffered(
       bootstrap?.settings?.card_on_file_enabled === true &&
       canPos(bootstrap, 'charge_saved_card') &&
       Boolean(sale.guest?.id),
+    sendToPhone: take && bootstrap?.card_methods?.card_app === true && bootstrap?.card_methods?.send_to_phone === true,
   };
 }
 
@@ -167,6 +177,45 @@ export function payLinkExpiry(expiresAt: string, timeZone: string): { time: stri
   } catch {
     return { time: expiresAt.slice(11, 16), date: expiresAt.slice(0, 10) };
   }
+}
+
+// ─── Sending a sale to a phone ──────────────────────────────────────────────
+
+/** Who should take it: any phone that can take cards, or one person's. */
+export type PhoneChoice = { any: true } | { staff_id: string };
+
+export function phoneChoiceKey(choice: PhoneChoice): string {
+  return 'any' in choice ? 'any' : choice.staff_id;
+}
+
+/**
+ * The choice the list shows (web UX §23.2): what staff picked while that person is still listed,
+ * else the person serving when they have a phone that can take cards, else any phone.
+ */
+export function phoneChoiceFor(
+  phones: Pick<PosCardPhone, 'staff_id'>[],
+  picked: PhoneChoice | null,
+  servingStaffId: string | null | undefined,
+): PhoneChoice {
+  if (picked && 'staff_id' in picked && phones.some((p) => p.staff_id === picked.staff_id)) return picked;
+  if (picked && 'any' in picked) return picked;
+  if (servingStaffId && phones.some((p) => p.staff_id === servingStaffId)) return { staff_id: servingStaffId };
+  return { any: true };
+}
+
+/** A phone not seen for this long shows when it was, so staff can judge it (web W2-04). */
+const SHOW_LAST_SEEN_AFTER_MS = 12 * 60 * 60 * 1000;
+
+/** "3 days ago" for a phone that has not registered for a while, else null (web `phoneLastSeen`). */
+export function phoneLastSeenRelative(lastSeenAt: string | null | undefined, now: number = Date.now()): string | null {
+  const at = lastSeenAt ? Date.parse(lastSeenAt) : NaN;
+  if (Number.isNaN(at) || now - at < SHOW_LAST_SEEN_AFTER_MS) return null;
+  return lastSeenText(lastSeenAt, new Date(now));
+}
+
+/** The person the desk is waiting on: who took it, else who it was sent to, else null. */
+export function collectStaffName(state: Pick<PosCollectState, 'claimed_by_name' | 'target_name'>): string | null {
+  return state.claimed_by_name ?? state.target_name ?? null;
 }
 
 // ─── A sale sent to this phone ──────────────────────────────────────────────

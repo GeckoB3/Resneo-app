@@ -7,6 +7,7 @@ import {
   cardBrandName,
   cardMethodsOffered,
   collectEndedCopyId,
+  collectStaffName,
   declinedSavedCardPayment,
   defaultReaderFor,
   isAccountLimitError,
@@ -14,6 +15,9 @@ import {
   payoutStatusCopyId,
   pendingCollectPayment,
   pendingReaderPayment,
+  phoneChoiceFor,
+  phoneChoiceKey,
+  phoneLastSeenRelative,
   readerStatusCopyId,
   savedCardConsentLine,
   savedCardLabel,
@@ -40,11 +44,21 @@ const guest = { id: 'g-1', name: 'Ada Lovelace', email: 'ada@example.com', phone
 
 describe('cardMethodsOffered', () => {
   it('offers the reader, a pay link and saved cards when the venue and login allow them', () => {
-    expect(cardMethodsOffered(boot(), { guest })).toEqual({ cardReader: true, payLink: true, savedCards: true });
+    expect(cardMethodsOffered(boot(), { guest })).toEqual({ cardReader: true, payLink: true, savedCards: true, sendToPhone: false });
   });
 
   it('hides everything from a login without take_payment', () => {
-    expect(cardMethodsOffered(boot({ capabilities: {} }), { guest })).toEqual({ cardReader: false, payLink: false, savedCards: false });
+    const all = boot({ capabilities: {}, card_methods: { card_app: true, card_reader: true, pay_link: true, send_to_phone: true } });
+    expect(cardMethodsOffered(all, { guest })).toEqual({ cardReader: false, payLink: false, savedCards: false, sendToPhone: false });
+  });
+
+  it('offers Send to a phone when in-person cards are on and someone has a phone that can take one', () => {
+    expect(cardMethodsOffered(boot({ card_methods: { card_app: true, send_to_phone: true } }), { guest }).sendToPhone).toBe(true);
+    // Nobody has a phone that can take cards, or a server before Pass 2.
+    expect(cardMethodsOffered(boot({ card_methods: { card_app: true, send_to_phone: false } }), { guest }).sendToPhone).toBe(false);
+    expect(cardMethodsOffered(boot({ card_methods: { card_app: true } }), { guest }).sendToPhone).toBe(false);
+    // In-person cards switched off.
+    expect(cardMethodsOffered(boot({ card_methods: { card_app: false, send_to_phone: true } }), { guest }).sendToPhone).toBe(false);
   });
 
   it('needs charge_saved_card, cards on file and a client for saved cards', () => {
@@ -148,6 +162,44 @@ describe('a sale sent to this phone', () => {
       "The card wasn't tapped within 5 minutes, so this stopped. Nothing was taken.",
     );
     expect(t(collectEndedCopyId('paid', false))).toBe('Paid. The desk can see it.');
+  });
+});
+
+describe('sending a sale to a phone', () => {
+  const phones = [{ staff_id: 'st-1' }, { staff_id: 'st-2' }];
+
+  it('preselects the person serving when they have a phone that can take cards, else any phone', () => {
+    expect(phoneChoiceFor(phones, null, 'st-2')).toEqual({ staff_id: 'st-2' });
+    expect(phoneChoiceFor(phones, null, 'st-9')).toEqual({ any: true });
+    expect(phoneChoiceFor(phones, null, null)).toEqual({ any: true });
+    expect(phoneChoiceFor([], null, 'st-1')).toEqual({ any: true });
+  });
+
+  it('keeps what staff picked while that person is still listed', () => {
+    expect(phoneChoiceFor(phones, { staff_id: 'st-1' }, 'st-2')).toEqual({ staff_id: 'st-1' });
+    expect(phoneChoiceFor(phones, { any: true }, 'st-2')).toEqual({ any: true });
+    // Their phone dropped off the list: back to the person serving.
+    expect(phoneChoiceFor([{ staff_id: 'st-2' }], { staff_id: 'st-1' }, 'st-2')).toEqual({ staff_id: 'st-2' });
+  });
+
+  it('keys each choice for the list', () => {
+    expect(phoneChoiceKey({ any: true })).toBe('any');
+    expect(phoneChoiceKey({ staff_id: 'st-1' })).toBe('st-1');
+  });
+
+  it('says when a phone was last seen only after 12 hours', () => {
+    const now = Date.parse('2026-10-21T12:00:00Z');
+    expect(phoneLastSeenRelative('2026-10-21T06:00:00Z', now)).toBeNull();
+    expect(phoneLastSeenRelative('2026-10-20T20:00:00Z', now)).toBe('16 hours ago');
+    expect(phoneLastSeenRelative('2026-10-18T12:00:00Z', now)).toBe('3 days ago');
+    expect(phoneLastSeenRelative(null, now)).toBeNull();
+    expect(phoneLastSeenRelative('not a date', now)).toBeNull();
+  });
+
+  it('names who has it: who took it, else who it was sent to', () => {
+    expect(collectStaffName({ claimed_by_name: 'Priya', target_name: 'Jess' })).toBe('Priya');
+    expect(collectStaffName({ claimed_by_name: null, target_name: 'Jess' })).toBe('Jess');
+    expect(collectStaffName({ claimed_by_name: null, target_name: null })).toBeNull();
   });
 });
 

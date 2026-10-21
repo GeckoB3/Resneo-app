@@ -823,6 +823,40 @@ export const POS_COPY = {
   'err.POS_PAYMENT_CLAIMED': '{staffName} has already taken this payment on their phone.',
   'err.POS_COLLECT_EXPIRED': 'Nobody took this payment in time. Send it again.',
   'err.POS_NO_CARD_DEVICE': 'No phone here can take cards. Send a pay link instead.',
+  // Sending a sale from a device that can't take cards (a tablet without NFC, an iPad), word for
+  // word from the web till's panel (src/components/pos/tophone/copy.ts, UX spec §23).
+  'pay.method.phone': 'Send to a phone',
+  'phone.title': 'Send to a phone',
+  'phone.who': 'Who should take it?',
+  'phone.any': 'Any phone that can take cards',
+  'phone.device.iphone': 'iPhone',
+  'phone.device.android': 'Android phone',
+  'phone.device.wisepad': 'Card reader (Bluetooth)',
+  'phone.notListed': 'Only people signed in to the ResNeo app on a phone that can take cards are shown.',
+  'phone.send': 'Send {amount}',
+  'phone.sending': 'Sending {amount}...', // (added on the web)
+  'phone.loading': 'Finding phones...', // (added on the web)
+  'phone.none.title': 'No phone can take cards right now',
+  'phone.none.help': 'To take cards on a phone, set up Tap to Pay in the ResNeo app, under More.',
+  'phone.waiting': 'Waiting for {staffName} to take it',
+  'phone.waiting.any': 'Waiting for a phone to take it',
+  'phone.expiresIn': '{seconds} seconds left',
+  'phone.claimed': '{staffName} has it on their phone',
+  'phone.collecting': '{staffName} is taking the card',
+  'phone.tip': 'With a {tip} tip',
+  'phone.paid': "Paid on {staffName}'s phone",
+  'phone.declined': 'The card was declined. {staffName} can try again on their phone.',
+  'phone.cancelled': 'Cancelled. Nothing was taken.',
+  'phone.expired': 'Nobody took it within 2 minutes, so it was cancelled. Nothing was taken.',
+  'phone.timedOut': "{staffName}'s phone stopped waiting for the card. Nothing was taken.",
+  'phone.needsPin': "The card needs to be inserted with a PIN, which a phone can't do. Send a pay link instead.",
+  'phone.failed': "The payment didn't go through. Nothing was taken.", // (added on the web)
+  'phone.cancel': 'Cancel',
+  'phone.sendAgain': 'Send again',
+  'phone.another': 'Choose another phone',
+  'phone.someone': 'Someone', // (added on the web) when the name is not known
+  'phone.lastSeen': 'Last seen {relative}', // (added on the web, W2-04)
+  'app.pay.tile.phone': "Take it on a team member's phone", // (added) the tile on a device that can't take cards
   'app.collect.list.title': 'Waiting for you',
   'app.collect.row': '{amount} for Sale {saleNo}, from {staffName}',
   'app.collect.row.any': 'For anyone',

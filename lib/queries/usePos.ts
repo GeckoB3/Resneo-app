@@ -30,6 +30,7 @@ import type {
   TakingsReport,
   PosVoucherSettingsResponse,
   PosVoucherSummary,
+  PosCollectPhonesResponse,
   PosCollectRequestsResponse,
   PosCollectStateResponse,
   PosPayLinksResponse,
@@ -669,6 +670,23 @@ export function useCollectRequests(options: { enabled?: boolean } = {}) {
     refetchOnWindowFocus: true,
     retry: false,
     queryFn: () => posFetch<PosCollectRequestsResponse>(posPaths.collectRequestsMine, { accessToken: accessToken! }),
+  });
+}
+
+/**
+ * Who can take a card on a phone right now (`GET /api/venue/pos/collect-phones`), for "Send to a
+ * phone" on a device that can't take cards itself. Phones come and go, so it is read afresh each
+ * time the list is shown.
+ */
+export function useCollectPhones(options: { enabled?: boolean } = {}) {
+  const { accessToken, enabled } = usePosGate(options.enabled ?? true);
+  return useQuery({
+    queryKey: queryKeys.pos.collectPhones(accessToken),
+    enabled,
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+    queryFn: () => posFetch<PosCollectPhonesResponse>(posPaths.collectPhones, { accessToken: accessToken! }),
   });
 }
 

@@ -111,6 +111,8 @@ export const posPaths = {
   collectState: (paymentId: string) => `/api/venue/pos/payments/${encodeURIComponent(paymentId)}/collect`,
   collectClaim: (paymentId: string) => `/api/venue/pos/payments/${encodeURIComponent(paymentId)}/claim`,
   collectCancel: (paymentId: string) => `/api/venue/pos/payments/${encodeURIComponent(paymentId)}/cancel`,
+  // Sending a sale from this device to a team member's phone (the web till's "Send to a phone").
+  collectPhones: '/api/venue/pos/collect-phones',
   // Pass 4 (app step 4): products at the till. A search is the catalogue's products only; a scan is
   // one exact barcode look-up.
   productSearch: (q: string) => {

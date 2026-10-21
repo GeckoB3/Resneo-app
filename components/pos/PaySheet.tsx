@@ -17,6 +17,7 @@ import {
 import { ReaderPayPanel } from '@/components/pos/ReaderPayPanel';
 import { SaleCardCollect } from '@/components/pos/SaleCardCollect';
 import { SavedCardCharge, SavedCardMethods } from '@/components/pos/SavedCards';
+import { SendToPhonePanel } from '@/components/pos/SendToPhonePanel';
 import { CreditPayPanel, VoucherPayPanel } from '@/components/pos/VoucherSheets';
 import { writeError, type Send } from '@/components/pos/SaleSheets';
 import { AmountRow, ErrorLine, money, Notice, PosSheet, posStyles, usePosT } from '@/components/pos/parts';
@@ -70,9 +71,13 @@ import type { PosBootstrap, PosPaymentType, PosSale, PosSavedCard } from '@/type
  * account credit and saved cards as tiles when the client has them, and the venue's own payment
  * types under "Other ways". Every method shows under the same rules as before. On a phone that
  * can't take cards, at a venue with no counter reader, the card tile says so and what to do instead.
+ *
+ * On a device that can't take cards (a tablet without NFC, an iPad), "Send to a phone" comes first
+ * when someone has a phone that can take one, in place of that card tile: the web till's panel, so
+ * a venue run from a tablet with no counter reader can still take cards (`SendToPhonePanel`).
  */
 
-type Mode = 'choose' | 'cash' | 'other' | 'card' | 'done' | 'voucher' | 'credit' | 'reader' | 'link' | 'saved';
+type Mode = 'choose' | 'cash' | 'other' | 'card' | 'done' | 'voucher' | 'credit' | 'reader' | 'link' | 'saved' | 'phone';
 
 export type PaidOutcome = {
   changePence: number;
@@ -153,9 +158,11 @@ function PaySheetBody({
   // Cards on file on and a client on the sale: the client may save their card on this phone.
   const consentClientName =
     bootstrap.settings?.card_on_file_enabled === true && sale.guest ? sale.guest.name.split(' ')[0] || sale.guest.name : null;
+  // This device can't take a card itself, but a team member's phone can: send it there.
+  const phoneOffered = !cardAvailable && methods.sendToPhone;
   // The venue takes cards in the app but this phone can't (Expo Go, no Terminal SDK or no key),
-  // and there is no counter reader to take one instead: the card tile says so (mock-up note 5).
-  const cardNotHere = !cardAvailable && bootstrap.card_methods?.card_app === true && !methods.cardReader;
+  // and there is no counter reader or phone to take one instead: the card tile says so (mock-up note 5).
+  const cardNotHere = !cardAvailable && bootstrap.card_methods?.card_app === true && !methods.cardReader && !phoneOffered;
   const waysOffered = splitWaysOffered(balance);
   const shares = ways ? splitEvenly(balance, ways) : null;
   // The amount never hides a problem behind "Pay part of it": a bill above the venue's largest
@@ -243,7 +250,9 @@ function PaySheetBody({
                   ? t('pay.method.cardReader')
                   : mode === 'saved'
                     ? t('pay.method.savedCard')
-                    : t('pay.title');
+                    : mode === 'phone'
+                      ? t('phone.title')
+                      : t('pay.title');
 
   return (
     // While the client holds the phone (tip, card, result), the sheet becomes client mode: full
@@ -317,6 +326,16 @@ function PaySheetBody({
                 primary
                 disabled={!amountOk}
                 onPress={() => enter('card')}
+              />
+            ) : null}
+            {phoneOffered ? (
+              <PayTile
+                icon={PAY_ICONS.phone}
+                title={t('pay.method.phone')}
+                detail={t('app.pay.tile.phone')}
+                primary
+                disabled={!amountOk}
+                onPress={() => enter('phone')}
               />
             ) : null}
             {cardNotHere ? (
@@ -526,6 +545,19 @@ function PaySheetBody({
           }}
           onBack={() => setMode('choose')}
           onUseLink={methods.payLink ? () => enter('link') : undefined}
+        />
+      ) : mode === 'phone' && amount != null ? (
+        <SendToPhonePanel
+          sale={sale}
+          send={send}
+          amountPence={amount}
+          onPaid={() => {
+            onPaid({ changePence: 0, method: 'card_app' });
+            onClose();
+          }}
+          onBack={() => setMode('choose')}
+          onUseLink={methods.payLink ? () => enter('link') : undefined}
+          onUseReader={methods.cardReader ? () => enter('reader') : undefined}
         />
       ) : mode === 'link' && amount != null ? (
         <PayLinkPanel
