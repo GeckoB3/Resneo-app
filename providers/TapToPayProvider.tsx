@@ -11,6 +11,7 @@ import {
 import { AppState, Platform } from 'react-native';
 
 import { buildSupportsTapToPay } from '@/lib/payments/tap-to-pay-build-support';
+import { loadTapToPayDeviceSupport } from '@/lib/payments/tap-to-pay-device-support';
 import {
   useTapToPayReader,
   type TapToPayConnectResult,
@@ -98,9 +99,47 @@ export function useTapToPay(): TapToPayContextValue {
 export const WARM_UP_MIN_INTERVAL_MS = 60_000;
 
 export function TapToPayProvider({ children }: { children: ReactNode }) {
-  // Android keeps the on-demand behaviour it ships with: nothing here applies.
+  // Android connects on demand, as it ships, but asks once whether this device can use Tap to Pay.
+  if (Platform.OS === 'android') {
+    return (
+      <>
+        <AndroidTapToPaySupportProbe />
+        {children}
+      </>
+    );
+  }
   if (Platform.OS !== 'ios') return <>{children}</>;
   return <TapToPayProviderIos>{children}</TapToPayProviderIos>;
+}
+
+/**
+ * Android: ask Stripe once whether this device can use Tap to Pay, at a venue that takes cards in
+ * person, and remember the answer (`tap-to-pay-device-support.ts`). Without it a tablet without
+ * NFC only learnt it could not when the card screen opened, so it was offered Tap to Pay, told the
+ * web it could take cards, and never offered "Send to a phone". The probe only starts the SDK and
+ * asks; it connects nothing and asks for no permission.
+ */
+function AndroidTapToPaySupportProbe(): null {
+  const { venue } = useVenueContext();
+  const reader = useTapToPayReader();
+  const readerRef = useRef(reader);
+  useEffect(() => {
+    readerRef.current = reader;
+  });
+  const applies = buildSupportsTapToPay() && venue?.card_present_ready === true;
+
+  useEffect(() => {
+    if (!applies) return;
+    let alive = true;
+    void loadTapToPayDeviceSupport().then((remembered) => {
+      if (alive && remembered === null) void readerRef.current.checkSupport();
+    });
+    return () => {
+      alive = false;
+    };
+  }, [applies]);
+
+  return null;
 }
 
 function TapToPayProviderIos({ children }: { children: ReactNode }) {

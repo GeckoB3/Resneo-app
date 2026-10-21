@@ -26,7 +26,13 @@ describe('classifyTapToPayError', () => {
     expect(classifyTapToPayError({ nativeErrorCode: 'TAP_TO_PAY_INSECURE_ENVIRONMENT' })).toBe('developer_options_on');
   });
 
+  it('reads Android’s “this device can’t” answers as unsupported (no NFC, an Android too old)', () => {
+    expect(classifyTapToPayError({ nativeErrorCode: 'TAP_TO_PAY_UNSUPPORTED_DEVICE' })).toBe('device_unsupported');
+    expect(classifyTapToPayError({ nativeErrorCode: 'TAP_TO_PAY_UNSUPPORTED_ANDROID_VERSION' })).toBe('device_unsupported');
+  });
+
   it('leaves everything else unclassified', () => {
+    // NFC switched off can be switched on: not a fact about the device.
     expect(classifyTapToPayError({ nativeErrorCode: 'TAP_TO_PAY_NFC_DISABLED' })).toBeNull();
     expect(classifyTapToPayError({ nativeErrorCode: '9999' })).toBeNull();
     expect(classifyTapToPayError(undefined)).toBeNull();
@@ -41,6 +47,11 @@ describe('tapToPayFailureMessage', () => {
 
   it('points an unsupported or blocked phone at the card reader', () => {
     expect(tapToPayFailureMessage('device_unsupported', true)).toMatch(/card reader/);
+    expect(tapToPayFailureMessage('device_unsupported', true, 'ios')).toMatch(/^This iPhone can't use Tap to Pay on iPhone/);
+    // An Android tablet is not an iPhone.
+    expect(tapToPayFailureMessage('device_unsupported', true, 'android')).toBe(
+      "This device can't use Tap to Pay. Take the payment with a card reader instead.",
+    );
     expect(tapToPayFailureMessage('merchant_blocked', true)).toMatch(/support.*card reader/);
   });
 

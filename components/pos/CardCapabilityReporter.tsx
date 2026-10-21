@@ -4,6 +4,11 @@ import { AppState, Platform } from 'react-native';
 import { getStripePublishableKey } from '@/lib/env';
 import { hasRememberedBluetoothReader } from '@/lib/payments/bluetoothReader';
 import { buildSupportsTapToPay } from '@/lib/payments/tap-to-pay-build-support';
+import {
+  loadTapToPayDeviceSupport,
+  useTapToPayDeviceSupport,
+  useTapToPayDeviceSupportLoaded,
+} from '@/lib/payments/tap-to-pay-device-support';
 import { isTerminalSdkAvailable } from '@/lib/payments/terminal-sdk';
 import { cardCapabilityFor, NO_CARD } from '@/lib/pos/card-capability';
 import { cardAppAvailable } from '@/lib/pos/pos-enabled';
@@ -31,6 +36,13 @@ export function CardCapabilityReporter(): null {
   const { ownerVenueId } = useLinkedVenueContext();
   const [wisepad, setWisepad] = useState(false);
   const [foregrounds, setForegrounds] = useState(0);
+  // Android: whether this device can use Tap to Pay, from the launch probe or an earlier launch.
+  const androidTapToPay = useTapToPayDeviceSupport();
+  const androidLoaded = useTapToPayDeviceSupportLoaded();
+
+  useEffect(() => {
+    if (Platform.OS === 'android') void loadTapToPayDeviceSupport();
+  }, []);
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
@@ -61,8 +73,9 @@ export function CardCapabilityReporter(): null {
         cardAppAvailable: true,
         platform: Platform.OS,
         tapToPayBuild: buildSupportsTapToPay(),
-        // iOS knows from the warm-up (TapToPayProvider); Android's SDK answers only on connect.
-        tapToPaySupported: Platform.OS === 'ios' ? (tapToPay.applies ? tapToPay.supported : false) : null,
+        // iOS knows from the warm-up (TapToPayProvider); Android from the launch probe, remembered
+        // (a tablet without NFC says no), and unknown until it answers.
+        tapToPaySupported: Platform.OS === 'ios' ? (tapToPay.applies ? tapToPay.supported : false) : androidTapToPay,
         termsAccepted: Platform.OS === 'ios' ? tapToPay.termsAccepted : null,
         wisepadRemembered: wisepad,
       })
@@ -70,10 +83,12 @@ export function CardCapabilityReporter(): null {
   const { card_capability: capability, tap_to_pay_terms_accepted: terms } = report;
 
   useEffect(() => {
-    // Wait for the bootstrap at a POS venue, so a first "none" is never sent by mistake.
+    // Wait for the bootstrap at a POS venue, so a first "none" is never sent by mistake, and on
+    // Android for the remembered Tap to Pay answer, so a tablet without NFC never says "tap_to_pay".
     if (posEnabled && boot.isLoading) return;
+    if (Platform.OS === 'android' && !androidLoaded) return;
     void reportDeviceCardCapability(accessToken, { card_capability: capability, tap_to_pay_terms_accepted: terms });
-  }, [accessToken, posEnabled, boot.isLoading, capability, terms, foregrounds]);
+  }, [accessToken, posEnabled, boot.isLoading, androidLoaded, capability, terms, foregrounds]);
 
   return null;
 }

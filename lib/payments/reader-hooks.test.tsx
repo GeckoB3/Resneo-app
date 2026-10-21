@@ -110,6 +110,10 @@ import {
   READER_DISCOVERY_TIMEOUT_MS,
 } from '@/lib/payments/reader-timeouts';
 import { TAP_TO_PAY_DEVELOPER_OPTIONS_MESSAGE } from '@/lib/payments/tap-to-pay-errors';
+import {
+  __resetTapToPayDeviceSupportForTests,
+  tapToPayDeviceSupport,
+} from '@/lib/payments/tap-to-pay-device-support';
 import { __resetTapToPayConnectForTests, useTapToPayReader } from '@/lib/payments/terminal';
 import { __resetTerminalInitForTests } from '@/lib/payments/terminal-sdk';
 
@@ -1355,5 +1359,78 @@ describe('Apple 1.4: an iOS too old for Tap to Pay on iPhone', () => {
     const res = await act(async () => result.current.connect());
 
     expect(res.reason).toBe('os_update_required');
+  });
+});
+
+describe('Tap to Pay on Android: a device without NFC', () => {
+  const originalOS = Platform.OS;
+  beforeEach(() => {
+    __resetTapToPayDeviceSupportForTests();
+    Object.defineProperty(Platform, 'OS', { value: 'android', configurable: true });
+  });
+  afterEach(() => {
+    Object.defineProperty(Platform, 'OS', { value: originalOS, configurable: true });
+    __resetTapToPayDeviceSupportForTests();
+  });
+
+  const NO_NFC = {
+    readerSupportResult: false,
+    error: { message: 'This device does not support Tap to Pay.', nativeErrorCode: 'TAP_TO_PAY_UNSUPPORTED_DEVICE' },
+  };
+
+  it('reads the probe’s “unsupported device” as a definite no, and remembers it', async () => {
+    mockApi.supportsReadersOfType.mockResolvedValue(NO_NFC as never);
+    const { result } = await renderHook(() => useTapToPayReader());
+
+    await act(async () => {
+      await result.current.checkSupport();
+    });
+
+    expect(result.current.supported).toBe(false);
+    expect(tapToPayDeviceSupport()).toBe(false);
+  });
+
+  it('gives every reader the answer at once, without asking the SDK again', async () => {
+    mockApi.supportsReadersOfType.mockResolvedValue(NO_NFC as never);
+    const probe = await renderHook(() => useTapToPayReader());
+    const sheet = await renderHook(() => useTapToPayReader());
+
+    await act(async () => {
+      await probe.result.current.checkSupport();
+    });
+    // The card screen, mounted before or after the launch probe answered, hides Tap to Pay.
+    expect(sheet.result.current.supported).toBe(false);
+
+    mockApi.supportsReadersOfType.mockClear();
+    let again: boolean | undefined;
+    await act(async () => {
+      again = await sheet.result.current.checkSupport();
+    });
+    expect(again).toBe(false);
+    expect(mockApi.supportsReadersOfType).not.toHaveBeenCalled();
+  });
+
+  it('remembers a capable phone too', async () => {
+    const { result } = await renderHook(() => useTapToPayReader());
+    await act(async () => {
+      await result.current.checkSupport();
+    });
+    expect(result.current.supported).toBe(true);
+    expect(tapToPayDeviceSupport()).toBe(true);
+  });
+
+  it('leaves NFC switched off as unknown: it can be switched on', async () => {
+    mockApi.supportsReadersOfType.mockResolvedValue({
+      readerSupportResult: false,
+      error: { message: 'NFC is disabled.', nativeErrorCode: 'TAP_TO_PAY_NFC_DISABLED' },
+    } as never);
+    const { result } = await renderHook(() => useTapToPayReader());
+
+    await act(async () => {
+      await result.current.checkSupport();
+    });
+
+    expect(result.current.supported).toBeNull();
+    expect(tapToPayDeviceSupport()).toBeNull();
   });
 });

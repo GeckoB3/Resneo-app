@@ -25,7 +25,9 @@ import { TAP_TO_PAY_ON_IPHONE } from '@/lib/payments/tap-to-pay-copy';
  *  - `passcode_required` (2920): the iPhone has no passcode, which Apple requires.
  *  - `phone_call_active` (2930): Tap to Pay cannot run during a phone call.
  *  - `device_unsupported` (2910): Apple reports this iPhone's configuration as
- *    unsupported. Also how the support probe says no on iOS.
+ *    unsupported. Also how the support probe says no on iOS. On Android,
+ *    `TAP_TO_PAY_UNSUPPORTED_DEVICE` (no NFC, as on many tablets) and
+ *    `TAP_TO_PAY_UNSUPPORTED_ANDROID_VERSION`, which come with the probe's "no".
  *  - `device_banned` (3920) / `merchant_blocked` (3950): Apple or Stripe has
  *    barred this iPhone or this merchant; only Stripe support can lift it.
  *  - `os_update_required`: Apple's `PaymentCardReaderError.osVersionNotSupported`
@@ -66,6 +68,10 @@ const NATIVE_REASONS: Record<string, TapToPayFailureReason> = {
   '3950': 'merchant_blocked',
   // Android sends the code's name rather than a number.
   TAP_TO_PAY_INSECURE_ENVIRONMENT: 'developer_options_on',
+  // Android's support probe says no WITH one of these (a tablet without NFC, an Android too old),
+  // so they are a definite "this device can't", not a probe that could not answer.
+  TAP_TO_PAY_UNSUPPORTED_DEVICE: 'device_unsupported',
+  TAP_TO_PAY_UNSUPPORTED_ANDROID_VERSION: 'device_unsupported',
 };
 
 /**
@@ -146,7 +152,11 @@ export function iosOlderThanTapToPayFloor(
  * accepted": Apple requires that only an admin can accept the terms, and that
  * everyone else is told to ask one (checklist 3.8 / 3.8.1).
  */
-export function tapToPayFailureMessage(reason: TapToPayFailureReason, isAdmin: boolean): string {
+export function tapToPayFailureMessage(
+  reason: TapToPayFailureReason,
+  isAdmin: boolean,
+  platform: string = Platform.OS,
+): string {
   switch (reason) {
     case 'terms_not_accepted':
       return isAdmin
@@ -165,7 +175,9 @@ export function tapToPayFailureMessage(reason: TapToPayFailureReason, isAdmin: b
     case 'phone_call_active':
       return `${TAP_TO_PAY_ON_IPHONE} can't be used during a phone call. End the call, then try again.`;
     case 'device_unsupported':
-      return `This iPhone can't use ${TAP_TO_PAY_ON_IPHONE}. Take the payment with a card reader instead.`;
+      return platform === 'ios'
+        ? `This iPhone can't use ${TAP_TO_PAY_ON_IPHONE}. Take the payment with a card reader instead.`
+        : "This device can't use Tap to Pay. Take the payment with a card reader instead.";
     case 'device_banned':
       return `${TAP_TO_PAY_ON_IPHONE} has been blocked on this iPhone. Contact ResNeo support, and take the payment with a card reader instead.`;
     case 'merchant_blocked':

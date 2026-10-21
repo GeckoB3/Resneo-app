@@ -10,7 +10,8 @@
  * - `card_capability: 'wisepad'`: a phone paired with a Bluetooth WisePad 3.
  *
  * An iPad never reports `tap_to_pay` (Apple's rule, and `buildSupportsTapToPay` already says no
- * there), so a request never reaches one for Tap to Pay. A phone at a venue without POS, without
+ * there), so a request never reaches one for Tap to Pay. Nor does an Android device whose probe
+ * said no (a tablet without NFC): it reports `wisepad` with a reader paired, else `none`. A phone at a venue without POS, without
  * card payments in person, or a login without `take_payment` reports `none`: it is never offered.
  *
  * Pure, so the rules are tested without a device.
@@ -33,7 +34,10 @@ export interface CardCapabilityInput {
   platform: string;
   /** `buildSupportsTapToPay()`: never on an iPad, iPhone XS or later on iOS. */
   tapToPayBuild: boolean;
-  /** What the Tap to Pay probe said on this phone (iOS warm-up); null when not known. */
+  /**
+   * What the Tap to Pay probe said on this device (the iOS warm-up; on Android the launch probe,
+   * remembered, which says no on a tablet without NFC); null when not known.
+   */
   tapToPaySupported: boolean | null;
   /** iOS: Apple's terms accepted for this business (from the warm-up); null when not known. */
   termsAccepted: boolean | null;

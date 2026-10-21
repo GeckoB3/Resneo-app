@@ -57,6 +57,9 @@ jest.mock('@/components/pos/SendToPhonePanel', () => {
 // Whether this build and phone may offer Tap to Pay (the card tile's line says so).
 let mockTapToPay = true;
 jest.mock('@/lib/payments/tap-to-pay-build-support', () => ({ buildSupportsTapToPay: () => mockTapToPay }));
+// What the Android probe said about this device (false: a tablet without NFC; null: unknown).
+let mockDeviceTapToPay: boolean | null = null;
+jest.mock('@/lib/payments/tap-to-pay-device-support', () => ({ useTapToPayDeviceSupport: () => mockDeviceTapToPay }));
 jest.mock('@/components/pos/SavedCards', () => {
   const { Text } = jest.requireActual<typeof import('react-native')>('react-native');
   return { SavedCardMethods: () => <Text>saved-cards</Text>, SavedCardCharge: () => <Text>saved-charge</Text> };
@@ -115,6 +118,7 @@ beforeEach(() => {
   mockCardProps.mockReset();
   mockPhoneProps.mockReset();
   mockTapToPay = true;
+  mockDeviceTapToPay = null;
 });
 
 describe('PaySheet', () => {
@@ -530,6 +534,25 @@ describe('PaySheet', () => {
       });
       expect(onPaid).toHaveBeenCalledWith({ changePence: 0, method: 'card_app' });
       expect(onClose).toHaveBeenCalled();
+    });
+
+    it('comes first on an Android tablet without NFC, with the card tile kept for a Bluetooth reader', async () => {
+      // The app's card SDK is in every store build, so the card is "available" on the tablet too:
+      // only the device's own answer says it can't tap.
+      mockDeviceTapToPay = false;
+      await renderSheet({ cardAvailable: true, bootstrap: phoneBoot({ card_app: true, send_to_phone: true }) });
+      const order = screen.getAllByRole('button').map((b) => b.props.accessibilityLabel as string);
+      expect(order.indexOf('Send to a phone')).toBeGreaterThanOrEqual(0);
+      expect(order.indexOf('Send to a phone')).toBeLessThan(order.indexOf('Card'));
+      expect(screen.getByText('With your Bluetooth card reader')).toBeTruthy();
+      expect(screen.queryByText('Tap to Pay on iPhone or a Bluetooth reader')).toBeNull();
+    });
+
+    it('comes first on an iPad, which never has Tap to Pay', async () => {
+      mockTapToPay = false;
+      await renderSheet({ cardAvailable: true, bootstrap: phoneBoot({ card_app: true, send_to_phone: true }) });
+      expect(screen.getByRole('button', { name: 'Send to a phone' })).toBeTruthy();
+      expect(screen.getByText('With your Bluetooth card reader')).toBeTruthy();
     });
 
     it('is not offered on a device that takes the card itself', async () => {

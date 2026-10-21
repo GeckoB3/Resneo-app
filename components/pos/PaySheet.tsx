@@ -29,6 +29,7 @@ import { Text } from '@/components/ui/Text';
 import { apiErrorCode } from '@/lib/api/client';
 import { newPaymentAttemptId } from '@/lib/payments/attempt-id';
 import { buildSupportsTapToPay } from '@/lib/payments/tap-to-pay-build-support';
+import { useTapToPayDeviceSupport } from '@/lib/payments/tap-to-pay-device-support';
 import { tapToPayButtonLabel } from '@/lib/payments/tap-to-pay-copy';
 import { isRequestReused } from '@/lib/pos/api';
 import type { SaleCardResult } from '@/lib/payments/useSaleCardPayment';
@@ -72,9 +73,10 @@ import type { PosBootstrap, PosPaymentType, PosSale, PosSavedCard } from '@/type
  * types under "Other ways". Every method shows under the same rules as before. On a phone that
  * can't take cards, at a venue with no counter reader, the card tile says so and what to do instead.
  *
- * On a device that can't take cards (a tablet without NFC, an iPad), "Send to a phone" comes first
- * when someone has a phone that can take one, in place of that card tile: the web till's panel, so
- * a venue run from a tablet with no counter reader can still take cards (`SendToPhonePanel`).
+ * On a device that can't take a card by tapping (a tablet without NFC, an iPad), "Send to a phone"
+ * comes first when someone has a phone that can take one: the web till's panel, so a venue run
+ * from a tablet with no counter reader can still take cards (`SendToPhonePanel`). The card tile
+ * then says it is for a Bluetooth reader, or, where the app can't take cards at all, gives way.
  */
 
 type Mode = 'choose' | 'cash' | 'other' | 'card' | 'done' | 'voucher' | 'credit' | 'reader' | 'link' | 'saved' | 'phone';
@@ -119,6 +121,7 @@ function PaySheetBody({
 }) {
   const t = usePosT();
   const { colors } = useTheme();
+  const deviceTapToPay = useTapToPayDeviceSupport();
   const tips = useMemo(() => tipConfig(bootstrap.tip_settings), [bootstrap.tip_settings]);
   const balance = Math.max(0, sale.balance_due_pence);
   const max = bootstrap.settings.max_payment_pence ?? null;
@@ -158,8 +161,13 @@ function PaySheetBody({
   // Cards on file on and a client on the sale: the client may save their card on this phone.
   const consentClientName =
     bootstrap.settings?.card_on_file_enabled === true && sale.guest ? sale.guest.name.split(' ')[0] || sale.guest.name : null;
-  // This device can't take a card itself, but a team member's phone can: send it there.
-  const phoneOffered = !cardAvailable && methods.sendToPhone;
+  // Tap to Pay on this device: the build allows it (never an iPad) and, on Android, the device has
+  // not said no (a tablet without NFC does, `tap-to-pay-device-support.ts`).
+  const tapToPayHere = buildSupportsTapToPay() && deviceTapToPay !== false;
+  // This device can't take a card by tapping, but a team member's phone can: send it there. The
+  // card tile stays for a Bluetooth reader. (`cardAvailable` is the app's card SDK and key, not the
+  // device: it is true on every store build, tablets included.)
+  const phoneOffered = methods.sendToPhone && !(cardAvailable && tapToPayHere);
   // The venue takes cards in the app but this phone can't (Expo Go, no Terminal SDK or no key),
   // and there is no counter reader or phone to take one instead: the card tile says so (mock-up note 5).
   const cardNotHere = !cardAvailable && bootstrap.card_methods?.card_app === true && !methods.cardReader && !phoneOffered;
@@ -314,20 +322,7 @@ function PaySheetBody({
             </Text>
           ) : null}
           <PayTileGrid>
-            {cardAvailable ? (
-              <PayTile
-                icon={PAY_ICONS.tapToPay}
-                title={t('app.pay.card')}
-                detail={
-                  buildSupportsTapToPay()
-                    ? t('app.pay.tile.card', { tapToPay: tapToPayButtonLabel() })
-                    : t('app.pay.tile.cardBluetooth')
-                }
-                primary
-                disabled={!amountOk}
-                onPress={() => enter('card')}
-              />
-            ) : null}
+            {/* First when shown: it is only shown where this device can't take a card by tapping. */}
             {phoneOffered ? (
               <PayTile
                 icon={PAY_ICONS.phone}
@@ -336,6 +331,20 @@ function PaySheetBody({
                 primary
                 disabled={!amountOk}
                 onPress={() => enter('phone')}
+              />
+            ) : null}
+            {cardAvailable ? (
+              <PayTile
+                icon={PAY_ICONS.tapToPay}
+                title={t('app.pay.card')}
+                detail={
+                  tapToPayHere
+                    ? t('app.pay.tile.card', { tapToPay: tapToPayButtonLabel() })
+                    : t('app.pay.tile.cardBluetooth')
+                }
+                primary
+                disabled={!amountOk}
+                onPress={() => enter('card')}
               />
             ) : null}
             {cardNotHere ? (

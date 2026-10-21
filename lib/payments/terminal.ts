@@ -19,6 +19,11 @@ import {
   withTimeout,
 } from '@/lib/payments/reader-timeouts';
 import {
+  rememberTapToPayDeviceSupport,
+  tapToPayDeviceSupport,
+  useTapToPayDeviceSupport,
+} from '@/lib/payments/tap-to-pay-device-support';
+import {
   classifyTapToPayError,
   iosOlderThanTapToPayFloor,
   isOsVersionNotSupported,
@@ -181,7 +186,11 @@ export function useTapToPayReader(): UseTapToPayReader {
 
   const [status, setStatus] = useState<TapToPayStatus>('idle');
   const [error, setError] = useState<string | null>(null);
-  const [supported, setSupported] = useState<boolean | null>(null);
+  // On Android the device's answer, once known, is shared by every instance and kept across
+  // launches (`tap-to-pay-device-support.ts`): a tablet without NFC never offers Tap to Pay.
+  const [probed, setSupported] = useState<boolean | null>(null);
+  const remembered = useTapToPayDeviceSupport();
+  const supported = Platform.OS === 'android' && remembered !== null ? remembered : probed;
   const [progress, setProgress] = useState<number | null>(null);
   const [updateRequired, setUpdateRequired] = useState(osUpdateRequired);
 
@@ -286,6 +295,9 @@ export function useTapToPayReader(): UseTapToPayReader {
   }, [ownerVenueId, terminal]);
 
   const checkSupport = useCallback(async (): Promise<boolean> => {
+    // Android: a device's answer does not change between launches, so it is asked once.
+    const known = Platform.OS === 'android' ? tapToPayDeviceSupport() : null;
+    if (known !== null) return known;
     try {
       /**
        * `supportsReadersOfType` requires an initialised SDK. Without this the
@@ -313,6 +325,7 @@ export function useTapToPayReader(): UseTapToPayReader {
         // that could not answer.
         if (classifyTapToPayError(res.error) === 'device_unsupported') {
           setSupported(false);
+          rememberTapToPayDeviceSupport(false);
           return false;
         }
         // The SDK could not answer (often "not initialised yet"). Leave support
@@ -330,6 +343,7 @@ export function useTapToPayReader(): UseTapToPayReader {
         return false;
       }
       setSupported(ok);
+      rememberTapToPayDeviceSupport(ok);
       return ok;
     } catch {
       return supported === true;

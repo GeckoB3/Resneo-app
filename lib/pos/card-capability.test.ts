@@ -59,6 +59,15 @@ describe('cardCapabilityFor', () => {
     expect(cardCapabilityFor(input({ tapToPaySupported: false }))).toEqual(NO_CARD);
   });
 
+  it('never reports Tap to Pay for an Android tablet without NFC, only its paired reader', () => {
+    const tablet = { platform: 'android', termsAccepted: null, tapToPaySupported: false } as const;
+    expect(cardCapabilityFor(input(tablet))).toEqual(NO_CARD);
+    expect(cardCapabilityFor(input({ ...tablet, wisepadRemembered: true }))).toEqual({
+      card_capability: 'wisepad',
+      tap_to_pay_terms_accepted: null,
+    });
+  });
+
   it('never reports a card on the web build', () => {
     expect(cardCapabilityFor(input({ platform: 'web' }))).toEqual(NO_CARD);
   });

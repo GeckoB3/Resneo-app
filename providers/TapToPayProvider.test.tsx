@@ -44,6 +44,12 @@ jest.mock('@/modules/tap-to-pay-education', () => ({
   showAppleTapToPayEducation: jest.fn(async () => true),
 }));
 
+// Android: what an earlier launch remembered about this device (null: never asked).
+let mockRemembered: boolean | null = null;
+jest.mock('@/lib/payments/tap-to-pay-device-support', () => ({
+  loadTapToPayDeviceSupport: jest.fn(async () => mockRemembered),
+}));
+
 import { TapToPayProvider, useTapToPay } from '@/providers/TapToPayProvider';
 
 /** Captures the AppState listener so a test can bring the app to the foreground. */
@@ -200,15 +206,36 @@ describe('TapToPayProvider (iOS)', () => {
 });
 
 describe('TapToPayProvider (Android)', () => {
-  it('leaves Android exactly as it was', async () => {
-    const originalOS = Platform.OS;
+  const originalOS = Platform.OS;
+  beforeEach(() => {
+    mockRemembered = null;
     Object.defineProperty(Platform, 'OS', { value: 'android', configurable: true });
-    try {
-      await mount();
-      expect(mockReader.connect).not.toHaveBeenCalled();
-      expect(probe().applies).toBe(false);
-    } finally {
-      Object.defineProperty(Platform, 'OS', { value: originalOS, configurable: true });
-    }
+  });
+  afterEach(() => {
+    Object.defineProperty(Platform, 'OS', { value: originalOS, configurable: true });
+  });
+
+  it('connects nothing at launch and offers no iPhone warm-up', async () => {
+    await mount();
+    expect(mockReader.connect).not.toHaveBeenCalled();
+    expect(probe().applies).toBe(false);
+  });
+
+  it('asks once whether this device can use Tap to Pay, so a tablet without NFC is known before anyone taps', async () => {
+    await mount();
+    expect(mockReader.checkSupport).toHaveBeenCalledTimes(1);
+    expect(mockReader.connect).not.toHaveBeenCalled();
+  });
+
+  it('does not ask again when an earlier launch remembered the answer', async () => {
+    mockRemembered = false;
+    await mount();
+    expect(mockReader.checkSupport).not.toHaveBeenCalled();
+  });
+
+  it('does not ask at a venue that does not take cards in person', async () => {
+    mockVenue = { card_present_ready: false, current_user_role: 'admin' };
+    await mount();
+    expect(mockReader.checkSupport).not.toHaveBeenCalled();
   });
 });
