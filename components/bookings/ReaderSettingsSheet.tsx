@@ -83,7 +83,7 @@ function ReaderSettingsBody({ onClose }: { onClose: () => void }) {
     <View style={styles.body}>
       <View style={styles.header}>
         <Text variant="overline" tone="muted">
-          In-person payments
+          Card payments in person
         </Text>
         <Text variant="title">Card reader</Text>
         <Text variant="bodySmall" tone="muted">

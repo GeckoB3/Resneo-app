@@ -88,7 +88,7 @@ export const LIST_GROUPS: { key: DestGroup; title: string }[] = [
   { key: 'people', title: 'Team & clients' },
   { key: 'bookingTypes', title: 'Booking types' },
   // Checkout's set-up screens, all in the app (owner, 2026-10-09: full parity with the web; this
-  // group used to open the web). Beside the venue's other set-up, with In-person payments drawn
+  // group used to open the web). Beside the venue's other set-up, with Card payments in person drawn
   // straight after it. Only POS venues have rows here, and an empty group is not drawn, so every
   // other venue's More tab is unchanged.
   { key: 'checkoutSetup', title: 'Checkout set-up' },
@@ -274,7 +274,7 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
   list.push({ id: 'services', label: 'Services', hint: 'Review & edit your appointment services', icon: { ios: 'scissors', android: 'content_cut', web: 'content_cut' }, tile: TILE.navy, group: 'setup', kind: 'route', target: '/manage/services', keywords: ['treatments', 'pricing', 'duration'] });
   list.push({ id: 'hours', label: 'Business hours', hint: 'Weekly opening hours & closures', icon: { ios: 'clock.fill', android: 'access_time', web: 'access_time' }, tile: TILE.sky, group: 'setup', kind: 'route', target: '/manage/hours', keywords: ['settings', 'opening', 'closures', 'exceptions'] });
   if (isAdmin) {
-    // Appointments plans: "Taking payment in person" (the card switch, card reader, Tap to Pay and
+    // Appointments plans: "Payments at your venue" (the card switch, card reader, Tap to Pay and
     // the Checkout switch) is in Booking settings, as on the web, so the hint says so.
     list.push({ id: 'booking-settings', label: 'Booking settings', hint: isAppointmentTier ? 'Booking types, guest accounts and payments' : 'Booking types & guest accounts', icon: { ios: 'slider.horizontal.3', android: 'tune', web: 'tune' }, tile: TILE.slate, group: 'setup', kind: 'route', target: '/manage/booking-settings', keywords: ['settings', 'guests', 'waitlist', 'deposits', ...(isAppointmentTier ? ['payments', 'in-person payments', 'card reader', 'Tap to Pay', 'Checkout'] : [])] });
     list.push({ id: 'booking-page', label: 'Booking page', hint: 'Branding, colours, fonts & public tabs', icon: { ios: 'globe', android: 'public', web: 'public' }, tile: TILE.indigo, group: 'setup', kind: 'route', target: '/manage/booking-page', keywords: ['settings', 'branding', 'public', 'embed', 'widget'] });

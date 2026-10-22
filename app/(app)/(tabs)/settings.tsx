@@ -322,7 +322,7 @@ export default function MoreScreen() {
   }
 
   // In-person payments (Tap to Pay §6.7 / §7A.6). An admin of an Appointments-plan venue finds
-  // the switch, the card reader and Tap to Pay in Booking settings, "Taking payment in person",
+  // the switch, the card reader and Tap to Pay in Booking settings, "Payments at your venue",
   // as on the web (owner, 2026-10-15), so More shows them none of it. Everyone else keeps what
   // they had here: the card reader row once the venue has it on (staff can pair hardware but not
   // decide whether the venue takes cards), and Tap to Pay on iPhone, whose terms only an admin
@@ -333,7 +333,7 @@ export default function MoreScreen() {
   }) ? null : (
     <>
       {venue?.in_person_payments_enabled ? (
-        <Group title="In-person payments">
+        <Group title="Card payments in person">
           <CardReaderRow isFirst />
         </Group>
       ) : null}

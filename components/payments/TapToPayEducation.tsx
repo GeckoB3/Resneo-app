@@ -70,7 +70,7 @@ export function TapToPayEducationSheet({
       <View style={styles.body}>
         <View style={styles.header}>
           <Text variant="overline" tone="muted">
-            In-person payments
+            Card payments in person
           </Text>
           <Text variant="title">How to use {TAP_TO_PAY_ON_IPHONE}</Text>
         </View>

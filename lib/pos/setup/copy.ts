@@ -100,6 +100,8 @@ export const SETUP_COPY = {
   'setup.cards.links': 'Payment links only',
   'setup.cards.links.note': 'Send clients a link to pay on their own phone.',
   'setup.cards.inPerson': 'This also lets your team take card payments in the ResNeo app.',
+  // Said once choosing a phone or a reader has turned the switch on (owner, 2026-10-22).
+  'setup.cards.inPerson.turnedOn': "We've turned on Card payments in person for you, so Checkout can take cards.",
   'app.setup.cards.inPersonFailed': "We couldn't turn on card payments in person. Please try again.",
   'setup.cards.phone.title': 'Get your phone ready',
   // (app) You are on the phone already: this phone gets its own screen, and the team's phones follow.

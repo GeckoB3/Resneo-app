@@ -182,11 +182,17 @@ export const SWITCH_COPY = {
   'app.sw.gate.paused': 'ResNeo has paused it for your business: {publicReason} Contact ResNeo support if you have any questions.',
   'app.sw.gate.pausedNoReason': 'ResNeo has paused it for your business. Contact ResNeo support if you have any questions.',
 
-  // The Checkout switch in Booking settings, under "Take card payments at your venue" (the web's
-  // Settings, Booking Settings). Its title and description are the web's landing and offer lines.
-  'sw.landing.title': 'Take payments at your desk',
-  'sw.offer.body': "Check clients out in two taps, take cash or cards, sell products and send receipts. It's included in your plan.",
+  // The Checkout switch in Booking settings, "Payments at your venue", under "Card payments in
+  // person" (the web's Settings, Booking Settings; owner, 2026-10-22: each card says what it does
+  // and how the two fit together, in "Which do I need?" under them).
   'sw.bs.eyebrow': 'Checkout',
+  'sw.bs.title': 'Checkout: your till',
+  'sw.bs.body':
+    "A full point of sale on the web and in the ResNeo app. Check clients out after their appointment, sell products and gift vouchers, take cash, cards and tips, send receipts, cash up at the end of the day and see your takings. It's included in your plan.",
+  'sw.bs.cardsOff': 'To take cards at the till, also turn on Card payments in person, above.',
+  'sw.bs.which.title': 'Which do I need?',
+  'sw.bs.which.cards': 'Just want to take a card or cash for an appointment on your phone? Turn on Card payments in person.',
+  'sw.bs.which.till': 'Want a till for products, receipts and cashing up? Turn on Checkout, and Card payments in person to take cards at it.',
   'sw.bs.switch': 'Use Checkout',
   'sw.bs.off.help': 'Switching on asks you to confirm, then helps you set it up. You can switch it off whenever you like. Nothing is deleted.',
   // The web's sw.bs.on.help names Settings, Checkout; in the app that place is Checkout settings.

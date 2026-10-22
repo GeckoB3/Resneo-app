@@ -32,9 +32,10 @@ const CHOICES: { value: CardsAnswer; title: SetupCopyId; note: SetupCopyId | nul
 /**
  * W3, "How do you want to take cards?" (design 6.3, drawn as B4): only after Card was ticked. The
  * step that joins four places: Stripe (connected from here, through Stripe's own pages), the
- * in-person switch (set by choosing a phone or a reader, `PATCH /api/venue`), this phone ("Get
- * this phone ready") and the team's phones, ticked off live as each registers. A reader gets the
- * pairing steps and Checkout settings' card readers screen, where the code is typed.
+ * in-person switch (set by choosing a phone or a reader, `PATCH /api/venue`, and then said so: "We've
+ * turned on Card payments in person for you"), this phone ("Get this phone ready") and the team's
+ * phones, ticked off live as each registers. A reader gets the pairing steps and Checkout settings'
+ * card readers screen, where the code is typed.
  */
 export function CardsStep({ data }: { data: SetupData }) {
   const router = useRouter();
@@ -44,6 +45,8 @@ export function CardsStep({ data }: { data: SetupData }) {
   const { venue } = useVenueContext();
   const [cards, setCards] = useState<CardsAnswer | null>(data.status.answers.cards ?? null);
   const [inPersonError, setInPersonError] = useState<string | null>(null);
+  /** This step turned card payments in person on (choosing a phone or a reader), so it says so. */
+  const [turnedOnHere, setTurnedOnHere] = useState(false);
   const inPersonOn = (venue ?? data.venue).in_person_payments_enabled === true;
 
   const turnOnInPerson = async (): Promise<string | null> => {
@@ -53,6 +56,7 @@ export function CardsStep({ data }: { data: SetupData }) {
       // The till's card methods follow it, and so does this phone's report that it can take cards.
       void refreshBootstrap();
       setInPersonError(null);
+      setTurnedOnHere(true);
       return null;
     } catch (e) {
       const message = e instanceof ApiError && e.status !== 0 && e.status < 500 ? e.message : setupT('app.setup.cards.inPersonFailed');
@@ -109,6 +113,11 @@ export function CardsStep({ data }: { data: SetupData }) {
       {cardsNeedInPerson(cards) ? (
         <Text variant="bodySmall" tone="secondary">
           {setupT('setup.cards.inPerson')}
+        </Text>
+      ) : null}
+      {turnedOnHere ? (
+        <Text testID="cards-in-person-turned-on" variant="bodySmall" tone="secondary" accessibilityLiveRegion="polite">
+          {setupT('setup.cards.inPerson.turnedOn')}
         </Text>
       ) : null}
       {inPersonError ? (

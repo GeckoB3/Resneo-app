@@ -357,12 +357,17 @@ describe('W2, how clients pay', () => {
 });
 
 describe('W3, taking cards', () => {
+  const TURNED_ON = "We've turned on Card payments in person for you, so Checkout can take cards.";
+
   it('turns card payments in person on for a phone, lists the team, and keeps the answer', async () => {
     await show('cards');
     expect(screen.getByText('Stripe is connected. Card payments go straight to your own account.')).toBeTruthy();
+    expect(screen.queryByText(TURNED_ON)).toBeNull();
     await press('On my phone');
     expect(mockUpdateVenue).toHaveBeenCalledWith({ in_person_payments_enabled: true });
     expect(screen.getByText('This also lets your team take card payments in the ResNeo app.')).toBeTruthy();
+    // It says it turned the switch on (owner, 2026-10-22).
+    expect(screen.getByText(TURNED_ON)).toBeTruthy();
     expect(screen.getByText("Priya's Android phone is ready to take cards")).toBeTruthy();
     await press('Get this phone ready');
     expect(mockPush).toHaveBeenCalledWith('/checkout-setup/phone');
@@ -376,8 +381,30 @@ describe('W3, taking cards', () => {
     await show('cards');
     await press('A counter card reader');
     expect(mockUpdateVenue).not.toHaveBeenCalled();
+    // Already on: the step turned nothing on, so it says nothing about it.
+    expect(screen.queryByText(TURNED_ON)).toBeNull();
     await press('Add a card reader');
     expect(mockPush).toHaveBeenCalledWith('/checkout-settings/card-readers');
+  });
+
+  it('says it turned card payments in person on for a reader, and only once that worked', async () => {
+    mockUpdateVenue.mockRejectedValueOnce(new Error('network'));
+    await show('cards');
+    await press('A counter card reader');
+    expect(mockUpdateVenue).toHaveBeenCalledWith({ in_person_payments_enabled: true });
+    expect(screen.getByText("We couldn't turn on card payments in person. Please try again.")).toBeTruthy();
+    expect(screen.queryByText(TURNED_ON)).toBeNull();
+
+    await press('Both');
+    expect(screen.getByText(TURNED_ON)).toBeTruthy();
+    expect(screen.queryByText("We couldn't turn on card payments in person. Please try again.")).toBeNull();
+  });
+
+  it('says nothing about card payments in person for payment links only', async () => {
+    await show('cards');
+    await press('Payment links only');
+    expect(mockUpdateVenue).not.toHaveBeenCalled();
+    expect(screen.queryByText(TURNED_ON)).toBeNull();
   });
 
   it('marks the step skipped and moves on', async () => {

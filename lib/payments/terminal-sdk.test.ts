@@ -272,8 +272,8 @@ describe('terminalErrorMessage and a failed connection token', () => {
   afterEach(() => setConnectionTokenFailure(null));
 
   it('shows the server’s reason instead of the SDK’s sentence', () => {
-    setConnectionTokenFailure('This booking belongs to Glow Studio, so the payment goes to their account. They have not turned on in-person card payments, so you cannot take a card payment for it. They can turn it on in their Settings, under In-person payments, or take the payment themselves.');
-    expect(terminalErrorMessage(sdkTokenError, 'Could not start the card reader.')).toBe('This booking belongs to Glow Studio, so the payment goes to their account. They have not turned on in-person card payments, so you cannot take a card payment for it. They can turn it on in their Settings, under In-person payments, or take the payment themselves.');
+    setConnectionTokenFailure('This booking belongs to Glow Studio, so the payment goes to their account. They have not turned on Card payments in person, so you cannot take a card payment for it. They can turn it on in their Settings, then Booking Settings, or take the payment themselves.');
+    expect(terminalErrorMessage(sdkTokenError, 'Could not start the card reader.')).toBe('This booking belongs to Glow Studio, so the payment goes to their account. They have not turned on Card payments in person, so you cannot take a card payment for it. They can turn it on in their Settings, then Booking Settings, or take the payment themselves.');
   });
 
   it('falls back to plain words when the server gave no reason', () => {

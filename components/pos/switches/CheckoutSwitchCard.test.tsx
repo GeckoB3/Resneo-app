@@ -2,7 +2,9 @@
  * The Checkout switch in Booking settings (the web's CheckoutSwitchSection test, case for case):
  * switching on through the one confirmation (with the seller's tick) and on to the set-up wizard,
  * switching off through the sheet that says what is left, the reasons it cannot come on, ResNeo
- * managing it, and nothing at all for a venue ResNeo has not offered Checkout to (gate G0).
+ * managing it, and nothing at all for a venue ResNeo has not offered Checkout to (gate G0). The
+ * owner's words of 2026-10-22: "Checkout: your till", the line while card payments in person are
+ * off, and "Which do I need?" under the card, only where the card shows.
  *
  * jest hoists mock factories above imports, so every closed-over variable is prefixed `mock*`.
  */
@@ -26,9 +28,10 @@ jest.mock('@/components/ui/Sheet', () => {
   };
 });
 jest.mock('@/components/ui/Skeleton', () => ({ Skeleton: () => null }));
+let mockCardPaymentsOn = true;
 jest.mock('@/providers/VenueProvider', () => ({
   useVenueContext: () => ({
-    venue: { id: 'venue-1', name: 'Bloom Hair Studio', timezone: 'Europe/London' },
+    venue: { id: 'venue-1', name: 'Bloom Hair Studio', timezone: 'Europe/London', in_person_payments_enabled: mockCardPaymentsOn },
     terminology: { client: 'client', booking: 'appointment', staff: 'staff' },
   }),
 }));
@@ -48,6 +51,13 @@ jest.mock('@/lib/queries/useFeatureSwitches', () => ({
 jest.mock('@/lib/queries/usePos', () => ({ useVoucherSettings: () => ({ data: undefined }) }));
 
 const USE = 'Use Checkout';
+const TITLE = 'Checkout: your till';
+const BODY =
+  "A full point of sale on the web and in the ResNeo app. Check clients out after their appointment, sell products and gift vouchers, take cash, cards and tips, send receipts, cash up at the end of the day and see your takings. It's included in your plan.";
+const CARDS_OFF = 'To take cards at the till, also turn on Card payments in person, above.';
+const WHICH = 'Which do I need?';
+const WHICH_CARDS = 'Just want to take a card or cash for an appointment on your phone? Turn on Card payments in person.';
+const WHICH_TILL = 'Want a till for products, receipts and cashing up? Turn on Checkout, and Card payments in person to take cards at it.';
 
 async function show() {
   await render(
@@ -67,6 +77,7 @@ beforeEach(() => {
   mockApply.mockReset();
   mockToast.success.mockClear();
   mockLoading = false;
+  mockCardPaymentsOn = true;
   mockSwitches = switchesResponse();
 });
 
@@ -75,26 +86,72 @@ describe('Checkout switch in Booking settings', () => {
     mockSwitches = switchesResponse({ switches: { pos_enabled: { offered: false, can_switch_on: false, unavailable_reason: 'not_offered' } } });
     await show();
     expect(screen.queryByLabelText(USE)).toBeNull();
-    expect(screen.queryByText('Take payments at your desk')).toBeNull();
+    expect(screen.queryByText(TITLE)).toBeNull();
+    // "Which do I need?" goes with the card.
+    expect(screen.queryByText(WHICH)).toBeNull();
+    expect(screen.queryByTestId('checkout-switch-which')).toBeNull();
   });
 
   it('shows nothing while the switches cannot be read, and a placeholder while they load', async () => {
     mockSwitches = undefined;
     await show();
     expect(screen.queryByLabelText(USE)).toBeNull();
+    expect(screen.queryByText(WHICH)).toBeNull();
 
     mockLoading = true;
     await show();
     expect(screen.getByTestId('checkout-switch-loading')).toBeTruthy();
+    expect(screen.queryByText(WHICH)).toBeNull();
+  });
+
+  it('is titled "Checkout: your till", says what Checkout is, and has "Which do I need?" under it', async () => {
+    await show();
+    expect(screen.getByText(TITLE)).toBeTruthy();
+    expect(screen.getByText(BODY)).toBeTruthy();
+    // The landing's title stays the landing's.
+    expect(screen.queryByText('Take payments at your desk')).toBeNull();
+    expect(screen.getByTestId('checkout-switch-which')).toBeTruthy();
+    expect(screen.getByText(WHICH)).toBeTruthy();
+    expect(screen.getByText(WHICH_CARDS)).toBeTruthy();
+    expect(screen.getByText(WHICH_TILL)).toBeTruthy();
+    // Off: nothing to say about cards at the till yet.
+    mockCardPaymentsOn = false;
+    await show();
+    expect(screen.queryByText(CARDS_OFF)).toBeNull();
+  });
+
+  it('says to turn on card payments in person while Checkout is on and they are off', async () => {
+    mockSwitches = onResponse();
+    mockCardPaymentsOn = false;
+    await show();
+    expect(screen.getByTestId('checkout-switch-cards-off')).toBeTruthy();
+    expect(screen.getByText(CARDS_OFF)).toBeTruthy();
+    expect(screen.getByText(WHICH)).toBeTruthy();
+
+    mockCardPaymentsOn = true;
+    await show();
+    expect(screen.queryByTestId('checkout-switch-cards-off')).toBeNull();
+    expect(screen.queryByText(CARDS_OFF)).toBeNull();
+  });
+
+  it('keeps "Which do I need?" while Checkout cannot come on, and while ResNeo manages it', async () => {
+    mockSwitches = switchesResponse({ switches: { pos_enabled: { can_switch_on: false, unavailable_reason: 'billing' } } });
+    await show();
+    expect(screen.getByText(WHICH)).toBeTruthy();
+
+    mockSwitches = onResponse({ switches: { pos_enabled: { offered: false } } });
+    await show();
+    expect(screen.getByText(WHICH)).toBeTruthy();
   });
 
   it('switches Checkout on through the confirmation, with the seller tick box, then opens set-up', async () => {
     const after = onResponse();
     mockMutate.mockResolvedValue({ ok: true, switches: after });
     await show();
-    expect(screen.getByText('Checkout')).toBeTruthy();
-    expect(screen.getByText('Take payments at your desk')).toBeTruthy();
-    expect(screen.getByText(/^Check clients out in two taps, take cash or cards/)).toBeTruthy();
+    // The eyebrow, and the bold name in "Which do I need?".
+    expect(screen.getAllByText('Checkout')).toHaveLength(2);
+    expect(screen.getByText(TITLE)).toBeTruthy();
+    expect(screen.getByText(/^A full point of sale on the web and in the ResNeo app\./)).toBeTruthy();
     expect(toggle().props.value).toBe(false);
     expect(screen.getByText(/^Switching on asks you to confirm, then helps you set it up\./)).toBeTruthy();
     await act(async () => {

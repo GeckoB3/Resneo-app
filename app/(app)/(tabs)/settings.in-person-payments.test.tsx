@@ -2,11 +2,11 @@
  * More tab: what is left of in-person payments here (Tap to Pay §6.7).
  *
  * The switch, the card reader and Tap to Pay on iPhone moved to Booking settings,
- * "Taking payment in person", for admins of an Appointments-plan venue (owner,
+ * "Payments at your venue", for admins of an Appointments-plan venue (owner,
  * 2026-10-15; the switch's own tests are booking-settings.in-person-payments).
  * Team members cannot open Booking settings, so they keep the card reader row
- * here once the venue has it on; an admin sees none of it in More, and the
- * Booking settings row says payments are there.
+ * here, under "Card payments in person", once the venue has it on; an admin sees
+ * none of it in More, and the Booking settings row says payments are there.
  *
  * jest hoists mock factories above imports, so closed-over vars are `mock*`.
  */
@@ -96,7 +96,8 @@ jest.mock('@/components/bookings/ReaderSettingsSheet', () => ({ ReaderSettingsSh
 
 import MoreScreen from '@/app/(app)/(tabs)/settings';
 
-const SWITCH = 'Take card payments at your venue';
+const SWITCH = 'Take card payments in person';
+const GROUP = 'Card payments in person';
 const READER = 'Bluetooth card reader';
 
 beforeEach(() => {
@@ -124,7 +125,7 @@ describe('More tab: in-person payments', () => {
     await render(<MoreScreen />);
     expect(screen.queryByText(READER)).toBeNull();
     expect(screen.queryByText('Tap to Pay settings')).toBeNull();
-    expect(screen.queryByText('In-person payments')).toBeNull();
+    expect(screen.queryByText(GROUP)).toBeNull();
     expect(screen.getByText('Booking types, guest accounts and payments')).toBeTruthy();
   });
 
@@ -133,6 +134,8 @@ describe('More tab: in-person payments', () => {
     mockEnabled = true;
     mockTapToPayApplies = true;
     await render(<MoreScreen />);
+    expect(screen.getByText(GROUP)).toBeTruthy();
+    expect(screen.queryByText('In-person payments')).toBeNull();
     expect(screen.getByText(READER)).toBeTruthy();
     expect(screen.getByText('Tap to Pay on iPhone')).toBeTruthy();
     expect(screen.getByText('Tap to Pay settings')).toBeTruthy();
@@ -143,7 +146,7 @@ describe('More tab: in-person payments', () => {
     mockEnabled = false;
     await render(<MoreScreen />);
     expect(screen.queryByText(READER)).toBeNull();
-    expect(screen.queryByText('In-person payments')).toBeNull();
+    expect(screen.queryByText(GROUP)).toBeNull();
   });
 
   it("keeps the card reader in More for an admin whose plan has no Booking settings group", async () => {

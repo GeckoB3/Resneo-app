@@ -125,9 +125,9 @@ describe('ensureTerminalLocationId', () => {
 
 describe('the reason a token fetch failed', () => {
   it('keeps the server’s sentence, because the SDK hides it behind its own', async () => {
-    mockApiFetch.mockRejectedValueOnce(new Error('This booking belongs to Glow Studio, so the payment goes to their account. They have not turned on in-person card payments, so you cannot take a card payment for it. They can turn it on in their Settings, under In-person payments, or take the payment themselves.'));
+    mockApiFetch.mockRejectedValueOnce(new Error('This booking belongs to Glow Studio, so the payment goes to their account. They have not turned on Card payments in person, so you cannot take a card payment for it. They can turn it on in their Settings, then Booking Settings, or take the payment themselves.'));
     await expect(fetchConnectionToken({ accessToken: 'tok', ownerVenueId: 'venue-2' })).rejects.toThrow();
-    expect(getConnectionTokenFailure()).toBe('This booking belongs to Glow Studio, so the payment goes to their account. They have not turned on in-person card payments, so you cannot take a card payment for it. They can turn it on in their Settings, under In-person payments, or take the payment themselves.');
+    expect(getConnectionTokenFailure()).toBe('This booking belongs to Glow Studio, so the payment goes to their account. They have not turned on Card payments in person, so you cannot take a card payment for it. They can turn it on in their Settings, then Booking Settings, or take the payment themselves.');
   });
 
   it('forgets it once a fetch succeeds', async () => {

@@ -63,6 +63,8 @@ describe('the set-up copy deck', () => {
     expect(SETUP_COPY['setup.card.title']).toBe('Finish setting up Checkout');
     expect(SETUP_COPY['setup.saveLater']).toBe('Save and finish later');
     expect(SETUP_COPY['setup.skip']).toBe('Skip for now');
+    // The owner's line of 2026-10-22, when choosing a phone or a reader turns the switch on.
+    expect(SETUP_COPY['setup.cards.inPerson.turnedOn']).toBe("We've turned on Card payments in person for you, so Checkout can take cards.");
   });
 
   it('says what OB5 asks for under the profile fields', () => {

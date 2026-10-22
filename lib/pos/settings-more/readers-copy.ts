@@ -7,8 +7,9 @@ import { fillText, type CopyVars } from './copy';
 export const READERS_COPY = {
   'set.readers.title': 'Card readers',
   'set.readers.needStripe': 'Connect Stripe in Settings, Payments before adding a card reader.',
+  // (app) the web says "Settings, then Booking Settings"; in the app, Booking settings is under More.
   'set.readers.inPersonOff':
-    "Card payments in person are switched off, so your readers can't take payments yet. Turn them on in Settings, Booking Settings, Taking payment in person.",
+    "Card payments in person are switched off, so your readers can't take payments yet. An admin can turn them on in More, then Booking settings.",
   'set.readers.type.s700': 'Stripe Reader S700',
   'set.readers.type.s710': 'Stripe Reader S710 (4G)',
   'set.readers.type.wisepos': 'BBPOS WisePOS E',

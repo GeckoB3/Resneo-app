@@ -41,6 +41,22 @@ describe('the switch copy deck', () => {
     expect(SWITCH_COPY['sw.landing.cost.included'].startsWith('Included in your plan.')).toBe(true);
   });
 
+  it("keeps the owner's Booking settings words (2026-10-22) word for word with the web", () => {
+    expect(SWITCH_COPY['sw.bs.title']).toBe('Checkout: your till');
+    expect(SWITCH_COPY['sw.bs.body']).toBe(
+      "A full point of sale on the web and in the ResNeo app. Check clients out after their appointment, sell products and gift vouchers, take cash, cards and tips, send receipts, cash up at the end of the day and see your takings. It's included in your plan.",
+    );
+    expect(SWITCH_COPY['sw.bs.cardsOff']).toBe('To take cards at the till, also turn on Card payments in person, above.');
+    expect(SWITCH_COPY['sw.bs.which.title']).toBe('Which do I need?');
+    expect(SWITCH_COPY['sw.bs.which.cards']).toBe(
+      'Just want to take a card or cash for an appointment on your phone? Turn on Card payments in person.',
+    );
+    expect(SWITCH_COPY['sw.bs.which.till']).toBe(
+      'Want a till for products, receipts and cashing up? Turn on Checkout, and Card payments in person to take cards at it.',
+    );
+    expect(SWITCH_COPY['sw.bs.switch']).toBe('Use Checkout');
+  });
+
   it('has no email copy (SW9: the history is the record)', () => {
     expect(Object.keys(SWITCH_COPY).filter((id) => id.includes('email'))).toEqual([]);
   });
