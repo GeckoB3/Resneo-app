@@ -15,7 +15,7 @@ type MoreHeroProps = {
   name: string;
   /** Venue name (or fallback email) shown under the staff name. */
   subtitle: string;
-  /** "Admin" / "Staff" — rendered as a glassy pill. Hidden when empty. */
+  /** The role: Owner, Admin, Front desk or Staff, rendered as a glassy pill. Hidden when empty. */
   roleLabel: string;
   /** Time-of-day greeting eyebrow, e.g. "Good morning". */
   greeting: string;

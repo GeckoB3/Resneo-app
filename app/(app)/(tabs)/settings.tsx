@@ -57,7 +57,7 @@ import { useStaffMe } from "@/lib/queries/useStaffMe";
 import { useMeSites } from "@/lib/queries/useMeSites";
 import { showsSitePicker } from "@/lib/sites/sites";
 import { useWebDashboardLink } from "@/lib/sites/useWebDashboardLink";
-import { hasBillingPayoutsAdmins } from "@/lib/roles/roles";
+import { hasBillingPayoutsAdmins, roleLabelOf } from "@/lib/roles/roles";
 import { useAppLock } from "@/providers/AppLockProvider";
 import { switchAppMode } from "@/lib/mode/app-mode-store";
 import { useAuth } from "@/providers/AuthProvider";
@@ -66,7 +66,6 @@ import { useToast } from "@/providers/ToastProvider";
 import { useVenueContext } from "@/providers/VenueProvider";
 import { radius, spacing } from "@/theme/index";
 import { useTheme } from "@/theme/useTheme";
-import type { StaffRole } from "@/types/staff";
 import type { BookingModel } from "@/types/venue";
 
 /**
@@ -81,10 +80,6 @@ const WARN_PLAN_STATUSES = new Set(["past_due", "cancelling", "cancelled"]);
 function webDashboardUrl(path = "/dashboard"): string {
   const base = getWebUrl();
   return base ? `${base}${path}` : `https://reserve-ni.vercel.app${path}`;
-}
-
-function formatStaffRole(role: StaffRole): string {
-  return role === "admin" ? "Admin" : "Staff";
 }
 
 /** Time-of-day eyebrow for the hero. */
@@ -367,7 +362,7 @@ export default function MoreScreen() {
       <MoreHero
         name={staff?.name ?? "Staff member"}
         subtitle={venueName ?? staff?.email ?? ""}
-        roleLabel={staff ? formatStaffRole(staff.role) : ""}
+        roleLabel={staff ? roleLabelOf(staff) : ""}
         greeting={greetingFor()}
         unreadCount={unreadCount}
         onPressProfile={() => router.push("/manage/account" as Href)}
