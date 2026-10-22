@@ -112,7 +112,8 @@ import {
 import { BookingLocationCallout } from '@/components/bookings/BookingLocationCallout';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
-import { useClientContactHidden } from '@/providers/ViewerAccessProvider';
+import { useClientContactHidden, useDiaryScope } from '@/providers/ViewerAccessProvider';
+import { restrictedVisitLabels, ROLES_COPY } from '@/lib/roles/roles';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { BookingDetail, BookingStatus } from '@/types/booking-detail';
@@ -348,36 +349,51 @@ function GuestHistoryBody({
           No other bookings for this guest.
         </Text>
       ) : (
-        history.map((row) => (
-          <Pressable
-            key={row.id}
-            accessibilityRole="button"
-            onPress={() => router.push(`/booking/${row.id}` as Href)}
-            style={[styles.historyRow, { borderBottomColor: colors.border }]}>
-            <View style={styles.historyText}>
-              <Text variant="bodySmall" numberOfLines={1}>
-                {row.detail_label || row.kind_label}
-              </Text>
-              <Text variant="caption" tone="muted">
-                {row.booking_date}
-                {row.booking_time ? ` · ${row.booking_time.slice(0, 5)}` : ''}
-                {bookingSourceLabel(row.source) ? ` · ${bookingSourceLabel(row.source)}` : ''}
-              </Text>
+        history.map((row) =>
+          row.restricted ? (
+            // "Hidden" (roles plan §5.11, UR20): someone else's visit, as its date, the service
+            // and who it was with. It does not open, and there is nothing of it to rebook.
+            <View key={row.id} style={[styles.historyRow, { borderBottomColor: colors.border }]}>
+              <View style={styles.historyText}>
+                <Text variant="bodySmall" numberOfLines={1}>
+                  {restrictedVisitLabels(row).service}
+                </Text>
+                <Text variant="caption" tone="muted">
+                  {[row.booking_date, restrictedVisitLabels(row).withWhom].filter(Boolean).join(' · ')}
+                </Text>
+              </View>
             </View>
-            <View style={styles.historyTrailing}>
-              <StatusPill
-                status={row.status}
-                isTableReservation={row.booking_model === 'table_reservation'}
-              />
-              <Button
-                label="Rebook"
-                variant="ghost"
-                size="sm"
-                onPress={() => handleRebookRow(row)}
-              />
-            </View>
-          </Pressable>
-        ))
+          ) : (
+            <Pressable
+              key={row.id}
+              accessibilityRole="button"
+              onPress={() => router.push(`/booking/${row.id}` as Href)}
+              style={[styles.historyRow, { borderBottomColor: colors.border }]}>
+              <View style={styles.historyText}>
+                <Text variant="bodySmall" numberOfLines={1}>
+                  {row.detail_label || row.kind_label}
+                </Text>
+                <Text variant="caption" tone="muted">
+                  {row.booking_date}
+                  {row.booking_time ? ` · ${row.booking_time.slice(0, 5)}` : ''}
+                  {bookingSourceLabel(row.source) ? ` · ${bookingSourceLabel(row.source)}` : ''}
+                </Text>
+              </View>
+              <View style={styles.historyTrailing}>
+                <StatusPill
+                  status={row.status}
+                  isTableReservation={row.booking_model === 'table_reservation'}
+                />
+                <Button
+                  label="Rebook"
+                  variant="ghost"
+                  size="sm"
+                  onPress={() => handleRebookRow(row)}
+                />
+              </View>
+            </Pressable>
+          ),
+        )
       )}
       <Button
         label={hiddenCount > 0 ? `View all in Contacts (${otherVisits.length})` : 'View contact'}
@@ -560,6 +576,9 @@ export function BookingDetailContent({
   const contactHidden = useClientContactHidden(booking.contacts_hidden);
   // What a linked venue's booking lets us do; everything, for our own.
   const policy = linkedDetailPolicy(linked?.act);
+  // Other people's diaries (roles plan §5.11, §7.3): the open scope for everyone on "Can book and
+  // change", which allows everything, so nothing below changes for them.
+  const diary = useDiaryScope();
   // A rebook of a partner's guest opens the form over the partner's venue.
   const linkedFormParams = linked
     ? { ownerVenueId: linked.venueId, ownerVenueName: linked.venueName }
@@ -678,7 +697,6 @@ export function BookingDetailContent({
     isAppointment: isAppointmentVenue,
     isTableReservation: isTable,
   });
-  const canReschedule = !TERMINAL_STATUSES.has(booking.status) && policy.canEdit;
 
   // Booked length — feeds the duration stepper on the reschedule sheet AND the
   // seed for the Modify sheet. Reads BOTH end columns: a guest-created
@@ -742,11 +760,27 @@ export function BookingDetailContent({
     lastVisitDate: booking.guest?.last_visit_date,
   });
 
-  const actions = bookingDetailActions(headerStatus as BookingStatus, isTable).filter(
-    (a) =>
-      (!visit && !visitPending) ||
-      (!isServiceLevelStatus(a.target) && !isServiceLevelStatus(headerStatus)),
-  );
+  /**
+   * View only and Hidden (roles plan §5.11): an appointment on someone else's calendar is look
+   * only. A visit's header actions change every service in it, so one service on someone else's
+   * calendar locks those too; each service's own Start and Complete follow its calendar (see
+   * `VisitSummary`'s `canChangeRow`). Messaging, the client's notes and Records, and Checkout (the
+   * till follows till rights) are not covered and stay.
+   */
+  const diaryLocked =
+    diary.restricted &&
+    (!diary.allows(booking) || (Boolean(visit) && (groupVisitQuery.data ?? []).some((row) => !diary.allows(row))));
+  /** Status, attendance, Modify and Reschedule, resend, deposit and payment: the link's grant and the diary both. */
+  const canChange = policy.canEdit && !diaryLocked;
+  const canReschedule = !TERMINAL_STATUSES.has(booking.status) && canChange;
+
+  const actions = diaryLocked
+    ? []
+    : bookingDetailActions(headerStatus as BookingStatus, isTable).filter(
+        (a) =>
+          (!visit && !visitPending) ||
+          (!isServiceLevelStatus(a.target) && !isServiceLevelStatus(headerStatus)),
+      );
 
   // Booked length as the screen should read it: the visit's wall-clock span when
   // there is one, otherwise this row's own. Note this is the SPAN, gaps included
@@ -822,7 +856,7 @@ export function BookingDetailContent({
     !isTable &&
     isAppointmentBooking &&
     ['Pending', 'Booked', 'Confirmed', 'Seated'].includes(booking.status) &&
-    policy.canEdit;
+    canChange;
   const complianceEnabled =
     featureFlags?.resolved?.compliance_records_enabled === true &&
     !!booking.guest &&
@@ -875,6 +909,8 @@ export function BookingDetailContent({
   const destructiveActions = actions.filter(
     (a) => a.kind === 'destructive' && (policy.canCancel || a.target !== 'Cancelled'),
   );
+  /** Cancelling and permanently deleting: the link's full grant, and the diary. */
+  const canCancelBooking = policy.canCancel && !diaryLocked;
   const timelineEvents = bookingTimelineEventsForDisplay(booking.events ?? []);
 
   // Hidden client contacts (roles plan §5.6): the server sends them as null, and
@@ -884,7 +920,7 @@ export function BookingDetailContent({
   const showHiddenContact = contactHidden && Boolean(booking.guest || booking.guest_id);
   // The server sends the confirmation to the address it holds, so someone who
   // cannot see it can still resend it (web parity: the button is always there).
-  const canResend = (!!guestEmail || showHiddenContact) && policy.canEdit;
+  const canResend = (!!guestEmail || showHiddenContact) && canChange;
   const hasDeposit = booking.deposit_amount_pence != null || !!shownDepositStatus;
   // Card-hold state (§9.1): when non-null the legacy deposit UI is replaced by
   // the card-aware pill/lines/actions everywhere in this component.
@@ -906,7 +942,7 @@ export function BookingDetailContent({
   // Money actions follow the edit grant on a linked booking (web: the deposit
   // and card actions are withheld for a view-only link, the figures stay).
   const canTakePayment =
-    policy.canEdit &&
+    canChange &&
     canTakeInPersonPayment({
       inPersonPaymentsEnabled: venue?.in_person_payments_enabled === true,
       isAppointmentVenue,
@@ -961,7 +997,8 @@ export function BookingDetailContent({
     linked: Boolean(linked),
     status: booking.status,
   });
-  const showPaymentToolbarAction = posCheckout || canTakePayment || isPaidInPerson;
+  // "Paid" opens the payment sheet, which charges through `/charge`: not on a look-only booking.
+  const showPaymentToolbarAction = posCheckout || canTakePayment || (isPaidInPerson && !diaryLocked);
 
   const paymentSheetTarget = (initialMode?: 'menu' | 'refund'): TakePaymentTarget => ({
     id: booking.id,
@@ -992,7 +1029,7 @@ export function BookingDetailContent({
    * payment route when in-person payments are off (the kill switch is total).
    */
   const showInPersonRefund =
-    policy.canEdit &&
+    canChange &&
     canRefundInPerson({
       inPersonPaymentsEnabled: venue?.in_person_payments_enabled,
       isAppointmentVenue,
@@ -1016,7 +1053,7 @@ export function BookingDetailContent({
   // payment path, not this one.
   const isCancelled = booking.status === 'Cancelled';
   const showDepositActions =
-    policy.canEdit &&
+    canChange &&
     (cardHoldState
       ? cardHoldHasActions
       : !isCancelled &&
@@ -1035,8 +1072,10 @@ export function BookingDetailContent({
   // arrival are no longer actionable — the lifecycle has moved past them. A
   // `Confirmed` booking also drops the toggle: the "Undo confirm" status revert
   // below already cancels the confirmation, so the duplicate "Unconfirm" goes.
-  const showAttendanceConfirmToggle = canShowStaffAttendanceToggle(booking, revertAction?.target);
+  const showAttendanceConfirmToggle =
+    !diaryLocked && canShowStaffAttendanceToggle(booking, revertAction?.target);
   const showArrivedToggle =
+    !diaryLocked &&
     !isTable &&
     booking.source !== 'walk-in' &&
     booking.status !== 'Seated' &&
@@ -1201,7 +1240,25 @@ export function BookingDetailContent({
           ]}>
           <Badge label="Linked" tone="warning" />
           <Text variant="bodySmall" tone="secondary" style={styles.linkedNoteText}>
-            {policy.banner ?? `A booking at ${linked.venueName}.`}
+            {diaryLocked && !policy.viewOnly
+              ? ROLES_COPY['diary.booking']
+              : (policy.banner ?? `A booking at ${linked.venueName}.`)}
+          </Text>
+        </View>
+      ) : diaryLocked ? (
+        // View only and Hidden (§5.11): why the actions are missing.
+        <View
+          style={[
+            styles.linkedNote,
+            { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
+          ]}>
+          <SymbolView
+            name={{ ios: 'lock.fill', android: 'lock', web: 'lock' }}
+            tintColor={colors.textMuted}
+            size={14}
+          />
+          <Text variant="bodySmall" tone="secondary" style={styles.linkedNoteText}>
+            {ROLES_COPY['diary.booking']}
           </Text>
         </View>
       ) : null}
@@ -1263,6 +1320,8 @@ export function BookingDetailContent({
               // grant as the header's actions — for a partner's visit too, as its
               // bars on the diary already allow (see `canChangeVisitServiceStatus`).
               canChangeServiceStatus={canChangeVisitServiceStatus(policy, isTable)}
+              // View only and Hidden: each service's Start and Complete follow its own calendar.
+              canChangeRow={diary.restricted ? diary.allows : undefined}
               detailHydrating={detailPending}
             />
 
@@ -1736,6 +1795,9 @@ export function BookingDetailContent({
           isTable={isTable}
           readOnly={policy.viewOnly}
           customerReadOnly={policy.linked}
+          // The booking's own notes save through the booking (refused on a look-only one); the
+          // client's notes and tags do not.
+          bookingReadOnly={diaryLocked}
         />
       </CollapsibleCard>
 
@@ -1967,7 +2029,7 @@ export function BookingDetailContent({
                 {formatTimelineEventTime(booking.cancellation_deadline)}
               </Text>
             ) : null}
-            {booking.deposit_status === 'Paid' && policy.canEdit ? (
+            {booking.deposit_status === 'Paid' && canChange ? (
               <Button
                 label="Refund deposit"
                 variant="danger"
@@ -1989,7 +2051,7 @@ export function BookingDetailContent({
       {/* Permanent delete — cancelled bookings only (web "Remove from diary");
           a partner's needs the full grant, as the route requires. Never offered
           for a booking holding payment records (`can_delete: false`). */}
-      {isCancelled && policy.canCancel && booking.can_delete !== false ? (
+      {isCancelled && canCancelBooking && booking.can_delete !== false ? (
         <Card>
           <View style={styles.cardStack}>
             <Text variant="overline" tone="danger">

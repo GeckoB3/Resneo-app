@@ -178,7 +178,8 @@ describe('the A2 switches on a Front desk or Staff row', () => {
     expect(screen.getByText("Other people's diaries")).toBeTruthy();
     expect(screen.getByText('Can book and change')).toBeTruthy();
     expect(screen.getByText('View only')).toBeTruthy();
-    expect(screen.queryByText('Hidden')).toBeNull();
+    // A2b: the third choice is offered to everyone now.
+    expect(screen.getByText('Hidden')).toBeTruthy();
     expect(screen.getByLabelText('Can export client data').props.value).toBe(true);
     expect(
       screen.getByText(
@@ -211,23 +212,45 @@ describe('the A2 switches on a Front desk or Staff row', () => {
     expect(screen.getByLabelText('Can export client data').props.value).toBe(false);
   });
 
+  const NO_CALENDAR_NOTE =
+    'Fay has no calendar. With View only they can look but not book. With Hidden they see no bookings.';
+
   it('explains View only for someone with no calendar', async () => {
     await open({ ...desk, linked_calendar_ids: [], permissions: { role_key: 'front_desk', other_diaries: 'view' } }, ADMIN_VIEWER);
     await press('Role');
-    expect(screen.getByText('Fay has no calendar. With View only they can look but not book.')).toBeTruthy();
+    expect(screen.getByText(NO_CALENDAR_NOTE)).toBeTruthy();
+  });
+
+  it('explains Hidden for someone with no calendar, with the same note', async () => {
+    await open({ ...desk, linked_calendar_ids: [], permissions: { role_key: 'front_desk', other_diaries: 'hidden' } }, ADMIN_VIEWER);
+    await press('Role');
+    expect(screen.getByText(NO_CALENDAR_NOTE)).toBeTruthy();
   });
 
   it('does not explain it for someone with a calendar', async () => {
     await open({ ...desk, permissions: { role_key: 'front_desk', other_diaries: 'view' } }, ADMIN_VIEWER);
     await press('Role');
-    expect(screen.queryByText('Fay has no calendar. With View only they can look but not book.')).toBeNull();
+    expect(screen.queryByText(NO_CALENDAR_NOTE)).toBeNull();
   });
 
-  it('shows Hidden only for someone already set to it on the web, and lets you move them off it', async () => {
+  it('does not explain it on Can book and change, even with no calendar', async () => {
+    await open({ ...desk, linked_calendar_ids: [] }, ADMIN_VIEWER);
+    await press('Role');
+    expect(screen.queryByText(NO_CALENDAR_NOTE)).toBeNull();
+  });
+
+  it('saves Hidden as soon as it is chosen', async () => {
+    mockPatch.mockResolvedValue({ staff: desk });
+    await open(desk, ADMIN_VIEWER);
+    await press('Role');
+    await press('Hidden');
+    expect(mockPatch).toHaveBeenLastCalledWith({ id: 'f1', body: { permissions: { other_diaries: 'hidden' } } });
+  });
+
+  it('reads Hidden as chosen for someone set to it, and lets you move them off it', async () => {
     mockPatch.mockResolvedValue({ staff: desk });
     await open({ ...desk, permissions: { role_key: 'front_desk', other_diaries: 'hidden' } }, ADMIN_VIEWER);
     await press('Role');
-    expect(screen.getByText('Hidden')).toBeTruthy();
     await press('Hidden');
     expect(mockPatch).not.toHaveBeenCalled();
     await press('Can book and change');

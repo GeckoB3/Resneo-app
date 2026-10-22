@@ -83,6 +83,56 @@ describe('AllCalendarsDayGrid — linked columns', () => {
     expect(onEmptyPress).toHaveBeenCalledWith('own-2', expect.any(String));
   });
 
+  /**
+   * Roles plan §5.11: for a View only or Hidden person, someone else's column is look only. Its
+   * bars open but carry no quick actions (or drag), and an empty-slot tap is still reported so
+   * the screen can say why nothing opens.
+   */
+  it("draws someone else's column look only, and keeps the person's own column working", async () => {
+    const onEmptyPress = jest.fn();
+    const onBlockPress = jest.fn();
+    const bar = (id: string, guestName: string) => ({
+      id,
+      guestName,
+      serviceName: 'Cut',
+      startTime: '10:00',
+      endTime: '11:00',
+      status: 'Booked',
+    });
+    await render(
+      <AllCalendarsDayGrid
+        embedded
+        calendars={[
+          column({ calendarId: 'mine', calendarName: 'Sam', bookings: [bar('b-mine', 'Ada Own')] }),
+          column({
+            calendarId: 'theirs',
+            calendarName: 'Marcus',
+            bookings: [bar('b-theirs', 'Bea Other')],
+            readOnly: true,
+            acceptsDrops: false,
+          }),
+        ]}
+        nowMinutes={null}
+        onBlockPress={onBlockPress}
+        onEmptyPress={onEmptyPress}
+        onStatusChange={jest.fn()}
+        onArrivalToggle={jest.fn()}
+        onDragReschedule={jest.fn()}
+        onDragResize={jest.fn()}
+      />,
+    );
+    // Both bars are drawn; only the own column's carries the grip and the quick actions.
+    expect(screen.getByText('Ada Own')).toBeTruthy();
+    expect(screen.getByText('Bea Other')).toBeTruthy();
+    expect(screen.getAllByLabelText('Touch and hold the bottom edge to change duration')).toHaveLength(1);
+    expect(screen.getAllByLabelText('Start')).toHaveLength(1);
+    // A tap on its empty time still reaches the screen.
+    fireEvent.press(screen.getByLabelText('Tap an empty slot to add a booking for Marcus'), {
+      nativeEvent: { locationY: 20 },
+    });
+    expect(onEmptyPress).toHaveBeenCalledWith('theirs', expect.any(String));
+  });
+
   it("draws a resolved linked column's closures by cause, and an older feed's as the linked venue's", async () => {
     // Both partner venues are shut after 17:00; the grid runs to 18:00.
     const shutAt17 = { kind: 'open' as const, periods: [{ start: 9 * 60, end: 17 * 60 }] };

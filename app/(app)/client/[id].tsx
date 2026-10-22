@@ -29,6 +29,7 @@ import { StoredValueSection } from '@/components/clients/StoredValueSection';
 import { ClientSavedCardsSection } from '@/components/pos/SavedCards';
 import { GuestMessageSheet, type GuestMessageTarget } from '@/components/messaging/GuestMessageSheet';
 import { HiddenContactValue } from '@/components/roles/HiddenContact';
+import { restrictedVisitLabels } from '@/lib/roles/roles';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge, StatusPill } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -125,11 +126,51 @@ function HistoryRow({
   isLast,
 }: {
   booking: GuestBookingHistoryRow;
-  onPress: () => void;
+  /** Absent for a restricted visit, which does not open. */
+  onPress?: () => void;
   isFirst: boolean;
   isLast: boolean;
 }) {
   const { colors } = useTheme();
+  const rowChrome = [
+    styles.historyRow,
+    {
+      backgroundColor: colors.surfaceRaised,
+      borderColor: colors.border,
+      borderLeftWidth: StyleSheet.hairlineWidth,
+      borderRightWidth: StyleSheet.hairlineWidth,
+      // Hairline on every row: a divider between rows and the card's bottom edge.
+      borderBottomWidth: StyleSheet.hairlineWidth,
+    },
+    isFirst ? styles.historyRowFirst : null,
+    isLast ? styles.historyRowLast : null,
+  ];
+  // "Hidden" (roles plan §5.11, UR20): someone else's visit shows its date, the service and who
+  // it was with, and does not open (the booking is not this person's to see).
+  if (booking.restricted) {
+    const visit = restrictedVisitLabels(booking);
+    const date = booking.booking_date ? formatBookingDate(booking.booking_date) : '';
+    return (
+      <View
+        accessible
+        accessibilityLabel={[date, visit.service, visit.withWhom].filter(Boolean).join(', ')}
+        style={rowChrome}>
+        <View style={styles.historyTime}>
+          <Text variant="label">{date}</Text>
+        </View>
+        <View style={styles.historyMain}>
+          <Text variant="bodyMedium" numberOfLines={1}>
+            {visit.service}
+          </Text>
+          {visit.withWhom ? (
+            <Text variant="caption" tone="muted" numberOfLines={1}>
+              {visit.withWhom}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+    );
+  }
   const party =
     typeof booking.party_size === 'number' && booking.party_size > 0
       ? ` · ${booking.party_size} guest${booking.party_size === 1 ? '' : 's'}`
@@ -141,20 +182,7 @@ function HistoryRow({
     <Pressable
       accessibilityRole="button"
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.historyRow,
-        {
-          backgroundColor: colors.surfaceRaised,
-          borderColor: colors.border,
-          borderLeftWidth: StyleSheet.hairlineWidth,
-          borderRightWidth: StyleSheet.hairlineWidth,
-          // Hairline on every row: a divider between rows and the card's bottom edge.
-          borderBottomWidth: StyleSheet.hairlineWidth,
-        },
-        isFirst ? styles.historyRowFirst : null,
-        isLast ? styles.historyRowLast : null,
-        pressed ? styles.pressed : null,
-      ]}>
+      style={({ pressed }) => [...rowChrome, pressed ? styles.pressed : null]}>
       <View style={styles.historyTime}>
         <Text variant="label">{formatBookingDate(booking.booking_date)}</Text>
         {booking.booking_time ? (
@@ -433,7 +461,7 @@ export default function ClientDetailScreen() {
       booking={item}
       isFirst={index === 0}
       isLast={index === section.data.length - 1}
-      onPress={() => handleBookingPress(item.id)}
+      onPress={item.restricted ? undefined : () => handleBookingPress(item.id)}
     />
   );
   const renderHistorySectionHeader = ({ section }: { section: HistorySection }) => (

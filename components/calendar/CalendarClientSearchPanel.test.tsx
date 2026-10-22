@@ -179,6 +179,28 @@ describe('CalendarClientSearchPanel', () => {
     expect(screen.getByLabelText('Search client')).toBeTruthy();
   });
 
+  /** Roles plan A2b (UR20): a Hidden person sees someone else's visit, and cannot pick it. */
+  it("shows a restricted visit as when, what and who with, and does not hand it back", async () => {
+    mockGuests = { data: { guests: [ADA] }, isFetching: false };
+    const restricted = {
+      ...historyRow('b-theirs', '2020-02-05', 'Completed'),
+      restricted: true,
+      booking_time: '',
+      service_name: 'Colour',
+      practitioner_name: 'Marcus',
+    };
+    mockDetail = { data: { booking_history: [restricted] }, isLoading: false };
+    const { props } = await renderPanel();
+    await typeAndSettle('ada');
+    await fireEvent.press(screen.getByText('Ada Lovelace'));
+
+    expect(screen.getByText('Wed 5 Feb 2020')).toBeTruthy();
+    expect(screen.getByText('Colour · With Marcus')).toBeTruthy();
+    expect(screen.queryByText('Completed')).toBeNull();
+    await fireEvent.press(screen.getByText('Colour · With Marcus'));
+    expect(props.onPickBooking).not.toHaveBeenCalled();
+  });
+
   it('says None under an empty group, and Loading while the bookings load', async () => {
     mockGuests = { data: { guests: [ADA] }, isFetching: false };
     mockDetail = { isLoading: true };

@@ -50,6 +50,7 @@ import { csvCellQuoted } from '@/lib/csv/csv-cell';
 import { formatPhoneForDisplay } from '@/lib/phone/e164';
 import { buildAndShareCsv } from '@/lib/reports/csv-export';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
+import { fetchGuestDetail } from '@/lib/queries/useGuestDetail';
 import { useGuestCustomFields, useGuests } from '@/lib/queries/useGuests';
 import { useGuestTags } from '@/lib/queries/useGuestTags';
 import { queryKeys } from '@/lib/queries/keys';
@@ -462,12 +463,7 @@ export default function ClientsScreen() {
       if (!accessToken) return;
       void queryClient.prefetchQuery({
         queryKey: queryKeys.guests.detail(accessToken, guestId, DETAIL_BOOKING_HISTORY_LIMIT),
-        queryFn: () => {
-          const params = new URLSearchParams({
-            booking_history_limit: String(DETAIL_BOOKING_HISTORY_LIMIT),
-          });
-          return apiFetch(`/api/venue/guests/${guestId}?${params.toString()}`, { accessToken });
-        },
+        queryFn: () => fetchGuestDetail(guestId, DETAIL_BOOKING_HISTORY_LIMIT, accessToken),
         staleTime: 30_000,
       });
     },

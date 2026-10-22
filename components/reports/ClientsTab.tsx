@@ -432,18 +432,22 @@ function GuestDetail({
                   {row.practitioner_name ? ` · ${row.practitioner_name}` : ''}
                 </Text>
               </View>
-              <Text
-                variant="caption"
-                style={{
-                  color:
-                    row.status === 'Completed'
-                      ? colors.success
-                      : row.status === 'Cancelled'
-                        ? colors.danger
-                        : colors.textSecondary,
-                }}>
-                {row.status}
-              </Text>
+              {/* "Hidden" (roles plan §5.11, UR20): someone else's visit is its date, the
+                  service and who it was with, nothing more. */}
+              {row.restricted ? null : (
+                <Text
+                  variant="caption"
+                  style={{
+                    color:
+                      row.status === 'Completed'
+                        ? colors.success
+                        : row.status === 'Cancelled'
+                          ? colors.danger
+                          : colors.textSecondary,
+                  }}>
+                  {row.status}
+                </Text>
+              )}
             </View>
           ))}
         </View>

@@ -71,6 +71,11 @@ type VisitSummaryProps = {
   badges: VisitSummaryBadge[];
   /** Offer Start / Complete on each row of a multi-service visit. */
   canChangeServiceStatus: boolean;
+  /**
+   * Narrows that per row: a View only or Hidden person (roles plan §5.11) starts and completes only
+   * the services on their own calendar. Omitted, every row follows `canChangeServiceStatus`.
+   */
+  canChangeRow?: (row: GroupVisitBookingRow) => boolean;
   /** The money picture is still arriving (summary placeholder shown). */
   detailHydrating: boolean;
 };
@@ -192,6 +197,7 @@ export function VisitSummary({
   guestHistory,
   badges,
   canChangeServiceStatus,
+  canChangeRow,
   detailHydrating,
 }: VisitSummaryProps) {
   const { colors } = useTheme();
@@ -382,7 +388,7 @@ export function VisitSummary({
                     )}
                   </View>
                 </View>
-                {isServiceVisit && canChangeServiceStatus ? (
+                {isServiceVisit && canChangeServiceStatus && (canChangeRow?.(row) ?? true) ? (
                   <ServiceRowActions row={row} disabledAll={false} />
                 ) : null}
               </View>

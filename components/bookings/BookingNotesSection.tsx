@@ -185,6 +185,7 @@ export function BookingNotesSection({
   isTable,
   readOnly = false,
   customerReadOnly = false,
+  bookingReadOnly = false,
 }: {
   booking: BookingDetail;
   isTable: boolean;
@@ -201,8 +202,15 @@ export function BookingNotesSection({
    * the link covers.
    */
   customerReadOnly?: boolean;
+  /**
+   * The booking's own notes read only, the client's still edit: an appointment on someone else's
+   * calendar seen by a View only or Hidden person (roles plan §5.11). They save through the booking
+   * route, which refuses that person; the client's go through the guest route, which does not.
+   */
+  bookingReadOnly?: boolean;
 }) {
   const { colors } = useTheme();
+  const bookingFieldsReadOnly = readOnly || bookingReadOnly;
   const updateBooking = useUpdateBookingDetails(booking.id);
   const guestId = booking.guest?.id ?? null;
   const updateGuest = useUpdateGuest(guestId ?? '');
@@ -233,7 +241,7 @@ export function BookingNotesSection({
           value={booking.dietary_notes}
           placeholder="e.g. Gluten free, nut allergy"
           multiline
-          disabled={readOnly}
+          disabled={bookingFieldsReadOnly}
           onSave={saveBookingField('dietary_notes')}
         />
       ) : null}
@@ -248,7 +256,7 @@ export function BookingNotesSection({
           value={booking.dietary_notes}
           placeholder="Comments or requests entered when booking"
           multiline
-          disabled={readOnly}
+          disabled={bookingFieldsReadOnly}
           onSave={saveBookingField('dietary_notes')}
         />
       ) : null}
@@ -262,7 +270,7 @@ export function BookingNotesSection({
             : 'Notes, comments or requests the guest entered when booking'
         }
         multiline
-        disabled={readOnly}
+        disabled={bookingFieldsReadOnly}
         onSave={saveBookingField('special_requests')}
       />
 
@@ -271,7 +279,7 @@ export function BookingNotesSection({
         value={booking.internal_notes}
         placeholder="Internal notes (not visible to the guest)"
         multiline
-        disabled={readOnly}
+        disabled={bookingFieldsReadOnly}
         onSave={saveBookingField('internal_notes')}
       />
 

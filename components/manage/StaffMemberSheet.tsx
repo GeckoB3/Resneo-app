@@ -253,11 +253,11 @@ export function StaffMemberSheet({
   const personSwitches = showsPersonSwitches(viewer, member);
   const adminExportSwitch = showsAdminExportSwitch(viewer, member);
   const diaries = diaryChoiceOf(member);
-  // "Hidden" is not offered yet; someone already set to it on the web shows it until changed here.
+  // Roles plan §5.11 (A2 and A2b): book and change, look only, or see none of anyone else's bookings.
   const diaryOptions: { value: DiaryAccess; label: string }[] = [
     { value: 'book', label: ROLES_COPY['switch.other_diaries.book'] },
     { value: 'view', label: ROLES_COPY['switch.other_diaries.view'] },
-    ...(diaries === 'hidden' ? [{ value: 'hidden' as const, label: ROLES_COPY['switch.other_diaries.hidden'] }] : []),
+    { value: 'hidden', label: ROLES_COPY['switch.other_diaries.hidden'] },
   ];
 
   const exportSwitchRow = (
@@ -479,7 +479,7 @@ export function StaffMemberSheet({
                     options={diaryOptions}
                     value={diaries}
                     onChange={(next) => {
-                      if (next === diaries || next === 'hidden' || patchSwitch.isPending) return;
+                      if (next === diaries || patchSwitch.isPending) return;
                       void handleSwitch({ other_diaries: next });
                     }}
                   />

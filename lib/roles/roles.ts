@@ -1,5 +1,6 @@
 import { ApiError, apiErrorCode, isApiErrorBody } from '@/lib/api/client';
 import type { RoleChoice, RoleKey, StaffMe, StaffPermissions, StaffRole } from '@/types/staff';
+import type { LinkedVenueCalendar } from '@/types/linked-venues';
 import type { VenueBootstrap } from '@/types/venue';
 
 /**
@@ -44,9 +45,10 @@ export const ROLES_COPY = {
   'switch.other_diaries': "Other people's diaries",
   'switch.other_diaries.book': 'Can book and change',
   'switch.other_diaries.view': 'View only',
-  // A2b: offered on the web; the app shows it only for someone already set to it.
+  // A2b: other people's appointments are left out altogether.
   'switch.other_diaries.hidden': 'Hidden',
-  'switch.other_diaries.no_calendar': '{name} has no calendar. With View only they can look but not book.',
+  'switch.other_diaries.no_calendar':
+    '{name} has no calendar. With View only they can look but not book. With Hidden they see no bookings.',
   'switch.export_clients': 'Can export client data',
   'switch.export_clients.help':
     "Shows or hides the buttons that download client lists. It can't stop someone copying details they can already see. To keep phone numbers and emails private, switch off 'Can see client phone numbers and emails'.",
@@ -60,6 +62,15 @@ export const ROLES_COPY = {
   'err.CONTACT_BELONGS_TO_OTHER_CLIENT': 'These details belong to another client. Search by name, or ask an admin.',
   'err.EXPORT_NOT_ALLOWED': 'Exporting client data is switched off for you.',
   'err.DIARY_VIEW_ONLY': 'You can see this booking, but you can only change bookings on your own calendar.',
+  // A2 and A2b: where a View only or Hidden person finds an action missing (§5.11, §7.3).
+  'diary.booking': 'You can see this booking, but you can only change bookings on your own calendar.',
+  'diary.new': 'You can see this calendar, but you can only add bookings to your own calendar.',
+  'diary.move': 'You can only move bookings onto your own calendar.',
+  'diary.no_calendar.title': 'No calendar of your own',
+  'diary.no_calendar':
+    "You can only add bookings to your own calendar, and you don't have one yet. Ask an admin to give you one.",
+  'diary.none_here': 'None of these calendars is yours. You can only add bookings to your own calendar.',
+  'diary.restricted_visit': 'On another calendar',
 } as const;
 
 export type RolesCopyId = keyof typeof ROLES_COPY;
@@ -149,8 +160,7 @@ export function venueBillingPayoutsAdmins(
 }
 
 /**
- * Other people's diaries (roles plan §5.11): 'book' (the default), 'view' (A2) or 'hidden' (A2b,
- * not offered yet).
+ * Other people's diaries (roles plan §5.11): 'book' (the default), 'view' (A2) or 'hidden' (A2b).
  */
 export type DiaryAccess = NonNullable<StaffPermissions['other_diaries']>;
 
@@ -199,6 +209,13 @@ export interface ViewerAccess {
   canExportClients: boolean;
   /** "Other people's diaries": 'book' for owners and admins. */
   otherDiaries: DiaryAccess;
+  /**
+   * "Their calendars" (`GET /api/venue/staff/me` `linked_calendar_ids`, the server's
+   * `getStaffManagedCalendarIds`): the only diaries a View only or Hidden person may book and change
+   * on. Set only when `otherDiaries` is not 'book'; absent there reads as no calendars at all, the
+   * server's own safe direction.
+   */
+  ownCalendarIds?: readonly string[];
 }
 
 /** Everything allowed: today's behaviour, and what a screen reads before anyone is known. */
@@ -229,15 +246,134 @@ export function venueRoleSubject(venue: VenueViewerFields | null | undefined): R
  * `GET /api/venue`, else everything (before either answers; the server hides what it must anyway).
  */
 export function viewerAccessOf(
-  me: RoleSubject | null | undefined,
+  me: (RoleSubject & { linked_calendar_ids?: string[] | null }) | null | undefined,
   venue?: VenueViewerFields | null,
 ): ViewerAccess {
-  const person = me && me.role ? me : venueRoleSubject(venue);
+  const fromMe = Boolean(me && me.role);
+  const person = fromMe ? me : venueRoleSubject(venue);
   if (!person) return FULL_VIEWER_ACCESS;
+  const otherDiaries = diaryAccessOf(person);
   return {
     canSeeClientContact: canSeeClientContact(person),
     canExportClients: canExportClients(person),
-    otherDiaries: diaryAccessOf(person),
+    otherDiaries,
+    // Only a View only or Hidden person needs their calendars; before staff/me answers they are
+    // not known, which reads as none (nothing of anyone's is offered until it does).
+    ...(otherDiaries === 'book' ? {} : { ownCalendarIds: fromMe ? [...(me?.linked_calendar_ids ?? [])] : [] }),
+  };
+}
+
+/**
+ * The booking fields that say whether a row is an appointment on someone's calendar, and which one
+ * (web `diary-access` `DiaryRow`). Every booking shape the app holds fits: the detail, the list
+ * rows, a visit's rows.
+ */
+export interface DiaryRow {
+  calendar_id?: string | null;
+  practitioner_id?: string | null;
+  class_instance_id?: string | null;
+  experience_event_id?: string | null;
+  resource_id?: string | null;
+  /** The list and detail routes also name the model, which says the same for a row without the ids. */
+  booking_model?: string | null;
+  inferred_booking_model?: string | null;
+}
+
+const UNCOVERED_MODELS = new Set(['class_session', 'event_ticket', 'resource_booking']);
+
+/**
+ * The calendar a row sits on, or null when the row is not an appointment on a calendar (web
+ * `diaryCalendarOf`): classes, events, resources and tables keep today's rules (§5.11, Scope).
+ */
+export function diaryCalendarOf(row: DiaryRow): string | null {
+  if (row.class_instance_id || row.experience_event_id || row.resource_id) return null;
+  const model = row.inferred_booking_model ?? row.booking_model ?? null;
+  if (model && UNCOVERED_MODELS.has(model)) return null;
+  return row.calendar_id ?? row.practitioner_id ?? null;
+}
+
+/**
+ * What the signed-in person may book and change in the diary (roles plan §5.11, §7.3; web
+ * `writableCalendarIds` and `diaryAllows`). The server refuses the rest with 403
+ * `DIARY_VIEW_ONLY`; this keeps the screens from offering it.
+ */
+export interface DiaryScope {
+  access: DiaryAccess;
+  /** View only or Hidden: other people's appointments are look only. */
+  restricted: boolean;
+  /** The calendars this person may book and change on, or null when every diary is open to them. */
+  writable: ReadonlySet<string> | null;
+  /**
+   * Whether this person may make, change, move, cancel, check in or take money on a booking row, or
+   * add a booking to a calendar id. A row that is not an appointment on a calendar, and a null
+   * calendar, always pass (as on the server).
+   */
+  allows: (target: DiaryRow | string | null | undefined) => boolean;
+}
+
+/** Everyone on "Can book and change": every check passes before it looks at anything. */
+export const OPEN_DIARY_SCOPE: DiaryScope = {
+  access: 'book',
+  restricted: false,
+  writable: null,
+  allows: () => true,
+};
+
+/**
+ * How a Hidden person sees someone else's visit in a client's history (UR20): the service, and who
+ * it was with. Nothing else, and it does not open.
+ */
+export function restrictedVisitLabels(row: {
+  service_name?: string | null;
+  detail_label?: string | null;
+  kind_label?: string | null;
+  practitioner_name?: string | null;
+  calendar_name?: string | null;
+}): { service: string; withWhom: string | null } {
+  const service = row.service_name?.trim() || row.detail_label?.trim() || row.kind_label?.trim() || 'Booking';
+  const name = row.practitioner_name?.trim() || row.calendar_name?.trim() || '';
+  return { service, withWhom: name ? `With ${name}` : null };
+}
+
+/**
+ * A booking catalogue as this person may book from it: every calendar for everyone on "Can book
+ * and change" (the same object, untouched), only their own for View only and Hidden.
+ */
+export function catalogForDiary<T extends { practitioners: { id: string }[] }>(
+  catalog: T | undefined,
+  diary: DiaryScope,
+): T | undefined {
+  if (!catalog || !diary.restricted) return catalog;
+  return { ...catalog, practitioners: catalog.practitioners.filter((p) => diary.allows(p.id)) };
+}
+
+/**
+ * Linked calendars as this person may act on them. A partner's calendars are never their own, so
+ * for View only every link reads as a view-only link (§5.11: the setting narrows a link's grant and
+ * never widens it); the server sends a Hidden person no linked calendars at all. Everyone else gets
+ * the list untouched (the same array).
+ */
+export function linkedVenuesForDiary(
+  venues: LinkedVenueCalendar[],
+  diary: Pick<DiaryScope, 'restricted'>,
+): LinkedVenueCalendar[] {
+  if (!diary.restricted) return venues;
+  return venues.map((v) => (v.action === 'none' ? v : { ...v, action: 'none' as const }));
+}
+
+/** A person's diary scope from their access. 'book' costs nothing: the open scope, as before. */
+export function diaryScopeOf(access: Pick<ViewerAccess, 'otherDiaries' | 'ownCalendarIds'>): DiaryScope {
+  if (access.otherDiaries === 'book') return OPEN_DIARY_SCOPE;
+  const writable: ReadonlySet<string> = new Set(access.ownCalendarIds ?? []);
+  return {
+    access: access.otherDiaries,
+    restricted: true,
+    writable,
+    allows: (target) => {
+      if (target == null) return true;
+      const calendarId = typeof target === 'string' ? target : diaryCalendarOf(target);
+      return calendarId === null || writable.has(calendarId);
+    },
   };
 }
 

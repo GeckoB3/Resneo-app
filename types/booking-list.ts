@@ -40,6 +40,13 @@ export interface BookingListRow {
   /** Appointment anchors — practitioner venues use practitioner_id, unified use calendar_id. */
   practitioner_id?: string | null;
   calendar_id?: string | null;
+  /**
+   * Set on a class, event or resource booking (the route returns them). Such a row is not an
+   * appointment on a calendar, which the "Other people's diaries" check reads (roles plan §5.11).
+   */
+  class_instance_id?: string | null;
+  experience_event_id?: string | null;
+  resource_id?: string | null;
   /** Resolved column name for unified venues. */
   calendar_name?: string | null;
   appointment_service_id?: string | null;

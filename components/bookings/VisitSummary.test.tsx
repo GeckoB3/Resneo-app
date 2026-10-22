@@ -193,6 +193,31 @@ describe('VisitSummary', () => {
     expect(mockMutate.mock.calls.at(-1)![0]).toBe('Booked');
   });
 
+  /**
+   * View only and Hidden (roles plan §5.11): starting or completing one service follows that
+   * service's calendar, so only the services on the person's own calendar keep their buttons.
+   */
+  it("offers Start only on the services on this person's own calendar", async () => {
+    await render(
+      <VisitSummary
+        {...common}
+        booking={base({ group_booking_id: 'g' })}
+        visit={{ services: [], totalMinutes: 90, spansDays: false, spansCalendars: true } as never}
+        visitRows={[
+          { id: 'b1', booking_date: '2026-09-10', booking_time: '10:00', booking_end_time: '10:45', status: 'Confirmed', booking_item_name: 'Cut', calendar_id: 'mine' },
+          { id: 'b2', booking_date: '2026-09-10', booking_time: '10:45', booking_end_time: '11:30', status: 'Confirmed', booking_item_name: 'Colour', calendar_id: 'theirs' },
+        ]}
+        canChangeRow={(row) => row.calendar_id === 'mine'}
+        headerStatus="Confirmed"
+        timeLabel="10:00 – 11:30"
+        durationMinutes={90}
+        serviceName={null}
+      />,
+    );
+    expect(screen.getByLabelText('Start Cut')).toBeTruthy();
+    expect(screen.queryByLabelText('Start Colour')).toBeNull();
+  });
+
   describe('Undo start on one service of a visit (web QA B-4)', () => {
     const visitBooking = base({ group_booking_id: 'g' });
     const visit = { services: [], totalMinutes: 90, spansDays: false, spansCalendars: false } as never;

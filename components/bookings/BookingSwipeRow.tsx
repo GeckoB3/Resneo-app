@@ -5,6 +5,7 @@ import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
 import { SwipeRow, type SwipeAction } from '@/components/ui/SwipeRow';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
+import { useDiaryScope } from '@/providers/ViewerAccessProvider';
 import { ApiError } from '@/lib/api/client';
 import { bookingStatusVisualForKey } from '@/lib/booking/booking-status-visual';
 import { canMarkNoShowForSlot, clampNoShowGraceMinutes } from '@/lib/booking/no-show-grace';
@@ -49,6 +50,8 @@ function BookingSwipeRowBase({
 }: BookingSwipeRowProps) {
   const toast = useToast();
   const { venue } = useVenueContext();
+  // View only and Hidden (roles plan §5.11): no quick actions on someone else's appointment.
+  const diary = useDiaryScope();
   const updateStatus = useUpdateBookingStatus(booking.id);
   /**
    * A swipe No-show asks first, as the detail screen and every web path do:
@@ -81,9 +84,10 @@ function BookingSwipeRowBase({
     [updateStatus, toast, onUnpaidPromotion, booking.id],
   );
 
-  // Status-appropriate quick actions — never offered in selection mode.
+  // Status-appropriate quick actions — never offered in selection mode, nor on an appointment
+  // this person may only look at (the row still opens the booking).
   const rightActions: SwipeAction[] = [];
-  if (!selectionMode) {
+  if (!selectionMode && diary.allows(booking)) {
     const confirmedTint = bookingStatusVisualForKey('Confirmed').listStripeColor;
     const noShowTint = bookingStatusVisualForKey('No-Show').listStripeColor;
     if (booking.status === 'Pending') {

@@ -96,6 +96,8 @@ describe('viewerAccessOf', () => {
       canSeeClientContact: false,
       canExportClients: false,
       otherDiaries: 'view',
+      // No linked calendars on this staff/me: none of their own (roles.diary.test.ts).
+      ownCalendarIds: [],
     });
   });
 
@@ -212,8 +214,9 @@ describe('the A2 copy', () => {
     expect(ROLES_COPY['contact.hidden']).toBe('Hidden');
     expect(ROLES_COPY['contact.hidden.tip']).toBe('Your business has hidden client phone numbers and emails for you.');
     expect(rolesT('switch.other_diaries.no_calendar', { name: 'Cal' })).toBe(
-      'Cal has no calendar. With View only they can look but not book.',
+      'Cal has no calendar. With View only they can look but not book. With Hidden they see no bookings.',
     );
+    expect(ROLES_COPY['switch.other_diaries.hidden']).toBe('Hidden');
     for (const [id, text] of Object.entries(ROLES_COPY)) {
       expect({ id, dash: text.includes(EM_DASH) }).toEqual({ id, dash: false });
     }

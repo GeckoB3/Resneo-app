@@ -18,6 +18,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
 import { ModifyBookingSheet, type ModifyBookingTarget } from './ModifyBookingSheet';
+import { ViewerAccessProvider } from '@/providers/ViewerAccessProvider';
 
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 
@@ -433,6 +434,27 @@ describe('ModifyBookingSheet', () => {
     await render(<ModifyBookingSheet target={TARGET} onClose={onClose} />);
     expect(screen.getByText('Sam')).toBeTruthy();
     expect(screen.getByText('Kim')).toBeTruthy();
+    mockExtraPractitioners = [];
+  });
+
+  /**
+   * Roles plan §5.11: a View only or Hidden person moves a booking only onto their own calendars.
+   * The booking's current calendar stays in the row as the selected value.
+   */
+  it("offers a View only person only their own calendars to move to, keeping the booking's own", async () => {
+    mockExtraPractitioners = [
+      { id: 'prac-2', name: 'Kim', services: [{ id: 'svc-1', name: 'Cut & Finish', duration_minutes: 45 }] },
+      { id: 'prac-3', name: 'Lee', services: [{ id: 'svc-1', name: 'Cut & Finish', duration_minutes: 45 }] },
+    ];
+    await render(
+      <ViewerAccessProvider
+        value={{ canSeeClientContact: true, canExportClients: true, otherDiaries: 'view', ownCalendarIds: ['prac-3'] }}>
+        <ModifyBookingSheet target={TARGET} onClose={onClose} />
+      </ViewerAccessProvider>,
+    );
+    expect(screen.getByText('Sam')).toBeTruthy();
+    expect(screen.getByText('Lee')).toBeTruthy();
+    expect(screen.queryByText('Kim')).toBeNull();
     mockExtraPractitioners = [];
   });
 

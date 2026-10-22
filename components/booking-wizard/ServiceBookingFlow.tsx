@@ -5,6 +5,7 @@ import { StyleSheet, View } from 'react-native';
 import { AddonsStep } from '@/components/booking-wizard/AddonsStep';
 import { ConfirmStep } from '@/components/booking-wizard/ConfirmStep';
 import { BookingWizardHeader } from '@/components/booking-wizard/BookingWizardHeader';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { GroupBookingFlow } from '@/components/booking-wizard/GroupBookingFlow';
 import type { GuestDetails } from '@/components/booking-wizard/GuestDetailsStep';
 import { GuestDetailsStep } from '@/components/booking-wizard/GuestDetailsStep';
@@ -55,6 +56,8 @@ import {
   resetRebookBootstrapGuard,
 } from '@/lib/rebook-bootstrap';
 import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
+import { useDiaryScope } from '@/providers/ViewerAccessProvider';
+import { catalogForDiary, ROLES_COPY } from '@/lib/roles/roles';
 import { spacing } from '@/theme/index';
 import type { AppointmentSlot } from '@/types/appointment-availability';
 import {
@@ -167,8 +170,15 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   // Prefill from a calendar empty-slot tap (date / practitioner / time).
   const prefilledDate =
     typeof dateParam === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : null;
+  // Other people's diaries (roles plan §5.11): the open scope, allowing everything, unless this
+  // person is View only or Hidden.
+  const diary = useDiaryScope();
+  // A calendar this person may not book on is never preselected (the calendar does not send one;
+  // a deep link or an older screen might).
   const prefilledPractitionerId =
-    typeof practitionerIdParam === 'string' && practitionerIdParam.length > 0
+    typeof practitionerIdParam === 'string' &&
+    practitionerIdParam.length > 0 &&
+    diary.allows(practitionerIdParam)
       ? practitionerIdParam
       : null;
   const prefilledTime =
@@ -195,6 +205,15 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     includeHidden: !isLinked || isCollective,
     overrideAvailability: availabilityOverride,
   });
+  /**
+   * View only and Hidden (roles plan §5.11, §7.3): a new appointment goes only on this person's own
+   * calendars, so the catalogue offers only those (the server refuses the rest, and "Any available"
+   * already pools only them). Everyone else gets the catalogue exactly as loaded.
+   */
+  const bookableCatalog = useMemo(
+    () => catalogForDiary(catalogQuery.data, diary),
+    [catalogQuery.data, diary],
+  );
   const validateSlot = useValidateAppointmentSlot();
   // Staff service list — the reliable source of each service's booking window
   // (min notice / same-day). The booking catalog omits min_booking_notice_hours
@@ -271,12 +290,12 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   // Practitioners able to perform the selected service — and, for a multi-service
   // visit, EVERY service in it: the whole visit is with one person.
   const servicePractitioners: AppointmentCatalogPractitioner[] = useMemo(() => {
-    if (!selectedService || !catalogQuery.data) return [];
+    if (!selectedService || !bookableCatalog) return [];
     const wanted = [selectedService.serviceId, ...chainExtras.map((e) => e.option.serviceId)];
-    return catalogQuery.data.practitioners.filter((p) =>
+    return bookableCatalog.practitioners.filter((p) =>
       wanted.every((id) => p.services.some((s) => s.id === id)),
     );
-  }, [selectedService, chainExtras, catalogQuery.data]);
+  }, [selectedService, chainExtras, bookableCatalog]);
 
   // Booking-window settings for the selected service (min notice / same-day).
   // The staff availability endpoint returns past + inside-notice slots, so the
@@ -284,13 +303,13 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   // every venue type), fall back to the catalog, then the web default (1h /
   // same-day allowed). `?? ` preserves an explicit 0 (zero notice).
   const selectedCatalogService = useMemo(() => {
-    if (!selectedService || !catalogQuery.data) return null;
-    for (const p of catalogQuery.data.practitioners) {
+    if (!selectedService || !bookableCatalog) return null;
+    for (const p of bookableCatalog.practitioners) {
       const svc = p.services.find((s) => s.id === selectedService.serviceId);
       if (svc) return svc;
     }
     return null;
-  }, [selectedService, catalogQuery.data]);
+  }, [selectedService, bookableCatalog]);
 
   const bookingWindow = useMemo(() => {
     const managed = managedServicesQuery.data?.services.find(
@@ -391,8 +410,8 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   const chooseService = useCallback(
     (option: AppointmentServiceOption, customDuration: number | null, extras: ChainExtra[]) => {
       const wanted = [option.serviceId, ...extras.map((e) => e.option.serviceId)];
-      const practitioners = catalogQuery.data
-        ? catalogQuery.data.practitioners.filter((p) =>
+      const practitioners = bookableCatalog
+        ? bookableCatalog.practitioners.filter((p) =>
             wanted.every((id) => p.services.some((s) => s.id === id)),
           )
         : [];
@@ -439,7 +458,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
         goToStep('date');
       }
     },
-    [catalogQuery.data, isStaffFirst, staffPick, prefilledPractitionerId, goToStep],
+    [bookableCatalog, isStaffFirst, staffPick, prefilledPractitionerId, goToStep],
   );
 
   /** Advance to the next step KEY after `from` in the active steps array. */
@@ -684,9 +703,9 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   // slot ("Any available" rows pick the slot's real practitioner). Used to offer
   // "Add another service" with that same practitioner only (server requires it).
   const visitPractitioner: AppointmentCatalogPractitioner | null = useMemo(() => {
-    if (!catalogQuery.data || !selectedSlot) return null;
-    return catalogQuery.data.practitioners.find((p) => p.id === selectedSlot.practitioner_id) ?? null;
-  }, [catalogQuery.data, selectedSlot]);
+    if (!bookableCatalog || !selectedSlot) return null;
+    return bookableCatalog.practitioners.find((p) => p.id === selectedSlot.practitioner_id) ?? null;
+  }, [bookableCatalog, selectedSlot]);
 
 
   /** "Change services": back to the picker with the visit's services still ticked. */
@@ -744,7 +763,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
       // Pre-select service/variant/practitioner and jump ahead once catalog is ready.
       if (bootstrap.appointment) {
         const appt = bootstrap.appointment;
-        const catalog = catalogQuery.data;
+        const catalog = bookableCatalog;
         if (catalog) {
           const practitioner = catalog.practitioners.find((p) => p.id === appt.practitionerId);
           const service = practitioner?.services.find((s) => s.id === appt.serviceId);
@@ -793,7 +812,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           }
         } else {
           // Catalog still loading — re-run when it arrives (deps include
-          // catalogQuery.data) instead of consuming the bootstrap now and
+          // bookableCatalog) instead of consuming the bootstrap now and
           // losing the appointment pre-select. The payload is cached by
           // readAndClearRebookBootstrap's module guard, so the re-read is safe.
           return;
@@ -803,7 +822,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
       rebookApplyRef.current = true;
       setRebookApplied(true);
     })();
-  }, [catalogQuery.data, rebookApplied]);
+  }, [bookableCatalog, rebookApplied]);
 
   // Clean up the guard when the wizard unmounts so a subsequent navigation starts fresh.
   useEffect(() => {
@@ -1092,12 +1111,33 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
 
   if (!venueId) return null;
 
+  // View only and Hidden (§5.11) with no calendar of their own among these: say so, rather than
+  // offer services that could only be booked on someone else's calendar.
+  const noBookableCalendar =
+    diary.restricted &&
+    !!catalogQuery.data &&
+    catalogQuery.data.practitioners.length > 0 &&
+    (bookableCatalog?.practitioners.length ?? 0) === 0;
+  if (noBookableCalendar) {
+    return (
+      <View style={styles.container}>
+        <BookingWizardHeader canGoBack={canGoBack} onBack={handleBack} />
+        <EmptyState
+          title={ROLES_COPY['diary.no_calendar.title']}
+          message={
+            (diary.writable?.size ?? 0) === 0 ? ROLES_COPY['diary.no_calendar'] : ROLES_COPY['diary.none_here']
+          }
+        />
+      </View>
+    );
+  }
+
   // Group mode hands off entirely to the self-contained group sub-flow. It owns
   // its own state machine + create call; exiting returns to the single flow.
   if (groupMode) {
     return (
       <GroupBookingFlow
-        catalog={catalogQuery.data}
+        catalog={bookableCatalog}
         venueId={venueId}
         timeZone={timeZone}
         anyAvailableEnabled={anyAvailableEnabled}
@@ -1118,7 +1158,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
 
       {activeKey === 'staff_pick' ? (
         <StaffPickerStep
-          catalog={catalogQuery.data}
+          catalog={bookableCatalog}
           isLoading={catalogQuery.isLoading}
           isError={catalogQuery.isError}
           errorMessage={
@@ -1165,7 +1205,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
       {activeKey === 'service' ? (
         <>
           <ServicePickerStep
-          catalog={catalogQuery.data}
+          catalog={bookableCatalog}
           layout={servicesLayout}
           defaultPractitionerId={serviceScopePractitionerId}
           errorMessage={

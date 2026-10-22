@@ -36,7 +36,7 @@ import { ApiError } from '@/lib/api/client';
 import { splitGuestHistory } from '@/lib/guests/guest-history-sections';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
 import { useGuests } from '@/lib/queries/useGuests';
-import { ROLES_COPY } from '@/lib/roles/roles';
+import { restrictedVisitLabels, ROLES_COPY } from '@/lib/roles/roles';
 import { useClientContactHidden } from '@/providers/ViewerAccessProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -275,19 +275,46 @@ function BookingGroup({
           None
         </Text>
       ) : (
-        rows.map((booking) => <BookingRow key={booking.id} booking={booking} onPress={() => onPick(booking)} />)
+        rows.map((booking) => (
+          <BookingRow
+            key={booking.id}
+            booking={booking}
+            // A restricted visit (Hidden, UR20) is not this person's to jump to.
+            onPress={booking.restricted ? undefined : () => onPick(booking)}
+          />
+        ))
       )}
     </View>
   );
 }
 
-function BookingRow({ booking, onPress }: { booking: GuestBookingHistoryRow; onPress: () => void }) {
+function BookingRow({ booking, onPress }: { booking: GuestBookingHistoryRow; onPress?: () => void }) {
   const { colors } = useTheme();
   const date = formatClientBookingDate(booking.booking_date);
   const time = booking.booking_time ? booking.booking_time.slice(0, 5) : '';
   const when = time ? `${date} · ${time}` : date;
   const what = booking.service_name?.trim() || booking.detail_label?.trim() || 'No service';
   const who = booking.practitioner_name?.trim() || booking.area_name?.trim() || null;
+  // "Hidden" (roles plan §5.11, UR20): someone else's visit shows when, what and who with, and
+  // cannot be picked (it is not on this person's calendar to jump to).
+  if (booking.restricted) {
+    const visit = restrictedVisitLabels(booking);
+    return (
+      <View
+        accessible
+        accessibilityLabel={[date, visit.service, visit.withWhom].filter(Boolean).join(', ')}
+        style={[styles.row, { borderColor: colors.border, backgroundColor: colors.surfaceRaised }]}>
+        <View style={styles.flex}>
+          <Text variant="label" numberOfLines={1}>
+            {date}
+          </Text>
+          <Text variant="caption" tone="secondary" numberOfLines={1}>
+            {visit.withWhom ? `${visit.service} · ${visit.withWhom}` : visit.service}
+          </Text>
+        </View>
+      </View>
+    );
+  }
   return (
     <Pressable
       accessibilityRole="button"

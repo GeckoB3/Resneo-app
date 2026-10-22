@@ -77,6 +77,16 @@ export interface GuestBookingHistoryRow {
   calendar_id?: string | null;
   service_item_id?: string | null;
   service_variant_id?: string | null;
+  /** The calendar's name, beside `practitioner_name`. */
+  calendar_name?: string | null;
+  /**
+   * "Hidden" (roles plan §5.11, A2b; UR20): a visit on someone else's calendar, seen by a person set
+   * to Hidden. The server sends only its id, date, model, labels, who it was with, the service and
+   * the status, and it cannot be opened (the detail route answers 404). `useGuestDetail` fills the
+   * missing fields with empty values so the list code keeps working; show it with
+   * `restrictedVisitLabels` and never as a link.
+   */
+  restricted?: boolean;
 }
 
 /** Custom client field definition from the venue setup. */

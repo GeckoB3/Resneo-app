@@ -69,6 +69,8 @@ import { useBookingsRange } from '@/lib/queries/useBookingsRange';
 import { usePractitioners } from '@/lib/queries/usePractitioners';
 import { isAppointmentFromVenue } from '@/lib/venue/venue-experience';
 import { useVenueContext } from '@/providers/VenueProvider';
+import { useDiaryScope } from '@/providers/ViewerAccessProvider';
+import { linkedVenuesForDiary } from '@/lib/roles/roles';
 import { useVenueLiveSync } from '@/lib/realtime/useVenueLiveSync';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -485,9 +487,11 @@ export default function BookingsScreen() {
   // Selection defaults to the active linked context (ownerVenueId) when set, else own.
   const { ownerVenueId } = useLinkedVenueContext();
   const linkedQuery = useLinkedCalendar({ from: range.from, to: range.to });
+  // View only (roles plan §5.11): every link reads as a view-only link; untouched for everyone else.
+  const diary = useDiaryScope();
   const linkedVenues = useMemo<LinkedVenueCalendar[]>(
-    () => linkedQuery.data?.venues ?? [],
-    [linkedQuery.data?.venues],
+    () => linkedVenuesForDiary(linkedQuery.data?.venues ?? [], diary),
+    [linkedQuery.data?.venues, diary],
   );
 
   const defaultVenueSel = useMemo<VenueSelection>(

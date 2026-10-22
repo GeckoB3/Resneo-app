@@ -3,8 +3,10 @@ import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import {
   clientContactHidden,
+  diaryScopeOf,
   FULL_VIEWER_ACCESS,
   viewerAccessOf,
+  type DiaryScope,
   type ViewerAccess,
 } from '@/lib/roles/roles';
 import { useVenueContext } from '@/providers/VenueProvider';
@@ -45,4 +47,15 @@ export function useViewerAccess(): ViewerAccess {
  */
 export function useClientContactHidden(contactsHidden?: boolean | null): boolean {
   return clientContactHidden(useViewerAccess(), contactsHidden);
+}
+
+/**
+ * Other people's diaries for the signed-in person (roles plan §5.11, §7.3): which calendars they may
+ * book and change on, and a check for a booking row or a calendar id. For everyone on "Can book and
+ * change" (owners, admins, and the default) it is the open scope, which allows everything and costs
+ * nothing, so their screens are exactly as before.
+ */
+export function useDiaryScope(): DiaryScope {
+  const access = useViewerAccess();
+  return useMemo(() => diaryScopeOf(access), [access]);
 }

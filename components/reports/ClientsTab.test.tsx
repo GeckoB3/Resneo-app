@@ -212,6 +212,33 @@ describe('ClientsTab guest history export', () => {
       ['2026-06-01', '10:30', 'Cut & finish', '2', 'Completed', 'Paid', 'Hannah'],
     ]);
   });
+
+  /** Roles plan A2b (UR20): a Hidden person reads someone else's visit as date, service and who with. */
+  it("shows a restricted visit without its status", async () => {
+    mockDetail.data = {
+      guest: { id: 'g1', first_name: 'Ada', last_name: 'Lovelace', email: null, phone: null, tags: [] },
+      stats: { total_bookings: 1, no_shows: 0, cancellations: 0, total_deposit_pence_paid: 0 },
+      booking_history: [
+        {
+          id: 'b-theirs',
+          restricted: true,
+          booking_date: '2026-03-02',
+          booking_time: '',
+          status: 'Completed',
+          booking_model: 'unified_scheduling',
+          kind_label: 'Appointment',
+          detail_label: 'Colour',
+          practitioner_name: 'Marcus',
+          service_name: 'Colour',
+        },
+      ],
+    };
+
+    await render(<ClientsTab clientWord="Client" bookingWord="Appointment" isAppointment />);
+    await press(() => screen.getByText('Ada Lovelace'));
+    expect(screen.getByText('Colour · Marcus')).toBeTruthy();
+    expect(screen.queryByText('Completed')).toBeNull();
+  });
 });
 
 /**

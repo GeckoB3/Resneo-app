@@ -52,6 +52,7 @@ import {
 import { useVisitSchedule, useVisitServices } from '@/lib/queries/useVisitMutations';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
+import { useDiaryScope } from '@/providers/ViewerAccessProvider';
 import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type {
@@ -208,6 +209,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   const { colors } = useTheme();
   const { venue } = useVenueContext();
   const toast = useToast();
+  const diary = useDiaryScope();
   // A linked venue's booking reads that venue's catalogue (see the target).
   const catalogQuery = useAppointmentCatalog(
     target ? target.ownerVenueId ?? venue?.id ?? null : null,
@@ -492,8 +494,11 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
      * reassign. Whether the save is then allowed is the server's call.
      */
     const own = practitioners.find((p) => p.id === target?.practitionerId);
-    const withOwn = own && !offering.some((p) => p.id === own.id) ? [own, ...offering] : offering;
-    // Staff move a booking to any calendar at their own venue, as an admin does (web, 2026-09-17).
+    // View only and Hidden (roles plan §5.11): a booking moves only onto this person's own
+    // calendars. Everyone else moves a booking to any calendar at their own venue, as an admin does
+    // (web, 2026-09-17).
+    const allowed = diary.restricted ? offering.filter((p) => diary.allows(p.id)) : offering;
+    const withOwn = own && !allowed.some((p) => p.id === own.id) ? [own, ...allowed] : allowed;
     return withOwn;
   }, [
     isVisit,
@@ -502,6 +507,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     practitioners,
     target?.practitionerId,
     target?.ownerVenueId,
+    diary,
   ]);
 
   /**

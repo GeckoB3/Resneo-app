@@ -23,7 +23,7 @@ export interface StaffPermissions {
   client_contact?: boolean;
   /** Everyone but the owner: "Can export client data". Absent means on (A2). */
   export_clients?: boolean;
-  /** Front desk and Staff: "Other people's diaries". Absent means 'book' ('hidden' arrives with A2b). */
+  /** Front desk and Staff: "Other people's diaries". Absent means 'book' ('hidden' since A2b). */
   other_diaries?: 'book' | 'view' | 'hidden';
 }
 
@@ -115,7 +115,7 @@ export interface InviteStaffResponse {
  * `team-policy.ts`):
  *   - `billing_payouts_admins`: admins only, set by the owner only;
  *   - `client_contact` and `other_diaries`: Front desk and Staff only, set by the owner or any admin
- *     ('hidden' is refused until A2b);
+ *     ('hidden' since A2b; an older server refuses it);
  *   - `export_clients`: everyone but the owner; only the owner sets it for an admin.
  * Nobody changes their own.
  */
@@ -127,7 +127,7 @@ export interface PatchStaffBody {
     billing_payouts_admins?: boolean | null;
     client_contact?: boolean | null;
     export_clients?: boolean | null;
-    other_diaries?: 'book' | 'view' | null;
+    other_diaries?: 'book' | 'view' | 'hidden' | null;
   };
 }
 

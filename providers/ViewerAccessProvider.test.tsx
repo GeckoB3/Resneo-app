@@ -17,6 +17,7 @@ import { HiddenContactField, HiddenContactValue } from '@/components/roles/Hidde
 import {
   LiveViewerAccessProvider,
   useClientContactHidden,
+  useDiaryScope,
   useViewerAccess,
   ViewerAccessProvider,
 } from '@/providers/ViewerAccessProvider';
@@ -29,6 +30,12 @@ function Probe({ flag }: { flag?: boolean }) {
       {`contact:${access.canSeeClientContact} export:${access.canExportClients} diaries:${access.otherDiaries} hidden:${hidden}`}
     </Text>
   );
+}
+
+/** Other people's diaries: whether this person may add to their own and to someone else's calendar. */
+function DiaryProbe() {
+  const diary = useDiaryScope();
+  return <Text>{`restricted:${diary.restricted} mine:${diary.allows('cal-mine')} theirs:${diary.allows('cal-theirs')}`}</Text>;
 }
 
 beforeEach(() => {
@@ -106,6 +113,47 @@ describe('LiveViewerAccessProvider', () => {
       </LiveViewerAccessProvider>,
     );
     expect(screen.getByText('contact:true export:true diaries:book hidden:false')).toBeTruthy();
+  });
+});
+
+describe('useDiaryScope (§5.11)', () => {
+  it('allows every calendar outside the provider and for Can book and change', async () => {
+    await render(<DiaryProbe />);
+    expect(screen.getByText('restricted:false mine:true theirs:true')).toBeTruthy();
+  });
+
+  it("allows only the person's own calendars from staff/me for View only", async () => {
+    mockStaffMe = {
+      staff: { id: 's1', role: 'staff', role_key: 'staff', linked_calendar_ids: ['cal-mine'], permissions: { other_diaries: 'view' } },
+    };
+    await render(
+      <LiveViewerAccessProvider>
+        <DiaryProbe />
+      </LiveViewerAccessProvider>,
+    );
+    expect(screen.getByText('restricted:true mine:true theirs:false')).toBeTruthy();
+  });
+
+  it('does the same for Hidden', async () => {
+    mockStaffMe = {
+      staff: { id: 's1', role: 'staff', role_key: 'staff', linked_calendar_ids: ['cal-mine'], permissions: { other_diaries: 'hidden' } },
+    };
+    await render(
+      <LiveViewerAccessProvider>
+        <DiaryProbe />
+      </LiveViewerAccessProvider>,
+    );
+    expect(screen.getByText('restricted:true mine:true theirs:false')).toBeTruthy();
+  });
+
+  it('never limits an admin, whatever their stored switch says', async () => {
+    mockStaffMe = { staff: { id: 'a1', role: 'admin', role_key: 'admin', linked_calendar_ids: [], permissions: { other_diaries: 'view' } } };
+    await render(
+      <LiveViewerAccessProvider>
+        <DiaryProbe />
+      </LiveViewerAccessProvider>,
+    );
+    expect(screen.getByText('restricted:false mine:true theirs:true')).toBeTruthy();
   });
 });
 

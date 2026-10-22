@@ -94,7 +94,8 @@ import {
   type PendingCrossVenueRebook,
 } from '@/lib/calendar/cross-venue-rebook';
 import { writeRebookBootstrap } from '@/lib/rebook-bootstrap';
-import { accessRefusalMessage } from '@/lib/roles/roles';
+import { accessRefusalMessage, linkedVenuesForDiary, ROLES_COPY } from '@/lib/roles/roles';
+import { diaryColumnFlags, diarySlotAnswer } from '@/lib/calendar/diary-view-only';
 import { newBookingActionLabel } from '@/lib/booking/terminology';
 import { isAppointmentFromVenue } from '@/lib/venue/venue-experience';
 import { hapticSelect, hapticSuccess } from '@/lib/haptics';
@@ -146,6 +147,7 @@ import { usePractitionerLeave } from '@/lib/queries/useAvailabilityManage';
 import { useVenueLiveSync } from '@/lib/realtime/useVenueLiveSync';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
+import { useDiaryScope } from '@/providers/ViewerAccessProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import { LinkedBookingDetailSheet } from '@/components/linked/LinkedBookingDetailSheet';
@@ -504,6 +506,13 @@ export default function CalendarScreen() {
 
   /** The signed-in staff profile (role), already cached app-wide, so this costs no request. */
   const staffMe = useStaffMe();
+  /**
+   * Other people's diaries (roles plan §5.11, §7.3). For a View only or Hidden person, another
+   * person's column takes no new booking, and its bars do not drag, resize or take quick actions:
+   * the server refuses all of it with DIARY_VIEW_ONLY. Everyone else gets the open scope, which
+   * allows everything and changes nothing here.
+   */
+  const diary = useDiaryScope();
 
   // One mutation for drag commits AND undo — the booking id travels in the input.
   const rescheduleById = useRescheduleBookingById();
@@ -757,9 +766,10 @@ export default function CalendarScreen() {
     [scope, anchor, week],
   );
   const linkedQuery = useLinkedCalendar(linkedRange);
+  // View only (§5.11): every link reads as a view-only link; untouched for everyone else.
   const linkedVenues = useMemo<LinkedVenueCalendar[]>(
-    () => linkedQuery.data?.venues ?? [],
-    [linkedQuery.data?.venues],
+    () => linkedVenuesForDiary(linkedQuery.data?.venues ?? [], diary),
+    [linkedQuery.data?.venues, diary],
   );
   // The live venue collective this venue books for as one business (web
   // 2026-09-04): New, Walk-in and a slot on any of its calendars open the
@@ -1549,21 +1559,40 @@ export default function CalendarScreen() {
     [pausedColumnNameById, toast],
   );
 
+  /**
+   * View only and Hidden (roles plan §5.11): someone else's column takes no new booking from this
+   * person, so an empty slot there says so instead of opening the menu. A column that hosts a
+   * resource still opens it, for its "Book <resource>" entries (resources keep today's rules); the
+   * sheet then leaves out New booking, Walk-in and Block time. True when the tap has been answered.
+   */
+  const refusedOnOthersColumn = useCallback(
+    (calendarId: string | null | undefined): boolean => {
+      const hostsResource =
+        !!calendarId && activeResources.some((r) => r.display_on_calendar_id === calendarId);
+      if (diarySlotAnswer(diary, calendarId, hostsResource) !== 'refuse') return false;
+      toast.info(ROLES_COPY['diary.new']);
+      return true;
+    },
+    [diary, activeResources, toast],
+  );
+
   const createAt = useCallback(
     (time: string) => {
       if (refusedOnPausedColumn(effectiveId)) return;
+      if (refusedOnOthersColumn(effectiveId)) return;
       setAddSheetTarget({ kind: 'slot', time, practitionerId: effectiveId ?? '' });
     },
-    [effectiveId, refusedOnPausedColumn],
+    [effectiveId, refusedOnPausedColumn, refusedOnOthersColumn],
   );
 
   /** Empty-slot tap in the multi-calendar view — carries the target column. */
   const createAtFor = useCallback(
     (practitionerId: string, time: string) => {
       if (refusedOnPausedColumn(practitionerId)) return;
+      if (refusedOnOthersColumn(practitionerId)) return;
       setAddSheetTarget({ kind: 'slot', time, practitionerId });
     },
-    [refusedOnPausedColumn],
+    [refusedOnPausedColumn, refusedOnOthersColumn],
   );
 
   /** Empty-slot tap in the week grid — re-anchor to that day (keeps the same
@@ -1571,10 +1600,11 @@ export default function CalendarScreen() {
   const createAtForDate = useCallback(
     (date: string, time: string) => {
       if (refusedOnPausedColumn(effectiveId)) return;
+      if (refusedOnOthersColumn(effectiveId)) return;
       setAnchor(date);
       setAddSheetTarget({ kind: 'slot', time, practitionerId: effectiveId ?? '' });
     },
-    [effectiveId, refusedOnPausedColumn],
+    [effectiveId, refusedOnPausedColumn, refusedOnOthersColumn],
   );
 
   /**
@@ -2069,6 +2099,12 @@ export default function CalendarScreen() {
         });
         return;
       }
+      // View only and Hidden (§5.11): someone else's column, ours or a partner's, takes nothing
+      // from this person, so there is no move, rebook or collective move to offer either.
+      if (!diary.allows(targetColumnId)) {
+        toast.info(ROLES_COPY['diary.move']);
+        return;
+      }
       const booking = findBookingOnAnchor(bookingId);
       const sourceHit = linkedBookingVenue.get(bookingId) ?? null;
       const targetHit = linkedColumnVenue.get(targetColumnId) ?? null;
@@ -2127,6 +2163,7 @@ export default function CalendarScreen() {
       anchor,
       practitioners,
       pausedColumnNameById,
+      diary,
       toast,
       staffCollective,
       venue?.id,
@@ -2265,12 +2302,19 @@ export default function CalendarScreen() {
   // practitioner column → reschedule to the new time AND reassign to that calendar
   // in one PATCH (the server re-validates the target slot and 409s on a clash).
   const handleDragMoveToColumn = useCallback(
-    (bookingId: string, newTime: string, targetCalendarId: string, fromCalendarId: string) =>
+    (bookingId: string, newTime: string, targetCalendarId: string, fromCalendarId: string) => {
+      // The grid refuses such a drop already (the column does not accept drops); this keeps the
+      // answer the same if one gets through.
+      if (!diary.allows(targetCalendarId)) {
+        toast.info(ROLES_COPY['diary.move']);
+        return;
+      }
       commitTimeMove(bookingId, newTime, {
         toPractitionerId: targetCalendarId,
         fromPractitionerId: fromCalendarId,
-      }),
-    [commitTimeMove],
+      });
+    },
+    [commitTimeMove, diary, toast],
   );
 
   const handleBlockTimeBlockPress = useCallback(
@@ -2512,9 +2556,13 @@ export default function CalendarScreen() {
         scheduleBlocks: scheduleByCalendarDate.get(scheduleKey(p.id, anchor)) ?? [],
         ...(column.amended ? { venueHours: column.venueHours } : {}),
         ...(paused ? { badge: 'Paused', acceptsDrops: false } : {}),
+        // View only and Hidden (§5.11): someone else's column is look only for this person. Its
+        // bars open but take no quick actions, drag or resize, and nothing may be dropped on it.
+        ...diaryColumnFlags(diary, p.id),
       };
     });
   }, [
+    diary,
     showAllCalendars,
     ownColumnsShown,
     gridQuery.data,
@@ -2620,6 +2668,9 @@ export default function CalendarScreen() {
             // of its calendars (or when the tap names no calendar).
             collective: collectiveBookingTargetFor(staffCollective, venue.venueId, practitionerId),
           });
+        } else if (diary.restricted) {
+          // View only (§5.11): a partner's calendar is never this person's own.
+          toast.info(ROLES_COPY['diary.new']);
         } else if (linkedColumnUsesNativeGrid(venue)) {
           // An editable column without a create grant says why (web parity).
           toast.info(linkedCreateNotGrantedMessage(venue.venueName));
@@ -2628,7 +2679,7 @@ export default function CalendarScreen() {
       }
       createAtFor(calendarId, time);
     },
-    [linkedColumnVenue, createAtFor, anchor, staffCollective, toast],
+    [linkedColumnVenue, createAtFor, anchor, staffCollective, toast, diary.restricted],
   );
 
   // ---- Week view data ----
@@ -2852,6 +2903,11 @@ export default function CalendarScreen() {
     [practitioners, effectiveId, anchor, venueHoursForAnchor],
   );
 
+  // View only and Hidden (§5.11): on someone else's calendar the bars open but take no quick
+  // actions, drag or resize (the server would refuse each with DIARY_VIEW_ONLY). Always true for
+  // everyone on "Can book and change".
+  const dayColumnWritable = diary.allows(effectiveId);
+
   const dayGrid = (
     <CalendarDayGrid
       // Remount when the viewed calendar or day changes so scroll-to-now
@@ -2876,14 +2932,14 @@ export default function CalendarScreen() {
       windowOverride={windowOverride}
       nowMinutes={nowMinutes}
       onBlockPress={openDetail}
-      onStatusChange={handleStatusChange}
-      onArrivalToggle={handleArrivalToggle}
+      onStatusChange={dayColumnWritable ? handleStatusChange : undefined}
+      onArrivalToggle={dayColumnWritable ? handleArrivalToggle : undefined}
       pendingActionIds={pendingActionIds}
       complianceFlags={complianceFlags}
       onEmptyPress={createAt}
       onBlockTimeBlockPress={handleBlockTimeBlockPress}
-      onDragReschedule={handleDragReschedule}
-      onDragResize={handleDragResize}
+      onDragReschedule={dayColumnWritable ? handleDragReschedule : undefined}
+      onDragResize={dayColumnWritable ? handleDragResize : undefined}
       onDragConflictReject={handleDragConflictReject}
       refreshing={refreshing}
       onRefresh={onRefresh}
@@ -2901,6 +2957,11 @@ export default function CalendarScreen() {
   const closeAddSheet = useCallback(() => setAddSheetTarget(null), []);
 
   const addSheetSlot = addSheetTarget?.kind === 'slot' ? addSheetTarget : null;
+  /**
+   * A slot on someone else's column, for a View only or Hidden person (§5.11). It opens only when
+   * the column hosts a resource (see `refusedOnOthersColumn`), and then offers just those.
+   */
+  const addSheetLookOnly = addSheetSlot != null && !diary.allows(addSheetSlot.practitionerId || null);
   // The collective this sheet's New and Walk-in book for, when one takes the
   // booking (the same rule `collectiveParamsFor` applies), so the sheet can say
   // so: from a partner's linked view the FAB is the only way to it.
@@ -3512,67 +3573,77 @@ export default function CalendarScreen() {
           </Text>
         ) : null}
         <View style={styles.addSheetActions}>
-          <Button
-            label={newBookingActionLabel(terminology, isAppointmentVenue)}
-            variant="primary"
-            fullWidth
-            onPress={() => {
-              const slot = addSheetSlot;
-              closeAddSheet();
-              router.push({
-                pathname: '/booking/new',
-                params: {
-                  // A live collective takes the booking (web 2026-09-04): New
-                  // and Walk-in open the form over the whole collective, a slot
-                  // on one of its calendars with that calendar preselected.
-                  ...collectiveParamsFor(slot?.practitionerId || null),
-                  ...newBookingParams({ date: anchor, slot }),
-                },
-              });
-            }}
-          />
-          {/* Walk-in — slot-aware: starts at the TAPPED slot time when a slot
-              opened the sheet, else "now" (FAB). Web parity: the slot menu offers
-              a Walk-in at that exact time, not the current time. */}
-          <Button
-            label="Walk-in"
-            variant="secondary"
-            fullWidth
-            onPress={() => {
-              const slot = addSheetSlot;
-              closeAddSheet();
-              router.push({
-                pathname: '/booking/new',
-                params: {
-                  ...collectiveParamsFor(slot?.practitionerId || null),
-                  ...newBookingParams({
-                    date: anchor,
-                    slot,
-                    fallbackTime: nowTime,
-                    intent: 'walk-in',
-                  }),
-                },
-              });
-            }}
-          />
-          {/* Block time — slot only (the FAB has no target column/time). */}
-          {addSheetSlot ? (
-            <Button
-              label="Block time"
-              variant="secondary"
-              fullWidth
-              onPress={() => {
-                const slot = addSheetSlot;
-                closeAddSheet();
-                setBlockTarget({
-                  mode: 'create',
-                  practitionerId: slot.practitionerId,
-                  date: anchor,
-                  startTime: slot.time,
-                });
-              }}
-            />
-          ) : null}
+          {addSheetLookOnly ? (
+            // View only and Hidden (§5.11): a slot on someone else's column books only its
+            // resources here, so say why New booking, Walk-in and Block time are missing.
+            <Text variant="bodySmall" tone="secondary">
+              {ROLES_COPY['diary.new']}
+            </Text>
+          ) : (
+            <>
+              <Button
+                label={newBookingActionLabel(terminology, isAppointmentVenue)}
+                variant="primary"
+                fullWidth
+                onPress={() => {
+                  const slot = addSheetSlot;
+                  closeAddSheet();
+                  router.push({
+                    pathname: '/booking/new',
+                    params: {
+                      // A live collective takes the booking (web 2026-09-04): New
+                      // and Walk-in open the form over the whole collective, a slot
+                      // on one of its calendars with that calendar preselected.
+                      ...collectiveParamsFor(slot?.practitionerId || null),
+                      ...newBookingParams({ date: anchor, slot }),
+                    },
+                  });
+                }}
+              />
+              {/* Walk-in — slot-aware: starts at the TAPPED slot time when a slot
+                  opened the sheet, else "now" (FAB). Web parity: the slot menu offers
+                  a Walk-in at that exact time, not the current time. */}
+              <Button
+                label="Walk-in"
+                variant="secondary"
+                fullWidth
+                onPress={() => {
+                  const slot = addSheetSlot;
+                  closeAddSheet();
+                  router.push({
+                    pathname: '/booking/new',
+                    params: {
+                      ...collectiveParamsFor(slot?.practitionerId || null),
+                      ...newBookingParams({
+                        date: anchor,
+                        slot,
+                        fallbackTime: nowTime,
+                        intent: 'walk-in',
+                      }),
+                    },
+                  });
+                }}
+              />
+              {/* Block time — slot only (the FAB has no target column/time). */}
+              {addSheetSlot ? (
+                <Button
+                  label="Block time"
+                  variant="secondary"
+                  fullWidth
+                  onPress={() => {
+                    const slot = addSheetSlot;
+                    closeAddSheet();
+                    setBlockTarget({
+                      mode: 'create',
+                      practitionerId: slot.practitionerId,
+                      date: anchor,
+                      startTime: slot.time,
+                    });
+                  }}
+                />
+              ) : null}
+            </>
+          )}
 
           {/* "Book <resource>" — one button per resource hosted on the tapped
               column (web parity: `resourcesHere`). Routes to the resource flow

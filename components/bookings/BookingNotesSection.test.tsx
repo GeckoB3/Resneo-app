@@ -99,6 +99,20 @@ describe('BookingNotesSection — web parity', () => {
     expect(mockUpdateBooking).not.toHaveBeenCalled();
   });
 
+  it("reads the booking's own notes only, and still edits the client's, on a look-only booking", async () => {
+    // Roles plan §5.11: someone else's appointment, for a View only or Hidden person.
+    await render(<BookingNotesSection booking={makeBooking()} isTable={false} bookingReadOnly />);
+
+    await press(screen.getByLabelText('Edit booking notes'));
+    expect(screen.queryByDisplayValue('Window seat')).toBeNull();
+
+    await press(screen.getByLabelText('Edit customer notes'));
+    await changeText(screen.getByDisplayValue('VIP'), 'VIP, nut allergy');
+    await press(screen.getByText('Save'));
+    expect(mockUpdateGuest).toHaveBeenCalledWith({ customer_profile_notes: 'VIP, nut allergy' });
+    expect(mockUpdateBooking).not.toHaveBeenCalled();
+  });
+
   it('clearing a note saves null (not an empty string)', async () => {
     await render(<BookingNotesSection booking={makeBooking()} isTable={false} />);
 

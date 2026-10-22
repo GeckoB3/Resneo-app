@@ -167,6 +167,12 @@ export type AllCalendarColumn = {
    */
   editable?: boolean;
   /**
+   * Someone else's own column, seen by a View only or Hidden person (roles plan §5.11): drawn as
+   * always, but its bars are static and only open (no quick actions, hold-drag or resize), as on a
+   * read-only linked column. Pair it with `acceptsDrops: false`. Defaults to false.
+   */
+  readOnly?: boolean;
+  /**
    * The venue whose columns a bar of this column may be dragged onto (a
    * partner's venue id): a booking never changes venue. Own columns need none;
    * a linked column without one accepts no cross-column move at all.
@@ -989,9 +995,11 @@ function DayColumn({
   /**
    * Whether this column's bars take actions and gestures: every own column,
    * and a linked column the grant lets us edit (web
-   * `linkedColumnUsesNativeGrid`). The rest draw a static, tap-to-open bar.
+   * `linkedColumnUsesNativeGrid`), unless the column is `readOnly` (someone
+   * else's, for a View only or Hidden person). The rest draw a static,
+   * tap-to-open bar.
    */
-  const interactive = !column.linked || column.editable === true;
+  const interactive = (!column.linked || column.editable === true) && column.readOnly !== true;
   const positioned = useMemo(
     () =>
       positionColumn(
