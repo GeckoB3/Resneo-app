@@ -116,7 +116,7 @@ export function PlanChangeSection({
       <Text variant="bodySmall" tone="secondary" style={styles.intro}>
         Move between Light, Plus, and Pro without starting a new checkout. We update your existing
         Stripe subscription and use the card already on file. Downgrades are available when your
-        active calendars and team logins fit the target plan limits.
+        active calendars fit the smaller plan.
       </Text>
 
       {blocked && (
