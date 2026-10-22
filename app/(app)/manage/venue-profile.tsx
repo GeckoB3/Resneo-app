@@ -39,6 +39,7 @@ import {
   useUploadVenueLogo,
   useUploadVenueCover,
 } from '@/lib/queries/useVenueImageUpload';
+import { useWebDashboardLink } from '@/lib/sites/useWebDashboardLink';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -550,13 +551,15 @@ export default function VenueProfileScreen() {
   }, []);
 
   // In-app browser tab on the configured web origin (system-browser fallback);
-  // inline error if neither opens — keeps the user inside the app.
+  // inline error if neither opens — keeps the user inside the app. A dashboard
+  // path names this venue (`?site=`, web roles plan §6.2b).
+  const siteLink = useWebDashboardLink();
   const openWeb = useCallback((path: string) => {
-    const url = webDashboardUrl(path);
+    const url = webDashboardUrl(siteLink(path));
     void WebBrowser.openBrowserAsync(url).catch(() =>
       Linking.openURL(url).catch(() => setError(`Could not open the browser: ${url}`)),
     );
-  }, []);
+  }, [siteLink]);
 
   // ------------------------------------------------------------------
   // Image upload handlers

@@ -41,6 +41,7 @@ import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useOrderWrite, useShopOrder } from '@/lib/queries/useOrders';
 import { usePosEnabled } from '@/lib/queries/usePos';
 import { useVenue } from '@/lib/queries/useVenue';
+import { useWebDashboardLink } from '@/lib/sites/useWebDashboardLink';
 import { useToast } from '@/providers/ToastProvider';
 import { useClientContactHidden } from '@/providers/ViewerAccessProvider';
 import { spacing } from '@/theme/index';
@@ -126,6 +127,7 @@ function OrderBody({
   const t = usePosT();
   const toast = useToast();
   const router = useRouter();
+  const siteLink = useWebDashboardLink();
   const o = data.order;
   const write = useOrderWrite(o.id);
   const tz = data.venue.timezone;
@@ -174,7 +176,8 @@ function OrderBody({
 
   function openSlipOnWeb() {
     const base = getWebUrl() || 'https://reserve-ni.vercel.app';
-    const url = `${base}/dashboard/orders/${encodeURIComponent(o.id)}/packing-slip`;
+    // Names this venue (`?site=`, web roles plan §6.2b), so the web opens the slip on this business.
+    const url = `${base}${siteLink(`/dashboard/orders/${encodeURIComponent(o.id)}/packing-slip`)}`;
     toast.info(t('app.ord.slip.web'));
     void WebBrowser.openBrowserAsync(url).catch(() => Linking.openURL(url).catch(() => undefined));
   }

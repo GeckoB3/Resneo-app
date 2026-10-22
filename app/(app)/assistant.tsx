@@ -17,6 +17,7 @@ import { ASSISTANT_COPY } from '@/lib/assistant/copy';
 import { writeHandoff } from '@/lib/assistant/handoff';
 import { assistantLinkUrl, isVideoLink } from '@/lib/assistant/links';
 import { useAssistantChat } from '@/lib/assistant/useAssistantChat';
+import { useWebDashboardLink } from '@/lib/sites/useWebDashboardLink';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import { useToast } from '@/providers/ToastProvider';
@@ -53,9 +54,11 @@ export default function AssistantScreen() {
     paddingBottom: spacing.base + insets.bottom + keyboardInset.value,
   }));
 
+  // A dashboard link in an answer names this venue (`?site=`, web roles plan §6.2b).
+  const siteLink = useWebDashboardLink();
   const openLink = useCallback(
     (href: string) => {
-      const url = assistantLinkUrl(href);
+      const url = assistantLinkUrl(siteLink(href.trim()));
       // A link we do not open should never have been tappable; nothing to say.
       if (!url) return;
       const fallback = () =>
@@ -68,7 +71,7 @@ export default function AssistantScreen() {
       }
       void WebBrowser.openBrowserAsync(url).catch(fallback);
     },
-    [toast],
+    [siteLink, toast],
   );
 
   const sendToSupport = useCallback(

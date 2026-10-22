@@ -11,7 +11,14 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
-jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn(() => Promise.resolve()) }));
+const mockOpenBrowser = jest.fn((..._a: unknown[]) => Promise.resolve());
+jest.mock('expo-web-browser', () => ({ openBrowserAsync: (...a: unknown[]) => mockOpenBrowser(...a) }));
+
+// The venue the app is showing: a dashboard link in an answer names it (`?site=`, web roles plan §6.2b).
+const mockVenueId = '0b6a2f1e-4c3d-4e5f-8a9b-0c1d2e3f4a5b';
+jest.mock('@/providers/VenueProvider', () => ({
+  useVenueContext: () => ({ venue: { id: mockVenueId } }),
+}));
 
 const mockPush = jest.fn();
 jest.mock('expo-router', () => {
@@ -101,6 +108,34 @@ describe('Ask ResNeo screen', () => {
     expect(screen.getByText('Settings')).toBeTruthy();
     expect(screen.getByText('Calendars')).toBeTruthy();
     expect(screen.getByText(ASSISTANT_COPY.feedbackPrompt)).toBeTruthy();
+  });
+
+  it('opens a dashboard link on this venue, and a help link as it is', async () => {
+    mockStream.mockImplementation(async ({ handlers }: any) => {
+      handlers.onConversation('c-1');
+      handlers.onDone({
+        assistantMessageId: 'm-1',
+        text: 'Open [Plan](/dashboard/settings?tab=plan) or read [Calendars](/help/settings/calendars).',
+        citations: ['settings/calendars'],
+        answered: true,
+      });
+    });
+
+    await render(<AssistantScreen />);
+    await ask('Where is my plan?');
+    mockOpenBrowser.mockClear();
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('Plan'));
+    });
+    expect(mockOpenBrowser).toHaveBeenLastCalledWith(
+      expect.stringMatching(new RegExp(`/dashboard/settings\\?tab=plan&site=${mockVenueId}$`)),
+    );
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('Calendars'));
+    });
+    expect(mockOpenBrowser).toHaveBeenLastCalledWith(expect.stringMatching(/\/help\/settings\/calendars$/));
   });
 
   it('shows the thinking dots while the first token is still coming', async () => {

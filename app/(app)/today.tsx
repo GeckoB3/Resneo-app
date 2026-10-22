@@ -48,6 +48,7 @@ import {
 } from '@/lib/queries/useSetupStatus';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { venueActiveModels } from '@/lib/booking/venue-models';
+import { useWebDashboardLink } from '@/lib/sites/useWebDashboardLink';
 import { isAppointmentExperience } from '@/lib/venue/venue-experience';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { minTouchTarget, radius, spacing } from '@/theme/index';
@@ -79,6 +80,7 @@ export function SetupChecklistCard() {
   const snooze = useSnoozeSetupStep();
   const { venue } = useVenueContext();
   const venueId = venue?.id ?? null;
+  const siteLink = useWebDashboardLink();
   // Tap-through completion for the post-onboarding prompts (web parity).
   const clickedSteps = useClickedSetupSteps(venueId);
   // Web parity: the X confirms first, so one stray tap can't permanently hide
@@ -143,7 +145,8 @@ export function SetupChecklistCard() {
     if (step.webPath) {
       hapticTap();
       const base = (process.env.EXPO_PUBLIC_API_URL ?? '').replace(/\/$/, '');
-      void Linking.openURL(`${base}${step.webPath}`);
+      // A dashboard path names this venue (`?site=`, web roles plan §6.2b).
+      void Linking.openURL(`${base}${siteLink(step.webPath)}`);
       return;
     }
     if (step.route) goTo(step.route);

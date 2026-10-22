@@ -23,8 +23,13 @@ jest.mock('@/lib/env', () => ({
   getApiUrl: () => 'https://api.example.test',
   getWebUrl: () => 'https://web.example.test',
 }));
+// The venue the app is showing: the web page names it (`?site=`, web roles plan §6.2b).
+const mockVenueId = '7c6b5a49-3827-4615-a4b3-c2d1e0f9a8b7';
 jest.mock('@/providers/VenueProvider', () => ({
-  useVenueContext: () => ({ terminology: { client: 'Client', booking: 'Appointment', staff: 'Stylist' } }),
+  useVenueContext: () => ({
+    venue: { id: mockVenueId },
+    terminology: { client: 'Client', booking: 'Appointment', staff: 'Stylist' },
+  }),
 }));
 const mockToast = { success: jest.fn(), error: jest.fn(), info: jest.fn() };
 jest.mock('@/providers/ToastProvider', () => ({ useToast: () => mockToast }));
@@ -125,7 +130,9 @@ it('opens the web page when the server has no PDF route yet (every slip 404)', a
   mockDownload.mockResolvedValue({ ok: false, message: 'Download failed (404).', status: 404 });
   await render(<PackingSlipBar selected={three} accessToken="token-A" />);
   await press('Print packing slips');
-  expect(mockOpenBrowser).toHaveBeenCalledWith('https://web.example.test/dashboard/orders/packing-slips?ids=o1,o2,o3');
+  expect(mockOpenBrowser).toHaveBeenCalledWith(
+    `https://web.example.test/dashboard/orders/packing-slips?ids=o1,o2,o3&site=${mockVenueId}`,
+  );
   expect(mockToast.info).toHaveBeenCalledWith('The packing slips open on the web, where you can print them.');
   expect(mockShareFile).not.toHaveBeenCalled();
 });

@@ -49,6 +49,7 @@ import {
 } from '@/lib/queries/useBillingStatus';
 import { useSmsUsage } from '@/lib/queries/useSmsUsage';
 import { ROLES_COPY, venueBillingPayoutsAdmins } from '@/lib/roles/roles';
+import { useWebDashboardLink } from '@/lib/sites/useWebDashboardLink';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -269,9 +270,11 @@ export default function PlanScreen() {
     );
   }, []);
 
+  // A dashboard path names this venue (`?site=`, web roles plan §6.2b).
+  const siteLink = useWebDashboardLink();
   const openWeb = useCallback(
-    (path: string) => openExternal(`${getWebUrl()}${path}`),
-    [openExternal],
+    (path: string) => openExternal(`${getWebUrl()}${siteLink(path)}`),
+    [openExternal, siteLink],
   );
 
   const onRefresh = useCallback(async () => {

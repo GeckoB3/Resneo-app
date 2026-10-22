@@ -93,6 +93,7 @@ jest.mock('@/lib/queries/usePosReports', () => ({
 }));
 
 import CheckoutHomeScreen from '@/app/(app)/checkout/index';
+import { noteActiveVenueId } from '@/lib/sites/active-site';
 
 const SALE = 'a1a1a1a1-a1a1-41a1-81a1-a1a1a1a1a1a1';
 const ORDER = 'b2b2b2b2-b2b2-42b2-82b2-b2b2b2b2b2b2';
@@ -220,6 +221,22 @@ describe('needs your attention', () => {
       fireEvent.press(screen.getByRole('button', { name: 'A client has disputed a card payment. Respond in your Stripe dashboard.' }));
     });
     expect(mockOpenBrowser).toHaveBeenCalledWith(expect.stringMatching(/\/dashboard\/settings\?tab=payments$/));
+  });
+
+  it('opens the payment settings on the site this phone acts on, before the venue has loaded (§6.2b)', async () => {
+    const acting = '8d7c6b5a-4938-4271-b6a5-948372615049';
+    noteActiveVenueId(acting);
+    try {
+      await render(<CheckoutHomeScreen />);
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: 'A client has disputed a card payment. Respond in your Stripe dashboard.' }));
+      });
+      expect(mockOpenBrowser).toHaveBeenLastCalledWith(
+        expect.stringMatching(new RegExp(`/dashboard/settings\\?tab=payments&site=${acting}$`)),
+      );
+    } finally {
+      noteActiveVenueId(null);
+    }
   });
 
   it.each([

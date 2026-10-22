@@ -27,6 +27,7 @@ import {
 import { formatVenueList, setupCopy } from '@/lib/linked/setup-copy';
 import { useIncomingLinks, useLinkedVenues } from '@/lib/queries/useLinkedVenues';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
+import { useWebDashboardLink } from '@/lib/sites/useWebDashboardLink';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
@@ -49,6 +50,7 @@ export default function CollectivesScreen() {
   const staffQuery = useStaffMe();
   const isAdmin = staffQuery.data?.staff?.role === 'admin';
   const { name: venueName } = useVenueContext();
+  const siteLink = useWebDashboardLink();
 
   const query = useCollectives();
   const linksQuery = useLinkedVenues();
@@ -101,9 +103,11 @@ export default function CollectivesScreen() {
 
   // The address customers actually use: a member venue's own page when the
   // collective adopted it, else the dedicated combined address (web 2026-09-05).
+  // A dashboard path (joining on the web) names this venue (`?site=`, web roles plan §6.2b); a
+  // public booking page is left as it is.
   const openWeb = (publicPath: string) => {
     const base = getWebUrl() || 'https://app.resneo.com';
-    const url = `${base}${publicPath}`;
+    const url = `${base}${siteLink(publicPath)}`;
     void WebBrowser.openBrowserAsync(url).catch(() =>
       Linking.openURL(url).catch(() => toast.error('Could not open the browser.')),
     );

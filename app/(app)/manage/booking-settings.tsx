@@ -27,6 +27,7 @@ import {
   useUpdateVenue,
   type FeatureFlagsCalendar,
 } from '@/lib/queries/useVenueSettings';
+import { useWebDashboardLink } from '@/lib/sites/useWebDashboardLink';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
@@ -769,6 +770,7 @@ export default function BookingSettingsScreen() {
   const isAdmin = venue?.current_user_role === 'admin';
   const appointmentsPlan = isAppointmentsPlanTier(venue?.pricing_tier ?? null);
   const { colors } = useTheme();
+  const siteLink = useWebDashboardLink();
 
   // --- Booking models state (lazy initialiser, no render-phase side effects) ---
   const [models, setModels] = useState<BookingModel[]>(() => {
@@ -924,7 +926,8 @@ export default function BookingSettingsScreen() {
         process.env.EXPO_PUBLIC_WEB_URL ??
         process.env.EXPO_PUBLIC_API_URL ??
         '';
-      void Linking.openURL(`${webUrl.replace(/\/$/, '')}${item.webPath}`);
+      // The dashboard path names this venue (`?site=`, web roles plan §6.2b).
+      void Linking.openURL(`${webUrl.replace(/\/$/, '')}${siteLink(item.webPath)}`);
     }
   }
 

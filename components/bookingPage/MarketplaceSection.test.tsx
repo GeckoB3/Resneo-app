@@ -13,6 +13,9 @@ jest.mock('expo-router', () => ({ useRouter: () => ({ push: mockPush }) }));
 const mockOpenBrowser = jest.fn((..._a: unknown[]) => Promise.resolve());
 jest.mock('expo-web-browser', () => ({ openBrowserAsync: (...a: unknown[]) => mockOpenBrowser(...a) }));
 jest.mock('@/lib/env', () => ({ getWebUrl: () => 'https://web.example.com', isBackendConfigured: () => true }));
+// The venue the app is showing: a fix on the web dashboard names it (`?site=`, web roles plan §6.2b).
+const mockVenueId = '5d0c6a3e-7b1f-4a2c-9e8d-1f2a3b4c5d6e';
+jest.mock('@/providers/VenueProvider', () => ({ useVenueContext: () => ({ venue: { id: mockVenueId } }) }));
 
 const mockToast = { success: jest.fn(), error: jest.fn(), info: jest.fn() };
 jest.mock('@/providers/ToastProvider', () => ({ useToast: () => mockToast }));
@@ -131,7 +134,13 @@ describe('MarketplaceSection', () => {
     await press(links[0]!);
     expect(mockPush).toHaveBeenCalledWith('/manage/venue-profile');
     await press(links[1]!);
-    expect(mockOpenBrowser).toHaveBeenCalledWith('https://web.example.com/onboarding');
+    expect(mockOpenBrowser).toHaveBeenCalledWith(`https://web.example.com/onboarding?site=${mockVenueId}`);
+  });
+
+  it('opens the public marketplace without naming a venue', async () => {
+    await render(<MarketplaceSection isAdmin />);
+    await press(screen.getByText('resneo.com/book'));
+    expect(mockOpenBrowser).toHaveBeenCalledWith('https://web.example.com/book');
   });
 
   it('asks the owner to confirm suggested categories, or change them', async () => {

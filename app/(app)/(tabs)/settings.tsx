@@ -56,6 +56,7 @@ import { usePosBootstrap } from "@/lib/queries/usePos";
 import { useStaffMe } from "@/lib/queries/useStaffMe";
 import { useMeSites } from "@/lib/queries/useMeSites";
 import { showsSitePicker } from "@/lib/sites/sites";
+import { useWebDashboardLink } from "@/lib/sites/useWebDashboardLink";
 import { hasBillingPayoutsAdmins } from "@/lib/roles/roles";
 import { useAppLock } from "@/providers/AppLockProvider";
 import { switchAppMode } from "@/lib/mode/app-mode-store";
@@ -162,17 +163,20 @@ export default function MoreScreen() {
     canManageBilling && planStatus != null && WARN_PLAN_STATUSES.has(planStatus);
 
   // In-app browser tab (SFSafariViewController / Chrome Custom Tab) so web
-  // content opens without bouncing the user out of the app.
+  // content opens without bouncing the user out of the app. A dashboard path
+  // names this venue (`?site=`), so a multi-site login lands on the business
+  // the app is showing (web roles plan §6.2b).
+  const siteLink = useWebDashboardLink();
   const openWeb = useCallback(
     (path: string) => {
-      const url = webDashboardUrl(path);
+      const url = webDashboardUrl(siteLink(path));
       void WebBrowser.openBrowserAsync(url).catch(() =>
         Linking.openURL(url).catch(() =>
           toast.error("Could not open the browser."),
         ),
       );
     },
-    [toast],
+    [siteLink, toast],
   );
 
   // Toggle the opt-in biometric lock. Enabling prompts for Face ID/passcode

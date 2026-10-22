@@ -142,3 +142,17 @@ describe('the owner, and an admin from before roles', () => {
     expect(screen.getByText('Manage billing')).toBeTruthy();
   });
 });
+
+describe('opening the plan on the web', () => {
+  it('names this venue, so a login with several businesses lands on this one (§6.2b)', async () => {
+    const venueId = '6f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0';
+    mockVenue = { ...BASE, id: venueId, current_user_role: 'admin', current_user_role_key: 'owner', current_user_is_owner: true };
+    const openBrowser = jest.mocked(jest.requireMock<typeof import('expo-web-browser')>('expo-web-browser').openBrowserAsync);
+    openBrowser.mockClear();
+    await render(<PlanScreen />);
+    await act(async () => {
+      fireEvent.press(screen.getByText('View plan on web'));
+    });
+    expect(openBrowser).toHaveBeenCalledWith(expect.stringMatching(new RegExp(`/dashboard/settings\\?tab=plan&site=${venueId}$`)));
+  });
+});

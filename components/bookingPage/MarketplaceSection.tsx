@@ -36,6 +36,7 @@ import {
   type MarketplacePatch,
 } from '@/lib/marketplace/owner-state';
 import { useMarketplaceOwnerState, useUpdateMarketplace } from '@/lib/queries/useMarketplace';
+import { useWebDashboardLink } from '@/lib/sites/useWebDashboardLink';
 import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -48,6 +49,7 @@ export function MarketplaceSection({ isAdmin }: { isAdmin: boolean }) {
   const toast = useToast();
   const query = useMarketplaceOwnerState();
   const update = useUpdateMarketplace();
+  const siteLink = useWebDashboardLink();
   const [editingCategories, setEditingCategories] = useState(false);
   // The draft follows the server's categories until the owner starts changing them.
   const [draftEdit, setDraftEdit] = useState<string[] | null>(null);
@@ -84,7 +86,8 @@ export function MarketplaceSection({ isAdmin }: { isAdmin: boolean }) {
       router.push(target.target as Href);
       return;
     }
-    void WebBrowser.openBrowserAsync(`${getWebUrl()}${target.target}`).catch(() => undefined);
+    // A dashboard or onboarding fix names this venue (`?site=`, web roles plan §6.2b).
+    void WebBrowser.openBrowserAsync(`${getWebUrl()}${siteLink(target.target)}`).catch(() => undefined);
   }
 
   function openMarketplace() {

@@ -17,6 +17,7 @@ import {
   slipRouteMissing,
   webPackingSlipsUrl,
 } from '@/lib/shop/packing-slips';
+import { useWebDashboardLink } from '@/lib/sites/useWebDashboardLink';
 import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -41,6 +42,7 @@ export function PackingSlipBar({ selected, accessToken }: { selected: SlipOrder[
   const t = usePosT();
   const toast = useToast();
   const { colors } = useTheme();
+  const siteLink = useWebDashboardLink();
   const [phase, setPhase] = useState<Phase>(IDLE);
   const [error, setError] = useState<string | null>(null);
   const stopRef = useRef(false);
@@ -56,7 +58,8 @@ export function PackingSlipBar({ selected, accessToken }: { selected: SlipOrder[
 
   function openOnWeb(ids: string[]) {
     const base = getWebUrl() || 'https://reserve-ni.vercel.app';
-    const url = webPackingSlipsUrl(base, ids);
+    // Names this venue (`?site=`, web roles plan §6.2b), so the web opens the slips on this business.
+    const url = siteLink(webPackingSlipsUrl(base, ids), base);
     toast.info(t('app.ord.bulk.web'));
     void WebBrowser.openBrowserAsync(url).catch(() => Linking.openURL(url).catch(() => undefined));
   }

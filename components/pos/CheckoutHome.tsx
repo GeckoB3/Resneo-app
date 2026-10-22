@@ -13,6 +13,7 @@ import { getWebUrl } from '@/lib/env';
 import { saleStatusCopyId } from '@/lib/pos/sale-math';
 import { longBusinessDateLabel } from '@/lib/pos/till-math';
 import { knownVenueAlerts, venueAlertLink, venueAlertSentence } from '@/lib/pos/venue-alerts';
+import { useWebDashboardLink } from '@/lib/sites/useWebDashboardLink';
 import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { PosSaleListRow, PosVenueAlert } from '@/types/pos';
@@ -165,6 +166,7 @@ export function AttentionCard({ alerts }: { alerts: PosVenueAlert[] | null | und
   const t = usePosT();
   const router = useRouter();
   const { colors } = useTheme();
+  const siteLink = useWebDashboardLink();
   const rows = knownVenueAlerts(alerts);
   if (rows.length === 0) return null;
   return (
@@ -181,7 +183,8 @@ export function AttentionCard({ alerts }: { alerts: PosVenueAlert[] | null | und
                 router.push(link.href as Href);
                 return;
               }
-              const url = `${getWebUrl() || 'https://reserve-ni.vercel.app'}${link.path}`;
+              // The dashboard path names this venue (`?site=`, web roles plan §6.2b).
+              const url = `${getWebUrl() || 'https://reserve-ni.vercel.app'}${siteLink(link.path)}`;
               void WebBrowser.openBrowserAsync(url).catch(() => Linking.openURL(url).catch(() => undefined));
             }
           : undefined;

@@ -83,10 +83,12 @@ jest.mock('@/lib/queries/useBillingStatus', () => ({
 jest.mock('@/lib/queries/useVenueSettings', () => ({
   useUpdateVenue: () => ({ mutateAsync: jest.fn() }),
 }));
+// A uuid, as the web's `?site=` deep link needs (web roles plan §6.2b).
+const mockVenueId = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
 jest.mock('@/providers/VenueProvider', () => ({
   useVenueContext: () => ({
     venue: {
-      id: 'venue-1',
+      id: mockVenueId,
       pricing_tier: 'appointments',
       booking_model: 'unified_scheduling',
       active_booking_models: ['unified_scheduling'],
@@ -195,5 +197,17 @@ describe('More tab — the billing nudge (roles plan §5.3)', () => {
     mockStaff = { ...mockStaff, role_key: 'admin', is_owner: false, permissions: { billing_payouts_admins: false } };
     await render(<MoreScreen />);
     expect(mockUseBillingStatus).toHaveBeenLastCalledWith(false);
+  });
+});
+
+describe('More tab: Web dashboard (web roles plan §6.2b)', () => {
+  it('opens the dashboard on the venue the app is showing', async () => {
+    const openBrowser = jest.mocked(jest.requireMock<typeof import('expo-web-browser')>('expo-web-browser').openBrowserAsync);
+    openBrowser.mockClear();
+    await render(<MoreScreen />);
+    await act(async () => {
+      fireEvent.press(screen.getByText('Web dashboard'));
+    });
+    expect(openBrowser).toHaveBeenCalledWith(expect.stringMatching(new RegExp(`/dashboard\\?site=${mockVenueId}$`)));
   });
 });
