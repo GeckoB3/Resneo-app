@@ -1,6 +1,5 @@
-import { ApiError } from '@/lib/api/client';
+import { ApiError, apiRawFetch } from '@/lib/api/client';
 import { formDataFile } from '@/lib/api/form-data-file';
-import { getApiUrl } from '@/lib/env';
 import { posHeaders } from '@/lib/pos/api';
 
 /** Time box for a photo upload: longer than a JSON call. */
@@ -28,7 +27,7 @@ export async function posPhotoUpload<T>(
   }, UPLOAD_TIMEOUT_MS);
   let response: Response;
   try {
-    response = await fetch(`${getApiUrl()}${path}`, {
+    response = await apiRawFetch(path, {
       method: 'POST',
       headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json', ...posHeaders() },
       body: form,

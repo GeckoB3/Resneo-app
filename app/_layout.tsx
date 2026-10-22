@@ -28,6 +28,8 @@ import {
 } from '@/lib/observability';
 import { useDeviceOrientationLock } from '@/lib/orientation';
 import { useAppMode } from '@/lib/mode/useAppMode';
+import { startChosenSiteHydration } from '@/lib/sites/active-site';
+import { registerSiteSwitchCleanup } from '@/lib/sites/site-switch-cleanup';
 import { AppProviders } from '@/providers/AppProviders';
 import { useAuth } from '@/providers/AuthProvider';
 import { useTheme } from '@/theme/useTheme';
@@ -42,6 +44,9 @@ SplashScreen.preventAutoHideAsync();
 initObservability();
 // Product-analytics seam (console/no-op until a backend key is configured).
 initAnalytics();
+// The site this phone acts on (web roles plan §6.2c), read before any request can go out.
+void startChosenSiteHydration();
+registerSiteSwitchCleanup();
 
 export default function RootLayout() {
   // Phones stay portrait; tablets rotate freely (applied at runtime — see hook).

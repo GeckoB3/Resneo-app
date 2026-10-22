@@ -1,9 +1,8 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import * as ImagePicker from 'expo-image-picker';
 
-import { apiFetch, ApiError } from '@/lib/api/client';
+import { apiFetch, ApiError, apiRawFetch } from '@/lib/api/client';
 import { formDataFile } from '@/lib/api/form-data-file';
-import { getApiUrl } from '@/lib/env';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 
@@ -31,7 +30,6 @@ async function uploadImageToRoute(
     formDataFile(fileUri, `upload.${mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg'}`, mimeType),
   );
 
-  const url = `${getApiUrl()}${route}`;
   // Uploads go out through raw fetch (apiFetch cannot carry FormData), so they
   // need their own time box — otherwise a stalled connection on venue Wi-Fi
   // leaves "Uploading…" on screen until the OS socket timeout, a minute or more
@@ -46,7 +44,7 @@ async function uploadImageToRoute(
 
   let response: Response;
   try {
-    response = await fetch(url, {
+    response = await apiRawFetch(route, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,

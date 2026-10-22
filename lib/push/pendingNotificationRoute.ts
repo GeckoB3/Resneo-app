@@ -36,7 +36,8 @@
  * somewhere that shows the offer.
  */
 export type PendingPushRoute =
-  | { kind: 'booking'; bookingId: string }
+  /** `venueId`: the booking's site, on pushes sent since the web roles plan's B1 (§6.2c). */
+  | { kind: 'booking'; bookingId: string; venueId?: string | null }
   | { kind: 'url'; url: string }
   | { kind: 'customerHome' }
   /** A sale sent from the web till to this phone (`pos_collect_request`, POS plan §4.36). */

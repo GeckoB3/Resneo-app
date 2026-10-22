@@ -8,6 +8,7 @@ import { CardCapabilityReporter } from '@/components/pos/CardCapabilityReporter'
 import { CollectRequestPrompt } from '@/components/pos/CollectRequestPrompt';
 import { CollectRequestsBanner } from '@/components/pos/CollectRequests';
 import { PendingPushRouteHandler } from '@/components/push/PendingPushRouteHandler';
+import { SiteChoiceOffer } from '@/components/sites/SiteChoiceOffer';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { WaitlistAvailabilityBanner } from '@/components/waitlist/WaitlistAvailabilityBanner';
 import { useColorScheme } from '@/components/useColorScheme';
@@ -258,10 +259,28 @@ export default function AppLayout() {
           title: 'Collective',
         }}
       />
+      {/* One login, several sites (web roles plan §6.2c, §6.7): the site picker and All sites. */}
+      <Stack.Screen
+        name="sites/index"
+        options={{
+          headerShown: true,
+          title: 'Switch site',
+        }}
+      />
+      <Stack.Screen
+        name="sites/overview"
+        options={{
+          headerShown: true,
+          title: 'All sites',
+        }}
+      />
       </Stack>
       {/* Routes a parked notification tap. Lives inside this layout so it can
           only ever push while the (app) navigator is mounted. */}
       <PendingPushRouteHandler />
+      {/* One login, several sites (web roles plan §6.2c): after signing in, the
+          site picker for someone with more than one site or an invite waiting. */}
+      <SiteChoiceOffer ready={!checkingStaffAccess && role === 'staff'} />
       {/* Tap to Pay on iPhone, introduced once to each eligible user (Apple 3.2 /
           6.2). Renders nothing unless it applies; waits out the staff check. */}
       {!checkingStaffAccess ? <TapToPayIntroduction /> : null}

@@ -1,8 +1,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { ApiError, apiErrorCode } from '@/lib/api/client';
+import { ApiError, apiErrorCode, apiRawFetch } from '@/lib/api/client';
 import { formDataFile } from '@/lib/api/form-data-file';
-import { getApiUrl } from '@/lib/env';
 import { posFetch, posHeaders, retailPaths } from '@/lib/pos/api';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
@@ -228,7 +227,7 @@ export async function uploadProductPhoto(
   }, UPLOAD_TIMEOUT_MS);
   let response: Response;
   try {
-    response = await fetch(`${getApiUrl()}${retailPaths.productPhotos(productId)}`, {
+    response = await apiRawFetch(retailPaths.productPhotos(productId), {
       method: 'POST',
       headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json', ...posHeaders() },
       body: form,

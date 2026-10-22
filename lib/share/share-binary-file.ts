@@ -1,5 +1,7 @@
 import { Platform } from 'react-native';
 
+import { withApiSiteHeader } from '@/lib/api/client';
+
 /**
  * Download a file the API serves (a CSV, an .xlsx workbook or a PDF) and hand it to the OS
  * share sheet, as `shareTextFile` does for text the app builds itself. The bytes never pass
@@ -14,7 +16,9 @@ export async function downloadAndShareFile(args: {
   headers: Record<string, string>;
   dialogTitle?: string;
 }): Promise<ShareBinaryResult> {
-  const { url, filename, mimeType, headers, dialogTitle } = args;
+  const { url, filename, mimeType, dialogTitle } = args;
+  // The chosen site's header too, when the file is the API's (web roles plan §6.2c).
+  const headers = withApiSiteHeader(url, args.headers);
   if (Platform.OS === 'web') {
     try {
       const res = await fetch(url, { headers });
@@ -71,7 +75,8 @@ export async function downloadFileToCache(args: {
   filename: string;
   headers: Record<string, string>;
 }): Promise<CachedFileResult> {
-  const { url, filename, headers } = args;
+  const { url, filename } = args;
+  const headers = withApiSiteHeader(url, args.headers);
   if (Platform.OS === 'web') return { ok: false, message: 'Not available in a browser.' };
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports

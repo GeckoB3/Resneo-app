@@ -22,7 +22,35 @@ type MoreHeroProps = {
   unreadCount: number;
   onPressProfile: () => void;
   onPressNotifications: () => void;
+  /**
+   * The site picker (web roles plan §6.2c), for someone with more than one site, an invite waiting
+   * or the All sites overview. Absent for everyone else, who see the header as before.
+   */
+  siteSwitch?: { onPress: () => void; inviteCount: number };
 };
+
+/** "Switch site", with the number of invitations waiting, under the venue name. */
+function SiteSwitchButton({ onPress, inviteCount }: { onPress: () => void; inviteCount: number }) {
+  const label =
+    inviteCount > 0
+      ? `Switch site, ${inviteCount} ${inviteCount === 1 ? 'invitation' : 'invitations'} waiting`
+      : 'Switch site';
+  return (
+    <PressableScale onPress={onPress} haptic accessibilityLabel={label} style={styles.siteSwitch}>
+      <SymbolView
+        name={{ ios: 'arrow.left.arrow.right', android: 'swap_horiz', web: 'swap_horiz' }}
+        tintColor="#FFFFFF"
+        size={14}
+      />
+      <Text style={styles.siteSwitchText}>Switch site</Text>
+      {inviteCount > 0 ? (
+        <View style={styles.siteSwitchBadge}>
+          <Text style={styles.badgeText}>{inviteCount > 99 ? '99+' : String(inviteCount)}</Text>
+        </View>
+      ) : null}
+    </PressableScale>
+  );
+}
 
 /** Glassy circular bell with an unread-count badge. */
 function BellButton({ count, onPress }: { count: number; onPress: () => void }) {
@@ -60,6 +88,7 @@ export function MoreHero({
   unreadCount,
   onPressProfile,
   onPressNotifications,
+  siteSwitch,
 }: MoreHeroProps) {
   const [size, setSize] = useState({ width: 0, height: 0 });
 
@@ -127,6 +156,8 @@ export function MoreHero({
           size={16}
         />
       </PressableScale>
+
+      {siteSwitch ? <SiteSwitchButton onPress={siteSwitch.onPress} inviteCount={siteSwitch.inviteCount} /> : null}
     </View>
   );
 }
@@ -224,5 +255,34 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 14,
     letterSpacing: 0.3,
+  },
+  siteSwitch: {
+    // Closer to the identity it belongs to than the hero's own gap.
+    marginTop: -spacing.md,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    minHeight: 36,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.22)',
+  },
+  siteSwitchText: {
+    color: '#FFFFFF',
+    fontFamily: fonts.semibold,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  siteSwitchBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: BADGE_BG,
   },
 });

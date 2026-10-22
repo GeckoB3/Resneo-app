@@ -30,6 +30,8 @@ jest.mock('@/lib/queries/useFeatureSwitches', () => ({
   usePosWayBack: () => ({ orders: false, ordersNewCount: null, salesHistory: false }),
 }));
 jest.mock('@/lib/queries/useNotifications', () => ({ useNotifications: () => ({ data: { unreadCount: 0 } }) }));
+// One site: no site picker (web roles plan §6.2c has its own tests in settings.test.tsx).
+jest.mock('@/lib/queries/useMeSites', () => ({ useMeSites: () => ({ data: undefined }) }));
 jest.mock('@/lib/queries/useStaffMe', () => ({
   useStaffMe: () => ({ data: { staff: { id: 'staff-1', name: 'Sam', email: 'sam@example.com', role: mockRole } }, isLoading: false }),
 }));

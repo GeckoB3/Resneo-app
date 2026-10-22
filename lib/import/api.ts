@@ -5,9 +5,8 @@
  */
 import { useMemo } from 'react';
 
-import { ApiError, apiFetch, getApiErrorMessage, isApiErrorBody, refreshExpiredAccessToken } from '@/lib/api/client';
+import { ApiError, apiFetch, apiRawFetch, getApiErrorMessage, isApiErrorBody, refreshExpiredAccessToken } from '@/lib/api/client';
 import { formDataFile } from '@/lib/api/form-data-file';
-import { getApiUrl } from '@/lib/env';
 import { EXECUTE_TIMEOUT_MS } from '@/lib/import/progress';
 import type {
   BulkCreateResult,
@@ -149,11 +148,11 @@ export function useImportApi(): ImportApi {
 }
 
 async function fetchReportCsv(accessToken: string | null, sessionId: string): Promise<string> {
-  const url = `${getApiUrl()}${BASE}/${enc(sessionId)}/report`;
+  const path = `${BASE}/${enc(sessionId)}/report`;
   const attempt = async (token: string | null) => {
     let res: Response;
     try {
-      res = await fetch(url, { headers: { Accept: 'text/csv', ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
+      res = await apiRawFetch(path, { headers: { Accept: 'text/csv', ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
     } catch {
       throw new ApiError('Network request failed. Check your connection and try again.', 0);
     }

@@ -9,8 +9,15 @@
 import { act, render } from '@testing-library/react-native';
 
 const mockPush = jest.fn();
+const mockDismissAll = jest.fn();
 jest.mock('expo-router', () => ({
-  useRouter: () => ({ push: mockPush }),
+  useRouter: () => ({ push: mockPush, canDismiss: () => true, dismissAll: mockDismissAll }),
+}));
+
+// A push for another site switches first (web roles plan §6.2c); its own suite is push-site.test.ts.
+const mockSwitchSiteForPush = jest.fn(async (_venueId: string | null | undefined) => false);
+jest.mock('@/lib/sites/push-site', () => ({
+  switchSiteForPush: (venueId: string | null | undefined) => mockSwitchSiteForPush(venueId),
 }));
 
 import { PendingPushRouteHandler } from '@/components/push/PendingPushRouteHandler';
@@ -22,7 +29,58 @@ import {
 describe('PendingPushRouteHandler', () => {
   beforeEach(() => {
     mockPush.mockClear();
+    mockDismissAll.mockClear();
+    mockSwitchSiteForPush.mockClear();
+    mockSwitchSiteForPush.mockImplementation(async () => false);
     resetPendingPushRoute();
+  });
+
+  it('opens a push that names no site straight away, without asking about sites', async () => {
+    setPendingPushRoute({ kind: 'booking', bookingId: 'booking-0' });
+    await act(async () => {
+      render(<PendingPushRouteHandler />);
+    });
+    expect(mockSwitchSiteForPush).not.toHaveBeenCalled();
+    expect(mockPush).toHaveBeenCalledWith('/booking/booking-0');
+  });
+
+  it('switches to the booking’s site first, clears the old site’s screens, then opens it', async () => {
+    const order: string[] = [];
+    mockSwitchSiteForPush.mockImplementation(async (venueId) => {
+      order.push(`switch ${String(venueId)}`);
+      return true;
+    });
+    mockDismissAll.mockImplementation(() => order.push('dismiss'));
+    mockPush.mockImplementation((href: string) => order.push(`open ${href}`));
+
+    setPendingPushRoute({ kind: 'booking', bookingId: 'booking-9', venueId: 'venue-2' });
+    await act(async () => {
+      render(<PendingPushRouteHandler />);
+    });
+
+    expect(order).toEqual(['switch venue-2', 'dismiss', 'open /booking/booking-9']);
+    mockDismissAll.mockReset();
+    mockPush.mockReset();
+  });
+
+  it('does the same for the till and shop pushes, which name their venue', async () => {
+    mockSwitchSiteForPush.mockImplementation(async () => true);
+    setPendingPushRoute({ kind: 'posOrder', orderId: 'order-1', venueId: 'venue-3' });
+    await act(async () => {
+      render(<PendingPushRouteHandler />);
+    });
+    expect(mockSwitchSiteForPush).toHaveBeenCalledWith('venue-3');
+    expect(mockPush).toHaveBeenCalledWith('/orders/order-1?venue=venue-3');
+  });
+
+  it('opens a push for the current site without clearing anything', async () => {
+    setPendingPushRoute({ kind: 'posTill', sessionId: null, venueId: 'venue-1' });
+    await act(async () => {
+      render(<PendingPushRouteHandler />);
+    });
+    expect(mockSwitchSiteForPush).toHaveBeenCalledWith('venue-1');
+    expect(mockDismissAll).not.toHaveBeenCalled();
+    expect(mockPush).toHaveBeenCalledWith('/checkout/till?venue=venue-1');
   });
 
   it('routes a tap parked before it mounted (the cold-start case)', async () => {

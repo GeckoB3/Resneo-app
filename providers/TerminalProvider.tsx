@@ -6,10 +6,45 @@ import {
   clearTerminalLocationCache,
   fetchConnectionToken,
 } from '@/lib/payments/connection-token';
-import { getTerminalSdk } from '@/lib/payments/terminal-sdk';
+import {
+  getTerminalSdk,
+  isTerminalInitialized,
+  type TerminalHookApi,
+  type TerminalSdkModule,
+} from '@/lib/payments/terminal-sdk';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
+import { onBeforeSiteChange } from '@/lib/sites/active-site';
 import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
 import { TapToPayProvider } from '@/providers/TapToPayProvider';
+
+/**
+ * Lets go of the card reader before the phone switches site (web roles plan §6.2c). Each site takes
+ * cards on its own connected account, so the reader is disconnected and the SDK's cached connection
+ * token dropped (`clearCachedCredentials`) before the first request names the new site; the
+ * Terminal Location cache goes once the site has changed (`lib/sites/site-switch-cleanup.ts`).
+ * Renders nothing. Inside the SDK provider, because `useStripeTerminal` must be.
+ */
+function TerminalSiteReset({ sdk }: { sdk: TerminalSdkModule }) {
+  const terminal = sdk.useStripeTerminal();
+  const terminalRef = useRef<TerminalHookApi>(terminal);
+  useEffect(() => {
+    terminalRef.current = terminal;
+  });
+
+  useEffect(
+    () =>
+      onBeforeSiteChange(async () => {
+        // An SDK never initialised has nothing connected or cached, and every call would log an error.
+        if (!isTerminalInitialized()) return;
+        const current = terminalRef.current;
+        await current.disconnectReader().catch(() => undefined);
+        await current.clearCachedCredentials?.().catch(() => undefined);
+      }),
+    [],
+  );
+
+  return null;
+}
 
 /**
  * Stripe Terminal provider for in-person payments (Tap to Pay design doc §7.5).
@@ -82,6 +117,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     <StripeTerminalProvider
       logLevel={isDiagnosticBuild() ? 'verbose' : 'error'}
       tokenProvider={tokenProvider}>
+      <TerminalSiteReset sdk={sdk} />
       {/* Tap to Pay on iPhone warm-up and status (iOS; inert elsewhere). Inside
           the SDK provider because it drives the reader. */}
       <TapToPayProvider>{children}</TapToPayProvider>

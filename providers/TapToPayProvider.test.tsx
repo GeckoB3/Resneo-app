@@ -50,7 +50,14 @@ jest.mock('@/lib/payments/tap-to-pay-device-support', () => ({
   loadTapToPayDeviceSupport: jest.fn(async () => mockRemembered),
 }));
 
+jest.mock('expo-secure-store', () => ({
+  getItemAsync: jest.fn(async () => null),
+  setItemAsync: jest.fn(async () => undefined),
+  deleteItemAsync: jest.fn(async () => undefined),
+}));
+
 import { TapToPayProvider, useTapToPay } from '@/providers/TapToPayProvider';
+import { __resetActiveSiteForTests, setChosenSite, syncChosenSiteUser } from '@/lib/sites/active-site';
 
 /** Captures the AppState listener so a test can bring the app to the foreground. */
 let appStateListener: ((state: string) => void) | null = null;
@@ -202,6 +209,24 @@ describe('TapToPayProvider (iOS)', () => {
       tosAcceptancePermitted: false,
       promptForPermissions: true,
     });
+  });
+
+  it('asks again about the terms after a site switch: each site is its own merchant (roles plan §6.2c)', async () => {
+    __resetActiveSiteForTests();
+    syncChosenSiteUser('user-1');
+    await mount();
+    expect(probe().termsAccepted).toBe(true);
+
+    // The next site has not accepted Apple's terms.
+    mockReader.connect.mockClear();
+    mockReader.connect.mockResolvedValue({ ok: false, error: null, reason: 'terms_not_accepted' });
+    await act(async () => {
+      await setChosenSite('22222222-2222-4222-8222-222222222222');
+    });
+    await act(async () => {});
+
+    expect(mockReader.connect).toHaveBeenCalledTimes(1);
+    expect(probe().termsAccepted).toBe(false);
   });
 });
 

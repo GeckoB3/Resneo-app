@@ -10,8 +10,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { Text } from '@/components/ui/Text';
-import { ApiError } from '@/lib/api/client';
-import { getApiUrl } from '@/lib/env';
+import { ApiError, apiRawFetch } from '@/lib/api/client';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useLinkedVenueAudit } from '@/lib/queries/useLinkedVenues';
@@ -198,8 +197,8 @@ export function LinkAuditView({
       if (actingUserId) qs.set('actingUserId', actingUserId);
       if (from) qs.set('from', from);
       if (to) qs.set('to', to);
-      const res = await fetch(
-        `${getApiUrl()}/api/venue/account-links/${linkId}/audit?${qs.toString()}`,
+      const res = await apiRawFetch(
+        `/api/venue/account-links/${linkId}/audit?${qs.toString()}`,
         { headers: { Accept: 'text/csv', Authorization: `Bearer ${accessToken}` } },
       );
       if (!res.ok) {

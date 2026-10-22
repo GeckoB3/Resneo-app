@@ -6,7 +6,23 @@ import * as WebBrowser from 'expo-web-browser';
 import {
   subscribePendingPushRoute,
   takePendingPushRoute,
+  type PendingPushRoute,
 } from '@/lib/push/pendingNotificationRoute';
+import { switchSiteForPush } from '@/lib/sites/push-site';
+
+/** The site a push names, for the kinds that open at one site. */
+function pushVenueId(route: PendingPushRoute): string | null {
+  switch (route.kind) {
+    case 'booking':
+    case 'posCollect':
+    case 'posTill':
+    case 'posOrder':
+    case 'posOrders':
+      return route.venueId ?? null;
+    default:
+      return null;
+  }
+}
 
 /**
  * Routes a parked notification tap to its booking — from INSIDE the navigator.
@@ -19,16 +35,17 @@ import {
  * Handles both arrival orders — a tap that LAUNCHED the app is parked long
  * before this mounts (drained on mount), and a tap taken while the app is
  * running arrives after (drained via the subscription).
+ *
+ * A push for another site switches there first (web roles plan §6.2c), then
+ * clears the old site's screens and opens it: the booking, and the till and
+ * shop screens, which otherwise only say the item belongs to another venue. A
+ * push that names no site, or the current one, opens straight away as before.
  */
 export function PendingPushRouteHandler(): null {
   const router = useRouter();
 
   useEffect(() => {
-    const flush = () => {
-      // `take` clears as it reads, so this can never route the same tap twice.
-      const route = takePendingPushRoute();
-      if (!route) return;
-
+    const open = (route: PendingPushRoute) => {
       if (route.kind === 'booking') {
         router.push(`/booking/${route.bookingId}` as Href);
         return;
@@ -80,6 +97,23 @@ export function PendingPushRouteHandler(): null {
       // An offer with no bookable link. Their own bookings is where the
       // waitlist entry shows that a place has come up.
       router.push('/bookings' as Href);
+    };
+
+    const flush = () => {
+      // `take` clears as it reads, so this can never route the same tap twice.
+      const route = takePendingPushRoute();
+      if (!route) return;
+
+      const venueId = pushVenueId(route);
+      if (!venueId) {
+        open(route);
+        return;
+      }
+      void switchSiteForPush(venueId).then((switched) => {
+        // The screens on the stack belong to the site just left.
+        if (switched && router.canDismiss()) router.dismissAll();
+        open(route);
+      });
     };
 
     flush();

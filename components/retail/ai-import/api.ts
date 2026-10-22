@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 
-import { refreshExpiredAccessToken } from '@/lib/api/client';
-import { getApiUrl } from '@/lib/env';
+import { apiRawFetch, refreshExpiredAccessToken } from '@/lib/api/client';
 import { posFetch, posHeaders } from '@/lib/pos/api';
 import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { usePosGate } from '@/lib/queries/usePos';
@@ -59,14 +58,13 @@ function statusMessage(status: number): string {
 
 /** `POST` one source. Never throws. */
 export async function readProductsAi(body: ProductAiExtractRequest, accessToken: string | null): Promise<ProductsAiReadResult> {
-  const url = `${getApiUrl()}${PRODUCTS_AI_PATH}`;
   const json = JSON.stringify(body);
 
   const attempt = async (bearer: string | null): Promise<{ status: number; data: unknown }> => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), READ_TIMEOUT_MS);
     try {
-      const res = await fetch(url, {
+      const res = await apiRawFetch(PRODUCTS_AI_PATH, {
         method: 'POST',
         body: json,
         signal: controller.signal,

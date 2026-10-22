@@ -33,8 +33,17 @@ jest.mock('react-native-safe-area-context', () => {
   };
 });
 
-// The hero pulls in react-native-svg; stub it — it is not under test.
-jest.mock('@/components/more/MoreHero', () => ({ MoreHero: () => null }));
+// The hero pulls in react-native-svg; stub it, keeping what it was given (the site picker).
+const mockHeroProps: { siteSwitch?: { onPress: () => void; inviteCount: number } }[] = [];
+jest.mock('@/components/more/MoreHero', () => ({
+  MoreHero: (props: { siteSwitch?: { onPress: () => void; inviteCount: number } }) => {
+    mockHeroProps.push(props);
+    return null;
+  },
+}));
+// The login's sites (web roles plan §6.2c): one, unless a test says otherwise.
+let mockMeSites: unknown = undefined;
+jest.mock('@/lib/queries/useMeSites', () => ({ useMeSites: () => ({ data: mockMeSites }) }));
 
 const mockToast = { success: jest.fn(), error: jest.fn(), info: jest.fn() };
 jest.mock('@/providers/ToastProvider', () => ({ useToast: () => mockToast }));
@@ -108,6 +117,66 @@ describe('More tab — Ask ResNeo', () => {
       fireEvent.press(screen.getByLabelText('Ask ResNeo'));
     });
     expect(mockPush).toHaveBeenCalledWith('/assistant');
+  });
+});
+
+describe('More tab: the site picker in the header (web roles plan §6.2c)', () => {
+  const site = (id: string, name: string) => ({
+    venue_id: id,
+    name,
+    role: 'admin',
+    role_key: 'admin',
+    is_owner: false,
+    onboarding_complete: true,
+  });
+
+  beforeEach(() => {
+    mockPush.mockClear();
+    mockHeroProps.length = 0;
+  });
+  afterEach(() => {
+    mockMeSites = undefined;
+  });
+
+  it('is not offered with one site and nothing waiting: no change for anyone else', async () => {
+    mockMeSites = {
+      home_venue_id: 'v1',
+      active_venue_id: 'v1',
+      sites: [site('v1', 'Northside')],
+      pending_invites: [],
+      overview_eligible: false,
+    };
+    await render(<MoreScreen />);
+    expect(mockHeroProps.at(-1)?.siteSwitch).toBeUndefined();
+  });
+
+  it('is offered with two sites, and opens the picker', async () => {
+    mockMeSites = {
+      home_venue_id: 'v1',
+      active_venue_id: 'v1',
+      sites: [site('v1', 'Northside'), site('v2', 'Southside')],
+      pending_invites: [],
+      overview_eligible: true,
+    };
+    await render(<MoreScreen />);
+    const siteSwitch = mockHeroProps.at(-1)?.siteSwitch;
+    expect(siteSwitch?.inviteCount).toBe(0);
+    await act(async () => {
+      siteSwitch?.onPress();
+    });
+    expect(mockPush).toHaveBeenCalledWith('/sites');
+  });
+
+  it('is offered for an invitation waiting, with its count', async () => {
+    mockMeSites = {
+      home_venue_id: 'v1',
+      active_venue_id: 'v1',
+      sites: [site('v1', 'Northside')],
+      pending_invites: [{ staff_id: 's9', venue_id: 'v9', venue_name: 'Eastside', role_key: 'staff', invited_at: null }],
+      overview_eligible: false,
+    };
+    await render(<MoreScreen />);
+    expect(mockHeroProps.at(-1)?.siteSwitch?.inviteCount).toBe(1);
   });
 });
 

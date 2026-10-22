@@ -12,7 +12,7 @@
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Platform, Share } from 'react-native';
 
-import { ApiError, apiFetch } from '@/lib/api/client';
+import { ApiError, apiFetch, apiRawFetch } from '@/lib/api/client';
 import type {
   BulkOp,
   BulkOpResult,
@@ -20,7 +20,7 @@ import type {
   HistoryPage,
   PreviewVenue,
 } from '@/lib/collective-area/model';
-import { getApiUrl, isBackendConfigured } from '@/lib/env';
+import { isBackendConfigured } from '@/lib/env';
 import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 
@@ -161,8 +161,8 @@ export async function shareHistoryCsv(
   collectiveName: string,
   q: HistoryQuery,
 ): Promise<void> {
-  const url = `${getApiUrl()}/api/venue/collectives/${collectiveId}/history?${historyParams(q, { format: 'csv' })}`;
-  const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}`, Accept: 'text/csv' } });
+  const path = `/api/venue/collectives/${collectiveId}/history?${historyParams(q, { format: 'csv' })}`;
+  const response = await apiRawFetch(path, { headers: { Authorization: `Bearer ${accessToken}`, Accept: 'text/csv' } });
   if (!response.ok) {
     let message = 'Could not download the history. Please try again.';
     try {

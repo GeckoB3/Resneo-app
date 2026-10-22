@@ -36,6 +36,16 @@ describe('booking notifications, which must not change', () => {
     ).toEqual({ kind: 'booking', bookingId: 'bk-1' });
   });
 
+  it('keeps the site a booking push names, so a tap for another site can switch first (roles plan §6.2c)', async () => {
+    expect(
+      extractPushRoute({ type: 'booking_new', booking_id: 'bk-1', venue_id: 'venue-2', venue_name: 'Southside' }),
+    ).toStrictEqual({ kind: 'booking', bookingId: 'bk-1', venueId: 'venue-2' });
+  });
+
+  it('adds no site to a booking push that names none (sent before B1)', async () => {
+    expect(extractPushRoute({ booking_id: 'bk-1' })).toStrictEqual({ kind: 'booking', bookingId: 'bk-1' });
+  });
+
   it('ignores an empty booking id rather than routing to nowhere', async () => {
     expect(extractPushRoute({ booking_id: '' })).toBeNull();
   });

@@ -26,8 +26,15 @@ jest.mock('@/providers/LinkedVenueProvider', () => ({
 jest.mock('@/lib/queries/useAccessToken', () => ({ useAccessToken: () => 'token-A' }));
 
 let mockSdk: { StripeTerminalProvider: unknown; useStripeTerminal: unknown } | null = null;
+let mockInitialized = false;
 jest.mock('@/lib/payments/terminal-sdk', () => ({
   getTerminalSdk: () => mockSdk,
+  isTerminalInitialized: () => mockInitialized,
+}));
+jest.mock('expo-secure-store', () => ({
+  getItemAsync: jest.fn(async () => null),
+  setItemAsync: jest.fn(async () => undefined),
+  deleteItemAsync: jest.fn(async () => undefined),
 }));
 
 let mockKey: string | null = 'pk_test_123';
@@ -40,6 +47,7 @@ jest.mock('@/providers/TapToPayProvider', () => ({
 }));
 
 import { TerminalProvider } from '@/providers/TerminalProvider';
+import { __resetActiveSiteForTests, setChosenSite, syncChosenSiteUser } from '@/lib/sites/active-site';
 
 /** Stand-in for the SDK provider that marks the tree when it renders. */
 function makeSdk() {
@@ -136,6 +144,54 @@ describe('enabled venue', () => {
     );
     // Token minting is lazy: the provider only supplies the callback.
     expect(mockFetchConnectionToken).not.toHaveBeenCalled();
+  });
+});
+
+describe('switching site (web roles plan §6.2c)', () => {
+  beforeEach(() => {
+    __resetActiveSiteForTests();
+    syncChosenSiteUser('user-1');
+    mockInitialized = false;
+  });
+
+  function sdkWith(terminal: Record<string, unknown>) {
+    return { ...makeSdk(), useStripeTerminal: () => terminal };
+  }
+
+  it('disconnects the reader, then drops the SDK’s cached token, before the site changes', async () => {
+    const order: string[] = [];
+    const terminal = {
+      disconnectReader: jest.fn(async () => {
+        order.push('disconnect');
+        return {};
+      }),
+      clearCachedCredentials: jest.fn(async () => {
+        order.push('clear credentials');
+        return {};
+      }),
+    };
+    mockSdk = sdkWith(terminal);
+    mockInitialized = true;
+    await render(
+      <TerminalProvider>
+        <Text>child</Text>
+      </TerminalProvider>,
+    );
+    await setChosenSite('22222222-2222-4222-8222-222222222222');
+    expect(order).toEqual(['disconnect', 'clear credentials']);
+  });
+
+  it('asks nothing of an SDK that was never initialised', async () => {
+    const terminal = { disconnectReader: jest.fn(), clearCachedCredentials: jest.fn() };
+    mockSdk = sdkWith(terminal);
+    await render(
+      <TerminalProvider>
+        <Text>child</Text>
+      </TerminalProvider>,
+    );
+    await setChosenSite('22222222-2222-4222-8222-222222222222');
+    expect(terminal.disconnectReader).not.toHaveBeenCalled();
+    expect(terminal.clearCachedCredentials).not.toHaveBeenCalled();
   });
 });
 

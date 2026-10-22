@@ -13,8 +13,7 @@
  */
 import { fetch as streamingFetch } from 'expo/fetch';
 
-import { apiFetch, refreshExpiredAccessToken } from '@/lib/api/client';
-import { getApiUrl } from '@/lib/env';
+import { apiFetch, apiRawFetch, refreshExpiredAccessToken } from '@/lib/api/client';
 
 import { ASSISTANT_COPY } from './copy';
 import { parseSseFrames } from './sse';
@@ -95,16 +94,22 @@ async function postAssistant(
   body: string,
   signal: AbortSignal,
 ): Promise<Response> {
-  return streamingFetch(`${getApiUrl()}/api/venue/assistant`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'text/event-stream',
-      Authorization: `Bearer ${accessToken}`,
+  // Through the client for the chosen site's header; `expo/fetch` for a body that streams.
+  return apiRawFetch(
+    '/api/venue/assistant',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body,
+      signal,
     },
-    body,
-    signal,
-  }) as unknown as Promise<Response>;
+    // Its request and response types are expo's own; the shapes are the same.
+    streamingFetch as unknown as (url: string, init: unknown) => Promise<Response>,
+  );
 }
 
 /**

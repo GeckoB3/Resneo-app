@@ -115,6 +115,12 @@ export interface TerminalHookApi {
   }) => Promise<SdkResult & { paymentIntent?: PaymentIntent.Type }>;
   cancelCollectPaymentMethod: () => Promise<SdkResult>;
   /**
+   * Drops the connection token the SDK cached, so the next connect asks for a new one. Called
+   * when the phone switches site (web roles plan §6.2c): the token belongs to the old site's
+   * connected account. Optional because an older SDK may lack it.
+   */
+  clearCachedCredentials?: () => Promise<SdkResult>;
+  /**
    * Android only (beta.33): styles Stripe's Tap to Pay screen. iOS answers UNSUPPORTED_OPERATION
    * without touching native code; the hook throws before `initialize()`. Optional because an older
    * build's SDK may lack it.

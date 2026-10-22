@@ -27,6 +27,7 @@ import {
 } from '@/lib/payments/terminal-sdk';
 import { isTapToPayConnectInFlight } from '@/lib/payments/terminal';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
+import { siteScopedKey, useChosenSiteId } from '@/lib/sites/active-site';
 import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
 
 /**
@@ -164,9 +165,12 @@ async function awaitReaderConnect<T>(
   }
 }
 
-/** Remembered reader serial, per venue scope, so we can reconnect silently. */
+/**
+ * Remembered reader serial, per venue scope, so we can reconnect silently. The phone's own venue is
+ * the chosen site (web roles plan §6.2c), so its key carries the site once one is chosen.
+ */
 function serialStorageKey(ownerVenueId: string | null): string {
-  return `resneo_bt_reader_serial_${ownerVenueId ?? 'own'}`;
+  return ownerVenueId ? `resneo_bt_reader_serial_${ownerVenueId}` : siteScopedKey('resneo_bt_reader_serial_own');
 }
 
 /**
@@ -219,6 +223,8 @@ export function useBluetoothReader(): UseBluetoothReader {
   const sdk = getTerminalSdk();
   const accessToken = useAccessToken();
   const { ownerVenueId } = useLinkedVenueContext();
+  // The site the phone acts on (web roles plan §6.2c): a switch re-scopes the account like a linked venue.
+  const siteId = useChosenSiteId();
 
   const [status, setStatus] = useState<BluetoothReaderStatus>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -227,7 +233,7 @@ export function useBluetoothReader(): UseBluetoothReader {
   const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
   const [updateProgress, setUpdateProgress] = useState<number | null>(null);
 
-  const scopeRef = useRef<string | null>(ownerVenueId ?? null);
+  const scopeRef = useRef<string>(`${siteId ?? 'home'}:${ownerVenueId ?? 'own'}`);
   const discoveredRef = useRef<Reader.Type[]>([]);
   // Single-shot guard + late-bound callback for the auto-reconnect below
   // (the handler is defined before `reconnectRemembered` exists).
@@ -356,9 +362,9 @@ export function useBluetoothReader(): UseBluetoothReader {
     [],
   );
 
-  /** Linked-venue switch: drop the reader and the remembered serial scope. */
+  /** Linked-venue or site switch: drop the reader and the remembered serial scope. */
   useEffect(() => {
-    const next = ownerVenueId ?? null;
+    const next = `${siteId ?? 'home'}:${ownerVenueId ?? 'own'}`;
     if (scopeRef.current === next) return;
     scopeRef.current = next;
     setConnected(null);
@@ -367,7 +373,7 @@ export function useBluetoothReader(): UseBluetoothReader {
     void terminal.disconnectReader().catch(() => {
       // Best effort; reconnection happens on next use.
     });
-  }, [ownerVenueId, terminal]);
+  }, [ownerVenueId, siteId, terminal]);
 
   /** Shared setup: initialise once and resolve the Terminal Location. */
   const prepare = useCallback(async (): Promise<string> => {

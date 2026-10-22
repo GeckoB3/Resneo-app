@@ -17,6 +17,7 @@ import {
   type TapToPayConnectResult,
 } from '@/lib/payments/terminal';
 import { getTerminalSdk } from '@/lib/payments/terminal-sdk';
+import { useChosenSiteId } from '@/lib/sites/active-site';
 import { showAppleTapToPayEducation } from '@/modules/tap-to-pay-education';
 import { useVenueContext } from '@/providers/VenueProvider';
 
@@ -151,30 +152,45 @@ function TapToPayProviderIos({ children }: { children: ReactNode }) {
   const applies = buildSupportsTapToPay() && venue?.card_present_ready === true;
   const isAdmin = venue?.current_user_role === 'admin';
 
-  const [termsAccepted, setTermsAccepted] = useState<boolean | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  /*
+    Per site (web roles plan §6.2c). Apple's terms are accepted per merchant, and
+    each site is its own connected account, so what was learned at one site says
+    nothing about the next: after a switch the answer is unknown again until the
+    warm-up below asks Apple for the new site.
+  */
+  const siteKey = useChosenSiteId() ?? 'home';
+  const [terms, setTerms] = useState<{ site: string; accepted: boolean | null; error: string | null }>({
+    site: siteKey,
+    accepted: null,
+    error: null,
+  });
+  const termsAccepted = terms.site === siteKey ? terms.accepted : null;
+  const error = terms.site === siteKey ? terms.error : null;
   const lastWarmUpRef = useRef(0);
   const readerRef = useRef(reader);
   const terminalRef = useRef(terminal);
+  const siteKeyRef = useRef(siteKey);
   useEffect(() => {
     readerRef.current = reader;
     terminalRef.current = terminal;
+    siteKeyRef.current = siteKey;
   });
 
   const recordConnect = useCallback((result: TapToPayConnectResult) => {
+    const site = siteKeyRef.current;
     if (result.ok) {
-      setTermsAccepted(true);
-      setError(null);
+      setTerms({ site, accepted: true, error: null });
       return;
     }
     if (result.reason === 'terms_not_accepted') {
-      setTermsAccepted(false);
-      setError(null);
+      setTerms({ site, accepted: false, error: null });
       return;
     }
     // Missing permission on the silent warm-up is not a failure to report: the
     // first real use asks for it.
-    if (result.reason !== 'permission_needed') setError(result.error);
+    if (result.reason !== 'permission_needed') {
+      setTerms((prev) => ({ site, accepted: prev.site === site ? prev.accepted : null, error: result.error }));
+    }
   }, []);
 
   const warmUp = useCallback(
@@ -194,6 +210,7 @@ function TapToPayProviderIos({ children }: { children: ReactNode }) {
     [recordConnect],
   );
 
+  // Runs again on a site switch (`siteKey`), so the new site's terms are asked about at once.
   useEffect(() => {
     if (!applies) return;
     void warmUp(true);
@@ -201,7 +218,7 @@ function TapToPayProviderIos({ children }: { children: ReactNode }) {
       if (state === 'active') void warmUp(false);
     });
     return () => subscription.remove();
-  }, [applies, warmUp]);
+  }, [applies, warmUp, siteKey]);
 
   const enable = useCallback(async (): Promise<TapToPayConnectResult> => {
     const result = await readerRef.current.connect({

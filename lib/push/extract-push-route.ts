@@ -22,7 +22,15 @@ export function extractPushRoute(
     data['bookingId'],
     (data['booking'] as Record<string, unknown> | undefined)?.['id'],
   ]);
-  if (bookingId) return { kind: 'booking', bookingId };
+  if (bookingId) {
+    /*
+      Since the web roles plan's B1 (§6.2c) a booking push names its site
+      (`venue_id`, `venue_name`), so a tap on one for another site can switch
+      there first. An older push names none and opens as it always did.
+    */
+    const venueId = firstString([data['venue_id']]);
+    return venueId ? { kind: 'booking', bookingId, venueId } : { kind: 'booking', bookingId };
+  }
 
   /*
     A waitlist offer PRECEDES any booking, so there is nothing to route to by

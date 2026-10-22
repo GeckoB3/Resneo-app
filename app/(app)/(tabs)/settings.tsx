@@ -54,6 +54,8 @@ import { useOrdersTile } from "@/lib/queries/useOrders";
 import { sellProductsOn } from "@/lib/pos/setup/answers";
 import { usePosBootstrap } from "@/lib/queries/usePos";
 import { useStaffMe } from "@/lib/queries/useStaffMe";
+import { useMeSites } from "@/lib/queries/useMeSites";
+import { showsSitePicker } from "@/lib/sites/sites";
 import { hasBillingPayoutsAdmins } from "@/lib/roles/roles";
 import { useAppLock } from "@/providers/AppLockProvider";
 import { switchAppMode } from "@/lib/mode/app-mode-store";
@@ -126,6 +128,15 @@ export default function MoreScreen() {
   const { data: staffData, isLoading: staffLoading } = useStaffMe();
   const { venue, name: venueName, isLoading: venueLoading } = useVenueContext();
   const notificationsQuery = useNotifications();
+  // One login, several sites (web roles plan §6.2c): the picker in the header, for anyone with more
+  // than one site, an invite waiting or the All sites overview. Nobody else sees a change.
+  const meSitesQuery = useMeSites();
+  const siteSwitch = showsSitePicker(meSitesQuery.data)
+    ? {
+        onPress: () => router.push("/sites" as Href),
+        inviteCount: meSitesQuery.data?.pending_invites.length ?? 0,
+      }
+    : undefined;
   const {
     appLockEnabled,
     setAppLockEnabled,
@@ -357,6 +368,7 @@ export default function MoreScreen() {
         unreadCount={unreadCount}
         onPressProfile={() => router.push("/manage/account" as Href)}
         onPressNotifications={() => router.push("/notifications" as Href)}
+        siteSwitch={siteSwitch}
       />
 
       {/* Plan warning banner for admins when billing has an issue */}

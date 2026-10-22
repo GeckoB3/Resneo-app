@@ -10,6 +10,7 @@ import {
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
+import { onSiteChange, siteScopedKey, whenChosenSiteReady } from '@/lib/sites/active-site';
 import { getSupabase } from '@/lib/supabase';
 
 type LinkedVenueContextValue = {
@@ -58,6 +59,7 @@ type LinkedVenueContextValue = {
  */
 export const LinkedVenueContext = createContext<LinkedVenueContextValue | null>(null);
 
+/** Per site (web roles plan §6.2c): a linked venue is chosen at, and belongs to, one business. */
 const STORAGE_KEY = 'reserveni.linked.ownerVenue';
 
 type StoredOwner = { id: string; name: string | null; practitionerId?: string | null };
@@ -66,7 +68,9 @@ async function readStoredOwner(): Promise<StoredOwner | null> {
   // Web preview is in-memory only (per project rules) — no persistence there.
   if (Platform.OS === 'web') return null;
   try {
-    const raw = await SecureStore.getItemAsync(STORAGE_KEY);
+    // The key carries the chosen site, which is read from storage at launch too.
+    await whenChosenSiteReady();
+    const raw = await SecureStore.getItemAsync(siteScopedKey(STORAGE_KEY));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as StoredOwner;
     return parsed && typeof parsed.id === 'string' ? parsed : null;
@@ -79,9 +83,9 @@ async function writeStoredOwner(value: StoredOwner | null): Promise<void> {
   if (Platform.OS === 'web') return;
   try {
     if (value) {
-      await SecureStore.setItemAsync(STORAGE_KEY, JSON.stringify(value));
+      await SecureStore.setItemAsync(siteScopedKey(STORAGE_KEY), JSON.stringify(value));
     } else {
-      await SecureStore.deleteItemAsync(STORAGE_KEY);
+      await SecureStore.deleteItemAsync(siteScopedKey(STORAGE_KEY));
     }
   } catch {
     // Persistence is best-effort; a failure here must never break the session.
@@ -149,6 +153,10 @@ export function LinkedVenueProvider({ children }: LinkedVenueProviderProps) {
     },
     [ownerVenueId, clearOwnerVenue],
   );
+
+  // Switching site (web roles plan §6.2c) starts the new one on its own calendar, never on a
+  // linked venue chosen at the site being left.
+  useEffect(() => onSiteChange(() => clearOwnerVenue()), [clearOwnerVenue]);
 
   // Drop the linked context on sign-out so it can't carry to the next user.
   useEffect(() => {

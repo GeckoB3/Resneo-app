@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 
-import { getApiUrl } from '@/lib/env';
+import { apiUrl, withApiSiteHeader } from '@/lib/api/client';
 import { posHeaders } from '@/lib/pos/api';
 import { filenameFromDisposition } from '@/lib/reports/pos-report-format';
 
@@ -40,8 +40,9 @@ export async function downloadReportFile(args: {
   dialogTitle?: string;
 }): Promise<ReportDownloadResult> {
   const { path, accessToken, fallbackFilename, mimeType, dialogTitle } = args;
-  const url = `${getApiUrl()}${path}`;
-  const headers = { ...posHeaders(), Authorization: `Bearer ${accessToken}` };
+  const url = apiUrl(path);
+  // The chosen site's header too (web roles plan §6.2c).
+  const headers = withApiSiteHeader(url, { ...posHeaders(), Authorization: `Bearer ${accessToken}` });
 
   if (Platform.OS === 'web') {
     try {

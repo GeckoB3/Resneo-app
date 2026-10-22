@@ -13,8 +13,8 @@
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { apiFetch } from '@/lib/api/client';
-import { getApiUrl, isBackendConfigured } from '@/lib/env';
+import { apiFetch, apiRawFetch } from '@/lib/api/client';
+import { isBackendConfigured } from '@/lib/env';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import type {
@@ -207,7 +207,7 @@ export function useLinkedVenueProfile(venueId: string | null) {
  */
 export function pingLinkedBookingView(bookingId: string, accessToken: string | null): void {
   if (!isBackendConfigured() || !accessToken) return;
-  void fetch(`${getApiUrl()}/api/venue/linked-calendar/booking/view`, {
+  void apiRawFetch('/api/venue/linked-calendar/booking/view', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

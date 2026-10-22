@@ -39,6 +39,7 @@ import {
   type TerminalHookApi,
 } from '@/lib/payments/terminal-sdk';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
+import { useChosenSiteId } from '@/lib/sites/active-site';
 import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
 
 /**
@@ -183,6 +184,8 @@ export function useTapToPayReader(): UseTapToPayReader {
   const sdk = getTerminalSdk();
   const accessToken = useAccessToken();
   const { ownerVenueId } = useLinkedVenueContext();
+  // The site the phone acts on (web roles plan §6.2c): a switch re-scopes the account like a linked venue.
+  const siteId = useChosenSiteId();
 
   const [status, setStatus] = useState<TapToPayStatus>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -206,7 +209,7 @@ export function useTapToPayReader(): UseTapToPayReader {
   // Resolver for the discovery callback: `discoverReaders` streams results
   // through `onUpdateDiscoveredReaders` rather than returning them.
   const pendingReaderRef = useRef<((reader: Reader.Type) => void) | null>(null);
-  const scopeRef = useRef<string | null>(ownerVenueId ?? null);
+  const scopeRef = useRef<string>(`${siteId ?? 'home'}:${ownerVenueId ?? 'own'}`);
   /** Discovery in flight, so leaving the sheet can stop it (see cleanup below). */
   const discoveringRef = useRef(false);
   const terminalRef = useRef<TerminalHookApi | null>(null);
@@ -279,9 +282,9 @@ export function useTapToPayReader(): UseTapToPayReader {
     [releaseOwnedConnect],
   );
 
-  /** Switching linked venue re-scopes the connected account: drop the reader. */
+  /** Switching linked venue, or site, re-scopes the connected account: drop the reader. */
   useEffect(() => {
-    const next = ownerVenueId ?? null;
+    const next = `${siteId ?? 'home'}:${ownerVenueId ?? 'own'}`;
     if (scopeRef.current === next) return;
     scopeRef.current = next;
     setStatus('idle');
@@ -292,7 +295,7 @@ export function useTapToPayReader(): UseTapToPayReader {
     void terminal.disconnectReader().catch(() => {
       // Best effort: a failure here only means we reconnect on next use.
     });
-  }, [ownerVenueId, terminal]);
+  }, [ownerVenueId, siteId, terminal]);
 
   const checkSupport = useCallback(async (): Promise<boolean> => {
     // Android: a device's answer does not change between launches, so it is asked once.

@@ -42,6 +42,18 @@ export const queryKeys = {
   },
 
   /**
+   * The login's sites (web roles plan §6.2c, §6.7): `GET /api/v1/me/sites` and the All sites
+   * overview. About the login, not one site, though like every key the hash still carries the
+   * chosen site.
+   */
+  sites: {
+    all: () => [...queryKeys.all, 'sites'] as const,
+    me: (accessToken?: string | null) => [...queryKeys.sites.all(), 'me', keyScope(accessToken)] as const,
+    overview: (accessToken?: string | null) =>
+      [...queryKeys.sites.all(), 'overview', keyScope(accessToken)] as const,
+  },
+
+  /**
    * The customer's own account, which is a different surface from `venue`:
    * these routes answer about the caller, never about a venue, and they are
    * scoped server-side from the session rather than by any id we send.

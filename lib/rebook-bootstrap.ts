@@ -13,6 +13,8 @@
 
 import * as SecureStore from 'expo-secure-store';
 
+import { siteScopedKey } from '@/lib/sites/active-site';
+
 export const REBOOK_BOOTSTRAP_KEY = 'resneo_staffRebook_v1';
 
 export interface RebookGuestPrefill {
@@ -57,7 +59,7 @@ export interface RebookBootstrapPayload {
 /** Write the rebook payload. Call before navigating to /booking/new. */
 export async function writeRebookBootstrap(payload: RebookBootstrapPayload): Promise<void> {
   try {
-    await SecureStore.setItemAsync(REBOOK_BOOTSTRAP_KEY, JSON.stringify(payload));
+    await SecureStore.setItemAsync(siteScopedKey(REBOOK_BOOTSTRAP_KEY), JSON.stringify(payload));
   } catch {
     // Quota / permissions — best-effort.
   }
@@ -75,7 +77,7 @@ export async function readAndClearRebookBootstrap(): Promise<RebookBootstrapPayl
     return _resolvedPayload;
   }
   try {
-    const raw = await SecureStore.getItemAsync(REBOOK_BOOTSTRAP_KEY);
+    const raw = await SecureStore.getItemAsync(siteScopedKey(REBOOK_BOOTSTRAP_KEY));
     if (!raw?.trim()) {
       _resolvedOnce = true;
       _resolvedPayload = null;
@@ -90,7 +92,7 @@ export async function readAndClearRebookBootstrap(): Promise<RebookBootstrapPayl
     _resolvedPayload = parsed;
     _resolvedOnce = true;
     // Clear immediately so the next navigation to /booking/new starts fresh.
-    await SecureStore.deleteItemAsync(REBOOK_BOOTSTRAP_KEY);
+    await SecureStore.deleteItemAsync(siteScopedKey(REBOOK_BOOTSTRAP_KEY));
     return parsed;
   } catch {
     _resolvedOnce = true;
@@ -103,4 +105,18 @@ export async function readAndClearRebookBootstrap(): Promise<RebookBootstrapPayl
 export function resetRebookBootstrapGuard(): void {
   _resolvedOnce = false;
   _resolvedPayload = null;
+}
+
+/**
+ * Drop a rebook that has not been used yet, before the site changes (web roles plan §6.2c, as the
+ * web's switch clears its sessionStorage copy): it names a client and a service at the site being
+ * left. Best-effort.
+ */
+export async function clearRebookBootstrap(): Promise<void> {
+  resetRebookBootstrapGuard();
+  try {
+    await SecureStore.deleteItemAsync(siteScopedKey(REBOOK_BOOTSTRAP_KEY));
+  } catch {
+    // Nothing stored, or no SecureStore: nothing to drop.
+  }
 }

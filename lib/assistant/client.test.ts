@@ -17,6 +17,9 @@ jest.mock('@/lib/env', () => ({
 const mockRefresh = jest.fn();
 jest.mock('@/lib/api/client', () => ({
   apiFetch: jest.fn(),
+  // The real one: it adds the chosen site's header and hands the request to `expo/fetch`.
+  apiRawFetch: (...args: unknown[]) =>
+    (jest.requireActual('@/lib/api/client') as { apiRawFetch: (...a: unknown[]) => unknown }).apiRawFetch(...args),
   refreshExpiredAccessToken: (...args: unknown[]) => mockRefresh(...args),
 }));
 

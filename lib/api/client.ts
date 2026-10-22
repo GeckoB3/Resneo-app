@@ -1,4 +1,12 @@
 import { getApiUrl } from '@/lib/env';
+import {
+  chosenSitePending,
+  getChosenSiteId,
+  getSiteEpoch,
+  markSiteLost,
+  setChosenSite,
+  siteHeaders,
+} from '@/lib/sites/active-site';
 
 /** Common error shape from reserve-ni /api routes. */
 export interface ApiErrorBody {
@@ -186,6 +194,67 @@ export function apiErrorCode(error: unknown): string | null {
   return typeof error.body.code === 'string' ? error.body.code : null;
 }
 
+/**
+ * The code on an answer `apiFetch` dropped because the person switched site while it was on its way
+ * (web roles plan §6.2c). Not the server's: nothing was wrong with the request, it just belongs to
+ * the site the phone has left, so nobody should see it or store it.
+ */
+export const SITE_SWITCHED_CODE = 'SITE_SWITCHED';
+
+/** True for an answer dropped because the site changed while it was on its way. */
+export function isSiteSwitchedError(error: unknown): boolean {
+  return apiErrorCode(error) === SITE_SWITCHED_CODE;
+}
+
+const SITE_SWITCHED_MESSAGE = 'You switched site, so this was not shown. Please try again.';
+
+function siteSwitchedError(): ApiError {
+  return new ApiError(SITE_SWITCHED_MESSAGE, 0, { error: SITE_SWITCHED_MESSAGE, code: SITE_SWITCHED_CODE });
+}
+
+/** The absolute URL of an API path, e.g. `/api/venue/export?…`. */
+export function apiUrl(path: string): string {
+  return `${getApiUrl()}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
+/**
+ * Add the chosen site's header (`X-ResNeo-Venue`) to the headers of a request to the API that does
+ * not go through `apiFetch`: a file downloaded straight to disk, say. A URL anywhere else (a signed
+ * storage URL) is left alone, so the site is never sent to another host.
+ */
+export function withApiSiteHeader(url: string, headers: Record<string, string> = {}): Record<string, string> {
+  let base = '';
+  try {
+    base = getApiUrl();
+  } catch {
+    return headers;
+  }
+  if (!base || !url.startsWith(base)) return headers;
+  return { ...headers, ...siteHeaders() };
+}
+
+type RawFetchInit = Omit<RequestInit, 'headers'> & { headers?: Record<string, string> };
+
+/**
+ * `fetch` for the few requests to the API that need the raw response rather than parsed JSON:
+ * multipart uploads, CSV text, the Ask ResNeo stream (pass `expo/fetch` as `fetchImpl`). It adds the
+ * chosen site's header, as `apiFetch` does; the caller keeps its own Authorization, timeout and
+ * error handling. A guard test (`lib/api/raw-fetch-guard.test.ts`) keeps every other raw fetch to
+ * the API out of the app.
+ */
+export async function apiRawFetch<R = Response>(
+  path: string,
+  init: RawFetchInit = {},
+  fetchImpl?: (url: string, init: RawFetchInit) => Promise<R>,
+): Promise<R> {
+  const pending = chosenSitePending();
+  if (pending) await pending;
+  const url = apiUrl(path);
+  const request: RawFetchInit = { ...init, headers: { ...(init.headers ?? {}), ...siteHeaders() } };
+  if (fetchImpl) return fetchImpl(url, request);
+  return fetch(url, request as RequestInit) as unknown as Promise<R>;
+}
+
 type ApiFetchOptions = RequestInit & {
   accessToken?: string | null;
   /**
@@ -318,11 +387,25 @@ export async function apiFetch<T>(
     signal: callerSignal,
     ...init
   } = options;
-  const url = `${getApiUrl()}${path.startsWith('/') ? path : `/${path}`}`;
+  const url = apiUrl(path);
+
+  // The chosen site is read from SecureStore at launch; a request that beats
+  // that read waits for it, so it never goes out naming no site (the home site)
+  // when another was chosen. Only ever pending for the first moments of a run.
+  const sitePending = chosenSitePending();
+  if (sitePending) await sitePending;
+
+  /** The site the latest attempt named in `X-ResNeo-Venue`, or null for none. */
+  // (Cast, not annotated: it is written inside `attempt`, which narrowing cannot see.)
+  let sentSite = null as string | null;
 
   // A single network attempt with the given Bearer token. Each attempt gets its
   // own AbortController/timeout so a retry (below) is independently time-boxed.
   const attempt = async (bearer: string | null | undefined): Promise<T> => {
+    // Read per attempt: the 403 retry below goes out after the choice is cleared.
+    const site = siteHeaders();
+    sentSite = getChosenSiteId();
+    const startedEpoch = getSiteEpoch();
     // Time-box the request so a stalled network rejects (retryable) instead of
     // hanging the UI. Also forward any caller-provided signal (e.g. React Query
     // cancellation) so both can abort the same fetch.
@@ -352,11 +435,22 @@ export async function apiFetch<T>(
             ? { 'Content-Type': 'application/json' }
             : {}),
           ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
+          // Which site this acts on (web roles plan §6.2c). Absent when none is
+          // chosen, so the server answers for the home site, as for an old build.
+          ...site,
           ...headers,
         },
       });
 
       const text = await response.text();
+      /*
+        The person switched site while this was on its way. Its answer is about
+        the site they have left: drop it rather than let a caller show it, or
+        write it into the cache under the new site's keys.
+      */
+      if (getSiteEpoch() !== startedEpoch) {
+        throw siteSwitchedError();
+      }
       const data = parseApiResponseBody(text, url);
 
       if (!response.ok) {
@@ -390,6 +484,27 @@ export async function apiFetch<T>(
   try {
     return await attempt(accessToken);
   } catch (err) {
+    /*
+      403 SITE_NOT_AVAILABLE: the chosen site is one this login no longer
+      belongs to (it was removed, or the site closed). `staff/me` and
+      `me/sites` say so. Go back to the home site, letting go of everything tied
+      to the old one, and ask once more without the header.
+    */
+    if (
+      err instanceof ApiError &&
+      err.status === 403 &&
+      apiErrorCode(err) === 'SITE_NOT_AVAILABLE' &&
+      sentSite !== null
+    ) {
+      if (getChosenSiteId() === sentSite) {
+        markSiteLost();
+        await setChosenSite(null);
+      }
+      if (getChosenSiteId() === null) {
+        return await attempt(accessToken);
+      }
+      throw err;
+    }
     // Transparently recover from an expired Bearer token — typically the first
     // request after the app resumes from the background, before Supabase's
     // auto-refresh has propagated the new token into the query layer. We retry

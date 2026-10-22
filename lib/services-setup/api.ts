@@ -11,9 +11,8 @@
  * refreshes an expired token once, as `apiFetch` does, through the client's own helper.
  */
 
-import { apiFetch, refreshExpiredAccessToken } from '@/lib/api/client';
+import { apiFetch, apiRawFetch, refreshExpiredAccessToken } from '@/lib/api/client';
 import { formDataFile } from '@/lib/api/form-data-file';
-import { getApiUrl } from '@/lib/env';
 
 import type { ServicesSetupExtractResponse } from './types';
 
@@ -66,13 +65,13 @@ export async function readSetupSource(
   instructions: string,
   accessToken: string | null,
 ): Promise<SetupReadResult> {
-  const url = `${getApiUrl()}/api/venue/services-setup/extract`;
+  const path = '/api/venue/services-setup/extract';
 
   const attempt = async (bearer: string | null): Promise<{ status: number; data: unknown }> => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), READ_TIMEOUT_MS);
     try {
-      const res = await fetch(url, {
+      const res = await apiRawFetch(path, {
         method: 'POST',
         body: buildForm(input, instructions),
         signal: controller.signal,

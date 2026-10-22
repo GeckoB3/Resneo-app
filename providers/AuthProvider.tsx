@@ -11,7 +11,7 @@ import {
 } from 'react';
 import { AppState, Platform, type AppStateStatus } from 'react-native';
 
-import { clearAppMode } from '@/lib/mode/app-mode-store';
+import { clearAppMode } from '@/lib/mode/app-mode-store';
 import { clearLatchedRole } from '@/lib/queries/useRole';
 import { unregisterDevice } from '@/lib/push/registerDevice';
 import { ANALYTICS_EVENTS, identify, resetAnalytics, track } from '@/lib/analytics';
@@ -20,6 +20,7 @@ import { isAccountEnumerationError, sendBrandedMagicLink } from '@/lib/auth/magi
 import { getAuthCallbackRedirectUrl } from '@/lib/auth/redirect';
 import { setObservabilityUser } from '@/lib/observability';
 import { setQueryAuthScope } from '@/lib/queries/keys';
+import { markSiteOfferDue, syncChosenSiteUser } from '@/lib/sites/active-site';
 import { queryClient } from '@/lib/queries/queryClient';
 import { clearAllStocktakeDrafts } from '@/lib/retail/stocktake-draft';
 import { clearAllServicesSetups } from '@/lib/services-setup/setup-storage';
@@ -75,6 +76,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
     life of the process.
   */
   const authLossHandledRef = useRef(false);
+  /*
+    Whether this run has seen the person signed out: null until the first answer.
+    A session arriving after `true` is a sign-in the person has just made, as
+    against one restored from storage at launch (Supabase reports both as
+    SIGNED_IN), and only a sign-in offers the site picker (web roles plan §6.2c).
+  */
+  const signedOutRef = useRef<boolean | null>(null);
 
   useEffect(() => {
     let supabase: SupabaseClient;
@@ -103,6 +111,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setSession(data.session ?? null);
       setObservabilityUser(userId);
       setQueryAuthScope(userId);
+      // The site chosen on this phone belongs to this login only.
+      syncChosenSiteUser(userId);
+      if (signedOutRef.current === null) signedOutRef.current = !userId;
       identify(userId);
       setIsLoading(false);
     }
@@ -116,6 +127,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setSession(nextSession);
       setObservabilityUser(userId);
       setQueryAuthScope(userId);
+      // Signing out (or in as someone else) forgets the chosen site.
+      syncChosenSiteUser(userId);
       identify(userId);
 
       if (userId) {
@@ -123,8 +136,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
         authLossHandledRef.current = false;
         if (event === 'SIGNED_IN') {
           track(ANALYTICS_EVENTS.signInSucceeded);
+          if (signedOutRef.current === true) markSiteOfferDue();
         }
-      } else if (event === 'SIGNED_OUT') {
+        signedOutRef.current = false;
+      } else {
+        signedOutRef.current = true;
+      }
+      if (!userId && event === 'SIGNED_OUT') {
         // A SIGNED_OUT we didn't initiate means the refresh token was revoked
         // or expired — flag it so the UI can prompt a friendly re-login.
         if (!isExplicitSignOutRef.current) {
@@ -434,7 +452,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       inherited choice would drop a staff member into customer mode with no
       explanation of why their calendar had vanished.
     */
-    clearAppMode();
+    clearAppMode();
     clearLatchedRole();
     // A services setup left half-checked belongs to the person leaving (web: sign-out's
     // Clear-Site-Data takes the browser's copy with it).
