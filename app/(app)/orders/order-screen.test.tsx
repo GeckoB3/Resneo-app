@@ -179,3 +179,23 @@ describe('an online order', () => {
     expect(screen.getByText('This order is at another business. Switch to it in the app, then open it again.')).toBeTruthy();
   });
 });
+
+/** Web roles plan A2: the customer's email and phone read "Hidden", with no email or call link. */
+describe("the customer's contact details", () => {
+  it('reads "Hidden" for someone whose client contacts are hidden', async () => {
+    const base = detail('preparing');
+    mockDetail = { ...base, order: { ...base.order, contact_email: null }, contacts_hidden: true };
+    await render(<OrderScreen />);
+    expect(screen.getByText('Ana')).toBeTruthy();
+    expect(screen.getByText('Hidden')).toBeTruthy();
+    expect(screen.getByText('Your business has hidden client phone numbers and emails for you.')).toBeTruthy();
+    expect(screen.queryByText('ana@example.test')).toBeNull();
+  });
+
+  it('shows the email as a link to everyone else', async () => {
+    mockDetail = detail('preparing');
+    await render(<OrderScreen />);
+    expect(screen.getByText('ana@example.test')).toBeTruthy();
+    expect(screen.queryByText('Hidden')).toBeNull();
+  });
+});

@@ -1,3 +1,5 @@
+import type { ContactsHiddenFlag } from '@/types/staff';
+
 /**
  * Guest directory row from GET /api/venue/guests.
  * @see _reference/Resneo/src/app/api/venue/guests/route.ts
@@ -30,7 +32,8 @@ export interface GuestListItem {
   custom_fields?: Record<string, unknown>;
 }
 
-export interface GuestListResponse {
+/** `contacts_hidden` (web roles plan A2): phone and email are null on every row. */
+export interface GuestListResponse extends ContactsHiddenFlag {
   guests: GuestListItem[];
   total: number;
   page: number;

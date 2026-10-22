@@ -17,6 +17,7 @@ import {
 import { GroupVisitCards } from '@/components/bookings/GroupVisitCards';
 import { VisitSummary, type VisitSummaryBadge } from '@/components/bookings/VisitSummary';
 import { MessageGuestSection } from '@/components/bookings/MessageGuestSection';
+import { HiddenContactValue } from '@/components/roles/HiddenContact';
 import {
   ModifyBookingSheet,
   type ModifyBookingTarget,
@@ -111,6 +112,7 @@ import {
 import { BookingLocationCallout } from '@/components/bookings/BookingLocationCallout';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
+import { useClientContactHidden } from '@/providers/ViewerAccessProvider';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { BookingDetail, BookingStatus } from '@/types/booking-detail';
@@ -321,6 +323,9 @@ function GuestHistoryBody({
       await writeRebookBootstrap({
         v: 1,
         guest: {
+          // The client this booking is for: the new booking joins them (roles
+          // plan §5.6), even when their phone and email are hidden from us.
+          guestId,
           firstName: guest?.first_name ?? undefined,
           lastName: guest?.last_name ?? undefined,
           email: guest?.email ?? null,
@@ -452,6 +457,9 @@ function LinkedGuestHistoryBody({
       await writeRebookBootstrap({
         v: 1,
         guest: {
+          // The client this booking is for: the new booking joins them (roles
+          // plan §5.6), even when their phone and email are hidden from us.
+          guestId,
           firstName: guest?.first_name ?? undefined,
           lastName: guest?.last_name ?? undefined,
           email: guest?.email ?? null,
@@ -549,6 +557,7 @@ export function BookingDetailContent({
   const router = useRouter();
   const toast = useToast();
   const { venue, featureFlags } = useVenueContext();
+  const contactHidden = useClientContactHidden(booking.contacts_hidden);
   // What a linked venue's booking lets us do; everything, for our own.
   const policy = linkedDetailPolicy(linked?.act);
   // A rebook of a partner's guest opens the form over the partner's venue.
@@ -868,9 +877,14 @@ export function BookingDetailContent({
   );
   const timelineEvents = bookingTimelineEventsForDisplay(booking.events ?? []);
 
-  const guestEmail = booking.guest?.email?.trim();
-  const guestPhone = booking.guest?.phone?.trim();
-  const canResend = !!guestEmail && policy.canEdit;
+  // Hidden client contacts (roles plan §5.6): the server sends them as null, and
+  // nothing here offers to call or email the client. A stale value never shows.
+  const guestEmail = contactHidden ? undefined : booking.guest?.email?.trim();
+  const guestPhone = contactHidden ? undefined : booking.guest?.phone?.trim();
+  const showHiddenContact = contactHidden && Boolean(booking.guest || booking.guest_id);
+  // The server sends the confirmation to the address it holds, so someone who
+  // cannot see it can still resend it (web parity: the button is always there).
+  const canResend = (!!guestEmail || showHiddenContact) && policy.canEdit;
   const hasDeposit = booking.deposit_amount_pence != null || !!shownDepositStatus;
   // Card-hold state (§9.1): when non-null the legacy deposit UI is replaced by
   // the card-aware pill/lines/actions everywhere in this component.
@@ -1290,8 +1304,15 @@ export function BookingDetailContent({
           </View>
 
           {/* Contact + quick actions */}
-          {guestPhone || guestEmail || canReschedule || canModify || booking.guest_id ? (
+          {guestPhone || guestEmail || showHiddenContact || canReschedule || canModify || booking.guest_id ? (
             <View style={[styles.heroBlock, { borderTopColor: colors.border }]}>
+              {/* Roles plan §5.6: "Hidden" with the tip, and no call or email
+                  actions, for someone whose business hides client contacts. */}
+              {showHiddenContact ? (
+                <View style={styles.contactLine}>
+                  <HiddenContactValue variant="bodySmall" label="Phone and email" showTip />
+                </View>
+              ) : null}
               {guestPhone ? (
                 <ContactRow
                   icon={{ ios: 'phone.fill', android: 'call', web: 'call' }}
@@ -1410,6 +1431,8 @@ export function BookingDetailContent({
                           await writeRebookBootstrap({
                             v: 1,
                             guest: {
+                              // Joins the new booking to this client (roles plan §5.6).
+                              guestId: booking.guest_id,
                               firstName: g?.first_name ?? undefined,
                               lastName: g?.last_name ?? undefined,
                               email: g?.email ?? null,
@@ -1460,6 +1483,8 @@ export function BookingDetailContent({
                         await writeRebookBootstrap({
                           v: 1,
                           guest: {
+                            // Joins the new booking to this client (roles plan §5.6).
+                            guestId: booking.guest_id,
                             firstName: g?.first_name ?? undefined,
                             lastName: g?.last_name ?? undefined,
                             email: g?.email ?? null,

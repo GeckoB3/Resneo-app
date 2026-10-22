@@ -42,6 +42,7 @@ import {
 import { formatPence } from '@/lib/format';
 import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { normalizePhone } from '@/lib/phone/normalize';
+import { accessRefusalMessage } from '@/lib/roles/roles';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
 import { useCreateGroupBooking } from '@/lib/queries/useCreateGroupBooking';
 import { useMonthAvailability } from '@/lib/queries/useMonthAvailability';
@@ -330,6 +331,9 @@ export function GroupBookingFlow({
           phone: normalizePhone(organiser.phone, phoneDefaultCountry),
           email: organiser.email,
           dietary_notes: comment || undefined,
+          // The picked organiser (web roles plan §5.6): joins the group to that client, and on a
+          // phone source stands in for a typed phone (the client's own fills it).
+          guest_id: organiser.guest_id,
         },
         source,
         people,
@@ -433,7 +437,11 @@ export function GroupBookingFlow({
             return;
           }
           hapticWarning();
-          setSubmitError(apiError ? apiError.message : 'Could not create the group booking.');
+          // The roles refusals (CONTACT_BELONGS_TO_OTHER_CLIENT, DIARY_VIEW_ONLY) in the server's words.
+          setSubmitError(
+            accessRefusalMessage(error) ??
+              (apiError ? apiError.message : 'Could not create the group booking.'),
+          );
         },
       });
     },

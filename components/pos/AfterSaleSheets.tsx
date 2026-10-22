@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { Switch, View } from 'react-native';
 
+import { savedContactHelper, sentToWords } from '@/components/pos/hidden-contact-send';
 import { writeError, type Send } from '@/components/pos/SaleSheets';
 import { AmountRow, ChoiceChips, ErrorLine, money, Notice, PosSheet, posStyles, usePosT } from '@/components/pos/parts';
 import { CashTillPrompt } from '@/components/pos/TillSheets';
@@ -35,6 +36,7 @@ import {
   storedValueRefundNote,
   voucherLineRefundState,
 } from '@/lib/pos/voucher-math';
+import { useClientContactHidden } from '@/providers/ViewerAccessProvider';
 import type { PosBootstrap, PosPayment, PosSale } from '@/types/pos';
 
 /**
@@ -409,9 +411,15 @@ function ReceiptSheetBody({
   onSent: (message: string) => void;
 }) {
   const t = usePosT();
-  const hasEmail = Boolean(sale.guest?.email);
-  const [channel, setChannel] = useState<'email' | 'sms'>(hasEmail || !sale.guest?.phone ? 'email' : 'sms');
-  const [to, setTo] = useState(() => (hasEmail ? sale.guest?.email ?? '' : sale.guest?.phone ?? ''));
+  // Web roles plan A2: for someone whose client contacts are hidden the field starts empty, and
+  // leaving it empty sends to what is saved for the client without showing it.
+  const contactHidden = useClientContactHidden();
+  const sendToSaved = contactHidden && Boolean(sale.guest);
+  const savedEmail = contactHidden ? '' : sale.guest?.email ?? '';
+  const savedPhone = contactHidden ? '' : sale.guest?.phone ?? '';
+  const hasEmail = Boolean(savedEmail);
+  const [channel, setChannel] = useState<'email' | 'sms'>(hasEmail || !savedPhone ? 'email' : 'sms');
+  const [to, setTo] = useState(() => (hasEmail ? savedEmail : savedPhone));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -426,7 +434,7 @@ function ReceiptSheetBody({
           value={channel}
           onChange={(c) => {
             setChannel(c);
-            setTo(c === 'email' ? sale.guest?.email ?? '' : sale.guest?.phone ?? '');
+            setTo(c === 'email' ? savedEmail : savedPhone);
           }}
         />
         <Input
@@ -436,18 +444,21 @@ function ReceiptSheetBody({
           keyboardType={channel === 'email' ? 'email-address' : 'phone-pad'}
           autoCapitalize="none"
           maxLength={200}
+          helper={sendToSaved ? savedContactHelper(channel) : undefined}
         />
         <ErrorLine message={error} />
         <Button
           label={channel === 'email' ? t('done.receipt.email') : t('done.receipt.text')}
           loading={busy}
-          disabled={!to.trim() || busy}
+          disabled={(!to.trim() && !sendToSaved) || busy}
           onPress={async () => {
             setBusy(true);
             setError(null);
             try {
-              const res = await send({ action: 'receipt', body: { channel, to: to.trim() } });
-              onSent(t('done.receipt.sent', { destination: String(res.destination ?? to.trim()) }));
+              // No `to` sends to the client's saved details (the server's `to` is optional).
+              const res = await send({ action: 'receipt', body: { channel, ...(to.trim() ? { to: to.trim() } : {}) } });
+              const destination = typeof res.destination === 'string' ? res.destination : null;
+              onSent(t('done.receipt.sent', { destination: sentToWords(destination, to, channel) }));
               onClose();
             } catch (e) {
               setError(writeError(e, t));

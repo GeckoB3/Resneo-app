@@ -103,10 +103,12 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
       last_name: profile.last_name ?? '',
       phone: profile.phone ?? '',
       email: profile.email ?? '',
+      // "Book" from the client's profile joins the booking to that client (sent as guest_id).
+      ...(prefilledGuestId ? { guest_id: prefilledGuestId } : {}),
     });
     setGuestPrefilled(true);
     setReturningGuest(true);
-  }, [prefillGuestQuery.data, guestPrefilled]);
+  }, [prefillGuestQuery.data, guestPrefilled, prefilledGuestId]);
 
   const classes = offeringsQuery.data?.classes ?? [];
   const instances = useMemo(() => offeringsQuery.data?.instances ?? [], [offeringsQuery.data]);
@@ -397,6 +399,8 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
             source,
             ...(hasDeposit && requireDeposit && source !== 'walk-in' ? { require_deposit: true } : {}),
             ...(returningGuest ? { returning_guest: true } : {}),
+            // The picked client (web roles plan §5.6): joins the booking to them.
+            ...(guest.guest_id ? { guest_id: guest.guest_id } : {}),
             ...(createOwnerVenueId ? { owner_venue_id: createOwnerVenueId } : {}),
           })}
           onCreated={(bookingId) => {

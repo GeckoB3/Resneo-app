@@ -12,6 +12,7 @@ import { format, parseISO } from 'date-fns';
 
 import { formatGuestDisplayName } from '@/lib/guests/name';
 import { formatPhoneForDisplay } from '@/lib/phone/e164';
+import { ROLES_COPY } from '@/lib/roles/roles';
 import type { GuestBookingHistoryRow } from '@/types/guest-detail';
 import type { GuestListItem, GuestListParams } from '@/types/guest-list';
 
@@ -40,8 +41,15 @@ export function clientSearchResultLabel(
   return formatGuestDisplayName(row.first_name, row.last_name);
 }
 
-/** Web `guestSearchResultSubtitle`, with the phone in its readable form. */
-export function clientSearchResultSubtitle(row: Pick<GuestListItem, 'email' | 'phone'>): string {
+/**
+ * Web `guestSearchResultSubtitle`, with the phone in its readable form. For someone whose "Can see
+ * client phone numbers and emails" is off (web roles plan A2) it reads "Hidden".
+ */
+export function clientSearchResultSubtitle(
+  row: Pick<GuestListItem, 'email' | 'phone'>,
+  contactHidden = false,
+): string {
+  if (contactHidden) return ROLES_COPY['contact.hidden'];
   const email = row.email?.trim() || null;
   const phone = formatPhoneForDisplay(row.phone) || null;
   if (email && phone) return `${email} · ${phone}`;

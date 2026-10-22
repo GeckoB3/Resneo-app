@@ -19,9 +19,21 @@ export interface StaffPermissions {
   role_key?: 'front_desk';
   /** Admins: plan, billing, payouts, closing the business and other admins. Only the owner changes it. */
   billing_payouts_admins?: boolean;
+  /** Front desk and Staff: "Can see client phone numbers and emails". Absent means on (A2). */
   client_contact?: boolean;
+  /** Everyone but the owner: "Can export client data". Absent means on (A2). */
   export_clients?: boolean;
+  /** Front desk and Staff: "Other people's diaries". Absent means 'book' ('hidden' arrives with A2b). */
   other_diaries?: 'book' | 'view' | 'hidden';
+}
+
+/**
+ * What a venue API response carries for someone whose "Can see client phone numbers and emails" is
+ * off (web roles plan §5.6, `contact-visibility`): every client phone and email in the body is null,
+ * and the body says `contacts_hidden: true`. Absent for everyone else.
+ */
+export interface ContactsHiddenFlag {
+  contacts_hidden?: boolean;
 }
 
 /**
@@ -99,13 +111,24 @@ export interface InviteStaffResponse {
 
 /**
  * PATCH /api/venue/staff/[id] request body (strict; never email). `role_key` wins over `role`.
- * `permissions` takes only `billing_payouts_admins` for now, which only the owner changes.
+ * `permissions` is partial; `null` puts a key back to its absent default. Who may send what (web
+ * `team-policy.ts`):
+ *   - `billing_payouts_admins`: admins only, set by the owner only;
+ *   - `client_contact` and `other_diaries`: Front desk and Staff only, set by the owner or any admin
+ *     ('hidden' is refused until A2b);
+ *   - `export_clients`: everyone but the owner; only the owner sets it for an admin.
+ * Nobody changes their own.
  */
 export interface PatchStaffBody {
   role?: StaffRole;
   role_key?: RoleChoice;
   name?: string;
-  permissions?: { billing_payouts_admins?: boolean | null };
+  permissions?: {
+    billing_payouts_admins?: boolean | null;
+    client_contact?: boolean | null;
+    export_clients?: boolean | null;
+    other_diaries?: 'book' | 'view' | null;
+  };
 }
 
 /** PATCH /api/venue/staff/[id] response. */

@@ -2,6 +2,7 @@
  * Online orders as the staff app reads them (POS Pass 6a, app step 5; web `src/lib/shop/orders.ts`,
  * `src/lib/shop/order-facts.ts`, `src/app/api/venue/shop/orders/**`).
  */
+import type { ContactsHiddenFlag } from '@/types/staff';
 
 export type OrderTab = 'todo' | 'ready' | 'sent' | 'done' | 'cancelled' | 'all';
 
@@ -26,7 +27,8 @@ export interface ShopOrderRow {
   };
 }
 
-export interface ShopOrdersResponse {
+/** `contacts_hidden` (web roles plan A2): each customer's email is null. */
+export interface ShopOrdersResponse extends ContactsHiddenFlag {
   orders: ShopOrderRow[];
   next_cursor: string | null;
   counts: Record<OrderTab, number>;
@@ -65,8 +67,8 @@ export interface ShopOrderReturn {
   created_by_name: string | null;
 }
 
-/** `GET /api/venue/shop/orders/[id]`. */
-export interface ShopOrderDetail {
+/** `GET /api/venue/shop/orders/[id]`. `contacts_hidden` (web roles plan A2): the customer's email and phone are null. */
+export interface ShopOrderDetail extends ContactsHiddenFlag {
   order: {
     id: string;
     number: number;

@@ -16,8 +16,12 @@ import {
 } from '@/lib/queries/useTeamMutations';
 import {
   billingSwitchOn,
+  contactSwitchOn,
+  diaryChoiceOf,
+  exportSwitchOn,
   isOwnerPerson,
   memberAccess,
+  memberHasCalendar,
   ROLE_LABELS,
   ROLES_COPY,
   roleChoiceBody,
@@ -25,14 +29,17 @@ import {
   roleDescription,
   roleOptionsFor,
   rolesT,
+  showsAdminExportSwitch,
   showsBillingSwitch,
+  showsPersonSwitches,
   teamErrorMessage,
+  type DiaryAccess,
   type TeamViewer,
 } from '@/lib/roles/roles';
 import { useToast } from '@/providers/ToastProvider';
 import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
-import type { AssignablePractitioner, RoleChoice, TeamMember } from '@/types/staff';
+import type { AssignablePractitioner, PatchStaffBody, RoleChoice, TeamMember } from '@/types/staff';
 
 type Tab = 'actions' | 'role' | 'password' | 'calendars';
 
@@ -60,6 +67,11 @@ const LEGACY_ADMIN_VIEWER: TeamViewer = { staffId: null, isOwner: false, billing
  * opening it sees only who can change it; an admin without "Billing, payouts and admins" sees the
  * same for another admin. The owner sees "Billing, payouts and admins" on each admin, and their own
  * row says transferring ownership is done on the web (UR30).
+ *
+ * A2 switches, on the Role tab (web Settings, Staff `PersonSwitches` and `ExportSwitch`): the owner
+ * or any admin sets "Can see client phone numbers and emails", "Other people's diaries" and "Can
+ * export client data" on a Front desk or Staff row; the owner alone sets "Can export client data"
+ * on another admin. Never on your own row. Each saves as soon as it changes.
  */
 export function StaffMemberSheet({
   visible,
@@ -154,10 +166,14 @@ export function StaffMemberSheet({
     }
   }
 
-  async function handleBillingSwitch(on: boolean) {
+  /**
+   * A switch on this person, saved as soon as it changes. The list shows the change at once and
+   * puts it back if the server refuses (usePatchStaffMember's optimistic update).
+   */
+  async function handleSwitch(permissions: NonNullable<PatchStaffBody['permissions']>) {
     if (!member) return;
     try {
-      await patchSwitch.mutateAsync({ id: member.id, body: { permissions: { billing_payouts_admins: on } } });
+      await patchSwitch.mutateAsync({ id: member.id, body: { permissions } });
       hapticSuccess();
       toast.success('Saved.');
     } catch (err) {
@@ -234,6 +250,25 @@ export function StaffMemberSheet({
   const roleOptions = roleOptionsFor(viewer);
   const currentRole = roleChoiceOf(member);
   const billingSwitch = showsBillingSwitch(viewer, member);
+  const personSwitches = showsPersonSwitches(viewer, member);
+  const adminExportSwitch = showsAdminExportSwitch(viewer, member);
+  const diaries = diaryChoiceOf(member);
+  // "Hidden" is not offered yet; someone already set to it on the web shows it until changed here.
+  const diaryOptions: { value: DiaryAccess; label: string }[] = [
+    { value: 'book', label: ROLES_COPY['switch.other_diaries.book'] },
+    { value: 'view', label: ROLES_COPY['switch.other_diaries.view'] },
+    ...(diaries === 'hidden' ? [{ value: 'hidden' as const, label: ROLES_COPY['switch.other_diaries.hidden'] }] : []),
+  ];
+
+  const exportSwitchRow = (
+    <SwitchRow
+      label={ROLES_COPY['switch.export_clients']}
+      help={ROLES_COPY['switch.export_clients.help']}
+      value={exportSwitchOn(member)}
+      disabled={patchSwitch.isPending}
+      onChange={(on) => void handleSwitch({ export_clients: on })}
+    />
+  );
 
   const header = (
     <View style={styles.header}>
@@ -408,21 +443,53 @@ export function StaffMemberSheet({
             {billingSwitch && currentRole === 'admin' ? (
               <>
                 <View style={[styles.divider, { backgroundColor: colors.border }]} />
-                <View style={styles.switchRow}>
-                  <View style={styles.flex1}>
-                    <Text variant="bodyMedium">{ROLES_COPY['billing.switch']}</Text>
-                    <Text variant="caption" tone="muted">
-                      {ROLES_COPY['billing.switch.help']}
-                    </Text>
-                  </View>
-                  <Switch
-                    value={billingSwitchOn(member)}
-                    onValueChange={(on) => void handleBillingSwitch(on)}
-                    disabled={patchSwitch.isPending}
-                    accessibilityLabel={ROLES_COPY['billing.switch']}
-                    accessibilityState={{ checked: billingSwitchOn(member), disabled: patchSwitch.isPending }}
+                <SwitchRow
+                  label={ROLES_COPY['billing.switch']}
+                  help={ROLES_COPY['billing.switch.help']}
+                  value={billingSwitchOn(member)}
+                  disabled={patchSwitch.isPending}
+                  onChange={(on) => void handleSwitch({ billing_payouts_admins: on })}
+                />
+              </>
+            ) : null}
+
+            {/* "Can export client data" on an admin: the owner only (roles plan §5.5). */}
+            {adminExportSwitch && currentRole === 'admin' ? (
+              <>
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                {exportSwitchRow}
+              </>
+            ) : null}
+
+            {/* Front desk and Staff: contacts, other diaries and exports, set by the owner or any
+                admin, never on your own row (roles plan §5.5, §5.6, §5.11). */}
+            {personSwitches && currentRole !== 'admin' ? (
+              <>
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                <SwitchRow
+                  label={ROLES_COPY['switch.client_contact']}
+                  help={ROLES_COPY['switch.client_contact.help']}
+                  value={contactSwitchOn(member)}
+                  disabled={patchSwitch.isPending}
+                  onChange={(on) => void handleSwitch({ client_contact: on })}
+                />
+                <View style={styles.diaryBlock}>
+                  <Text variant="bodyMedium">{ROLES_COPY['switch.other_diaries']}</Text>
+                  <Segmented
+                    options={diaryOptions}
+                    value={diaries}
+                    onChange={(next) => {
+                      if (next === diaries || next === 'hidden' || patchSwitch.isPending) return;
+                      void handleSwitch({ other_diaries: next });
+                    }}
                   />
+                  {diaries !== 'book' && !memberHasCalendar(member) ? (
+                    <Text variant="caption" color={colors.warning}>
+                      {rolesT('switch.other_diaries.no_calendar', { name: displayName })}
+                    </Text>
+                  ) : null}
                 </View>
+                {exportSwitchRow}
               </>
             ) : null}
           </View>
@@ -573,7 +640,43 @@ export function StaffMemberSheet({
   );
 }
 
+/** A labelled switch with its help line, as on the web Team screen (Appendix C). */
+function SwitchRow({
+  label,
+  help,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  help: string;
+  value: boolean;
+  disabled: boolean;
+  onChange: (on: boolean) => void;
+}) {
+  return (
+    <View style={styles.switchRow}>
+      <View style={styles.flex1}>
+        <Text variant="bodyMedium">{label}</Text>
+        <Text variant="caption" tone="muted">
+          {help}
+        </Text>
+      </View>
+      <Switch
+        value={value}
+        onValueChange={onChange}
+        disabled={disabled}
+        accessibilityLabel={label}
+        accessibilityState={{ checked: value, disabled }}
+      />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  diaryBlock: {
+    gap: spacing.sm,
+  },
   header: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.sm,

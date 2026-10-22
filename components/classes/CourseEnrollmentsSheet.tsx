@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
+import { HIDDEN_CONTACT_LABEL } from '@/components/roles/HiddenContact';
 import { Badge, type BadgeTone } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -20,6 +21,7 @@ import {
 } from '@/lib/queries/useClassProducts';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
+import { useClientContactHidden } from '@/providers/ViewerAccessProvider';
 import { minTouchTarget, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type {
@@ -68,6 +70,8 @@ export function cancelToastMessage(refundPence: number | null | undefined): stri
  */
 export function CourseEnrollmentsSheet({ course, onClose }: CourseEnrollmentsSheetProps) {
   const { colors } = useTheme();
+  // Roles plan §5.6: "Hidden" in place of each enrollee's email.
+  const contactHidden = useClientContactHidden();
   const toast = useToast();
   const { venue } = useVenueContext();
   const isAdmin = venue?.current_user_role === 'admin';
@@ -207,7 +211,8 @@ export function CourseEnrollmentsSheet({ course, onClose }: CourseEnrollmentsShe
                           {guestDisplayName(e.guest)}
                         </Text>
                         <Text variant="caption" tone="muted" numberOfLines={1}>
-                          {e.guest?.email ?? 'No email'} · enrolled {e.created_at.slice(0, 10)}
+                          {contactHidden ? HIDDEN_CONTACT_LABEL : (e.guest?.email ?? 'No email')} · enrolled{' '}
+                          {e.created_at.slice(0, 10)}
                         </Text>
                       </View>
                       <Badge label={e.status} tone={ENROLLMENT_TONE[e.status] ?? 'neutral'} />

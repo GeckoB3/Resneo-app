@@ -2,6 +2,8 @@
  * Subset of GET /api/venue/waitlist used by the mobile waitlist screen.
  * @see _reference/Resneo/src/app/api/venue/waitlist/route.ts
  */
+import type { ContactsHiddenFlag } from '@/types/staff';
+
 export type WaitlistStatus = 'waiting' | 'offered' | 'confirmed' | 'expired' | 'cancelled';
 
 export type WaitlistKind = 'appointment' | 'table';
@@ -52,7 +54,8 @@ export interface WaitlistEntry {
   booking_id?: string | null;
 }
 
-export interface WaitlistResponse {
+/** `contacts_hidden` when the viewer's "Can see client phone numbers and emails" is off (roles plan A2). */
+export interface WaitlistResponse extends ContactsHiddenFlag {
   entries: WaitlistEntry[];
   waitlist_mode?: WaitlistMode | string;
 }

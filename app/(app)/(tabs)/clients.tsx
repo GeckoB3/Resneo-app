@@ -27,6 +27,7 @@ import { ContactFilterSheet, type ContactFilterState, DEFAULT_FILTER_STATE } fro
 import { ContactLetterHeader } from '@/components/clients/ContactLetterHeader';
 import { flattenContacts, isNameSort } from '@/components/clients/contactListData';
 import { CreateContactSheet } from '@/components/clients/CreateContactSheet';
+import { HiddenContactValue } from '@/components/roles/HiddenContact';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
 import { BulkActionBar, BULK_ACTION_BAR_CLEARANCE } from '@/components/ui/BulkActionBar';
@@ -53,8 +54,10 @@ import { useGuestCustomFields, useGuests } from '@/lib/queries/useGuests';
 import { useGuestTags } from '@/lib/queries/useGuestTags';
 import { queryKeys } from '@/lib/queries/keys';
 import { useVenueLiveSync } from '@/lib/realtime/useVenueLiveSync';
+import { ROLES_COPY } from '@/lib/roles/roles';
 import { isUnifiedSchedulingVenue } from '@/lib/venue/venue-experience';
 import { useToast } from '@/providers/ToastProvider';
+import { useClientContactHidden, useViewerAccess } from '@/providers/ViewerAccessProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -147,6 +150,7 @@ function GuestRowBase({
   onLongPress,
   selectionMode = false,
   selected = false,
+  contactHidden = false,
 }: {
   guest: GuestListItem;
   onPress: (id: string) => void;
@@ -154,6 +158,8 @@ function GuestRowBase({
   onLongPress?: (id: string) => void;
   selectionMode?: boolean;
   selected?: boolean;
+  /** "Can see client phone numbers and emails" is off (web roles plan A2): the line reads "Hidden". */
+  contactHidden?: boolean;
 }) {
   const { colors } = useTheme();
   const name = formatGuestName(guest);
@@ -212,7 +218,9 @@ function GuestRowBase({
             <Badge label={`${guest.no_show_count} no-show${guest.no_show_count === 1 ? '' : 's'}`} tone="warning" />
           ) : null}
         </View>
-        {guest.phone ? (
+        {contactHidden ? (
+          isAnonymous ? null : <HiddenContactValue variant="caption" label="Phone and email" />
+        ) : guest.phone ? (
           <Text variant="caption" tone="secondary" numberOfLines={1}>
             {formatPhoneForDisplay(guest.phone)}
           </Text>
@@ -334,6 +342,10 @@ export default function ClientsScreen() {
   }, [queryParamsKey]);
 
   const guestsQuery = useGuests({ ...guestQueryParams, page, limit: PAGE_SIZE });
+  // Web roles plan A2: "Can see client phone numbers and emails" off shows "Hidden", offers no call or
+  // text, and searches names only; "Can export client data" off hides the CSV export.
+  const contactHidden = useClientContactHidden(guestsQuery.data?.contacts_hidden);
+  const { canExportClients } = useViewerAccess();
 
   const responsePage = guestsQuery.data?.page;
   const responseGuests = guestsQuery.data?.guests;
@@ -526,7 +538,7 @@ export default function ClientsScreen() {
   const renderContactRow = useCallback(
     (item: GuestListItem) => {
       const swipeActions: SwipeAction[] = [];
-      if (item.phone) {
+      if (item.phone && !contactHidden) {
         swipeActions.push({
           key: 'call',
           label: 'Call',
@@ -551,6 +563,7 @@ export default function ClientsScreen() {
           onPress={handleRowPress}
           onPressIn={handleRowPressIn}
           onLongPress={toggleSelected}
+          contactHidden={contactHidden}
         />
       );
 
@@ -570,6 +583,7 @@ export default function ClientsScreen() {
     [
       colors.brand,
       colors.success,
+      contactHidden,
       selectionMode,
       selectedIds,
       handleRowPress,
@@ -883,7 +897,9 @@ export default function ClientsScreen() {
         <SearchBar
           value={searchInput}
           onChangeText={setSearchInput}
-          placeholder={`Search ${clientLabel}s by name, phone, or email`}
+          placeholder={
+            contactHidden ? ROLES_COPY['search.names_only'] : `Search ${clientLabel}s by name, phone, or email`
+          }
           right={
             <IconButton
               icon={{ ios: 'line.3.horizontal.decrease', android: 'filter_list', web: 'filter_list' }}
@@ -914,7 +930,7 @@ export default function ClientsScreen() {
               onPress={() => setSort(option.value)}
             />
           ))}
-          {isAdmin ? (
+          {isAdmin && canExportClients ? (
             <Chip
               label={exporting ? 'Exporting…' : 'Export CSV'}
               selected={false}

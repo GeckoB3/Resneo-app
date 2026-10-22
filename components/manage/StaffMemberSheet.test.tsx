@@ -157,3 +157,126 @@ describe('"Billing, payouts and admins"', () => {
     expect(screen.queryByText('Billing, payouts and admins')).toBeNull();
   });
 });
+
+describe('the A2 switches on a Front desk or Staff row', () => {
+  const desk: TeamMember = {
+    id: 'f1',
+    name: 'Fay',
+    email: 'fay@x.com',
+    role: 'staff',
+    role_key: 'front_desk',
+    is_owner: false,
+    permissions: { role_key: 'front_desk' },
+    linked_calendar_ids: ['c1'],
+  };
+
+  it('shows the three switches to any admin, with the help text, reading absent as on', async () => {
+    await open(desk, LIMITED_ADMIN);
+    await press('Role');
+    expect(screen.getByText("When this is off, they see 'Hidden' instead of phone numbers and emails.")).toBeTruthy();
+    expect(screen.getByLabelText('Can see client phone numbers and emails').props.value).toBe(true);
+    expect(screen.getByText("Other people's diaries")).toBeTruthy();
+    expect(screen.getByText('Can book and change')).toBeTruthy();
+    expect(screen.getByText('View only')).toBeTruthy();
+    expect(screen.queryByText('Hidden')).toBeNull();
+    expect(screen.getByLabelText('Can export client data').props.value).toBe(true);
+    expect(
+      screen.getByText(
+        "Shows or hides the buttons that download client lists. It can't stop someone copying details they can already see. To keep phone numbers and emails private, switch off 'Can see client phone numbers and emails'.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it('saves each switch as soon as it changes', async () => {
+    mockPatch.mockResolvedValue({ staff: desk });
+    await open(desk, ADMIN_VIEWER);
+    await press('Role');
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Can see client phone numbers and emails'), 'valueChange', false);
+    });
+    expect(mockPatch).toHaveBeenLastCalledWith({ id: 'f1', body: { permissions: { client_contact: false } } });
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Can export client data'), 'valueChange', false);
+    });
+    expect(mockPatch).toHaveBeenLastCalledWith({ id: 'f1', body: { permissions: { export_clients: false } } });
+    await press('View only');
+    expect(mockPatch).toHaveBeenLastCalledWith({ id: 'f1', body: { permissions: { other_diaries: 'view' } } });
+    expect(mockToast.success).toHaveBeenCalledWith('Saved.');
+  });
+
+  it('reads the stored switches', async () => {
+    await open({ ...desk, permissions: { role_key: 'front_desk', client_contact: false, export_clients: false } }, ADMIN_VIEWER);
+    await press('Role');
+    expect(screen.getByLabelText('Can see client phone numbers and emails').props.value).toBe(false);
+    expect(screen.getByLabelText('Can export client data').props.value).toBe(false);
+  });
+
+  it('explains View only for someone with no calendar', async () => {
+    await open({ ...desk, linked_calendar_ids: [], permissions: { role_key: 'front_desk', other_diaries: 'view' } }, ADMIN_VIEWER);
+    await press('Role');
+    expect(screen.getByText('Fay has no calendar. With View only they can look but not book.')).toBeTruthy();
+  });
+
+  it('does not explain it for someone with a calendar', async () => {
+    await open({ ...desk, permissions: { role_key: 'front_desk', other_diaries: 'view' } }, ADMIN_VIEWER);
+    await press('Role');
+    expect(screen.queryByText('Fay has no calendar. With View only they can look but not book.')).toBeNull();
+  });
+
+  it('shows Hidden only for someone already set to it on the web, and lets you move them off it', async () => {
+    mockPatch.mockResolvedValue({ staff: desk });
+    await open({ ...desk, permissions: { role_key: 'front_desk', other_diaries: 'hidden' } }, ADMIN_VIEWER);
+    await press('Role');
+    expect(screen.getByText('Hidden')).toBeTruthy();
+    await press('Hidden');
+    expect(mockPatch).not.toHaveBeenCalled();
+    await press('Can book and change');
+    expect(mockPatch).toHaveBeenCalledWith({ id: 'f1', body: { permissions: { other_diaries: 'book' } } });
+  });
+
+  it('is never offered on your own row', async () => {
+    await open(desk, { ...ADMIN_VIEWER, staffId: 'f1' });
+    await press('Role');
+    expect(screen.queryByText('Can see client phone numbers and emails')).toBeNull();
+    expect(screen.queryByText('Can export client data')).toBeNull();
+  });
+
+  it("shows the server's words when it refuses", async () => {
+    mockPatch.mockRejectedValue(
+      new ApiError('Check the highlighted fields.', 400, { error: 'Check the highlighted fields.', code: 'VALIDATION_FAILED' }),
+    );
+    await open(staff, ADMIN_VIEWER);
+    await press('Role');
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Can see client phone numbers and emails'), 'valueChange', false);
+    });
+    expect(mockToast.error).toHaveBeenCalledWith('Check the highlighted fields.');
+  });
+});
+
+describe('"Can export client data" on an admin', () => {
+  it('shows to the owner, and saves when switched', async () => {
+    mockPatch.mockResolvedValue({ staff: admin });
+    await open({ ...admin, permissions: { export_clients: false } }, OWNER_VIEWER);
+    await press('Role');
+    const toggle = screen.getByLabelText('Can export client data');
+    expect(toggle.props.value).toBe(false);
+    await act(async () => {
+      fireEvent(toggle, 'valueChange', true);
+    });
+    expect(mockPatch).toHaveBeenCalledWith({ id: 'a9', body: { permissions: { export_clients: true } } });
+    expect(screen.queryByText('Can see client phone numbers and emails')).toBeNull();
+  });
+
+  it('is not shown to an admin', async () => {
+    await open(admin, ADMIN_VIEWER);
+    await press('Role');
+    expect(screen.queryByText('Can export client data')).toBeNull();
+  });
+
+  it("is not on the owner's own row", async () => {
+    await open(owner, OWNER_VIEWER);
+    await press('Role');
+    expect(screen.queryByText('Can export client data')).toBeNull();
+  });
+});

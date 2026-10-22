@@ -153,6 +153,15 @@ describe('one voucher', () => {
     expect(mockAction).toHaveBeenCalledWith({ action: 'resend', to: 'jo@example.com' });
   });
 
+  it('says it was emailed without naming the address to someone whose client contacts are hidden', async () => {
+    // Web roles plan A2: the buyer's and recipient's emails come back null.
+    mockDetail = { ...detail({ buyer_email: null, recipient_email: null }), contacts_hidden: true };
+    await render(<VoucherDetailSheet voucherId="v1" canManage timeZone="Europe/London" onClose={jest.fn()} />);
+    expect(screen.getByText('Emailed to the saved address on 2 October 2026')).toBeTruthy();
+    expect(screen.queryByText('Not emailed')).toBeNull();
+    expect(screen.queryByText(/jo@example\.com/)).toBeNull();
+  });
+
   it('offers nothing to change on a cancelled voucher', async () => {
     mockDetail = detail({ status: 'cancelled' });
     await render(<VoucherDetailSheet voucherId="v1" canManage timeZone="Europe/London" onClose={jest.fn()} />);

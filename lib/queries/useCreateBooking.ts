@@ -66,11 +66,22 @@ export interface CreateBookingPayload {
    */
   require_card_hold?: boolean;
   /**
-   * Flag the booking as belonging to an existing/known contact. The web sends
-   * this when staff pick a known contact (or rebook a guest) so the backend
-   * links the booking to the existing client rather than minting a new one.
+   * The client already existed before this booking (staff picked a known
+   * contact, or rebooked one). The server uses it for metrics only (P0.6
+   * returning-client time-to-book); it does NOT link the booking to anyone.
+   * `guest_id` is what does that.
    */
   returning_guest?: boolean;
+  /**
+   * The client picked from search, or opened from their profile or a rebook
+   * (web roles plan §5.6). Joins the booking to that client; their stored phone
+   * and email fill any the form left blank, which is how someone whose client
+   * contacts are hidden books an existing client without seeing them. Without
+   * it the server matches on the typed details, and for that person refuses a
+   * match to a different client (409 `CONTACT_BELONGS_TO_OTHER_CLIENT`). A
+   * stale id answers 404 "We couldn't find that client. Search for them again."
+   */
+  guest_id?: string;
 }
 
 /**

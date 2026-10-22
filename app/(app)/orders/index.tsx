@@ -25,6 +25,7 @@ import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { lookupOrderByPickupCode, useShopOrders } from '@/lib/queries/useOrders';
 import { usePosBootstrap, usePosEnabled } from '@/lib/queries/usePos';
 import { useToast } from '@/providers/ToastProvider';
+import { useClientContactHidden } from '@/providers/ViewerAccessProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -71,6 +72,9 @@ export default function OrdersScreen() {
   const q = useDebounced(search);
   const canManage = finishing || canPos(boot.data, 'manage_orders');
   const list = useShopOrders({ tab, q }, { enabled: canManage, finishing });
+  // Web roles plan A2: someone whose client contacts are hidden finds orders by number or name only.
+  const contactHidden = useClientContactHidden(list.data?.pages[0]?.contacts_hidden);
+  const searchWords = contactHidden ? 'Search by order number or name' : t('ord.search');
   const [code, setCode] = useState('');
   const [finding, setFinding] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
@@ -218,7 +222,13 @@ export default function OrdersScreen() {
             void find(scanned);
           }}
         />
-        <SearchBar value={search} onChangeText={setSearch} placeholder={t('ord.search')} accessibilityLabel={t('ord.search')} onClear={() => setSearch('')} />
+        <SearchBar
+          value={search}
+          onChangeText={setSearch}
+          placeholder={searchWords}
+          accessibilityLabel={searchWords}
+          onClear={() => setSearch('')}
+        />
         <ChoiceChips
           options={TABS.map((x) => ({ value: x, label: counts ? `${t(`ord.tab.${x}`)} (${counts[x] ?? 0})` : t(`ord.tab.${x}`) }))}
           value={tab}

@@ -28,6 +28,7 @@ import { Screen } from '@/components/ui/Screen';
 import { Segmented } from '@/components/ui/Segmented';
 import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
+import { HiddenContactValue } from '@/components/roles/HiddenContact';
 import { WaitlistJoinSheet } from '@/components/waitlist/WaitlistJoinSheet';
 import { ApiError } from '@/lib/api/client';
 import { formatDayHeading } from '@/lib/dates/venue-dates';
@@ -44,6 +45,7 @@ import { useVenueLiveSync } from '@/lib/realtime/useVenueLiveSync';
 import { waitlistOfferState } from '@/lib/waitlist/offer-state';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
+import { useClientContactHidden } from '@/providers/ViewerAccessProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { WaitlistEntry, WaitlistStatus } from '@/types/waitlist';
@@ -222,6 +224,11 @@ type WaitlistEntryRowProps = {
   onDelete: (id: string) => void;
   /** Jump to the booking created when a confirmed entry has a booking_id. */
   onOpenBooking: (bookingId: string) => void;
+  /**
+   * The viewer's business hides client phone numbers and emails from them
+   * (roles plan §5.6): the row reads "Hidden" in their place.
+   */
+  contactHidden?: boolean;
 };
 
 /**
@@ -239,6 +246,7 @@ const WaitlistEntryRow = memo(function WaitlistEntryRow({
   onArmConfirm,
   onDelete,
   onOpenBooking,
+  contactHidden = false,
 }: WaitlistEntryRowProps) {
   const { colors } = useTheme();
 
@@ -290,12 +298,15 @@ const WaitlistEntryRow = memo(function WaitlistEntryRow({
             {detail}
           </Text>
         ) : null}
-        {entry.guest_phone ? (
+        {contactHidden ? (
+          <HiddenContactValue variant="caption" label="Phone and email" />
+        ) : null}
+        {entry.guest_phone && !contactHidden ? (
           <Text variant="caption" tone="muted">
             {formatPhoneForDisplay(entry.guest_phone)}
           </Text>
         ) : null}
-        {entry.guest_email ? (
+        {entry.guest_email && !contactHidden ? (
           <Text variant="caption" tone="muted">
             {entry.guest_email}
           </Text>
@@ -416,6 +427,7 @@ export default function WaitlistScreen() {
   const deleteMutation = useDeleteWaitlistEntry();
 
   const waitlistMode = query.data?.waitlist_mode ?? 'notify_in_order';
+  const contactHidden = useClientContactHidden(query.data?.contacts_hidden);
   const isStaffChoose = waitlistMode === 'staff_choose';
 
   // Alerts only relevant in staff_choose mode
@@ -571,9 +583,10 @@ export default function WaitlistScreen() {
         onArmConfirm={armConfirm}
         onDelete={handleDelete}
         onOpenBooking={openBooking}
+        contactHidden={contactHidden}
       />
     ),
-    [waitlistMode, pendingIds, pendingConfirm, act, armConfirm, handleDelete, openBooking],
+    [waitlistMode, pendingIds, pendingConfirm, act, armConfirm, handleDelete, openBooking, contactHidden],
   );
 
   const keyExtractor = useCallback((item: WaitlistEntry) => item.id, []);

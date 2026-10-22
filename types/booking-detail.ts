@@ -1,5 +1,6 @@
 import type { CardHoldSummary } from '@/lib/booking/card-hold';
 import type { BookingTimelineEventRow } from '@/lib/booking/booking-timeline';
+import type { ContactsHiddenFlag } from '@/types/staff';
 import type { BookingModel } from '@/types/venue';
 
 /** Booking lifecycle statuses — matches PostgreSQL enum and web dashboard. */
@@ -127,7 +128,7 @@ export interface BookingDetailAddon {
  * Mobile subset of GET /api/venue/bookings/[id] (and /summary prefetch).
  * @see _reference/reserve-ni/src/app/api/venue/bookings/[id]/route.ts
  */
-export interface BookingDetail {
+export interface BookingDetail extends ContactsHiddenFlag {
   id: string;
   status: BookingStatus;
   booking_date: string;

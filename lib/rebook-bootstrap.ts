@@ -20,6 +20,12 @@ export interface RebookGuestPrefill {
   lastName?: string;
   email?: string | null;
   phone?: string | null;
+  /**
+   * The client being rebooked (web roles plan §5.6). The wizard sends it as `guest_id`, so the
+   * booking joins that client and takes their stored phone and email when the form has none:
+   * someone whose client contacts are hidden has none to carry here.
+   */
+  guestId?: string | null;
 }
 
 export interface RebookBootstrapPayload {

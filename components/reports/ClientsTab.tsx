@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 
 import { GuestTagEditor } from '@/components/clients/GuestTagEditor';
+import { HIDDEN_CONTACT_LABEL, HiddenContactField, HiddenContactValue } from '@/components/roles/HiddenContact';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -35,7 +36,9 @@ import { useGuests } from '@/lib/queries/useGuests';
 import { useGuestTags } from '@/lib/queries/useGuestTags';
 import { useUpdateGuest, useEraseGuest } from '@/lib/queries/useGuestMutations';
 import { formatPence } from '@/lib/format';
+import { ROLES_COPY } from '@/lib/roles/roles';
 import { useToast } from '@/providers/ToastProvider';
+import { useClientContactHidden, useViewerAccess } from '@/providers/ViewerAccessProvider';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { GuestListItem } from '@/types/guest-list';
@@ -81,6 +84,7 @@ function GuestRow({
   filter,
   totalBookingsLabel,
   visitsLabel,
+  contactHidden = false,
 }: {
   guest: GuestListItem;
   onPress: () => void;
@@ -88,6 +92,8 @@ function GuestRow({
   filter: IdentityFilter;
   totalBookingsLabel: string;
   visitsLabel: string;
+  /** "Can see client phone numbers and emails" is off (web roles plan A2). */
+  contactHidden?: boolean;
 }) {
   const { colors } = useTheme();
   const isAnonymous = filter === 'anonymous' || guest.identifiability_tier === 'anonymous';
@@ -119,7 +125,9 @@ function GuestRow({
         </View>
         {/* Email and phone, both shown as the web's columns do. */}
         <Text variant="caption" tone="muted" numberOfLines={1}>
-          {`${guest.email ?? '-'} · ${guest.phone ? formatPhoneForDisplay(guest.phone) : '-'}`}
+          {contactHidden
+            ? HIDDEN_CONTACT_LABEL
+            : `${guest.email ?? '-'} · ${guest.phone ? formatPhoneForDisplay(guest.phone) : '-'}`}
         </Text>
         <View style={styles.guestMeta}>
           <Text variant="caption" tone="secondary">
@@ -158,6 +166,10 @@ function GuestDetail({
   const detailQuery = useGuestDetail(guestId, { bookingHistoryLimit: 20 });
   const updateMutation = useUpdateGuest(guestId);
   const eraseMutation = useEraseGuest();
+  // Web roles plan A2: "Can see client phone numbers and emails" off shows "Hidden" and never sends
+  // them; "Can export client data" off hides the history CSV.
+  const contactHidden = useClientContactHidden(detailQuery.data?.contacts_hidden);
+  const { canExportClients } = useViewerAccess();
 
   const [firstName, setFirstName] = useState<string | null>(null);
   const [lastName, setLastName] = useState<string | null>(null);
@@ -195,8 +207,7 @@ function GuestDetail({
       await updateMutation.mutateAsync({
         first_name: firstName ?? undefined,
         last_name: lastName ?? undefined,
-        email: email ?? undefined,
-        phone: phone ?? undefined,
+        ...(contactHidden ? {} : { email: email ?? undefined, phone: phone ?? undefined }),
       });
       setEditing(false);
       toast.success('Guest profile updated.');
@@ -338,19 +349,28 @@ function GuestDetail({
               />
             </View>
           </View>
-          <Input
-            label="Email"
-            value={email ?? ''}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-          <Input
-            label="Phone"
-            value={phone ?? ''}
-            onChangeText={setPhone}
-            keyboardType="phone-pad"
-          />
+          {contactHidden ? (
+            <>
+              <HiddenContactField label="Email" />
+              <HiddenContactField label="Phone" />
+            </>
+          ) : (
+            <>
+              <Input
+                label="Email"
+                value={email ?? ''}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+              <Input
+                label="Phone"
+                value={phone ?? ''}
+                onChangeText={setPhone}
+                keyboardType="phone-pad"
+              />
+            </>
+          )}
           <View style={styles.editActions}>
             <Button
               label="Cancel"
@@ -370,12 +390,13 @@ function GuestDetail({
       ) : (
         <View style={styles.profileRow}>
           <View style={styles.profileInfo}>
-            {guest.email ? (
+            {contactHidden ? <HiddenContactValue variant="bodySmall" label="Phone and email" showTip /> : null}
+            {!contactHidden && guest.email ? (
               <Text variant="bodySmall" tone="secondary">
                 {guest.email}
               </Text>
             ) : null}
-            {guest.phone ? (
+            {!contactHidden && guest.phone ? (
               <Text variant="bodySmall" tone="secondary">
                 {formatPhoneForDisplay(guest.phone)}
               </Text>
@@ -430,12 +451,14 @@ function GuestDetail({
 
       {/* Action buttons */}
       <View style={styles.actionRow}>
-        <Button
-          label="Export history (CSV)"
-          variant="secondary"
-          size="sm"
-          onPress={() => void handleExportHistory()}
-        />
+        {canExportClients ? (
+          <Button
+            label="Export history (CSV)"
+            variant="secondary"
+            size="sm"
+            onPress={() => void handleExportHistory()}
+          />
+        ) : null}
         <Button
           label={eraseArmed ? 'Tap to confirm erase' : 'Erase data'}
           variant="danger"
@@ -528,6 +551,8 @@ export function ClientsTab({
 
   const guests = guestsQuery.data?.guests ?? [];
   const total = guestsQuery.data?.total_count ?? 0;
+  // Web roles plan A2: names-only search and "Hidden" contacts for someone whose switch is off.
+  const contactHidden = useClientContactHidden(guestsQuery.data?.contacts_hidden);
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const hasMore = guests.length + page * PAGE_SIZE < total;
 
@@ -538,7 +563,7 @@ export function ClientsTab({
         value={search}
         onChangeText={handleSearchChange}
         onClear={() => handleSearchChange('')}
-        placeholder="Name, email, or phone"
+        placeholder={contactHidden ? ROLES_COPY['search.names_only'] : 'Name, email, or phone'}
         containerStyle={styles.searchBar}
       />
 
@@ -633,6 +658,7 @@ export function ClientsTab({
                 totalBookingsLabel={totalBookingsLabel}
                 visitsLabel={visitsLabel}
                 isExpanded={expandedId === guest.id}
+                contactHidden={contactHidden}
                 onPress={() => setExpandedId(expandedId === guest.id ? null : guest.id)}
               />
               {expandedId === guest.id ? (

@@ -1,3 +1,4 @@
+import type { ContactsHiddenFlag } from '@/types/staff';
 import type { BookingModel } from '@/types/venue';
 
 /**
@@ -111,7 +112,11 @@ export interface CommunicationRow {
   source?: 'communication_logs' | 'communications' | null;
 }
 
-export interface GuestDetailResponse {
+/**
+ * `contacts_hidden` (web roles plan A2): the viewer's "Can see client phone numbers and emails" is
+ * off, so every phone and email in the body is null.
+ */
+export interface GuestDetailResponse extends ContactsHiddenFlag {
   guest: GuestDetailProfile;
   stats: GuestDetailStats;
   booking_history: GuestBookingHistoryRow[];

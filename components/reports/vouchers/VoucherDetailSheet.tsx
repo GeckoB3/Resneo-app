@@ -18,6 +18,7 @@ import { parseMoneyInput } from '@/lib/pos/sale-math';
 import { formatDay, todayInZone, voucherLastDay } from '@/lib/pos/voucher-math';
 import { posReportPaths, useVoucherAction, useVoucherDetail, type VoucherAction } from '@/lib/queries/usePosReports';
 import { formatLongDay, formatMoneyExact, isDisputeHold, movementWords, voucherEmailAction, voucherLastDayYmd } from '@/lib/reports/pos-report-format';
+import { useClientContactHidden } from '@/providers/ViewerAccessProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { VoucherDetail } from '@/types/pos-reports';
@@ -42,6 +43,9 @@ const STATUS: Record<string, { id: 'vch.status.active' | 'vch.status.usedUp' | '
   cancelled: { id: 'vch.status.cancelled', tone: 'neutral' },
 };
 
+/** Where a voucher went, for someone whose client contacts are hidden (web roles plan A2). */
+const HIDDEN_ADDRESS_WORDS = 'the saved address';
+
 /** The voucher's status as the web's pill shows it. */
 export function ReportVoucherStatus({ status }: { status: string }) {
   const t = usePosT();
@@ -49,9 +53,16 @@ export function ReportVoucherStatus({ status }: { status: string }) {
   return <Badge label={t(s.id)} tone={s.tone} />;
 }
 
-/** `vch.sent`, `vch.scheduled` or `vch.notSent`; a used-up voucher is never sent. */
-function deliveryWords(a: VoucherDetail['account'], timeZone: string): string {
-  const email = a.recipient_email ?? a.buyer_email;
+/**
+ * `vch.sent`, `vch.scheduled` or `vch.notSent`; a used-up voucher is never sent. For someone whose
+ * client contacts are hidden (web roles plan A2) the emails are null, so it says "the saved address".
+ */
+function deliveryWords(a: VoucherDetail['account'], timeZone: string, contactHidden = false): string {
+  const email = contactHidden
+    ? a.sent_at || a.send_at
+      ? HIDDEN_ADDRESS_WORDS
+      : null
+    : a.recipient_email ?? a.buyer_email;
   if (a.sent_at && email) return reportsCopy('vch.sent', { email, date: formatDay(a.sent_at, timeZone) });
   if (a.send_at && email && !a.sent_at && a.status !== 'used_up') {
     return reportsCopy('vch.scheduled', { email, date: formatDay(a.send_at, timeZone) });
@@ -76,6 +87,9 @@ export function VoucherDetailSheet({
   const { colors } = useTheme();
   const q = useVoucherDetail(voucherId);
   const action = useVoucherAction(voucherId ?? '');
+  // Web roles plan A2: the buyer's and recipient's emails never show to someone whose client
+  // contacts are hidden; a resend asks them to type the address.
+  const contactHidden = useClientContactHidden(q.data?.contacts_hidden);
   const download = useReportDownload();
   const [step, setStep] = useState<Step>('view');
   const [notice, setNotice] = useState<string | null>(null);
@@ -114,7 +128,9 @@ export function VoucherDetailSheet({
     setText('');
     setAmountText('');
     setDirection('add');
-    if (next === 'resend' && a) setText((a.recipient_email || a.recipient_name ? a.recipient_email : a.buyer_email) ?? '');
+    if (next === 'resend' && a && !contactHidden) {
+      setText((a.recipient_email || a.recipient_name ? a.recipient_email : a.buyer_email) ?? '');
+    }
     if (next === 'extend' && a) {
       const current = voucherLastDayYmd(a.expires_at, timeZone);
       setDay(current && current >= today ? current : today);
@@ -357,7 +373,7 @@ export function VoucherDetailSheet({
                   </Text>
                 </View>
               ) : null}
-              {isVoucher ? <Text variant="bodySmall">{deliveryWords(a, timeZone)}</Text> : null}
+              {isVoucher ? <Text variant="bodySmall">{deliveryWords(a, timeZone, contactHidden)}</Text> : null}
             </View>
 
             {canManage && !closed ? (

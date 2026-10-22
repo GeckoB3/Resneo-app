@@ -38,6 +38,28 @@ export const ROLES_COPY = {
   'err.OWNER_PROTECTED': "You can't change or remove the owner.",
   'err.PERMISSION_NOT_ALLOWED': 'Only the owner can change Billing, payouts and admins.',
   'err.RATE_LIMITED': "You've sent a lot of invites today. Please try again tomorrow.",
+  // A2: the switches on a person (Appendix C, "Switch labels" and "Help text under the switches").
+  'switch.client_contact': 'Can see client phone numbers and emails',
+  'switch.client_contact.help': "When this is off, they see 'Hidden' instead of phone numbers and emails.",
+  'switch.other_diaries': "Other people's diaries",
+  'switch.other_diaries.book': 'Can book and change',
+  'switch.other_diaries.view': 'View only',
+  // A2b: offered on the web; the app shows it only for someone already set to it.
+  'switch.other_diaries.hidden': 'Hidden',
+  'switch.other_diaries.no_calendar': '{name} has no calendar. With View only they can look but not book.',
+  'switch.export_clients': 'Can export client data',
+  'switch.export_clients.help':
+    "Shows or hides the buttons that download client lists. It can't stop someone copying details they can already see. To keep phone numbers and emails private, switch off 'Can see client phone numbers and emails'.",
+  // A2: what hidden contacts look like (Appendix C).
+  'contact.hidden': 'Hidden',
+  'contact.hidden.tip': 'Your business has hidden client phone numbers and emails for you.',
+  // A2: client search for someone whose contacts are hidden matches names only (§5.6).
+  'search.names_only': 'Search by name',
+  // A2 refusals (Appendix B and C).
+  'err.CONTACT_HIDDEN': "You can't change this client's phone or email. Ask an admin.",
+  'err.CONTACT_BELONGS_TO_OTHER_CLIENT': 'These details belong to another client. Search by name, or ask an admin.',
+  'err.EXPORT_NOT_ALLOWED': 'Exporting client data is switched off for you.',
+  'err.DIARY_VIEW_ONLY': 'You can see this booking, but you can only change bookings on your own calendar.',
 } as const;
 
 export type RolesCopyId = keyof typeof ROLES_COPY;
@@ -126,6 +148,124 @@ export function venueBillingPayoutsAdmins(
   });
 }
 
+/**
+ * Other people's diaries (roles plan §5.11): 'book' (the default), 'view' (A2) or 'hidden' (A2b,
+ * not offered yet).
+ */
+export type DiaryAccess = NonNullable<StaffPermissions['other_diaries']>;
+
+/**
+ * "Can see client phone numbers and emails" (roles plan §5.6, UR6; web `contact-visibility`
+ * `canSeeClientContact`). Owners and admins always see; Front desk and Staff unless their switch is
+ * off (absent means on).
+ */
+export function canSeeClientContact(person: RoleSubject | null | undefined): boolean {
+  if (!person) return false;
+  const key = roleKeyOf(person);
+  if (key === 'owner' || key === 'admin') return true;
+  return person.permissions?.client_contact !== false;
+}
+
+/**
+ * "Can export client data" (roles plan §5.5, UR17; web `permissions.ts` `canExportClients`). The
+ * owner always may; anyone else unless their switch is off (absent means on).
+ */
+export function canExportClients(person: RoleSubject | null | undefined): boolean {
+  if (!person) return false;
+  if (roleKeyOf(person) === 'owner') return true;
+  return person.permissions?.export_clients !== false;
+}
+
+/**
+ * Other people's diaries for this person (roles plan §5.11, UR19; web `permissions.ts`
+ * `diaryAccessOf`). Owners and admins always book and change.
+ */
+export function diaryAccessOf(person: RoleSubject | null | undefined): DiaryAccess {
+  if (!person) return 'book';
+  const key = roleKeyOf(person);
+  if (key === 'owner' || key === 'admin') return 'book';
+  const value = person.permissions?.other_diaries;
+  return value === 'view' || value === 'hidden' ? value : 'book';
+}
+
+/**
+ * What the signed-in person may see and do across the app (web `ViewerAccessProvider`). The server
+ * enforces every one of these; this only keeps the screens honest.
+ */
+export interface ViewerAccess {
+  /** "Can see client phone numbers and emails". Always true for owners and admins. */
+  canSeeClientContact: boolean;
+  /** "Can export client data". Always true for the owner. */
+  canExportClients: boolean;
+  /** "Other people's diaries": 'book' for owners and admins. */
+  otherDiaries: DiaryAccess;
+}
+
+/** Everything allowed: today's behaviour, and what a screen reads before anyone is known. */
+export const FULL_VIEWER_ACCESS: ViewerAccess = {
+  canSeeClientContact: true,
+  canExportClients: true,
+  otherDiaries: 'book',
+};
+
+type VenueViewerFields = Pick<
+  VenueBootstrap,
+  'current_user_role' | 'current_user_is_owner' | 'current_user_role_key' | 'current_user_permissions'
+>;
+
+/** The signed-in person's role fields as `GET /api/venue` describes them. */
+export function venueRoleSubject(venue: VenueViewerFields | null | undefined): RoleSubject | null {
+  if (!venue || !venue.current_user_role) return null;
+  return {
+    role: venue.current_user_role,
+    is_owner: venue.current_user_is_owner,
+    role_key: venue.current_user_role_key,
+    permissions: venue.current_user_permissions,
+  };
+}
+
+/**
+ * The signed-in person's access: from `GET /api/venue/staff/me` when it has loaded, else from
+ * `GET /api/venue`, else everything (before either answers; the server hides what it must anyway).
+ */
+export function viewerAccessOf(
+  me: RoleSubject | null | undefined,
+  venue?: VenueViewerFields | null,
+): ViewerAccess {
+  const person = me && me.role ? me : venueRoleSubject(venue);
+  if (!person) return FULL_VIEWER_ACCESS;
+  return {
+    canSeeClientContact: canSeeClientContact(person),
+    canExportClients: canExportClients(person),
+    otherDiaries: diaryAccessOf(person),
+  };
+}
+
+/**
+ * Whether a client's phone and email read "Hidden" on a screen: the viewer's switch is off, or the
+ * response that carried them says `contacts_hidden: true` (it then sends them as null). The second
+ * covers a switch changed since the app last loaded the viewer.
+ */
+export function clientContactHidden(access: ViewerAccess, contactsHidden?: boolean | null): boolean {
+  return !access.canSeeClientContact || contactsHidden === true;
+}
+
+const ACCESS_CODES = ['CONTACT_HIDDEN', 'CONTACT_BELONGS_TO_OTHER_CLIENT', 'EXPORT_NOT_ALLOWED', 'DIARY_VIEW_ONLY'] as const;
+type AccessCode = (typeof ACCESS_CODES)[number];
+
+/**
+ * The sentence for an A2 refusal (Appendix B and C): 403 `CONTACT_HIDDEN`, 409
+ * `CONTACT_BELONGS_TO_OTHER_CLIENT`, 403 `EXPORT_NOT_ALLOWED` and 403 `DIARY_VIEW_ONLY`. The
+ * server's own words, else the copy deck's; null for any other error, so a caller keeps its own.
+ */
+export function accessRefusalMessage(error: unknown): string | null {
+  if (!(error instanceof ApiError)) return null;
+  const code = apiErrorCode(error);
+  if (!code || !(ACCESS_CODES as readonly string[]).includes(code)) return null;
+  const said = isApiErrorBody(error.body) ? error.body.error.trim() : '';
+  return said || ROLES_COPY[`err.${code as AccessCode}`];
+}
+
 /** The stored role and the role key a role choice sends (`role` for older servers, `role_key` wins). */
 export function roleChoiceBody(choice: RoleChoice): { role: StaffRole; role_key: RoleChoice } {
   return { role: choice === 'admin' ? 'admin' : 'staff', role_key: choice };
@@ -187,6 +327,41 @@ export function showsBillingSwitch(viewer: TeamViewer, member: RoleSubject & { i
 /** The switch's value on an admin: absent means on. */
 export function billingSwitchOn(member: RoleSubject): boolean {
   return member.permissions?.billing_payouts_admins !== false;
+}
+
+/**
+ * The contact, diary and export switches show on a Front desk or Staff row, to the owner or any
+ * admin, never on the viewer's own row (web Settings, Staff `PersonSwitches`; `team-policy.ts`).
+ * Only on a server that knows the four roles, since an older one refuses the keys.
+ */
+export function showsPersonSwitches(viewer: TeamViewer, member: RoleSubject & { id: string }): boolean {
+  return viewer.rolesKnown && member.role !== 'admin' && member.id !== viewer.staffId;
+}
+
+/** "Can export client data" on another admin's row: the owner only (web `ExportSwitch`, §5.5). */
+export function showsAdminExportSwitch(viewer: TeamViewer, member: RoleSubject & { id: string }): boolean {
+  return viewer.isOwner && member.role === 'admin' && !isOwnerPerson(member) && member.id !== viewer.staffId;
+}
+
+/** "Can see client phone numbers and emails" on a member: absent means on. */
+export function contactSwitchOn(member: RoleSubject): boolean {
+  return member.permissions?.client_contact !== false;
+}
+
+/** "Can export client data" on a member: absent means on. */
+export function exportSwitchOn(member: RoleSubject): boolean {
+  return member.permissions?.export_clients !== false;
+}
+
+/** "Other people's diaries" on a member: absent means "Can book and change". */
+export function diaryChoiceOf(member: RoleSubject): DiaryAccess {
+  const value = member.permissions?.other_diaries;
+  return value === 'view' || value === 'hidden' ? value : 'book';
+}
+
+/** Whether a member has a calendar of their own ("Their calendars", §5.11). */
+export function memberHasCalendar(member: { linked_calendar_ids?: string[] | null; linked_practitioner_id?: string | null }): boolean {
+  return (member.linked_calendar_ids?.length ?? 0) > 0 || Boolean(member.linked_practitioner_id);
 }
 
 const TEAM_CODES = ['OWNER_PROTECTED', 'BILLING_ADMINS_ONLY', 'PERMISSION_NOT_ALLOWED', 'OWNER_ONLY', 'RATE_LIMITED'] as const;

@@ -36,6 +36,8 @@ import { ApiError } from '@/lib/api/client';
 import { splitGuestHistory } from '@/lib/guests/guest-history-sections';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
 import { useGuests } from '@/lib/queries/useGuests';
+import { ROLES_COPY } from '@/lib/roles/roles';
+import { useClientContactHidden } from '@/providers/ViewerAccessProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { GuestBookingHistoryRow } from '@/types/guest-detail';
@@ -80,6 +82,9 @@ export function CalendarClientSearchPanel({
   // A disabled query keeps its placeholder rows, so a cleared box would still
   // list the last matches: only a live search shows any.
   const results = searching && !guestsQuery.isError ? guestsQuery.data?.guests ?? [] : [];
+  // Web roles plan A2: someone whose client contacts are hidden searches names only, and the
+  // matches read "Hidden" where a phone or email would be.
+  const contactHidden = useClientContactHidden(guestsQuery.data?.contacts_hidden);
   const loading = searching && guestsQuery.isFetching;
   const hasError = searching && guestsQuery.isError;
   const status = clientSearchStatus({
@@ -109,7 +114,7 @@ export function CalendarClientSearchPanel({
       <SearchBar
         value={query}
         onChangeText={setQuery}
-        placeholder="Name, phone, or email"
+        placeholder={contactHidden ? ROLES_COPY['search.names_only'] : 'Name, phone, or email'}
         accessibilityLabel={`Search ${clientLower}`}
         autoFocus
       />
@@ -144,17 +149,25 @@ export function CalendarClientSearchPanel({
           ) : null}
         </View>
         {results.map((row) => (
-          <ResultRow key={row.id} row={row} onPress={() => setSelected(row)} />
+          <ResultRow key={row.id} row={row} contactHidden={contactHidden} onPress={() => setSelected(row)} />
         ))}
       </ScrollView>
     </View>
   );
 }
 
-function ResultRow({ row, onPress }: { row: GuestListItem; onPress: () => void }) {
+function ResultRow({
+  row,
+  contactHidden,
+  onPress,
+}: {
+  row: GuestListItem;
+  contactHidden: boolean;
+  onPress: () => void;
+}) {
   const { colors } = useTheme();
   const label = clientSearchResultLabel(row);
-  const subtitle = clientSearchResultSubtitle(row);
+  const subtitle = clientSearchResultSubtitle(row, contactHidden);
   return (
     <Pressable
       accessibilityRole="button"

@@ -187,6 +187,11 @@ export interface BookingContact {
   email?: string;
   /** Free-text comment, folded into dietary_notes (web parity). */
   dietary_notes?: string;
+  /**
+   * The client picked from search (web roles plan §5.6). Sent as `guest_id`, which joins the
+   * booking to that client; their stored phone and email fill any the form left blank.
+   */
+  guest_id?: string;
 }
 
 /** Address fields for at-home (`client_address`) services. */
@@ -221,6 +226,8 @@ export interface CreateMultiServicePayload {
   last_name: string;
   email?: string;
   phone?: string;
+  /** Staff only: the client picked from search (roles plan §5.6). */
+  guest_id?: string;
   source: BookingSource;
   services: {
     service_id: string;
@@ -258,6 +265,11 @@ export interface CreateGroupPayload {
   last_name: string;
   email?: string;
   phone?: string;
+  /**
+   * Staff only: the client picked from search (roles plan §5.6). With it, a `phone` source needs no
+   * typed phone: the client's own fills it.
+   */
+  guest_id?: string;
   source: BookingSource;
   people: {
     person_label: string;
@@ -354,6 +366,7 @@ export function buildMultiServicePayload(args: {
     last_name: contact.last_name.trim(),
     ...(email ? { email } : {}),
     ...(phone ? { phone } : {}),
+    ...(contact.guest_id ? { guest_id: contact.guest_id } : {}),
     source,
     services: segments.map((seg) => ({
       service_id: seg.serviceId,
@@ -395,6 +408,7 @@ export function buildGroupPayload(args: {
     last_name: contact.last_name.trim(),
     ...(email ? { email } : {}),
     ...(phone ? { phone } : {}),
+    ...(contact.guest_id ? { guest_id: contact.guest_id } : {}),
     source,
     people: people.map((p) => ({
       person_label: p.label.trim() || 'Guest',

@@ -6,6 +6,10 @@
  * `GET /api/venue/export` with every detail the venue holds, and lands in the OS share sheet.
  * Where Reports shows Takings (`posKinds`, plan §4.18), Sales, Payments, Products and Stock
  * movements join the kinds, as on the web.
+ *
+ * "Can export client data" (web roles plan A2): with it off, the files with clients in them
+ * (bookings, clients, sales and payments) are not offered, as on the web; the server refuses them
+ * with 403 EXPORT_NOT_ALLOWED.
  */
 import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -21,10 +25,15 @@ import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { exportQuery, useExportCount, type ExportKind } from '@/lib/queries/useExportCount';
 import { downloadAndShareFile } from '@/lib/share/share-binary-file';
 import { reportsCopy } from '@/lib/pos/reports-copy';
+import { ROLES_COPY } from '@/lib/roles/roles';
 import { useToast } from '@/providers/ToastProvider';
+import { useViewerAccess } from '@/providers/ViewerAccessProvider';
 import { spacing } from '@/theme/index';
 
 type ExportFormat = 'csv' | 'xlsx' | 'pdf';
+
+/** The kinds with clients in them (web `export/route.ts` CLIENT_EXPORT_KINDS). */
+export const CLIENT_EXPORT_KINDS: ReadonlySet<ExportKind> = new Set<ExportKind>(['bookings', 'contacts', 'sales', 'payments']);
 type RangePreset = 'all' | 'this_month' | 'last_month' | 'this_year' | 'last_year' | 'custom';
 
 const PRESETS: { id: RangePreset; label: string }[] = [
@@ -85,19 +94,22 @@ export function DataExportCard({
 }) {
   const accessToken = useAccessToken();
   const toast = useToast();
-  const [chosenKind, setKind] = useState<ExportKind>('bookings');
+  const { canExportClients } = useViewerAccess();
+  const [chosenKind, setKind] = useState<ExportKind>(canExportClients ? 'bookings' : 'services');
   // A POS kind chosen before the access check settled falls back to the first kind.
-  const kind: ExportKind =
+  const offeredKind: ExportKind =
     !posKinds && (chosenKind === 'sales' || chosenKind === 'payments' || chosenKind === 'products' || chosenKind === 'stock')
       ? 'bookings'
       : chosenKind;
+  // Without "Can export client data" a kind with clients in it is never chosen.
+  const kind: ExportKind = !canExportClients && CLIENT_EXPORT_KINDS.has(offeredKind) ? 'services' : offeredKind;
   const [preset, setPreset] = useState<RangePreset>('all');
   const [customFrom, setCustomFrom] = useState(today);
   const [customTo, setCustomTo] = useState(today);
   const [format, setFormat] = useState<ExportFormat>('csv');
   const [downloading, setDownloading] = useState(false);
 
-  const kinds: { id: ExportKind; label: string; hint: string; rangeHint: string }[] = [
+  const allKinds: { id: ExportKind; label: string; hint: string; rangeHint: string }[] = [
     {
       id: 'bookings',
       label: `${bookingWord}s`,
@@ -145,6 +157,7 @@ export function DataExportCard({
         ]
       : []),
   ];
+  const kinds = canExportClients ? allKinds : allKinds.filter((k) => !CLIENT_EXPORT_KINDS.has(k.id));
   const kindMeta = kinds.find((k) => k.id === kind) ?? kinds[0]!;
   const customInvalid = preset === 'custom' && customFrom > customTo;
   const range = useMemo(() => {
@@ -178,7 +191,13 @@ export function DataExportCard({
         mimeType: formatMeta.mime,
         headers: { Authorization: `Bearer ${accessToken}` },
       });
-      if (!result.ok) toast.error(result.message);
+      if (!result.ok) {
+        // A 403 on a file with clients in it is "Can export client data" switched off since the
+        // app last loaded who is looking (the card is admins only, so it is not the admin check).
+        toast.error(
+          result.status === 403 && CLIENT_EXPORT_KINDS.has(kind) ? ROLES_COPY['err.EXPORT_NOT_ALLOWED'] : result.message,
+        );
+      }
     } finally {
       setDownloading(false);
     }
@@ -192,6 +211,12 @@ export function DataExportCard({
       <Text variant="bodySmall" tone="secondary">
         {`Take a copy of everything ResNeo holds for your venue: your ${bookingWord.toLowerCase()}s, your ${clientLabel.toLowerCase()}s and your services. Choose what to export, which dates, and the file type. Every file includes the full details, so you can move to another system or keep a backup at any time.`}
       </Text>
+
+      {!canExportClients ? (
+        <Text variant="bodySmall" tone="secondary">
+          {`Exporting client data is switched off for you, so the files with ${clientLabel.toLowerCase()}s in them are not offered here.`}
+        </Text>
+      ) : null}
 
       <Text variant="overline" tone="muted">
         1. What to export

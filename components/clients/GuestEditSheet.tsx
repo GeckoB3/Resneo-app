@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Switch, View } from 'react-native';
 
+import { HiddenContactField } from '@/components/roles/HiddenContact';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Sheet } from '@/components/ui/Sheet';
@@ -9,6 +10,7 @@ import { ApiError } from '@/lib/api/client';
 import { marketingPermissionSummary } from '@/lib/guests/marketing-permission';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useUpdateGuest, type UpdateGuestInput } from '@/lib/queries/useGuestMutations';
+import { useClientContactHidden } from '@/providers/ViewerAccessProvider';
 import { spacing } from '@/theme/index';
 
 export type GuestEditTarget = {
@@ -28,6 +30,11 @@ export type GuestEditTarget = {
   addressLine2: string;
   addressCity: string;
   addressPostcode: string;
+  /**
+   * The response this client came from said `contacts_hidden: true` (web roles plan A2): the
+   * phone and email read "Hidden" and cannot be changed, as for a viewer whose switch is off.
+   */
+  contactsHidden?: boolean;
 };
 
 /**
@@ -119,6 +126,9 @@ const EDIT_SHEET_FIELDS = [
 /** Bottom-sheet to edit a guest's profile, tags, notes and marketing consent. */
 export function GuestEditSheet({ target, onClose }: GuestEditSheetProps) {
   const mutation = useUpdateGuest(target?.id ?? '');
+  // "Can see client phone numbers and emails" off (web roles plan §5.6): the phone and email are
+  // read-only "Hidden" and never sent; the server ignores them from this person anyway.
+  const contactHidden = useClientContactHidden(target?.contactsHidden);
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -183,10 +193,12 @@ export function GuestEditSheet({ target, onClose }: GuestEditSheetProps) {
     if (f !== undefined) payload.first_name = f;
     const l = diff(lastName, t.lastName);
     if (l !== undefined) payload.last_name = l;
-    const p = diff(phone, t.phone);
-    if (p !== undefined) payload.phone = p;
-    const e = diff(email, t.email);
-    if (e !== undefined) payload.email = e;
+    if (!contactHidden) {
+      const p = diff(phone, t.phone);
+      if (p !== undefined) payload.phone = p;
+      const e = diff(email, t.email);
+      if (e !== undefined) payload.email = e;
+    }
     const n = diff(notes, t.notes);
     if (n !== undefined) payload.customer_profile_notes = n;
 
@@ -269,25 +281,34 @@ export function GuestEditSheet({ target, onClose }: GuestEditSheetProps) {
                 />
               </View>
             </View>
-            <Input
-              label="Phone"
-              value={phone}
-              onChangeText={edited('phone', setPhone)}
-              keyboardType="phone-pad"
-              autoCapitalize="none"
-              maxLength={GUEST_CONTACT_MAX_LENGTH.phone}
-              error={fieldErrors.phone}
-            />
-            <Input
-              label="Email"
-              value={email}
-              onChangeText={edited('email', setEmail)}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              maxLength={GUEST_CONTACT_MAX_LENGTH.email}
-              error={fieldErrors.email}
-            />
+            {contactHidden ? (
+              <>
+                <HiddenContactField label="Phone" />
+                <HiddenContactField label="Email" />
+              </>
+            ) : (
+              <>
+                <Input
+                  label="Phone"
+                  value={phone}
+                  onChangeText={edited('phone', setPhone)}
+                  keyboardType="phone-pad"
+                  autoCapitalize="none"
+                  maxLength={GUEST_CONTACT_MAX_LENGTH.phone}
+                  error={fieldErrors.phone}
+                />
+                <Input
+                  label="Email"
+                  value={email}
+                  onChangeText={edited('email', setEmail)}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  maxLength={GUEST_CONTACT_MAX_LENGTH.email}
+                  error={fieldErrors.email}
+                />
+              </>
+            )}
             <Input
               label="Tags (comma separated)"
               value={tags}

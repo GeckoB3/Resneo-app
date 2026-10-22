@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/Card';
 import { CollapsibleCard } from '@/components/ui/CollapsibleCard';
 import { Text } from '@/components/ui/Text';
 import { formatCommunicationLogLabel } from '@/lib/communications/display-labels';
+import { useClientContactHidden } from '@/providers/ViewerAccessProvider';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { CommunicationRow } from '@/types/guest-detail';
@@ -14,6 +15,8 @@ type CommunicationsSectionProps = {
   communications: CommunicationRow[];
   /** Render inside a tap-to-expand CollapsibleCard instead of a plain Card. */
   collapsible?: boolean;
+  /** The response said `contacts_hidden: true` (web roles plan A2): leave out where each went. */
+  contactsHidden?: boolean;
 };
 
 function formatCommDate(iso: string): string {
@@ -62,8 +65,11 @@ function statusTone(status: string): 'success' | 'neutral' | 'danger' | 'warning
 export function CommunicationsSection({
   communications,
   collapsible = false,
+  contactsHidden,
 }: CommunicationsSectionProps) {
   const { colors } = useTheme();
+  // Someone whose client contacts are hidden never sees the address or number a message went to.
+  const contactHidden = useClientContactHidden(contactsHidden);
 
   // Plain (non-collapsible) mode keeps the original behaviour: hidden when empty.
   if (!collapsible && communications.length === 0) return null;
@@ -90,7 +96,7 @@ export function CommunicationsSection({
             <Text variant="caption" tone="muted">
               {channelLabel(comm.channel)} · {formatCommDate(comm.created_at)}
             </Text>
-            {comm.recipient ? (
+            {comm.recipient && !contactHidden ? (
               <Text variant="caption" tone="muted" numberOfLines={1}>
                 To {comm.recipient}
               </Text>

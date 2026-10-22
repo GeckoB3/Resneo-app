@@ -107,10 +107,12 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
       last_name: profile.last_name ?? '',
       phone: profile.phone ?? '',
       email: profile.email ?? '',
+      // "Book" from the client's profile joins the booking to that client (sent as guest_id).
+      ...(prefilledGuestId ? { guest_id: prefilledGuestId } : {}),
     });
     setGuestPrefilled(true);
     setReturningGuest(true);
-  }, [prefillGuestQuery.data, guestPrefilled]);
+  }, [prefillGuestQuery.data, guestPrefilled, prefilledGuestId]);
 
   // Pre-select the deep-linked resource once the offerings load, then jump to the
   // date step. Runs once (guarded) so the user can still go Back to the picker.
@@ -143,6 +145,8 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
           last_name: typeof g.lastName === 'string' ? g.lastName : prev.last_name,
           phone: typeof g.phone === 'string' ? g.phone : prev.phone,
           email: typeof g.email === 'string' ? g.email : prev.email,
+          // The rebooked client (web roles plan §5.6), sent as guest_id.
+          guest_id: typeof g.guestId === 'string' && g.guestId ? g.guestId : undefined,
         }));
         setGuestPrefilled(true);
         setReturningGuest(true);
@@ -468,6 +472,8 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
             source,
             ...(hasDeposit && requireDeposit && source !== 'walk-in' ? { require_deposit: true } : {}),
             ...(returningGuest ? { returning_guest: true } : {}),
+            // The picked client (web roles plan §5.6): joins the booking to them.
+            ...(guest.guest_id ? { guest_id: guest.guest_id } : {}),
             ...(ownerVenueId ? { owner_venue_id: ownerVenueId } : {}),
           })}
           onCreated={(bookingId) => {

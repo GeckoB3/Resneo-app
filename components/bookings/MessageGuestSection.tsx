@@ -17,6 +17,7 @@ import {
   useSendBookingMessage,
   type GuestMessageChannel,
 } from '@/lib/queries/useBookingMutations';
+import { useClientContactHidden } from '@/providers/ViewerAccessProvider';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { BookingDetail } from '@/types/booking-detail';
@@ -160,6 +161,9 @@ export function MessageGuestSection({
   readOnly?: boolean;
 }) {
   const { colors } = useTheme();
+  // Roles plan §5.6 (UR21): someone whose business hides client contacts is not
+  // offered the composer; the sent log stays (web parity), its recipients null.
+  const contactHidden = useClientContactHidden(booking.contacts_hidden);
   const communications = booking.communications ?? [];
   // A booking taken without a guest profile still has the address it was made
   // with, and the web sends to it (`send-custom-booking-message.ts` ~159-162),
@@ -167,7 +171,7 @@ export function MessageGuestSection({
   const guestEmail = booking.guest?.email?.trim() || booking.guest_email?.trim() || null;
   const guestPhone = booking.guest?.phone?.trim() || null;
   const guestId = booking.guest?.id ?? booking.guest_id ?? null;
-  const canMessage = (!!guestEmail || !!guestPhone) && !readOnly;
+  const canMessage = (!!guestEmail || !!guestPhone) && !readOnly && !contactHidden;
 
   if (!guestId && !guestEmail && communications.length === 0) return null;
 
@@ -176,7 +180,9 @@ export function MessageGuestSection({
   const summary =
     communications.length > 0
       ? `${communications.length} sent`
-      : guestEmail && guestPhone
+      : contactHidden
+        ? 'Nothing sent yet'
+        : guestEmail && guestPhone
         ? 'SMS + email'
         : guestEmail
           ? 'Email'
@@ -188,7 +194,7 @@ export function MessageGuestSection({
     <CollapsibleCard title="SMS / Email guest" summary={summary}>
       {canMessage ? (
         <MessageGuestCompose bookingId={booking.id} />
-      ) : readOnly ? (
+      ) : contactHidden ? null : readOnly ? (
         <Text variant="bodySmall" tone="muted" style={styles.noContact}>
           This link is view only, so the guest cannot be messaged from here.
         </Text>
@@ -218,7 +224,7 @@ export function MessageGuestSection({
                 <Badge label={status} tone={commStatusTone(status)} />
               </View>
               <Text variant="bodySmall">{formatCommunicationLogLabel(messageType)}</Text>
-              {row.recipient ? (
+              {row.recipient && !contactHidden ? (
                 <Text variant="caption" tone="muted" numberOfLines={1}>
                   To {row.recipient}
                 </Text>

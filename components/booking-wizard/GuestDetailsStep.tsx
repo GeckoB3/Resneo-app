@@ -3,13 +3,16 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'reac
 import Animated from 'react-native-reanimated';
 
 import { useSheetKeyboardScroll } from '@/components/bookings/sheet-scroll-context';
+import { HiddenContactField } from '@/components/roles/HiddenContact';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { PhoneWithCountryField } from '@/components/ui/PhoneWithCountryField';
 import { Segmented } from '@/components/ui/Segmented';
 import { Text } from '@/components/ui/Text';
 import { useGuests } from '@/lib/queries/useGuests';
+import { ROLES_COPY } from '@/lib/roles/roles';
 import { buildGuestSchema, type GuestField } from '@/lib/validation/walk-in-guest';
+import { useViewerAccess } from '@/providers/ViewerAccessProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { CountryCode } from '@/lib/phone/e164';
@@ -20,6 +23,13 @@ export type GuestDetails = {
   last_name: string;
   phone: string;
   email: string;
+  /**
+   * The existing client these details came from: picked from search, opened from
+   * their profile (`?guestId=`) or a rebook. Sent as `guest_id`, which joins the
+   * booking to that client (web roles plan §5.6). Editing a name, phone or email
+   * afterwards drops it, so the booking then goes by what was typed.
+   */
+  guest_id?: string;
   /** Free-text comments / requests (folded into dietary_notes on submit, web parity). */
   special_requests?: string;
   /** Service-delivery address for at-home (`client_address`) services. */
@@ -72,10 +82,10 @@ function guestDisplayName(guest: GuestListItem): string {
   return [guest.first_name, guest.last_name].filter(Boolean).join(' ').trim() || 'Unnamed guest';
 }
 
-function guestMeta(guest: GuestListItem): string {
+function guestMeta(guest: GuestListItem, showContact: boolean): string {
   const visits =
     guest.visit_count > 0 ? `${guest.visit_count} visit${guest.visit_count === 1 ? '' : 's'}` : null;
-  return [guest.phone, visits].filter(Boolean).join(' · ');
+  return [showContact ? guest.phone : null, visits].filter(Boolean).join(' · ');
 }
 
 /**
@@ -102,6 +112,11 @@ export function GuestDetailsStep({
   phoneDefaultCountry = 'GB',
 }: GuestDetailsStepProps) {
   const { colors } = useTheme();
+  // "Can see client phone numbers and emails" (web roles plan §5.6). Off: search matches names
+  // only, results show no phone, and a picked client's phone and email read "Hidden". A new
+  // client's are typed as usual.
+  const { canSeeClientContact } = useViewerAccess();
+  const contactHidden = !canSeeClientContact && Boolean(value.guest_id);
   // Keyboard avoidance. The wizard lives on a plain `Screen` (no
   // `keyboardAvoiding`), and the app runs edge-to-edge, so nothing built-in
   // lifts a field off the soft keyboard on Android (see the note in
@@ -135,6 +150,7 @@ export function GuestDetailsStep({
       last_name: guest.last_name ?? '',
       phone: guest.phone ?? '',
       email: guest.email ?? '',
+      guest_id: guest.id,
     });
     onPickExistingContact?.();
     setSearchInput('');
@@ -142,10 +158,18 @@ export function GuestDetailsStep({
     setFieldErrors({});
   };
 
-  // Manual edits to a contact field break the "known contact" link → clear the flag.
+  // Manual edits to a contact field break the "known contact" link: clear the flag and the
+  // picked client, so the booking goes by what was typed.
   const editContact = (patch: Partial<GuestDetails>) => {
     onClearExistingContact?.();
-    onChange({ ...value, ...patch });
+    // A hidden-contact viewer never had the picked client's phone or email, so leaving that
+    // client starts the contact fields empty rather than keeping the blanks the server sent.
+    const next: GuestDetails = { ...value, ...patch, guest_id: undefined };
+    if (contactHidden) {
+      next.phone = patch.phone ?? '';
+      next.email = patch.email ?? '';
+    }
+    onChange(next);
   };
 
   const handleContinue = () => {
@@ -217,7 +241,7 @@ export function GuestDetailsStep({
           <Input
             label="Find an existing guest"
             optional
-            placeholder="Search name or phone"
+            placeholder={canSeeClientContact ? 'Search name or phone' : ROLES_COPY['search.names_only']}
             value={searchInput}
             onChangeText={setSearchInput}
             autoCapitalize="none"
@@ -242,9 +266,9 @@ export function GuestDetailsStep({
                     <Text variant="bodyMedium" numberOfLines={1}>
                       {guestDisplayName(guest)}
                     </Text>
-                    {guestMeta(guest) ? (
+                    {guestMeta(guest, canSeeClientContact) ? (
                       <Text variant="caption" tone="muted" numberOfLines={1}>
-                        {guestMeta(guest)}
+                        {guestMeta(guest, canSeeClientContact)}
                       </Text>
                     ) : null}
                   </Pressable>
@@ -307,30 +331,41 @@ export function GuestDetailsStep({
             />
           </View>
         </View>
-        <Input
-          autoCapitalize="none"
-          autoComplete="email"
-          editable={!readOnlyContact}
-          error={fieldErrors.email}
-          helper="Without an email the client gets no confirmation."
-          keyboardType="email-address"
-          label="Email"
-          optional
-          onChangeText={(email) => editContact({ email })}
-          placeholder="you@example.com"
-          textContentType="emailAddress"
-          value={value.email}
-        />
-        {/* Country code + national number, as the web's staff form (PhoneWithCountryField). */}
-        <PhoneWithCountryField
-          defaultCountry={phoneDefaultCountry}
-          editable={!readOnlyContact}
-          error={fieldErrors.phone}
-          label="Phone"
-          optional
-          onChange={(phone) => editContact({ phone })}
-          value={value.phone}
-        />
+        {contactHidden ? (
+          // A picked client's contacts, for someone who may not see them: the booking takes
+          // the client's stored phone and email (sent as guest_id), so there is nothing to type.
+          <>
+            <HiddenContactField label="Email" />
+            <HiddenContactField label="Phone" />
+          </>
+        ) : (
+          <>
+            <Input
+              autoCapitalize="none"
+              autoComplete="email"
+              editable={!readOnlyContact}
+              error={fieldErrors.email}
+              helper="Without an email the client gets no confirmation."
+              keyboardType="email-address"
+              label="Email"
+              optional
+              onChangeText={(email) => editContact({ email })}
+              placeholder="you@example.com"
+              textContentType="emailAddress"
+              value={value.email}
+            />
+            {/* Country code + national number, as the web's staff form (PhoneWithCountryField). */}
+            <PhoneWithCountryField
+              defaultCountry={phoneDefaultCountry}
+              editable={!readOnlyContact}
+              error={fieldErrors.phone}
+              label="Phone"
+              optional
+              onChange={(phone) => editContact({ phone })}
+              value={value.phone}
+            />
+          </>
+        )}
 
         {collectClientAddress ? (
           <View style={styles.addressBlock}>

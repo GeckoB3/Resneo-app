@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
+import { HIDDEN_CONTACT_LABEL } from '@/components/roles/HiddenContact';
 import { Badge, StatusPill } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -24,8 +25,10 @@ import {
   useNoShowAttendee,
 } from '@/lib/queries/useClassesManage';
 import { buildAndShareCsv } from '@/lib/reports/csv-export';
+import { accessRefusalMessage } from '@/lib/roles/roles';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
+import { useClientContactHidden, useViewerAccess } from '@/providers/ViewerAccessProvider';
 import { minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import {
@@ -97,6 +100,10 @@ export function ClassRosterView({
   const isAdmin = venue?.current_user_role === 'admin';
   const currency = venue?.currency ?? 'GBP';
   const query = useClassInstanceAttendees(session.classInstanceId);
+  // Roles plan §5.6: "Hidden" in place of each attendee's phone and email, and
+  // no roster CSV without "Can export client data" (web parity).
+  const contactHidden = useClientContactHidden(query.data?.contacts_hidden);
+  const { canExportClients } = useViewerAccess();
 
   const checkIn = useCheckInAttendee();
   const noShow = useNoShowAttendee();
@@ -122,6 +129,12 @@ export function ClassRosterView({
   const handleAttendanceError = useCallback(
     (e: unknown, fallback: string) => {
       hapticWarning();
+      // A roles refusal says what it means; only the plan's 403 locks the actions.
+      const refusal = accessRefusalMessage(e);
+      if (refusal) {
+        toast.error(refusal);
+        return;
+      }
       if (e instanceof ApiError && e.status === 403) {
         setCommerceLocked(true);
         toast.error('Class check-in is not included in this plan. Manage it on the web dashboard.');
@@ -281,14 +294,16 @@ export function ClassRosterView({
             {capacityLabel}
           </Text>
         </View>
-        <IconButton
-          icon={{ ios: 'square.and.arrow.up', android: 'share', web: 'share' }}
-          accessibilityLabel="Export roster as CSV"
-          tint={colors.brand}
-          iconSize={20}
-          disabled={attendees.length === 0}
-          onPress={() => void onExport()}
-        />
+        {canExportClients ? (
+          <IconButton
+            icon={{ ios: 'square.and.arrow.up', android: 'share', web: 'share' }}
+            accessibilityLabel="Export roster as CSV"
+            tint={colors.brand}
+            iconSize={20}
+            disabled={attendees.length === 0}
+            onPress={() => void onExport()}
+          />
+        ) : null}
         {isAdmin ? (
           <IconButton
             icon={{ ios: 'xmark.circle', android: 'cancel', web: 'cancel' }}
@@ -344,7 +359,11 @@ export function ClassRosterView({
             attendees.map((row) => {
               const deposit = formatDeposit(row, currency);
               const presence = formatCheckedIn(row.checked_in_at);
-              const contact = row.guest_phone ? formatPhoneForDisplay(row.guest_phone) : (row.guest_email ?? null);
+              const contact = contactHidden
+                ? HIDDEN_CONTACT_LABEL
+                : row.guest_phone
+                  ? formatPhoneForDisplay(row.guest_phone)
+                  : (row.guest_email ?? null);
               const isCancelled = row.status === 'Cancelled';
               const isNoShow = row.status === 'No-Show';
               const isCheckedIn = !!row.checked_in_at;

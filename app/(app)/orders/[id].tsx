@@ -12,6 +12,7 @@ import {
   RecordReturnSheet,
 } from '@/components/shop/OrderSheets';
 import { Badge } from '@/components/ui/Badge';
+import { HiddenContactValue } from '@/components/roles/HiddenContact';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
@@ -41,6 +42,7 @@ import { useOrderWrite, useShopOrder } from '@/lib/queries/useOrders';
 import { usePosEnabled } from '@/lib/queries/usePos';
 import { useVenue } from '@/lib/queries/useVenue';
 import { useToast } from '@/providers/ToastProvider';
+import { useClientContactHidden } from '@/providers/ViewerAccessProvider';
 import { spacing } from '@/theme/index';
 import type { ShopOrderDetail } from '@/types/shop';
 
@@ -130,6 +132,9 @@ function OrderBody({
   const status = o.fulfilment_status ?? 'new';
   const isDelivery = o.fulfilment_type === 'delivery';
   const customer = o.contact_name ?? 'the customer';
+  // Web roles plan A2: the customer's email and phone read "Hidden", with no email or call links,
+  // for someone whose "Can see client phone numbers and emails" is off.
+  const contactHidden = useClientContactHidden(data.contacts_hidden);
   // Found by its pickup code: the check opens with the code filled in.
   const [dialog, setDialog] = useState<Dialog>(initialCode && status === 'ready' ? 'pickup' : null);
   const [fromReturn, setFromReturn] = useState<string | null>(null);
@@ -411,12 +416,13 @@ function OrderBody({
             <Text variant="label">{t('ord.detail.customer')}</Text>
             <Text variant="bodyMedium">{o.contact_name ?? ''}</Text>
             {/* Left-aligned links under the name, like the client screens; the phone as people read it. */}
-            {o.contact_email ? (
+            {contactHidden ? <HiddenContactValue label="Email and phone" showTip /> : null}
+            {!contactHidden && o.contact_email ? (
               <Text tone="brand" accessibilityRole="link" onPress={() => void Linking.openURL(`mailto:${o.contact_email}`).catch(() => undefined)}>
                 {o.contact_email}
               </Text>
             ) : null}
-            {o.contact_phone ? (
+            {!contactHidden && o.contact_phone ? (
               <Text tone="brand" accessibilityRole="link" onPress={() => void Linking.openURL(`tel:${o.contact_phone}`).catch(() => undefined)}>
                 {formatPhoneForDisplay(o.contact_phone)}
               </Text>

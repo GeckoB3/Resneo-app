@@ -1,5 +1,6 @@
 import type { PosReportPreset, SalesPersonRow, TakingsAmounts } from '@/types/pos';
 import type { ReportCalendarRef } from '@/types/reports';
+import type { ContactsHiddenFlag } from '@/types/staff';
 
 /**
  * Reports' POS tabs as the web routes return them (the full payloads; `types/pos.ts` keeps the
@@ -280,8 +281,11 @@ export interface VoucherMovement {
   dispute?: boolean;
 }
 
-/** The voucher sheet, as GET and PATCH /api/venue/pos/vouchers/[id] return it. */
-export interface VoucherDetail {
+/**
+ * The voucher sheet, as GET and PATCH /api/venue/pos/vouchers/[id] return it. `contacts_hidden`
+ * (web roles plan A2): the buyer's and recipient's emails are null.
+ */
+export interface VoucherDetail extends ContactsHiddenFlag {
   account: {
     id: string;
     kind: 'voucher' | 'credit';

@@ -480,6 +480,22 @@ describe('ModifyBookingSheet', () => {
     });
   });
 
+  /** Roles plan A2 (§5.11): a View only person changing someone else's booking. */
+  it("shows the View only refusal in the server's words", async () => {
+    const { ApiError } = require('@/lib/api/client');
+    const message = 'You can see this booking, but you can only change bookings on your own calendar.';
+    mockModify.mockRejectedValueOnce(new ApiError(message, 403, { error: message, code: 'DIARY_VIEW_ONLY' }));
+    jest.useFakeTimers();
+    try {
+      await render(<ModifyBookingSheet target={TARGET} onClose={onClose} />);
+      await moveAndSave();
+      expect(screen.getByText(message)).toBeTruthy();
+      expect(onClose).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('opens the month calendar as a step, not a second sheet', async () => {
     await render(<ModifyBookingSheet target={TARGET} onClose={onClose} />);
     expect(screen.queryByText('MONTH_CALENDAR')).toBeNull();

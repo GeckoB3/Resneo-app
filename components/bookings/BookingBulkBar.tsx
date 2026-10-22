@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { useToast } from '@/providers/ToastProvider';
+import { useClientContactHidden } from '@/providers/ViewerAccessProvider';
 import { hapticSelect, hapticWarning } from '@/lib/haptics';
 import { useBulkAddTag } from '@/lib/queries/useContactsBulk';
 import { fonts, radius, spacing } from '@/theme/index';
@@ -48,6 +49,9 @@ export function BookingBulkBar({
 }: BookingBulkBarProps) {
   const { colors } = useTheme();
   const toast = useToast();
+  // Roles plan §5.6 (UR21): no message action for someone whose business hides
+  // client phone numbers and emails from them.
+  const contactHidden = useClientContactHidden();
   const [subSheet, setSubSheet] = useState<SubSheet>(null);
   const [tagInput, setTagInput] = useState('');
 
@@ -107,19 +111,21 @@ export function BookingBulkBar({
             />
           }
         />
-        <Button
-          label="Message"
-          variant="secondary"
-          size="sm"
-          onPress={openMessageSheet}
-          leftIcon={
-            <SymbolView
-              name={{ ios: 'message', android: 'chat_bubble', web: 'chat' }}
-              tintColor={colors.text}
-              size={14}
-            />
-          }
-        />
+        {contactHidden ? null : (
+          <Button
+            label="Message"
+            variant="secondary"
+            size="sm"
+            onPress={openMessageSheet}
+            leftIcon={
+              <SymbolView
+                name={{ ios: 'message', android: 'chat_bubble', web: 'chat' }}
+                tintColor={colors.text}
+                size={14}
+              />
+            }
+          />
+        )}
       </BulkActionBar>
 
       {/* Add tag sub-sheet */}

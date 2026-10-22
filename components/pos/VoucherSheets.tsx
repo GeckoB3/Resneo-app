@@ -750,7 +750,9 @@ export function IssuedVouchers({ sale, timeZone, canPdf }: { sale: PosSale; time
       {issued.map((l) => {
         const v = l.voucher!;
         // A send date is always tomorrow or later when the voucher is sold, so here it is still ahead.
-        const scheduled = Boolean(v.send_at && v.recipient_email);
+        // The recipient's email is null for someone whose client contacts are hidden (web roles plan
+        // A2), so their name says it is scheduled too.
+        const scheduled = Boolean(v.send_at && (v.recipient_email || v.recipient_name));
         return (
           <Boxed key={l.id}>
             <Text variant="bodyMedium">{t('done.voucher.issued', { last4: v.code_last4 ?? '' })}</Text>

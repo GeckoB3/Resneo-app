@@ -7,6 +7,7 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { AvailabilityOverrideWarnings } from '@/components/booking-wizard/AvailabilityOverrideControls';
 import { ComplianceWarningNotice } from '@/components/compliance/ComplianceWarningNotice';
+import { HiddenContactValue } from '@/components/roles/HiddenContact';
 import {
   StaffCardHoldToggle,
   StaffRequireChargeCheckbox,
@@ -36,6 +37,8 @@ import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { normalizePhone } from '@/lib/phone/normalize';
 import { useCreateBooking, type ComplianceBookingWarning } from '@/lib/queries/useCreateBooking';
 import { useCreateMultiServiceBooking } from '@/lib/queries/useCreateMultiServiceBooking';
+import { accessRefusalMessage } from '@/lib/roles/roles';
+import { useViewerAccess } from '@/providers/ViewerAccessProvider';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { AppointmentSlot } from '@/types/appointment-availability';
@@ -141,6 +144,18 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
       <Text variant="bodyMedium" style={styles.rowValue}>
         {value}
       </Text>
+    </View>
+  );
+}
+
+/** A picked client's phone or email for someone who may not see it (web roles plan §5.6). */
+function HiddenSummaryRow({ label }: { label: string }) {
+  return (
+    <View style={styles.row}>
+      <Text variant="caption" tone="muted" style={styles.rowLabel}>
+        {label}
+      </Text>
+      <HiddenContactValue variant="bodyMedium" label={label} style={styles.rowValue} />
     </View>
   );
 }
@@ -283,6 +298,10 @@ export function ConfirmStep({
   overrideAvailability = false,
 }: ConfirmStepProps) {
   const { colors } = useTheme();
+  // A picked client's phone and email read "Hidden" for someone whose contact switch is off; the
+  // booking takes them from the client (guest_id) on the server.
+  const { canSeeClientContact } = useViewerAccess();
+  const pickedContactHidden = !canSeeClientContact && Boolean(guest.guest_id);
   const createBooking = useCreateBooking();
   const createMultiService = useCreateMultiServiceBooking();
   const isMultiService = (multiServiceSegments?.length ?? 0) > 1;
@@ -418,8 +437,10 @@ export function ConfirmStep({
     // choice hid the second one from every caller that can carry both.
     ...(staffCardHold ? { require_card_hold: requireCardHold } : {}),
     ...(hasDeposit && requireDeposit && source !== 'walk-in' ? { require_deposit: true } : {}),
-    // Existing-contact / rebook → flag as a returning guest (web parity).
+    // Existing-contact / rebook → flag as a returning guest (web parity; metrics only).
     ...(returningGuest ? { returning_guest: true } : {}),
+    // The picked client (web roles plan §5.6): joins the booking to them.
+    ...(guest.guest_id ? { guest_id: guest.guest_id } : {}),
     ...(overrideAvailability ? { override_availability: true } : {}),
     source,
     ...(ownerVenueId ? { owner_venue_id: ownerVenueId } : {}),
@@ -437,6 +458,7 @@ export function ConfirmStep({
         phone: normalizePhone(guest.phone, phoneDefaultCountry),
         email: guest.email.trim() || undefined,
         dietary_notes: comment || undefined,
+        guest_id: guest.guest_id,
       },
       source,
       segments: multiServiceSegments ?? [],
@@ -518,8 +540,13 @@ export function ConfirmStep({
     }
     hapticWarning();
     // Inline (not Alert.alert — a no-op on react-native-web): the message
-    // stays visible above the button while the user adjusts and retries.
-    setSubmitError(apiError ? apiError.message : 'Could not create booking. Please try again.');
+    // stays visible above the button while the user adjusts and retries. The
+    // roles refusals (CONTACT_BELONGS_TO_OTHER_CLIENT, DIARY_VIEW_ONLY) come in
+    // the server's words.
+    setSubmitError(
+      accessRefusalMessage(error) ??
+        (apiError ? apiError.message : 'Could not create booking. Please try again.'),
+    );
   };
 
   const handleConfirm = () => {
@@ -682,8 +709,17 @@ export function ConfirmStep({
           <SummaryRow label="Time" value={formatSummaryTime(slot.start_time)} />
         ) : null}
         <SummaryRow label="Guest" value={fullName || 'Not given'} />
-        {guest.phone.trim() ? <SummaryRow label="Phone" value={formatPhoneForDisplay(guest.phone)} /> : null}
-        {guest.email.trim() ? <SummaryRow label="Email" value={guest.email.trim()} /> : null}
+        {pickedContactHidden ? (
+          <>
+            <HiddenSummaryRow label="Phone" />
+            <HiddenSummaryRow label="Email" />
+          </>
+        ) : (
+          <>
+            {guest.phone.trim() ? <SummaryRow label="Phone" value={formatPhoneForDisplay(guest.phone)} /> : null}
+            {guest.email.trim() ? <SummaryRow label="Email" value={guest.email.trim()} /> : null}
+          </>
+        )}
         {comment ? <SummaryRow label="Comments" value={comment} /> : null}
 
         {addons.length > 0 && !isMultiService ? (

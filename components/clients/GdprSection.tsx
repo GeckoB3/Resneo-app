@@ -10,7 +10,9 @@ import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { fetchGuestGdprExport } from '@/lib/queries/useContactsBulk';
 import { useEraseGuest } from '@/lib/queries/useGuestMutations';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
+import { accessRefusalMessage } from '@/lib/roles/roles';
 import { useToast } from '@/providers/ToastProvider';
+import { useViewerAccess } from '@/providers/ViewerAccessProvider';
 import { spacing } from '@/theme/index';
 
 type GdprSectionProps = {
@@ -24,6 +26,8 @@ type GdprSectionProps = {
 
 /**
  * Admin-only GDPR card: data export (JSON share) + data erase (anonymise).
+ * The export is offered only with "Can export client data" (web roles plan A2): an owner can switch
+ * it off for an admin, and `gdpr/export-guest` then refuses with 403 EXPORT_NOT_ALLOWED.
  * The erase action is gated behind an in-sheet two-step confirmation — Alert.alert
  * is a no-op on react-native-web (the dev-preview path), so the old Alert-based
  * flow meant the erase button did nothing there.
@@ -32,6 +36,7 @@ export function GdprSection({ guestId, guestName, onErased, bare = false }: Gdpr
   const accessToken = useAccessToken();
   const eraseMutation = useEraseGuest();
   const toast = useToast();
+  const { canExportClients } = useViewerAccess();
   const [exporting, setExporting] = useState(false);
   // 0 = closed, 1 = first confirm, 2 = final confirm.
   const [confirmStep, setConfirmStep] = useState<0 | 1 | 2>(0);
@@ -49,7 +54,7 @@ export function GdprSection({ guestId, guestName, onErased, bare = false }: Gdpr
       hapticSuccess();
     } catch (e) {
       hapticWarning();
-      toast.error(e instanceof ApiError ? e.message : 'Could not export data.');
+      toast.error(accessRefusalMessage(e) ?? (e instanceof ApiError ? e.message : 'Could not export data.'));
     } finally {
       setExporting(false);
     }
@@ -75,19 +80,22 @@ export function GdprSection({ guestId, guestName, onErased, bare = false }: Gdpr
         GDPR (admin)
       </Text>
       <Text variant="bodySmall" tone="secondary" style={styles.description}>
-        Export a structured JSON copy of all personal data, or permanently anonymise this contact
-        (GDPR Art. 17 right to erasure).
+        {canExportClients
+          ? 'Export a structured JSON copy of all personal data, or permanently anonymise this contact (GDPR Art. 17 right to erasure).'
+          : 'Permanently anonymise this contact (GDPR Art. 17 right to erasure).'}
       </Text>
 
       <View style={styles.actions}>
-        <Button
-          label={exporting ? 'Exporting…' : 'Export data (JSON)'}
-          variant="secondary"
-          size="sm"
-          loading={exporting}
-          onPress={() => void handleExport()}
-          style={styles.flex1}
-        />
+        {canExportClients ? (
+          <Button
+            label={exporting ? 'Exporting…' : 'Export data (JSON)'}
+            variant="secondary"
+            size="sm"
+            loading={exporting}
+            onPress={() => void handleExport()}
+            style={styles.flex1}
+          />
+        ) : null}
         <Button
           label="Erase data"
           variant="danger"

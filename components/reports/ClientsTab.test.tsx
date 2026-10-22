@@ -213,3 +213,46 @@ describe('ClientsTab guest history export', () => {
     ]);
   });
 });
+
+/**
+ * Web roles plan A2 (§5.6): "Can see client phone numbers and emails" off shows "Hidden", searches
+ * names only and never edits or sends a phone or email; "Can export client data" off hides the
+ * client's history CSV.
+ */
+describe('ClientsTab with hidden contacts and no export', () => {
+  const { ViewerAccessProvider } = jest.requireActual<typeof import('@/providers/ViewerAccessProvider')>(
+    '@/providers/ViewerAccessProvider',
+  );
+  const HIDDEN = { canSeeClientContact: false, canExportClients: false, otherDiaries: 'book' as const };
+
+  async function renderHidden() {
+    await render(
+      <ViewerAccessProvider value={HIDDEN}>
+        <ClientsTab clientWord="Client" bookingWord="Appointment" isAppointment />
+      </ViewerAccessProvider>,
+    );
+  }
+
+  it('reads "Hidden" on the row and asks for a name', async () => {
+    mockGuest = { ...mockGuest, email: null, phone: null };
+    await renderHidden();
+    expect(screen.getByText('Hidden')).toBeTruthy();
+    expect(screen.getByPlaceholderText('Search by name')).toBeTruthy();
+  });
+
+  it('opens a client with "Hidden" details, read-only fields and no history CSV', async () => {
+    mockGuest = { ...mockGuest, email: null, phone: null };
+    mockDetail.data = {
+      guest: { id: 'g1', first_name: 'Ada', last_name: 'Lovelace', email: null, phone: null, tags: [] },
+      stats: { total_bookings: 5, no_shows: 0, cancellations: 0, total_deposit_pence_paid: 0 },
+      booking_history: [],
+      contacts_hidden: true,
+    };
+    await renderHidden();
+    await press(() => screen.getByText('Ada Lovelace'));
+    expect(screen.getByText('Your business has hidden client phone numbers and emails for you.')).toBeTruthy();
+    expect(screen.queryByText('Export history (CSV)')).toBeNull();
+    await press(() => screen.getByText('Edit'));
+    expect(screen.getAllByDisplayValue('Hidden')).toHaveLength(2);
+  });
+});

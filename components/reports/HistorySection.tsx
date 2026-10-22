@@ -36,6 +36,7 @@ import {
   useTopClientsByLifetimeValue,
 } from '@/lib/queries/useReportHistory';
 import { buildAndShareCsv } from '@/lib/reports/csv-export';
+import { useViewerAccess } from '@/providers/ViewerAccessProvider';
 import { minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
@@ -102,7 +103,8 @@ function HistoryCardHeader({
   onExportBlocked,
 }: {
   title: string;
-  onExport: () => void;
+  /** Left out, the card has no export (a client list without "Can export client data"). */
+  onExport?: () => void;
   exportDisabled: boolean;
   onExportBlocked: () => void;
 }) {
@@ -110,23 +112,25 @@ function HistoryCardHeader({
   return (
     <View style={styles.cardHeader}>
       <Text variant="label">{title}</Text>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`Export ${title} as CSV`}
-        onPress={() => {
-          if (exportDisabled) {
-            onExportBlocked();
-            return;
-          }
-          hapticTap();
-          onExport();
-        }}
-        hitSlop={12}
-        style={({ pressed }) => [styles.exportBtn, { opacity: pressed ? 0.7 : 1 }]}>
-        <Text variant="caption" style={{ color: exportDisabled ? colors.textMuted : colors.brand }}>
-          Export CSV
-        </Text>
-      </Pressable>
+      {onExport ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Export ${title} as CSV`}
+          onPress={() => {
+            if (exportDisabled) {
+              onExportBlocked();
+              return;
+            }
+            hapticTap();
+            onExport();
+          }}
+          hitSlop={12}
+          style={({ pressed }) => [styles.exportBtn, { opacity: pressed ? 0.7 : 1 }]}>
+          <Text variant="caption" style={{ color: exportDisabled ? colors.textMuted : colors.brand }}>
+            Export CSV
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -138,6 +142,9 @@ export function HistorySection({
   showClassCommerceNote = false,
 }: HistorySectionProps) {
   const { colors } = useTheme();
+  // Web roles plan A2: the client lifetime value CSV is a client list, so it follows "Can export
+  // client data".
+  const { canExportClients } = useViewerAccess();
 
   const [rangeKey, setRangeKey] = useState<HistoryRangeKey>('30d');
   const [monthAnchor, setMonthAnchor] = useState(today);
@@ -413,7 +420,7 @@ export function HistorySection({
       <Card>
         <HistoryCardHeader
           title="Client lifetime value"
-          onExport={() => void exportClients()}
+          onExport={canExportClients ? () => void exportClients() : undefined}
           exportDisabled={clients.length === 0}
           onExportBlocked={() => notify('notice', 'No clients to export yet.')}
         />

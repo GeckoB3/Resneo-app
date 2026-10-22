@@ -39,6 +39,8 @@ import { looksLikeBarcode, readStockRules, resolveTillFavourites, type TillFavou
 import { sellProductsOn } from '@/lib/pos/setup/answers';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useGuests } from '@/lib/queries/useGuests';
+import { ROLES_COPY } from '@/lib/roles/roles';
+import { useClientContactHidden } from '@/providers/ViewerAccessProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { creditLocked } from '@/lib/pos/voucher-math';
 import {
@@ -974,6 +976,9 @@ function ClientSheetBody({
   const searching = search.trim().length >= 2;
   const guests = useGuests({ search, limit: 20 }, { enabled: visible && searching });
   const found = guests.data?.guests ?? [];
+  // Web roles plan A2: someone whose client contacts are hidden searches names only and sees
+  // "Hidden" where a match's phone and email would be.
+  const contactHidden = useClientContactHidden(guests.data?.contacts_hidden);
 
 
   async function setGuest(guestId: string | null) {
@@ -1032,7 +1037,12 @@ function ClientSheetBody({
             {t('client.changeBooking', { clientName: sale.guest.name })}
           </Text>
         ) : null}
-        <SearchBar value={search} onChangeText={setSearch} placeholder={t('client.search')} onClear={() => setSearch('')} />
+        <SearchBar
+          value={search}
+          onChangeText={setSearch}
+          placeholder={contactHidden ? ROLES_COPY['search.names_only'] : t('client.search')}
+          onClear={() => setSearch('')}
+        />
         {searching && guests.isLoading ? (
           <Text variant="bodySmall" tone="muted">
             {t('client.searching')}
@@ -1049,7 +1059,11 @@ function ClientSheetBody({
             <PickRow
               key={g.id}
               title={name}
-              detail={[formatPhoneForDisplay(g.phone), g.email].filter(Boolean).join(' · ') || null}
+              detail={
+                contactHidden
+                  ? ROLES_COPY['contact.hidden']
+                  : [formatPhoneForDisplay(g.phone), g.email].filter(Boolean).join(' · ') || null
+              }
               selected={sale.guest?.id === g.id}
               onPress={() => void setGuest(g.id)}
             />

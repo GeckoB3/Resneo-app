@@ -200,3 +200,44 @@ describe('CalendarClientSearchPanel', () => {
     expect(screen.getAllByText('None')).toHaveLength(2);
   });
 });
+
+/** Web roles plan A2: someone whose client contacts are hidden searches names only. */
+describe('CalendarClientSearchPanel with hidden contacts', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    mockDetail = {};
+    mockUseGuests.mockClear();
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('asks for a name and shows "Hidden" where the contact would be', async () => {
+    const { ViewerAccessProvider } = jest.requireActual<typeof import('@/providers/ViewerAccessProvider')>(
+      '@/providers/ViewerAccessProvider',
+    );
+    mockGuests = { data: { guests: [{ ...ADA, email: null }], contacts_hidden: true }, isFetching: false };
+    await render(
+      <ViewerAccessProvider value={{ canSeeClientContact: false, canExportClients: true, otherDiaries: 'book' }}>
+        <CalendarClientSearchPanel
+          clientWord="Client"
+          timeZone="Europe/London"
+          onPickBooking={jest.fn()}
+          onBook={jest.fn()}
+          onViewContact={jest.fn()}
+        />
+      </ViewerAccessProvider>,
+    );
+    expect(screen.getByPlaceholderText('Search by name')).toBeTruthy();
+    await typeAndSettle('ada');
+    expect(screen.getByText('Ada Lovelace')).toBeTruthy();
+    expect(screen.getByText('Hidden')).toBeTruthy();
+    expect(screen.queryByText('No contact details on file')).toBeNull();
+  });
+
+  it('keeps the full search for everyone else', async () => {
+    mockGuests = {};
+    await renderPanel();
+    expect(screen.getByPlaceholderText('Name, phone, or email')).toBeTruthy();
+  });
+});

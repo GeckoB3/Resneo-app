@@ -19,11 +19,13 @@ import { TimePickerField } from '@/components/ui/TimePickerField';
 import { ApiError } from '@/lib/api/client';
 import { hapticSelect } from '@/lib/haptics';
 import { LinkedComplianceSection } from '@/components/linked/LinkedComplianceSection';
+import { HiddenContactValue } from '@/components/roles/HiddenContact';
 import { linkedBookingLabel } from '@/lib/linked/linked-calendar-view';
 import { formatPhoneForDisplay } from '@/lib/phone/e164';
 import { pingLinkedBookingView, useUpdateLinkedBooking } from '@/lib/queries/useLinkedCalendar';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useToast } from '@/providers/ToastProvider';
+import { useClientContactHidden } from '@/providers/ViewerAccessProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type {
@@ -115,6 +117,9 @@ export function LinkedBookingDetailSheet({
   const toast = useToast();
   const accessToken = useAccessToken();
   const update = useUpdateLinkedBooking();
+  // Roles plan §5.6: the switch covers a site's clients wherever they are seen,
+  // so a partner's client reads "Hidden" too, with no call, text or email.
+  const contactHidden = useClientContactHidden();
 
   const [date, setDate] = useState('');
   const [timeMinutes, setTimeMinutes] = useState(0);
@@ -169,8 +174,11 @@ export function LinkedBookingDetailSheet({
   const title = timeOnly ? 'Busy' : linkedBookingLabel(booking);
   const practitionerName =
     venue.practitioners.find((p) => p.id === booking.practitionerId)?.name ?? null;
-  const guestPhone = booking.guestPhone?.trim() || null;
-  const guestEmail = booking.guestEmail?.trim() || null;
+  const guestPhone = contactHidden ? null : booking.guestPhone?.trim() || null;
+  const guestEmail = contactHidden ? null : booking.guestEmail?.trim() || null;
+  // Only where the link shares client details at all: on a time-only or
+  // no-detail link there is nothing hidden, just nothing shared.
+  const showHiddenContact = contactHidden && !timeOnly && Boolean(venue.pii);
   const timeRange = booking.bookingEndTime
     ? `${fmtTime(booking.bookingTime)}–${fmtTime(booking.bookingEndTime)}`
     : fmtTime(booking.bookingTime);
@@ -322,7 +330,16 @@ export function LinkedBookingDetailSheet({
           ) : (
             <>
               {/* Contact details (read) */}
-              {guestPhone || guestEmail ? (
+              {showHiddenContact ? (
+                <Card style={styles.notesCard}>
+                  <View style={styles.notesBlock}>
+                    <Text variant="overline" tone="muted">
+                      Phone and email
+                    </Text>
+                    <HiddenContactValue variant="bodySmall" label="Phone and email" showTip />
+                  </View>
+                </Card>
+              ) : guestPhone || guestEmail ? (
                 <Card padded={false} style={styles.card}>
                   {guestPhone ? (
                     <DetailRow

@@ -135,3 +135,47 @@ describe('useInviteStaff', () => {
     expect(JSON.parse(init.body as string)).toEqual({ email: 'f@x.com', role: 'staff', role_key: 'front_desk' });
   });
 });
+
+describe('optimisticTeamMember and the A2 switches', () => {
+  it('sets the contact, export and diary switches, and null puts each back to absent', () => {
+    const off = optimisticTeamMember(desk, { permissions: { client_contact: false, export_clients: false, other_diaries: 'view' } });
+    expect(off.permissions).toEqual({ role_key: 'front_desk', client_contact: false, export_clients: false, other_diaries: 'view' });
+    const back = optimisticTeamMember(off, { permissions: { client_contact: null, export_clients: null, other_diaries: null } });
+    expect(back.permissions).toEqual({ role_key: 'front_desk' });
+  });
+
+  it('drops the contact and diary switches, and exports, from someone made an admin, as the server does', () => {
+    const made = optimisticTeamMember(
+      { ...desk, permissions: { role_key: 'front_desk', client_contact: false, other_diaries: 'view' } },
+      { role: 'admin', role_key: 'admin' },
+    );
+    expect(made.permissions).toEqual({ billing_payouts_admins: false, export_clients: false });
+  });
+});
+
+describe('usePatchStaffMember and the A2 switches', () => {
+  beforeEach(() => mockApiFetch.mockReset());
+
+  it('shows a switch at once, sends it, and puts it back when the server refuses', async () => {
+    const { client, wrapper } = setup([desk]);
+    let reject: (e: unknown) => void = () => undefined;
+    mockApiFetch.mockReturnValueOnce(new Promise((_resolve, r) => (reject = r)));
+    const { result } = await renderHook(() => usePatchStaffMember(), { wrapper });
+
+    let pending: Promise<unknown> = Promise.resolve();
+    await act(async () => {
+      pending = result.current.mutateAsync({ id: 'f1', body: { permissions: { client_contact: false } } }).catch(() => undefined);
+    });
+    expect(JSON.parse(mockApiFetch.mock.calls[0]![1].body as string)).toEqual({ permissions: { client_contact: false } });
+    const during = client.getQueryData<TeamListResponse>(queryKeys.team.list('token-A'));
+    expect(during?.staff[0]?.permissions).toEqual({ role_key: 'front_desk', client_contact: false });
+
+    await act(async () => {
+      reject(new ApiError('Check the highlighted fields.', 400, { error: 'Check the highlighted fields.', code: 'VALIDATION_FAILED' }));
+      await pending;
+    });
+    await settle();
+    const after = client.getQueryData<TeamListResponse>(queryKeys.team.list('token-A'));
+    expect(after?.staff[0]?.permissions).toEqual({ role_key: 'front_desk' });
+  });
+});

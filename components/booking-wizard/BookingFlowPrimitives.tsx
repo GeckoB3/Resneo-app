@@ -9,6 +9,7 @@ import { Segmented } from '@/components/ui/Segmented';
 import { Text } from '@/components/ui/Text';
 import { PressableScale } from '@/components/ui/PressableScale';
 import { ApiError } from '@/lib/api/client';
+import { accessRefusalMessage } from '@/lib/roles/roles';
 import {
   STAFF_CARD_HOLD_LINK_SENT_LINE,
   STAFF_CARD_HOLD_TOGGLE_LABEL,
@@ -283,7 +284,11 @@ export function BookingFlowConfirm({
           return;
         }
         hapticWarning();
-        setSubmitError(apiError ? apiError.message : 'Could not create booking. Please try again.');
+        // The roles refusals (CONTACT_BELONGS_TO_OTHER_CLIENT, DIARY_VIEW_ONLY) in the server's words.
+        setSubmitError(
+          accessRefusalMessage(error) ??
+            (apiError ? apiError.message : 'Could not create booking. Please try again.'),
+        );
       },
     });
   };

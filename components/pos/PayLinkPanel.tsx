@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Share, StyleSheet, Switch, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 
+import { savedContactHelper, sentToWords } from '@/components/pos/hidden-contact-send';
 import { AmountRow, ErrorLine, money, posStyles, usePosT, writeError, type Send } from '@/components/pos/parts';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -14,6 +15,7 @@ import { keepsRequestId, posErrorMessage, posFetch, posPaths } from '@/lib/pos/a
 import { payLinkExpiry, tipsOnLinks } from '@/lib/pos/card-methods';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { usePayLinks } from '@/lib/queries/usePos';
+import { useClientContactHidden } from '@/providers/ViewerAccessProvider';
 import { radius, spacing } from '@/theme/index';
 import type { PosBootstrap, PosPayLink, PosSale } from '@/types/pos';
 
@@ -55,6 +57,9 @@ export function PayLinkPanel({
 }) {
   const t = usePosT();
   const accessToken = useAccessToken();
+  // Web roles plan A2: for someone whose client contacts are hidden the "to" field starts empty,
+  // and leaving it empty sends to what is saved for the client without showing it.
+  const contactHidden = useClientContactHidden();
   const tipsAllowed = tipsOnLinks(bootstrap);
   const [phase, setPhase] = useState<Phase>(existingLinkId ? { kind: 'live', linkId: existingLinkId } : { kind: 'setup' });
   const [allowTip, setAllowTip] = useState(true);
@@ -120,7 +125,7 @@ export function PayLinkPanel({
     setSending(channel);
     setNotice(null);
     setError(null);
-    setTo((channel === 'sms' ? sale.guest?.phone : sale.guest?.email) ?? '');
+    setTo(contactHidden ? '' : (channel === 'sms' ? sale.guest?.phone : sale.guest?.email) ?? '');
   };
 
   const sendLink = async () => {
@@ -128,12 +133,13 @@ export function PayLinkPanel({
     setBusy(true);
     setError(null);
     try {
-      const res = await posFetch<{ sent: boolean; destination: string }>(posPaths.payLinkSend(sale.id, link.id), {
+      const res = await posFetch<{ sent: boolean; destination: string | null }>(posPaths.payLinkSend(sale.id, link.id), {
         accessToken,
         method: 'POST',
         body: { channel: sending, ...(to.trim() ? { to: to.trim() } : {}) },
       });
-      setNotice(sending === 'sms' ? t('link.sent.text', { phone: res.destination }) : t('link.sent.email', { email: res.destination }));
+      const sentTo = sentToWords(res.destination, to, sending);
+      setNotice(sending === 'sms' ? t('link.sent.text', { phone: sentTo }) : t('link.sent.email', { email: sentTo }));
       setSending(null);
     } catch (e) {
       setError(posErrorMessage(e, t('common.networkError')));
@@ -247,6 +253,7 @@ export function PayLinkPanel({
             keyboardType={sending === 'sms' ? 'phone-pad' : 'email-address'}
             autoCapitalize="none"
             autoCorrect={false}
+            helper={contactHidden && sale.guest ? savedContactHelper(sending) : undefined}
           />
           <Button label={t('link.send')} loading={busy} onPress={() => void sendLink()} fullWidth />
           <Button label={t('common.cancel')} variant="ghost" onPress={() => setSending(null)} fullWidth />

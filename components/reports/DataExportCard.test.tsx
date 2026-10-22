@@ -89,3 +89,44 @@ describe('presetRange', () => {
     expect(presetRange('last_month', new Date(2026, 0, 5))).toEqual({ from: '2025-12-01', to: '2025-12-31' });
   });
 });
+
+/**
+ * "Can export client data" off (web roles plan A2, §5.5): the files with clients in them (bookings,
+ * clients, sales, payments) are not offered, as on the web, and a refusal says why.
+ */
+describe('DataExportCard without "Can export client data"', () => {
+  const { ViewerAccessProvider } = jest.requireActual<typeof import('@/providers/ViewerAccessProvider')>(
+    '@/providers/ViewerAccessProvider',
+  );
+  const NO_EXPORT = { canSeeClientContact: true, canExportClients: false, otherDiaries: 'book' as const };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockCount.mockReturnValue({ data: 5, isLoading: false, isError: false });
+  });
+
+  it('offers only the files without clients, and says why', async () => {
+    await render(
+      <ViewerAccessProvider value={NO_EXPORT}>
+        <DataExportCard bookingWord="Appointment" clientLabel="Client" today="2026-09-19" posKinds />
+      </ViewerAccessProvider>,
+    );
+    expect(
+      screen.getByText('Exporting client data is switched off for you, so the files with clients in them are not offered here.'),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Appointments' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Clients' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Services' })).toBeTruthy();
+    expect(mockCount).toHaveBeenLastCalledWith('services', null, true);
+    expect(screen.getByText('Download services as CSV')).toBeTruthy();
+  });
+
+  it('shows the copy deck refusal when a client file is refused', async () => {
+    mockDownload.mockResolvedValue({ ok: false, status: 403, message: 'Only admins can export data.' });
+    await render(<DataExportCard bookingWord="Appointment" clientLabel="Client" today="2026-09-19" />);
+    await act(async () => {
+      fireEvent.press(screen.getByText('Download appointments as CSV'));
+    });
+    expect(mockToast.error).toHaveBeenCalledWith('Exporting client data is switched off for you.');
+  });
+});

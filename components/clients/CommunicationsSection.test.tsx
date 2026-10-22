@@ -81,3 +81,24 @@ describe('CommunicationsSection', () => {
     consoleError.mockRestore();
   });
 });
+
+/** Web roles plan A2: where a message went is never shown to someone whose contacts are hidden. */
+describe('CommunicationsSection with hidden contacts', () => {
+  it('leaves out the recipient, keeping the message itself', async () => {
+    const { ViewerAccessProvider } = jest.requireActual<typeof import('@/providers/ViewerAccessProvider')>(
+      '@/providers/ViewerAccessProvider',
+    );
+    await render(
+      <ViewerAccessProvider value={{ canSeeClientContact: false, canExportClients: true, otherDiaries: 'book' }}>
+        <CommunicationsSection communications={[row({ recipient: 'ada@example.com' })]} />
+      </ViewerAccessProvider>,
+    );
+    expect(screen.getByText('Booking confirmation')).toBeTruthy();
+    expect(screen.queryByText('To ada@example.com')).toBeNull();
+  });
+
+  it('leaves it out when the response said contacts_hidden', async () => {
+    await render(<CommunicationsSection communications={[row({ recipient: 'ada@example.com' })]} contactsHidden />);
+    expect(screen.queryByText('To ada@example.com')).toBeNull();
+  });
+});

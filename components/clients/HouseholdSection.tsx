@@ -19,7 +19,9 @@ import {
   type HouseholdMember,
 } from '@/lib/queries/useGuestHousehold';
 import { useGuests } from '@/lib/queries/useGuests';
+import { HIDDEN_CONTACT_LABEL } from '@/components/roles/HiddenContact';
 import { useToast } from '@/providers/ToastProvider';
+import { useClientContactHidden } from '@/providers/ViewerAccessProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -118,6 +120,9 @@ export function HouseholdSection({
     () => matches.filter((g) => !linkedIds.has(g.id)),
     [matches, linkedIds],
   );
+  // Web roles plan A2: someone whose client contacts are hidden searches by name only, and sees
+  // "Hidden" where a match's phone and email would be.
+  const contactHidden = useClientContactHidden(searchQuery.data?.contacts_hidden);
 
   function resetPicker() {
     setSearch('');
@@ -266,7 +271,9 @@ export function HouseholdSection({
             Link household member
           </Text>
           <Text variant="bodySmall" tone="secondary">
-            Search by name, email or phone to pick the contact to link.
+            {contactHidden
+              ? 'Search by name to pick the contact to link.'
+              : 'Search by name, email or phone to pick the contact to link.'}
           </Text>
 
           <SearchBar
@@ -302,7 +309,9 @@ export function HouseholdSection({
             ) : (
               results.map((item) => {
                 const isSelected = selected?.id === item.id;
-                const sub = [item.email, formatPhoneForDisplay(item.phone)].filter(Boolean).join(' · ') || 'No email or phone';
+                const sub = contactHidden
+                  ? HIDDEN_CONTACT_LABEL
+                  : [item.email, formatPhoneForDisplay(item.phone)].filter(Boolean).join(' · ') || 'No email or phone';
                 return (
                   <Pressable
                     key={item.id}

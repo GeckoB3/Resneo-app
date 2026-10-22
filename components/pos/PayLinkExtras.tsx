@@ -3,6 +3,7 @@ import { useRef, useState } from 'react';
 import { View } from 'react-native';
 
 import { PayLinkPanel } from '@/components/pos/PayLinkPanel';
+import { savedContactHelper, sentToWords } from '@/components/pos/hidden-contact-send';
 import { ChoiceChips, ErrorLine, money, PosSheet, posStyles, usePosT, writeError, type Send } from '@/components/pos/parts';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -16,6 +17,7 @@ import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { usePayLinks } from '@/lib/queries/usePos';
 import { useToast } from '@/providers/ToastProvider';
+import { useClientContactHidden } from '@/providers/ViewerAccessProvider';
 import type { PosBootstrap, PosPayLink, PosSale } from '@/types/pos';
 
 /**
@@ -135,8 +137,11 @@ export function TipLinkSheet({
   const toast = useToast();
   const accessToken = useAccessToken();
   const queryClient = useQueryClient();
-  const phone = sale.guest?.phone ?? null;
-  const email = sale.guest?.email ?? null;
+  // Web roles plan A2: for someone whose client contacts are hidden the field starts empty, and
+  // leaving it empty sends to what is saved for the client without showing it.
+  const contactHidden = useClientContactHidden();
+  const phone = contactHidden ? null : sale.guest?.phone ?? null;
+  const email = contactHidden ? null : sale.guest?.email ?? null;
   const [channel, setChannel] = useState<'sms' | 'email'>(phone ? 'sms' : 'email');
   const [to, setTo] = useState((phone ? phone : email) ?? '');
   const [busy, setBusy] = useState(false);
@@ -164,7 +169,7 @@ export function TipLinkSheet({
         });
         madeLinkId.current = made.link.id;
       }
-      const res = await posFetch<{ sent: boolean; destination: string }>(posPaths.payLinkSend(sale.id, madeLinkId.current), {
+      const res = await posFetch<{ sent: boolean; destination: string | null }>(posPaths.payLinkSend(sale.id, madeLinkId.current), {
         accessToken,
         method: 'POST',
         body: { channel, ...(to.trim() ? { to: to.trim() } : {}) },
@@ -172,7 +177,7 @@ export function TipLinkSheet({
       requestId.current = newPaymentAttemptId();
       madeLinkId.current = null;
       void queryClient.invalidateQueries({ queryKey: queryKeys.pos.sale(accessToken, sale.id) });
-      toast.success(t('link.tipOnly.sent', { destination: res.destination }));
+      toast.success(t('link.tipOnly.sent', { destination: sentToWords(res.destination, to, channel) }));
       onClose();
     } catch (e) {
       // Only a dropped connection keeps the same request id, so trying again never makes two links.
@@ -204,6 +209,7 @@ export function TipLinkSheet({
           keyboardType={channel === 'sms' ? 'phone-pad' : 'email-address'}
           autoCapitalize="none"
           autoCorrect={false}
+          helper={contactHidden && sale.guest ? savedContactHelper(channel) : undefined}
         />
         <ErrorLine message={error} />
         <Button label={t('link.tipOnly.send')} loading={busy} onPress={() => void sendTipLink()} fullWidth />

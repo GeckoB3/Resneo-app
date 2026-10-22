@@ -94,6 +94,7 @@ import {
   type PendingCrossVenueRebook,
 } from '@/lib/calendar/cross-venue-rebook';
 import { writeRebookBootstrap } from '@/lib/rebook-bootstrap';
+import { accessRefusalMessage } from '@/lib/roles/roles';
 import { newBookingActionLabel } from '@/lib/booking/terminology';
 import { isAppointmentFromVenue } from '@/lib/venue/venue-experience';
 import { hapticSelect, hapticSuccess } from '@/lib/haptics';
@@ -1772,6 +1773,8 @@ export default function CalendarScreen() {
           // a paused calendar, where "Staff not available" hides the cause.
           const message = error instanceof ApiError ? error.message : null;
           toast.error(
+            // A roles refusal (View only: 403 DIARY_VIEW_ONLY) in the server's words.
+            accessRefusalMessage(error) ??
             pausedColumnChangeRefusal(
               message,
               input.practitionerId ? null : pausedHomeNameOf(input.bookingId),
@@ -1872,6 +1875,8 @@ export default function CalendarScreen() {
           if (snapshot) revertCalendarGridBookings(queryClient, snapshot);
           const message = error instanceof ApiError ? error.message : null;
           toast.error(
+            // A roles refusal (View only: 403 DIARY_VIEW_ONLY) in the server's words.
+            accessRefusalMessage(error) ??
             // R44-3: a booking on a paused calendar cannot change time or
             // length while it stays there, and the engine's "Staff not
             // available" does not say so.

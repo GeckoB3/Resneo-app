@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
+import { HiddenContactValue } from '@/components/roles/HiddenContact';
 import { StatusPill } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
@@ -17,6 +18,7 @@ import {
 } from '@/lib/queries/useExperienceEvents';
 import { buildAndShareCsv } from '@/lib/reports/csv-export';
 import { useToast } from '@/providers/ToastProvider';
+import { useClientContactHidden, useViewerAccess } from '@/providers/ViewerAccessProvider';
 import { minTouchTarget, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
@@ -97,6 +99,10 @@ export function EventAttendees({
   const toast = useToast();
   const query = useEventAttendees(eventId);
   const toggleArrived = useToggleAttendeeArrived();
+  // Roles plan §5.6: "Hidden" in place of each ticket holder's phone and email,
+  // and no attendee CSV without "Can export client data" (web parity).
+  const contactHidden = useClientContactHidden();
+  const { canExportClients } = useViewerAccess();
   const [actionError, setActionError] = useState<string | null>(null);
 
   const rows = useMemo(() => query.data ?? [], [query.data]);
@@ -206,13 +212,15 @@ export function EventAttendees({
         <Text variant="caption" tone="muted">
           {attendees.length} ticket holder{attendees.length === 1 ? '' : 's'}
         </Text>
-        <IconButton
-          icon={{ ios: 'square.and.arrow.up', android: 'share', web: 'share' }}
-          accessibilityLabel="Export attendees as CSV"
-          tint={colors.brand}
-          iconSize={20}
-          onPress={() => void onExport()}
-        />
+        {canExportClients ? (
+          <IconButton
+            icon={{ ios: 'square.and.arrow.up', android: 'share', web: 'share' }}
+            accessibilityLabel="Export attendees as CSV"
+            tint={colors.brand}
+            iconSize={20}
+            onPress={() => void onExport()}
+          />
+        ) : null}
       </View>
       {actionError ? (
         <Text variant="caption" tone="danger">
@@ -226,7 +234,7 @@ export function EventAttendees({
         const tickets = `${row.party_size} ticket${row.party_size === 1 ? '' : 's'}`;
         const ticketLines = ticketLineSummary(row);
         const deposit = depositSummary(row);
-        const contact = contactLine(row);
+        const contact = contactHidden ? null : contactLine(row);
 
         return (
           <View
@@ -259,7 +267,9 @@ export function EventAttendees({
                   {deposit}
                 </Text>
               ) : null}
-              {contact ? (
+              {contactHidden ? (
+                <HiddenContactValue variant="caption" label="Phone and email" />
+              ) : contact ? (
                 <Text variant="caption" tone="muted" numberOfLines={1}>
                   {contact}
                 </Text>

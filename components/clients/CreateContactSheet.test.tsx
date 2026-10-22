@@ -96,4 +96,19 @@ describe('CreateContactSheet: field errors', () => {
 
     expect(screen.getByText('Failed to create guest')).toBeTruthy();
   });
+
+  it("shows the server's words when typed details belong to another client (web roles plan A2)", async () => {
+    // Someone whose client contacts are hidden still types a new client's details; a match with a
+    // different client is refused rather than shown to them.
+    const message = 'These details belong to another client. Search by name, or ask an admin.';
+    mockMutateAsync.mockRejectedValueOnce(
+      new ApiError(message, 409, { error: message, code: 'CONTACT_BELONGS_TO_OTHER_CLIENT' }),
+    );
+    await render(<CreateContactSheet visible onClose={jest.fn()} onCreated={jest.fn()} />);
+
+    await type('07911 123456', '07911 123456');
+    await save();
+
+    expect(screen.getByText(message)).toBeTruthy();
+  });
 });

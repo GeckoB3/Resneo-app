@@ -51,6 +51,12 @@ describe('calendar client search helpers', () => {
     );
   });
 
+  it('reads "Hidden" for someone whose client contacts are hidden (web roles plan A2)', () => {
+    expect(clientSearchResultSubtitle({ email: null, phone: null }, true)).toBe('Hidden');
+    // Even a value cached from before the switch changed never shows.
+    expect(clientSearchResultSubtitle({ email: 'ada@example.com', phone: '+447911123456' }, true)).toBe('Hidden');
+  });
+
   it('shows the hint below two characters and the empty state only after a finished search', () => {
     expect(
       clientSearchStatus({ query: 'a', debouncedQuery: 'a', loading: false, hasError: false, resultCount: 0 }),

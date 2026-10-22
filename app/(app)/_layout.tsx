@@ -13,6 +13,7 @@ import { WaitlistAvailabilityBanner } from '@/components/waitlist/WaitlistAvaila
 import { useColorScheme } from '@/components/useColorScheme';
 import { useRole } from '@/lib/queries/useRole';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
+import { LiveViewerAccessProvider } from '@/providers/ViewerAccessProvider';
 import { darkColors, fonts, lightColors } from '@/theme/index';
 
 /**
@@ -66,6 +67,9 @@ export default function AppLayout() {
   const checkingStaffAccess = role === 'loading' && !proceedAnyway;
 
   return (
+    // Who is looking (web roles plan A2): hidden client contacts and the export switch, for every
+    // screen in the staff app.
+    <LiveViewerAccessProvider>
     <View style={{ flex: 1 }}>
       {/* Cross-dashboard waitlist open-slot alerts (renders null unless in staff_choose mode with a match). */}
       <WaitlistAvailabilityBanner />
@@ -267,5 +271,6 @@ export default function AppLayout() {
         </View>
       ) : null}
     </View>
+    </LiveViewerAccessProvider>
   );
 }

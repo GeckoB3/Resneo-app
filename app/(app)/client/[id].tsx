@@ -28,6 +28,7 @@ import { LoyaltyCardSection } from '@/components/clients/LoyaltyCardSection';
 import { StoredValueSection } from '@/components/clients/StoredValueSection';
 import { ClientSavedCardsSection } from '@/components/pos/SavedCards';
 import { GuestMessageSheet, type GuestMessageTarget } from '@/components/messaging/GuestMessageSheet';
+import { HiddenContactValue } from '@/components/roles/HiddenContact';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge, StatusPill } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -61,6 +62,7 @@ import { useGuestTimeline, useSendGuestMessage, useUpdateGuest } from '@/lib/que
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useVenueLiveSync } from '@/lib/realtime/useVenueLiveSync';
 import { useToast } from '@/providers/ToastProvider';
+import { useClientContactHidden } from '@/providers/ViewerAccessProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -213,6 +215,9 @@ export default function ClientDetailScreen() {
 
   const updateGuest = useUpdateGuest(guestId ?? '');
   const sendMessage = useSendGuestMessage(guestId ?? '');
+  // Web roles plan A2: "Can see client phone numbers and emails" off shows "Hidden" with no call,
+  // message or email actions (the data export in the Admin card follows "Can export client data").
+  const contactHidden = useClientContactHidden(detailQuery.data?.contacts_hidden);
 
   // Realtime: keep THIS open profile fresh. The list screen subscribes venue-wide;
   // here we watch the same tables (a new/changed booking moves the contact's stats
@@ -308,8 +313,10 @@ export default function ClientDetailScreen() {
 
   const { guest, stats, booking_history, communications, custom_field_definitions } = detailQuery.data;
   const name = formatGuestName(guest);
-  const phone = guest.phone?.trim() ?? '';
-  const email = guest.email?.trim() ?? '';
+  // A hidden viewer's response carries null contacts anyway; blanking them here keeps a stale cached
+  // value from before the switch changed off the screen too.
+  const phone = contactHidden ? '' : guest.phone?.trim() ?? '';
+  const email = contactHidden ? '' : guest.email?.trim() ?? '';
   const canMessage = !!email || !!phone;
   const canCall = !!phone;
   const canEmail = !!email;
@@ -354,8 +361,9 @@ export default function ClientDetailScreen() {
       id: guest.id,
       firstName: guest.first_name ?? '',
       lastName: guest.last_name ?? '',
-      phone: guest.phone ?? '',
-      email: guest.email ?? '',
+      phone: contactHidden ? '' : guest.phone ?? '',
+      email: contactHidden ? '' : guest.email ?? '',
+      contactsHidden: contactHidden,
       notes: guest.customer_profile_notes ?? '',
       tags: guest.tags.join(', '),
       marketingConsent: guest.marketing_consent,
@@ -452,7 +460,11 @@ export default function ClientDetailScreen() {
             <Text variant="title" numberOfLines={1} style={styles.profileName}>
               {name}
             </Text>
-            {phone || email ? (
+            {contactHidden ? (
+              <View style={styles.profileContact}>
+                <HiddenContactValue variant="bodySmall" label="Phone and email" showTip />
+              </View>
+            ) : phone || email ? (
               <Text variant="bodySmall" tone="muted" numberOfLines={1} style={styles.profileContact}>
                 {[formatPhoneForDisplay(phone), email].filter(Boolean).join('  ·  ')}
               </Text>
@@ -656,7 +668,7 @@ export default function ClientDetailScreen() {
       {complianceEnabled ? <ComplianceSection guestId={guestId} /> : null}
 
       {/* Message history — default-opens when there is history (web parity) */}
-      <CommunicationsSection communications={communications} collapsible />
+      <CommunicationsSection communications={communications} contactsHidden={contactHidden} collapsible />
 
       {/* Activity timeline */}
       {timelineEvents.length > 0 ? (

@@ -6,6 +6,7 @@
  * @see _reference/Resneo/src/app/api/venue/classes/route.ts (classTypeSchema)
  * @see _reference/Resneo/src/app/api/venue/class-instances/route.ts
  */
+import type { ContactsHiddenFlag } from '@/types/staff';
 
 /** `'card_hold'` (web 2026-07): per-person no-show fee kept in `deposit_amount_pence` (spec D5). */
 export type ClassPaymentRequirement = 'none' | 'deposit' | 'full_payment' | 'card_hold';
@@ -241,7 +242,8 @@ export interface ClassAttendee {
 }
 
 /** GET /api/venue/class-instances/[id]/attendees response. */
-export interface ClassAttendeesResponse {
+/** `contacts_hidden` when the viewer's "Can see client phone numbers and emails" is off (roles plan A2). */
+export interface ClassAttendeesResponse extends ContactsHiddenFlag {
   class_instance_id: string;
   attendees: ClassAttendee[];
 }

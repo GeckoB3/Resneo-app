@@ -219,7 +219,7 @@ export default function TeamScreen() {
                     Staff
                   </Text>
                   {`: ${ROLES_COPY['role.staff']}\n`}
-                  Tap a member to manage their role, calendars, password or invitation.
+                  Tap a member to manage their role, what they can see and export, calendars, password or invitation.
                 </Text>
               </View>
 

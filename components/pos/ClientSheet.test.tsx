@@ -104,3 +104,57 @@ describe('ClientSheet', () => {
     expect(screen.getByPlaceholderText('Search by name, phone or email')).toBeTruthy();
   });
 });
+
+/**
+ * Web roles plan A2 (§5.6): someone whose client contacts are hidden searches the till's clients by
+ * name only, sees "Hidden" where a match's phone and email would be, and a new client whose typed
+ * details belong to someone else is refused with the server's words.
+ */
+describe('ClientSheet with hidden contacts', () => {
+  const HIDDEN = { canSeeClientContact: false, canExportClients: true, otherDiaries: 'book' as const };
+
+  async function renderHidden() {
+    const { ViewerAccessProvider } = jest.requireActual<typeof import('@/providers/ViewerAccessProvider')>(
+      '@/providers/ViewerAccessProvider',
+    );
+    await render(
+      <ViewerAccessProvider value={HIDDEN}>
+        <ClientSheet visible onClose={jest.fn()} sale={sale} send={jest.fn()} />
+      </ViewerAccessProvider>,
+    );
+  }
+
+  it('asks for a name and shows "Hidden" on each match', async () => {
+    mockGuests = {
+      data: { guests: [{ id: 'g1', first_name: 'Jo', last_name: 'Bloggs', email: null, phone: null }] },
+      isLoading: false,
+      isError: false,
+    };
+    await renderHidden();
+    await act(async () => {
+      fireEvent.changeText(screen.getByPlaceholderText('Search by name'), 'Jo');
+    });
+    expect(screen.getByText('Jo Bloggs')).toBeTruthy();
+    expect(screen.getByText('Hidden')).toBeTruthy();
+  });
+
+  it("shows the server's words when a new client's details belong to someone else", async () => {
+    const { ApiError } = jest.requireActual<typeof import('@/lib/api/client')>('@/lib/api/client');
+    const message = 'These details belong to another client. Search by name, or ask an admin.';
+    mockCreate.mockRejectedValue(new ApiError(message, 409, { error: message, code: 'CONTACT_BELONGS_TO_OTHER_CLIENT' }));
+    await renderHidden();
+    await act(async () => {
+      fireEvent.changeText(screen.getByPlaceholderText('Search by name'), 'Jo Bloggs');
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByText('New client'));
+    });
+    await act(async () => {
+      fireEvent.changeText(screen.getByPlaceholderText('name@example.com'), 'someone@example.com');
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByText('Add client'));
+    });
+    expect(screen.getByText(message)).toBeTruthy();
+  });
+});

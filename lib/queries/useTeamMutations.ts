@@ -42,7 +42,9 @@ export function useInviteStaff() {
  * A team member as a role or switch change will leave them (web `team-policy.ts`), for the list
  * while the PATCH is on its way; the refetch afterwards has the server's word. `role_key` wins over
  * `role`; a stored role change without one clears Front desk; someone made an admin starts without
- * "Billing, payouts and admins"; `permissions.billing_payouts_admins` null puts it back to absent.
+ * "Billing, payouts and admins" and, unless the request says, without "Can export client data", and
+ * loses the contact and diary switches (they are for Front desk and Staff only). Each switch in
+ * `permissions` sets its key; null puts it back to absent.
  */
 export function optimisticTeamMember(member: TeamMember, body: PatchStaffBody): TeamMember {
   const next: TeamMember = { ...member, permissions: { ...(member.permissions ?? {}) } };
@@ -54,7 +56,12 @@ export function optimisticTeamMember(member: TeamMember, body: PatchStaffBody): 
     next.role = toRole;
     if (toRole === 'admin') {
       delete permissions.role_key;
-      if (!wasAdmin) permissions.billing_payouts_admins = false;
+      delete permissions.client_contact;
+      delete permissions.other_diaries;
+      if (!wasAdmin) {
+        permissions.billing_payouts_admins = false;
+        if (body.permissions?.export_clients === undefined) permissions.export_clients = false;
+      }
       if (!member.is_owner) next.role_key = 'admin';
     } else {
       delete permissions.billing_payouts_admins;
@@ -63,9 +70,13 @@ export function optimisticTeamMember(member: TeamMember, body: PatchStaffBody): 
       next.role_key = permissions.role_key === 'front_desk' ? 'front_desk' : 'staff';
     }
   }
-  const billing = body.permissions?.billing_payouts_admins;
-  if (billing === null) delete permissions.billing_payouts_admins;
-  else if (typeof billing === 'boolean') permissions.billing_payouts_admins = billing;
+  const switches = body.permissions ?? {};
+  for (const key of ['billing_payouts_admins', 'client_contact', 'export_clients', 'other_diaries'] as const) {
+    if (!(key in switches)) continue;
+    const value = switches[key];
+    if (value === null) delete permissions[key];
+    else if (value !== undefined) (permissions as Record<string, unknown>)[key] = value;
+  }
   return next;
 }
 

@@ -23,6 +23,7 @@ import {
 import { MIN_CORE_DURATION_MINUTES } from '@/lib/booking/booking-core-duration';
 import { bookingModificationNotifyOutcome } from '@/lib/booking/modification-notify-result';
 import { explainModificationRefusal } from '@/lib/booking/modification-refusal';
+import { accessRefusalMessage } from '@/lib/roles/roles';
 import {
   visitRestoreRequest,
   visitScheduleRequest,
@@ -1523,7 +1524,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
       } catch (e) {
         hapticWarning();
         const message = e instanceof ApiError ? e.message : null;
-        setError(explainRefusal(message) ?? message ?? 'Could not save changes. Try again.');
+        setError(accessRefusalMessage(e) ?? explainRefusal(message) ?? message ?? 'Could not save changes. Try again.');
       }
       return;
     }
@@ -1563,7 +1564,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     } catch (e) {
       hapticWarning();
       const message = e instanceof ApiError ? e.message : null;
-      setError(explainRefusal(message) ?? message ?? 'Could not save changes. Try again.');
+      setError(accessRefusalMessage(e) ?? explainRefusal(message) ?? message ?? 'Could not save changes. Try again.');
     }
   }
 

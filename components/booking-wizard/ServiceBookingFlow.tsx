@@ -725,6 +725,9 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           last_name: typeof g.lastName === 'string' ? g.lastName : '',
           phone: typeof g.phone === 'string' ? g.phone : '',
           email: typeof g.email === 'string' ? g.email : '',
+          // The rebooked client (web roles plan §5.6): sent as guest_id so the booking joins
+          // them, with their stored phone and email when the form has none.
+          guest_id: typeof g.guestId === 'string' && g.guestId ? g.guestId : undefined,
         }));
         setRebookContactReadOnly(true);
         setGuestPrefilled(true);
@@ -822,11 +825,13 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
       last_name: profile.last_name ?? '',
       phone: profile.phone ?? '',
       email: profile.email ?? '',
+      // "Book" from the client's profile joins the booking to that client (sent as guest_id).
+      ...(prefilledGuestId ? { guest_id: prefilledGuestId } : {}),
     });
     setGuestPrefilled(true);
     // Prefilled from an existing guest profile → returning guest.
     setReturningGuest(true);
-  }, [prefillGuestQuery.data, guestPrefilled]);
+  }, [prefillGuestQuery.data, guestPrefilled, prefilledGuestId]);
 
   const handleBack = () => {
     // Multi-service review → drop back to slot selection, discarding the chain
