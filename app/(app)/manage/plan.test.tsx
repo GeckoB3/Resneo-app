@@ -1,0 +1,144 @@
+/**
+ * Plan & payments with the four roles (web roles plan §5.3): the plan, billing, invoices, payouts
+ * and closing the business need the owner, or an admin with "Billing, payouts and admins". Any
+ * other admin sees the plan read only, as the web does: no billing-status read and no plan
+ * previews (the routes would only 403), no billing actions, payouts read only, and closing the
+ * business shows its state without the controls. A server before roles says nothing, so every
+ * admin keeps it all.
+ *
+ * jest hoists mock factories above imports, so every closed-over variable is prefixed `mock*`.
+ */
+import { act, fireEvent, render, screen } from '@testing-library/react-native';
+
+jest.mock('expo-router', () => ({ Stack: { Screen: () => null } }));
+jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn(() => Promise.resolve()) }));
+jest.mock('@/lib/billing/store-billing-policy', () => ({ mustManageSubscriptionOnWeb: () => false }));
+
+let mockVenue: Record<string, unknown> = {};
+jest.mock('@/providers/VenueProvider', () => ({
+  useVenueContext: () => ({ venue: mockVenue, isLoading: false, refetch: jest.fn() }),
+}));
+
+const mockUseBillingStatus = jest.fn();
+const mockPortal = jest.fn();
+jest.mock('@/lib/queries/useBillingStatus', () => {
+  const actual = jest.requireActual<typeof import('@/lib/queries/useBillingStatus')>('@/lib/queries/useBillingStatus');
+  const mutation = () => ({ mutate: jest.fn(), isPending: false });
+  return {
+    isSuperuserFreeBillingAccess: actual.isSuperuserFreeBillingAccess,
+    useBillingStatus: (enabled: boolean) => {
+      mockUseBillingStatus(enabled);
+      return {
+        data: enabled ? { plan_status: 'active', pricing_tier: 'plus', stripe_subscription_id: 'sub_1' } : undefined,
+        isLoading: false,
+        isError: false,
+        refetch: jest.fn(),
+      };
+    },
+    useStripeConnect: () => ({ data: { charges_enabled: false, details_submitted: false }, isLoading: false, error: null, refetch: jest.fn() }),
+    useBillingPortalSession: () => ({ mutate: mockPortal, isPending: false }),
+    useChangePlan: mutation,
+    useStripeConnectLink: mutation,
+    useStripeDashboardLink: mutation,
+  };
+});
+jest.mock('@/lib/queries/useSmsUsage', () => ({ useSmsUsage: () => ({ data: undefined, refetch: jest.fn() }) }));
+// The plan change section (and its previews) has its own tests; here only whether it renders.
+jest.mock('@/components/plan/PlanChangeSection', () => {
+  const { Text } = jest.requireActual<typeof import('react-native')>('react-native');
+  const React = jest.requireActual<typeof import('react')>('react');
+  return { PlanChangeSection: () => React.createElement(Text, null, 'Change plan section') };
+});
+const mockDeleteSheet = jest.fn();
+jest.mock('@/components/manage/DeleteVenueSheet', () => ({
+  DeleteVenueSheet: (props: { visible: boolean; canAct?: boolean }) => {
+    mockDeleteSheet(props);
+    return null;
+  },
+}));
+
+import PlanScreen from '@/app/(app)/manage/plan';
+
+const BASE = {
+  id: 'v1',
+  name: 'Glow Bar',
+  currency: 'gbp',
+  pricing_tier: 'plus',
+  plan_status: 'active',
+  booking_model: 'unified_scheduling',
+  active_booking_models: [],
+  enabled_models: [],
+  stripe_connected_account_id: 'acct_1',
+  stripe_subscription_id: 'sub_1',
+};
+
+beforeEach(() => {
+  mockUseBillingStatus.mockClear();
+  mockDeleteSheet.mockClear();
+  mockPortal.mockClear();
+});
+
+describe('an admin without "Billing, payouts and admins"', () => {
+  beforeEach(() => {
+    mockVenue = {
+      ...BASE,
+      current_user_role: 'admin',
+      current_user_role_key: 'admin',
+      current_user_is_owner: false,
+      current_user_permissions: { billing_payouts_admins: false },
+      current_user_billing_payouts_admins: false,
+    };
+  });
+
+  it('never asks for the billing status, and shows the plan read only', async () => {
+    await render(<PlanScreen />);
+    expect(mockUseBillingStatus).toHaveBeenCalled();
+    expect(mockUseBillingStatus.mock.calls.every(([enabled]) => enabled === false)).toBe(true);
+    expect(
+      screen.getByText('Only the owner, or an admin they allow, can change the plan, manage billing or close the business.'),
+    ).toBeTruthy();
+    expect(screen.queryByText('Manage billing')).toBeNull();
+    expect(screen.queryByText('Change plan section')).toBeNull();
+  });
+
+  it('shows payouts read only, with who can finish them', async () => {
+    await render(<PlanScreen />);
+    expect(screen.queryByText('Continue setup')).toBeNull();
+    expect(screen.getByText('Only the owner, or an admin they allow, can do this.')).toBeTruthy();
+  });
+
+  it('lets them see the closure state, but not schedule or cancel one', async () => {
+    await render(<PlanScreen />);
+    expect(screen.getByText('Only the owner, or an admin they allow, can close the business or cancel a closure.')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByText('See closure status'));
+    });
+    expect(mockDeleteSheet).toHaveBeenLastCalledWith(expect.objectContaining({ visible: true, canAct: false }));
+  });
+});
+
+describe('the owner, and an admin from before roles', () => {
+  it('gives the owner every billing action', async () => {
+    mockVenue = {
+      ...BASE,
+      current_user_role: 'admin',
+      current_user_role_key: 'owner',
+      current_user_is_owner: true,
+      current_user_permissions: {},
+      current_user_billing_payouts_admins: true,
+    };
+    await render(<PlanScreen />);
+    expect(mockUseBillingStatus).toHaveBeenLastCalledWith(true);
+    expect(screen.getByText('Manage billing')).toBeTruthy();
+    expect(screen.getByText('Change plan section')).toBeTruthy();
+    expect(screen.getByText('Continue setup')).toBeTruthy();
+    expect(screen.getByText('Delete this venue…')).toBeTruthy();
+  });
+
+  it('keeps every power for an admin when the server sends no role fields', async () => {
+    mockVenue = { ...BASE, current_user_role: 'admin' };
+    await render(<PlanScreen />);
+    expect(mockUseBillingStatus).toHaveBeenLastCalledWith(true);
+    expect(screen.getByText('Manage billing')).toBeTruthy();
+  });
+});

@@ -152,6 +152,15 @@ describe('Get this phone ready', () => {
     expect(screen.queryByText(/Waiting for this phone/)).toBeNull();
   });
 
+  it('keeps connecting Stripe (payouts) to the owner or an admin with the billing switch', async () => {
+    mockVenue = setupVenue({ in_person_payments_enabled: true, current_user_billing_payouts_admins: false });
+    mockStripe = null;
+    await render(<PhoneReadyScreen />);
+    expect(await screen.findByText('First, connect Stripe')).toBeTruthy();
+    expect(screen.getByText('Only the owner, or an admin they allow, can do this.')).toBeTruthy();
+    expect(screen.queryByText('Connect Stripe')).toBeNull();
+  });
+
   it('tells a team member to ask an admin', async () => {
     mockRole = 'staff';
     mockVenue = setupVenue({ in_person_payments_enabled: false, current_user_role: 'staff' });

@@ -89,3 +89,21 @@ describe('StripeConnectCard for a team member (web Payments tab, read only)', ()
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('StripeConnectCard for an admin without "Billing, payouts and admins" (roles plan §5.3)', () => {
+  const note = 'Only the owner, or an admin they allow, can do this.';
+  const limited = { ...active, isAdmin: false, accountId: 'acct_123', restrictedNote: note };
+
+  it('says who can finish a step, in place of "Ask an admin"', async () => {
+    await render(<StripeConnectCard {...limited} chargesEnabled={false} detailsSubmitted={false} />);
+    expect(screen.getByText(note)).toBeTruthy();
+    expect(screen.queryByText(/Ask an admin/)).toBeNull();
+    expect(screen.queryByText('Continue setup')).toBeNull();
+  });
+
+  it('offers no Stripe dashboard once active, and says nothing more', async () => {
+    await render(<StripeConnectCard {...limited} onOpenDashboard={jest.fn()} />);
+    expect(screen.queryByText('Open Stripe dashboard')).toBeNull();
+    expect(screen.queryByText(note)).toBeNull();
+  });
+});

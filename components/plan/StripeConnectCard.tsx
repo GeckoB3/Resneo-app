@@ -27,6 +27,11 @@ type StripeConnectCardProps = {
   /** The status read failed (web: the message and a Retry button). */
   statusError?: string | null;
   onRetry?: () => void;
+  /**
+   * For an admin without "Billing, payouts and admins" (web roles plan §5.3), who sees the card read
+   * only (`isAdmin` false): said in place of "Ask an admin..." when there is a step to finish.
+   */
+  restrictedNote?: string | null;
 };
 
 type ConnectState = 'not_connected' | 'step1_pending' | 'step2_pending' | 'active';
@@ -59,6 +64,7 @@ export function StripeConnectCard({
   loading = false,
   statusError = null,
   onRetry,
+  restrictedNote = null,
 }: StripeConnectCardProps) {
   const { colors } = useTheme();
 
@@ -124,7 +130,7 @@ export function StripeConnectCard({
     );
   }
 
-  const staffLine = STAFF_LINE[state];
+  const staffLine = STAFF_LINE[state] ? (restrictedNote ?? STAFF_LINE[state]) : null;
 
   return (
     <Card>

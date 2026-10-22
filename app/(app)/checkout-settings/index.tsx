@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { TILE } from '@/lib/navigation/more-destinations';
 import { checkoutSettingsHref, groupedCheckoutSettingsSections } from '@/lib/pos/checkout-settings-sections';
+import { myCapabilitiesFrom } from '@/lib/pos/my-capabilities';
 import { isPosEnabled, posOffer } from '@/lib/pos/pos-enabled';
 import { SETTINGS_COPY } from '@/lib/pos/settings-copy';
 import { parseMissedExtras } from '@/lib/pos/switches/model';
@@ -48,7 +49,8 @@ function Rows() {
   const { data, t, vouchersEnabled, loyaltyEnabled, shopEnabled } = useCheckoutSettingsCtx();
   const groups = groupedCheckoutSettingsSections({
     can: data.can,
-    staffCapabilityMap: data.staff_capability_map,
+    // This login's own rights (roles plan §5.13), not the Staff map: Front desk has its own.
+    myCapabilities: myCapabilitiesFrom(data),
     trackStockEnabled: data.settings.track_stock_enabled === true,
     vouchersEnabled,
     loyaltyEnabled,

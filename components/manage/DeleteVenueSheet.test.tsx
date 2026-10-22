@@ -129,3 +129,23 @@ describe('DeleteVenueSheet — loading', () => {
     expect(screen.queryByText('Schedule venue deletion')).toBeNull();
   });
 });
+
+describe('DeleteVenueSheet — an admin without "Billing, payouts and admins" (roles plan §5.3)', () => {
+  const note = 'Only the owner, or an admin they allow, can close the business or cancel a closure.';
+
+  it('says who can, and offers no form', async () => {
+    await render(<DeleteVenueSheet visible venueName="Glow Bar" canAct={false} onClose={jest.fn()} />);
+    expect(screen.getByText(note)).toBeTruthy();
+    expect(screen.getByText('No deletion is scheduled for this venue.')).toBeTruthy();
+    expect(screen.queryByPlaceholderText('Glow Bar')).toBeNull();
+    expect(screen.queryByText('Schedule venue deletion')).toBeNull();
+  });
+
+  it('shows a scheduled closure, without the cancel button', async () => {
+    mockStatusData = { venue_name: 'Glow Bar', deletion_scheduled_at: '2026-07-31T00:00:00.000Z' };
+    await render(<DeleteVenueSheet visible venueName="Glow Bar" canAct={false} onClose={jest.fn()} />);
+    expect(screen.getByText('Deletion scheduled')).toBeTruthy();
+    expect(screen.queryByText('Cancel scheduled deletion')).toBeNull();
+    expect(mockCancelMutateAsync).not.toHaveBeenCalled();
+  });
+});

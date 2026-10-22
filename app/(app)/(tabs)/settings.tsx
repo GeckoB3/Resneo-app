@@ -54,6 +54,7 @@ import { useOrdersTile } from "@/lib/queries/useOrders";
 import { sellProductsOn } from "@/lib/pos/setup/answers";
 import { usePosBootstrap } from "@/lib/queries/usePos";
 import { useStaffMe } from "@/lib/queries/useStaffMe";
+import { hasBillingPayoutsAdmins } from "@/lib/roles/roles";
 import { useAppLock } from "@/providers/AppLockProvider";
 import { switchAppMode } from "@/lib/mode/app-mode-store";
 import { useAuth } from "@/providers/AuthProvider";
@@ -141,11 +142,13 @@ export default function MoreScreen() {
 
   // Live subscription status drives the billing-problem nudge. `plan_status` is
   // NOT on the venue bootstrap (GET /api/venue omits it), so read it from the
-  // admin-only billing endpoint — gated so non-admins never hit (and 403) it.
-  const billingStatusQuery = useBillingStatus(isAdmin);
+  // billing endpoint, which needs the owner or an admin with "Billing, payouts
+  // and admins" (web roles plan §5.3): gated so nobody else hits (and 403s) it.
+  const canManageBilling = isAdmin && hasBillingPayoutsAdmins(staff);
+  const billingStatusQuery = useBillingStatus(canManageBilling);
   const planStatus = billingStatusQuery.data?.plan_status ?? null;
   const showPlanWarning =
-    isAdmin && planStatus != null && WARN_PLAN_STATUSES.has(planStatus);
+    canManageBilling && planStatus != null && WARN_PLAN_STATUSES.has(planStatus);
 
   // In-app browser tab (SFSafariViewController / Chrome Custom Tab) so web
   // content opens without bouncing the user out of the app.

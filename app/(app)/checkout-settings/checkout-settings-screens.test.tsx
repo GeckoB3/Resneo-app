@@ -275,17 +275,92 @@ describe('team permissions', () => {
     expect(screen.getByText('Only an admin can change this.')).toBeTruthy();
   });
 
-  it('asks before using a preset and saves the whole map', async () => {
-    mockSettings = settingsResponse(ADMIN);
+  // One map per role (roles plan §5.13): the Front desk map as the server resolves it.
+  const FRONT_DESK_STANDARD = {
+    create_sale: true,
+    take_payment: true,
+    custom_line: true,
+    override_price: true,
+    refund: true,
+    charge_saved_card: true,
+    edit_tips: true,
+    edit_credit: true,
+    see_expected_cash: true,
+    adjust_stock: true,
+    manage_vouchers: true,
+    adjust_loyalty: true,
+  };
+  const withFrontDesk = (map: Record<string, boolean> = FRONT_DESK_STANDARD, custom = false) => ({
+    ...settingsResponse(ADMIN),
+    front_desk_capability_map: map,
+    front_desk_custom: custom,
+  });
+
+  async function pressText(text: string, index = 0) {
+    await act(async () => {
+      fireEvent.press(screen.getAllByText(text)[index]!);
+    });
+  }
+
+  it('shows Front desk and Staff ("Team member" is now Staff), Staff first', async () => {
+    mockSettings = withFrontDesk();
+    await render(<PermissionsScreen />);
+    expect(screen.getByLabelText('Front desk')).toBeTruthy();
+    expect(screen.getByLabelText('Staff')).toBeTruthy();
+    expect(screen.queryByText('Team member')).toBeNull();
+    expect(screen.getByText('This is the standard Staff set.')).toBeTruthy();
+  });
+
+  it("saves the Front desk map as its own, never the Staff map", async () => {
+    mockSettings = withFrontDesk();
     mockSave.mockResolvedValue({ ok: true });
     await render(<PermissionsScreen />);
     await act(async () => {
       fireEvent.press(screen.getByLabelText('Front desk'));
     });
-    expect(screen.getByText('Use the Front desk permissions?')).toBeTruthy();
+    expect(screen.getByText('This is the standard Front desk set.')).toBeTruthy();
+    await pressText('Change what Front desk can do');
+    expect(screen.getByText('Front desk permissions')).toBeTruthy();
     await act(async () => {
-      fireEvent.press(screen.getByText('Use Front desk'));
+      fireEvent(screen.getByLabelText('Give refunds'), 'valueChange', false);
     });
+    await pressText('Save changes');
+    expect(mockSave).toHaveBeenCalledWith({ front_desk_capabilities: expect.objectContaining({ refund: false, create_sale: true }) });
+    expect(mockToast.success).toHaveBeenCalledWith('Front desk permissions saved.');
+  });
+
+  it('puts Front desk back to the standard set by saving null', async () => {
+    mockSettings = withFrontDesk({ ...FRONT_DESK_STANDARD, refund: false }, true);
+    mockSave.mockResolvedValue({ ok: true });
+    await render(<PermissionsScreen />);
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Front desk'));
+    });
+    expect(screen.getByText('Your own mix.')).toBeTruthy();
+    await pressText('Change what Front desk can do');
+    await pressText('Use the standard Front desk permissions');
+    expect(screen.getByText('Every switch for Front desk goes back to how ResNeo sets it up.')).toBeTruthy();
+    await pressText('Use the standard Front desk permissions', 1);
+    expect(mockSave).toHaveBeenCalledWith({ front_desk_capabilities: null });
+  });
+
+  it('saves the Staff map as staff_capabilities', async () => {
+    mockSettings = withFrontDesk();
+    mockSave.mockResolvedValue({ ok: true });
+    await render(<PermissionsScreen />);
+    await pressText('Change what Staff can do');
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Give refunds'), 'valueChange', true);
+    });
+    await pressText('Save changes');
     expect(mockSave).toHaveBeenCalledWith({ staff_capabilities: expect.objectContaining({ refund: true, create_sale: true }) });
+    expect(mockToast.success).toHaveBeenCalledWith('Staff permissions saved.');
+  });
+
+  it('shows only the Staff map on a server before the four roles', async () => {
+    mockSettings = settingsResponse(ADMIN);
+    await render(<PermissionsScreen />);
+    expect(screen.queryByLabelText('Front desk')).toBeNull();
+    expect(screen.getByLabelText('Staff')).toBeTruthy();
   });
 });

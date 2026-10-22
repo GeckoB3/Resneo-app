@@ -1,12 +1,11 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { PasswordInput } from '@/components/ui/PasswordInput';
 import { Segmented } from '@/components/ui/Segmented';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
-import { ApiError } from '@/lib/api/client';
 import { hapticError, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
   useDeleteStaffMember,
@@ -15,35 +14,58 @@ import {
   useResendInvite,
   useResetStaffPassword,
 } from '@/lib/queries/useTeamMutations';
+import {
+  billingSwitchOn,
+  isOwnerPerson,
+  memberAccess,
+  ROLE_LABELS,
+  ROLES_COPY,
+  roleChoiceBody,
+  roleChoiceOf,
+  roleDescription,
+  roleOptionsFor,
+  rolesT,
+  showsBillingSwitch,
+  teamErrorMessage,
+  type TeamViewer,
+} from '@/lib/roles/roles';
 import { useToast } from '@/providers/ToastProvider';
 import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
-import type { AssignablePractitioner, StaffRole, TeamMember } from '@/types/staff';
+import type { AssignablePractitioner, RoleChoice, TeamMember } from '@/types/staff';
 
 type Tab = 'actions' | 'role' | 'password' | 'calendars';
-
-const ROLE_OPTIONS: { value: StaffRole; label: string }[] = [
-  { value: 'staff', label: 'Staff' },
-  { value: 'admin', label: 'Admin' },
-];
 
 type StaffMemberSheetProps = {
   visible: boolean;
   member: TeamMember | null;
   isSelf: boolean;
+  /**
+   * Who is looking (web roles plan §5.3 to §5.5). Left out, the viewer reads as an admin from before
+   * roles: every action, Staff and Admin to choose from.
+   */
+  viewer?: TeamViewer;
   practitioners: AssignablePractitioner[];
   onClose: () => void;
   onDeleted: () => void;
 };
 
+const LEGACY_ADMIN_VIEWER: TeamViewer = { staffId: null, isOwner: false, billingPayoutsAdmins: true, rolesKnown: false };
+
 /**
  * Full management sheet for a single staff member (admin only).
  * Tabs: Actions (resend invite), Change Role, Reset Password, Calendars.
+ *
+ * The four roles (web roles plan A1): nobody but the owner acts on the owner's row, so anyone else
+ * opening it sees only who can change it; an admin without "Billing, payouts and admins" sees the
+ * same for another admin. The owner sees "Billing, payouts and admins" on each admin, and their own
+ * row says transferring ownership is done on the web (UR30).
  */
 export function StaffMemberSheet({
   visible,
   member,
   isSelf,
+  viewer = LEGACY_ADMIN_VIEWER,
   practitioners,
   onClose,
   onDeleted,
@@ -55,8 +77,10 @@ export function StaffMemberSheet({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   // Role change
-  const [pendingRole, setPendingRole] = useState<StaffRole>('staff');
+  const [pendingRole, setPendingRole] = useState<RoleChoice>('staff');
   const patchMember = usePatchStaffMember();
+  // "Billing, payouts and admins" (owner only): saved as soon as it is switched.
+  const patchSwitch = usePatchStaffMember();
 
   // Password reset
   const [newPassword, setNewPassword] = useState('');
@@ -79,7 +103,7 @@ export function StaffMemberSheet({
   function handleOpen() {
     if (!member) return;
     setTab('actions');
-    setPendingRole((member.role as StaffRole) ?? 'staff');
+    setPendingRole(roleChoiceOf(member));
     setSelectedCalendarIds(member.linked_calendar_ids ?? []);
     setCalendarsDirty(false);
     setNewPassword('');
@@ -108,7 +132,7 @@ export function StaffMemberSheet({
       toast.success(res.message ?? 'A new sign-in link was emailed to them.');
     } catch (err) {
       hapticError();
-      toast.error(err instanceof ApiError ? err.message : 'Could not resend the invitation.');
+      toast.error(teamErrorMessage(err, 'Could not resend the invitation.'));
     }
   }
 
@@ -119,15 +143,26 @@ export function StaffMemberSheet({
       return;
     }
     try {
-      await patchMember.mutateAsync({ id: member.id, body: { role: pendingRole } });
+      // `role_key` names the role on a server with the four roles; `role` keeps an older one working.
+      await patchMember.mutateAsync({ id: member.id, body: roleChoiceBody(pendingRole) });
       hapticSuccess();
-      toast.success(
-        `${member.name ?? member.email} is now ${pendingRole === 'admin' ? 'an Admin' : 'a Staff member'}.`,
-      );
+      toast.success(`${member.name ?? member.email} is now ${ROLE_LABELS[pendingRole]}.`);
       handleClose();
     } catch (err) {
       hapticError();
-      toast.error(err instanceof ApiError ? err.message : 'Could not update the role.');
+      toast.error(teamErrorMessage(err, 'Could not update the role.'));
+    }
+  }
+
+  async function handleBillingSwitch(on: boolean) {
+    if (!member) return;
+    try {
+      await patchSwitch.mutateAsync({ id: member.id, body: { permissions: { billing_payouts_admins: on } } });
+      hapticSuccess();
+      toast.success('Saved.');
+    } catch (err) {
+      hapticError();
+      toast.error(teamErrorMessage(err, 'Could not save that change.'));
     }
   }
 
@@ -146,7 +181,7 @@ export function StaffMemberSheet({
       handleClose();
     } catch (err) {
       hapticError();
-      setPasswordError(err instanceof ApiError ? err.message : 'Password reset failed.');
+      setPasswordError(teamErrorMessage(err, 'Password reset failed.'));
     }
   }
 
@@ -163,9 +198,7 @@ export function StaffMemberSheet({
       handleClose();
     } catch (err) {
       hapticError();
-      toast.error(
-        err instanceof ApiError ? err.message : 'Could not update calendar assignments.',
-      );
+      toast.error(teamErrorMessage(err, 'Could not update calendar assignments.'));
     }
   }
 
@@ -179,7 +212,7 @@ export function StaffMemberSheet({
       onClose();
     } catch (err) {
       hapticError();
-      toast.error(err instanceof ApiError ? err.message : 'Could not remove the member.');
+      toast.error(teamErrorMessage(err, 'Could not remove the member.'));
     }
   }
 
@@ -196,19 +229,52 @@ export function StaffMemberSheet({
   const inactiveAssigned = (member.linked_calendar_ids ?? []).filter(
     (id) => !activePractitioners.some((p) => p.id === id),
   );
+  const access = memberAccess(viewer, member);
+  const ownerSelf = isSelf && isOwnerPerson(member);
+  const roleOptions = roleOptionsFor(viewer);
+  const currentRole = roleChoiceOf(member);
+  const billingSwitch = showsBillingSwitch(viewer, member);
+
+  const header = (
+    <View style={styles.header}>
+      <Text variant="subheading" numberOfLines={1}>
+        {displayName}
+      </Text>
+      {member.name && member.email ? (
+        <Text variant="caption" tone="muted" numberOfLines={1}>
+          {member.email}
+        </Text>
+      ) : null}
+    </View>
+  );
+
+  // The owner's row, opened by someone else, or another admin opened by an admin without the
+  // billing switch: nothing to do here, only who can.
+  if (access !== 'manage') {
+    return (
+      <Sheet visible={visible} onClose={handleClose}>
+        {header}
+        <View style={[styles.body, styles.section]}>
+          <Text variant="body" tone="secondary">
+            {access === 'owner_protected'
+              ? rolesT('owner.protected', { owner: displayName })
+              : ROLES_COPY['billing.only']}
+          </Text>
+          <Button label="Close" variant="secondary" onPress={handleClose} fullWidth />
+        </View>
+      </Sheet>
+    );
+  }
+
+  const transferLine = ownerSelf ? (
+    <Text variant="caption" tone="muted" style={styles.selfNote}>
+      {ROLES_COPY['owner.transfer']}
+    </Text>
+  ) : null;
 
   return (
     <Sheet visible={visible} onClose={handleClose} maxHeight="90%" fill>
-      <View style={styles.header}>
-        <Text variant="subheading" numberOfLines={1}>
-          {displayName}
-        </Text>
-        {member.name && member.email ? (
-          <Text variant="caption" tone="muted" numberOfLines={1}>
-            {member.email}
-          </Text>
-        ) : null}
-      </View>
+      {header}
 
       {/* Tab bar */}
       <View style={[styles.tabBar, { borderBottomColor: colors.border }]}>
@@ -304,6 +370,7 @@ export function StaffMemberSheet({
                 You cannot remove yourself from the team.
               </Text>
             )}
+            {transferLine}
           </View>
         )}
 
@@ -311,26 +378,53 @@ export function StaffMemberSheet({
         {tab === 'role' && (
           <View style={styles.section}>
             {isSelf ? (
-              <Text variant="body" tone="muted">
-                You cannot change your own role.
-              </Text>
+              <>
+                <Text variant="body" tone="muted">
+                  You cannot change your own role.
+                </Text>
+                {transferLine}
+              </>
             ) : (
               <>
-                <Segmented options={ROLE_OPTIONS} value={pendingRole} onChange={setPendingRole} />
+                <Segmented
+                  options={roleOptions}
+                  value={pendingRole}
+                  onChange={setPendingRole}
+                />
                 <Text variant="caption" tone="muted">
-                  {pendingRole === 'admin'
-                    ? 'Full access to all settings, staff management, reports and bookings.'
-                    : 'Day-to-day access. Can only see calendars assigned to them.'}
+                  {roleDescription(pendingRole)}
                 </Text>
                 <Button
                   label={patchMember.isPending ? 'Saving…' : 'Save role'}
                   loading={patchMember.isPending}
                   onPress={() => void handleRoleChange()}
                   fullWidth
-                  disabled={pendingRole === member.role}
+                  disabled={pendingRole === currentRole}
                 />
               </>
             )}
+
+            {/* "Billing, payouts and admins" on an admin: the owner only (roles plan §5.3). */}
+            {billingSwitch && currentRole === 'admin' ? (
+              <>
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                <View style={styles.switchRow}>
+                  <View style={styles.flex1}>
+                    <Text variant="bodyMedium">{ROLES_COPY['billing.switch']}</Text>
+                    <Text variant="caption" tone="muted">
+                      {ROLES_COPY['billing.switch.help']}
+                    </Text>
+                  </View>
+                  <Switch
+                    value={billingSwitchOn(member)}
+                    onValueChange={(on) => void handleBillingSwitch(on)}
+                    disabled={patchSwitch.isPending}
+                    accessibilityLabel={ROLES_COPY['billing.switch']}
+                    accessibilityState={{ checked: billingSwitchOn(member), disabled: patchSwitch.isPending }}
+                  />
+                </View>
+              </>
+            ) : null}
           </View>
         )}
 
@@ -364,7 +458,7 @@ export function StaffMemberSheet({
             {member.role === 'admin' ? (
               <Text variant="body" tone="muted">
                 Admin users have access to all calendars. Calendar restrictions only apply to
-                Staff role.
+                Front desk and Staff.
               </Text>
             ) : (
               <>
@@ -528,6 +622,11 @@ const styles = StyleSheet.create({
   },
   selfNote: {
     fontStyle: 'italic',
+  },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
   },
   calendarHeader: {
     flexDirection: 'row',

@@ -212,7 +212,8 @@ export const SETUP_COPY = {
   // W6. Your team at the till.
   'setup.team.title': 'Your team at the till',
   'setup.team.help': 'Owners and admins can always do everything. Choose what everyone else can do.',
-  'setup.team.team': 'Team member (recommended)',
+  // The preset formerly called "Team member" is "Staff" (web roles plan §5.13).
+  'setup.team.team': 'Staff (recommended)',
   'setup.team.team.note': 'Can check clients out, take payments, give discounts up to your limit and see their own sales.',
   'setup.team.frontDesk': 'Front desk',
   'setup.team.frontDesk.note': 'Everything a team member can do, plus refunds, price changes, gift vouchers and loyalty cards.',

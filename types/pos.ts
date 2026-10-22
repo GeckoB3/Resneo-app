@@ -7,6 +7,8 @@
  * `lib/pos/pos-enabled.ts`.
  */
 
+import type { RoleKey, StaffPermissions } from '@/types/staff';
+
 export type PosSaleStatus = 'open' | 'pending_payment' | 'part_paid' | 'completed' | 'voided' | 'expired';
 
 export interface PosPersonRef {
@@ -335,6 +337,13 @@ export interface PosBootstrap {
   settings: PosTillSettings;
   capabilities: PosCapabilityMap;
   role?: 'admin' | 'staff' | null;
+  /**
+   * The four roles (web roles plan §5.10, A1): the owner flag, which role, and the switches. An
+   * older server leaves them out. `capabilities` above are always this person's own rights.
+   */
+  is_owner?: boolean;
+  role_key?: RoleKey;
+  permissions?: StaffPermissions | null;
   tills: { id: string; name: string; is_active?: boolean }[];
   payment_types: PosPaymentType[];
   discount_presets: PosDiscountPreset[];

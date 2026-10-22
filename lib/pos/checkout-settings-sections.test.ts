@@ -14,7 +14,7 @@ import {
 function input(over: Partial<CheckoutSettingsGateInput> = {}): CheckoutSettingsGateInput {
   return {
     can: { is_admin: false, manage_settings: true, edit_capabilities: false },
-    staffCapabilityMap: {},
+    myCapabilities: {},
     trackStockEnabled: false,
     vouchersEnabled: false,
     loyaltyEnabled: false,
@@ -69,9 +69,15 @@ describe('visibleCheckoutSettingsSections', () => {
     expect(shown).toContain('commission');
   });
 
-  it('shows card readers to staff only when the team may manage readers', () => {
-    expect(slugs(input({ staffCapabilityMap: { manage_readers: true } }))).toContain('card-readers');
-    expect(slugs(input({ staffCapabilityMap: { manage_readers: false } }))).not.toContain('card-readers');
+  it('shows card readers to a team member only when their own rights include managing readers', () => {
+    expect(slugs(input({ myCapabilities: { manage_readers: true } }))).toContain('card-readers');
+    expect(slugs(input({ myCapabilities: { manage_readers: false } }))).not.toContain('card-readers');
+  });
+
+  it("takes the server's can.manage_readers over the map when it sends one (roles plan §5.13)", () => {
+    const can = (manage_readers: boolean) => ({ is_admin: false, manage_settings: true, edit_capabilities: false, manage_readers });
+    expect(slugs(input({ can: can(true), myCapabilities: {} }))).toContain('card-readers');
+    expect(slugs(input({ can: can(false), myCapabilities: { manage_readers: true } }))).not.toContain('card-readers');
   });
 
   it('shows Stock to anyone while Track stock is on', () => {

@@ -17,6 +17,7 @@ import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
 import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
 import { posFetch } from '@/lib/pos/api';
+import { canManageReadersFrom } from '@/lib/pos/my-capabilities';
 import { queryKeys } from '@/lib/queries/keys';
 import { usePosGate } from '@/lib/queries/usePos';
 import { settingsErrorCode, settingsErrorMessage, settingsMorePaths } from '@/lib/pos/settings-more/api';
@@ -36,9 +37,13 @@ import { spacing } from '@/theme/index';
  * be added and given a test card.
  */
 
-/** Who sees the card: admins, and staff with `manage_readers` (web `showReaders`). */
+/**
+ * Who sees the card: admins, and team members whose own role map has `manage_readers` (web
+ * `showReaders`). The server says so as `can.manage_readers` (roles plan §5.13): the Staff map is not
+ * a Front desk person's rights. An older server leaves it out, and then the Staff map is everyone's.
+ */
 export function canManageReaders(data: PosSettingsResponse): boolean {
-  return data.can.is_admin || data.staff_capability_map?.manage_readers === true;
+  return canManageReadersFrom(data);
 }
 
 function movedDate(iso: string | null | undefined): string {

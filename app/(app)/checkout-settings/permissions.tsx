@@ -15,9 +15,8 @@ import { Text } from '@/components/ui/Text';
 import {
   capabilityGroups,
   capabilityMapChanged,
-  matchingPreset,
-  presetMap,
-  type PresetId,
+  frontDeskPreset,
+  teamPreset,
 } from '@/lib/pos/settings-capabilities';
 import { SETTINGS_COPY } from '@/lib/pos/settings-copy';
 import { useToast } from '@/providers/ToastProvider';
@@ -26,11 +25,18 @@ import { useTheme } from '@/theme/useTheme';
 import type { PosSettingsCapabilityMap } from '@/types/pos-settings';
 
 /**
- * Team permissions (web `PermissionsCard.tsx`, UX spec §9.7, plan §4.19), admins only: the three
- * preset cards first (Owner and admins is fixed), then the full map under Advanced, closed until
- * opened. Choosing a preset asks first and saves the whole map; the full map saves with its own
- * button. Both send only `staff_capabilities` at the loaded version.
+ * Who can do what (web `PermissionsCard.tsx`, UX spec §9.7, plan §4.19; roles plan §5.13), admins
+ * only. Till rights are one map per role, never per person: Staff have the Staff map (what every
+ * team member had before Front desk existed) and Front desk have their own, which starts as the
+ * Front desk preset. Choose a role to see what it can do; "Change what {role} can do" opens that
+ * role's full map, which saves with its own button (`staff_capabilities` or
+ * `front_desk_capabilities` at the loaded version). Going back to the standard set asks first;
+ * for Front desk it saves null, so the map follows the preset if ResNeo ever changes it.
+ *
+ * A server before roles sends no Front desk map and does not know the key, so only Staff shows.
  */
+
+type RoleTab = 'front_desk' | 'team';
 
 export default function PermissionsSettingsScreen() {
   return (
@@ -45,23 +51,30 @@ function PermissionsSection() {
   const { colors } = useTheme();
   const toast = useToast();
   const defaults = data.capability_defaults;
-  const stored = data.staff_capability_map;
+  const hasFrontDesk = data.front_desk_capability_map !== undefined;
+  const [chosen, setChosen] = useState<RoleTab>('team');
+  const role: RoleTab = hasFrontDesk ? chosen : 'team';
+  const storedFor = (r: RoleTab): PosSettingsCapabilityMap =>
+    r === 'team' ? data.staff_capability_map : (data.front_desk_capability_map ?? frontDeskPreset(defaults));
+  const standardFor = (r: RoleTab): PosSettingsCapabilityMap => (r === 'team' ? teamPreset(defaults) : frontDeskPreset(defaults));
+  const roleName = (r: RoleTab) => (r === 'team' ? t('set.caps.preset.team') : t('set.caps.preset.frontDesk'));
+
+  const stored = storedFor(role);
   const [draft, setDraft] = useState<PosSettingsCapabilityMap | null>(null);
   const [advanced, setAdvanced] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<{ text: string; stale: boolean } | null>(null);
-  const [asking, setAsking] = useState<PresetId | 'reset' | null>(null);
+  const [askingReset, setAskingReset] = useState(false);
   const groups = useMemo(() => capabilityGroups(words), [words]);
   const map = draft ?? stored;
   const dirty = draft !== null && capabilityMapChanged(draft, stored);
   const guard = useUnsavedGuard(dirty);
-  const current = matchingPreset(stored, defaults);
-  const presetName = (id: PresetId) => (id === 'team' ? t('set.caps.preset.team') : t('set.caps.preset.frontDesk'));
+  const isStandard = !capabilityMapChanged(standardFor(role), stored);
 
-  const saveMap = async (next: PosSettingsCapabilityMap, message: string) => {
+  const saveMap = async (next: PosSettingsCapabilityMap | null, message: string) => {
     setSaving(true);
     setError(null);
-    const r = await save({ staff_capabilities: next });
+    const r = await save(role === 'team' ? { staff_capabilities: next ?? {} } : { front_desk_capabilities: next });
     setSaving(false);
     if (r.ok) {
       setDraft(null);
@@ -69,16 +82,24 @@ function PermissionsSection() {
     } else setError({ text: r.message, stale: r.stale });
   };
 
-  const confirm = async () => {
-    const what = asking;
-    setAsking(null);
-    if (what === 'reset') await saveMap({ ...defaults }, t('set.caps.reset.saved'));
-    else if (what) await saveMap(presetMap(what, defaults), t('set.caps.preset.saved', { preset: presetName(what) }));
+  const chooseRole = (next: RoleTab) => {
+    if (next === role) return;
+    setChosen(next);
+    setDraft(null);
+    setError(null);
   };
 
-  const cards: { id: PresetId | 'owner'; title: string; body: string }[] = [
+  const confirmReset = async () => {
+    setAskingReset(false);
+    // Front desk goes back to null, so it follows the preset if ResNeo ever changes it.
+    await saveMap(role === 'team' ? { ...defaults } : null, t('set.caps.reset.saved'));
+  };
+
+  const cards: { id: RoleTab | 'owner'; title: string; body: string }[] = [
     { id: 'owner', title: t('set.caps.preset.owner'), body: t('set.caps.preset.owner.body') },
-    { id: 'frontDesk', title: t('set.caps.preset.frontDesk'), body: t('set.caps.preset.frontDesk.body') },
+    ...(hasFrontDesk
+      ? [{ id: 'front_desk' as const, title: t('set.caps.preset.frontDesk'), body: t('set.caps.preset.frontDesk.body') }]
+      : []),
     { id: 'team', title: t('set.caps.preset.team'), body: t('set.caps.preset.team.body') },
   ];
 
@@ -88,19 +109,20 @@ function PermissionsSection() {
         <SectionCard.Header title={t('set.caps.presets.title')} description={t('set.caps.presets.help')} />
         <SectionCard.Body style={styles.body}>
           {error ? <Banner tone={error.stale ? 'warning' : 'danger'}>{error.text}</Banner> : null}
-          <View accessibilityRole="radiogroup" accessibilityLabel={t('set.caps.presets.title')} style={styles.cards}>
+          <View accessibilityRole="radiogroup" accessibilityLabel={t('set.caps.role.choose')} style={styles.cards}>
             {cards.map((card) => {
               const isOwner = card.id === 'owner';
-              const selected = !isOwner && current === card.id;
+              const selected = !isOwner && role === card.id;
+              const disabled = isOwner || saving || dirty;
               return (
                 <Pressable
                   key={card.id}
                   accessibilityRole="radio"
                   accessibilityLabel={card.title}
-                  accessibilityState={{ checked: selected, disabled: isOwner || saving }}
-                  disabled={isOwner || saving}
+                  accessibilityState={{ checked: selected, disabled }}
+                  disabled={disabled}
                   onPress={() => {
-                    if (!isOwner && current !== card.id) setAsking(card.id as PresetId);
+                    if (!isOwner) chooseRole(card.id as RoleTab);
                   }}
                   style={[
                     styles.card,
@@ -122,14 +144,16 @@ function PermissionsSection() {
               );
             })}
           </View>
-          {current === null ? (
-            <Text variant="bodySmall" tone="secondary">
-              {t('set.caps.preset.custom')}
-            </Text>
-          ) : null}
+          <Text variant="bodySmall" tone="secondary">
+            {isStandard
+              ? role === 'team'
+                ? t('set.caps.role.standard.team')
+                : t('set.caps.role.standard.frontDesk')
+              : t('set.caps.preset.custom')}
+          </Text>
 
           <Button
-            label={t('set.caps.advanced')}
+            label={t('set.caps.role.edit', { role: roleName(role) })}
             variant="ghost"
             accessibilityState={{ expanded: advanced }}
             onPress={() => setAdvanced((a) => !a)}
@@ -137,9 +161,9 @@ function PermissionsSection() {
 
           {advanced ? (
             <View style={styles.advanced}>
-              <Text variant="subheading">{t('set.caps.title')}</Text>
+              <Text variant="subheading">{t('set.caps.title', { role: roleName(role) })}</Text>
               <Text variant="bodySmall" tone="secondary">
-                {t('set.caps.help')}
+                {t('set.caps.help', { role: roleName(role) })}
               </Text>
               <View style={[styles.note, { borderColor: colors.border, backgroundColor: colors.surface }]}>
                 <Text variant="caption" tone="secondary">
@@ -170,7 +194,13 @@ function PermissionsSection() {
                   ) : null}
                 </View>
               ))}
-              <Button label={t('set.caps.reset')} variant="secondary" size="sm" disabled={saving} onPress={() => setAsking('reset')} />
+              <Button
+                label={role === 'team' ? t('set.caps.reset') : t('set.caps.reset.frontDesk')}
+                variant="secondary"
+                size="sm"
+                disabled={saving || isStandard}
+                onPress={() => setAskingReset(true)}
+              />
             </View>
           ) : null}
         </SectionCard.Body>
@@ -194,29 +224,21 @@ function PermissionsSection() {
               loading={saving}
               fullWidth
               onPress={() => {
-                if (draft) void saveMap(draft, t('set.caps.saved'));
+                if (draft) void saveMap(draft, t('set.caps.saved', { role: roleName(role) }));
               }}
             />
           </SectionCard.Footer>
         ) : null}
       </SectionCard>
       <ConfirmSheet
-        visible={asking !== null}
-        title={
-          asking === 'reset'
-            ? t('set.caps.reset.title')
-            : asking
-              ? t('set.caps.preset.confirm.title', { preset: presetName(asking) })
-              : ''
-        }
-        message={asking === 'reset' ? t('set.caps.reset.body') : t('set.caps.preset.confirm.body')}
-        confirmLabel={
-          asking === 'reset' ? t('set.caps.reset') : asking ? t('set.caps.preset.confirm.label', { preset: presetName(asking) }) : ''
-        }
+        visible={askingReset}
+        title={t('set.caps.reset.title')}
+        message={role === 'team' ? t('set.caps.reset.body') : t('set.caps.reset.frontDesk.body')}
+        confirmLabel={role === 'team' ? t('set.caps.reset') : t('set.caps.reset.frontDesk')}
         cancelLabel={t('common.cancel')}
         destructive={false}
-        onConfirm={() => void confirm()}
-        onClose={() => setAsking(null)}
+        onConfirm={() => void confirmReset()}
+        onClose={() => setAskingReset(false)}
       />
       {guard}
     </>

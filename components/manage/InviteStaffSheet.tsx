@@ -6,43 +6,47 @@ import { Input } from '@/components/ui/Input';
 import { Segmented } from '@/components/ui/Segmented';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
-import { ApiError } from '@/lib/api/client';
 import { hapticError, hapticSuccess } from '@/lib/haptics';
 import { useInviteStaff } from '@/lib/queries/useTeamMutations';
+import { roleChoiceBody, roleDescription, roleOptionsFor, teamErrorMessage, type TeamViewer } from '@/lib/roles/roles';
 import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
-import type { AssignablePractitioner, StaffRole } from '@/types/staff';
-
-const ROLE_OPTIONS: { value: StaffRole; label: string }[] = [
-  { value: 'staff', label: 'Staff' },
-  { value: 'admin', label: 'Admin' },
-];
+import type { AssignablePractitioner, RoleChoice } from '@/types/staff';
 
 type InviteStaffSheetProps = {
   visible: boolean;
   onClose: () => void;
   practitioners: AssignablePractitioner[];
+  /**
+   * Who is inviting (web roles plan §5.3): Front desk is offered on a server that knows it, and
+   * Admin only to the owner or an admin with "Billing, payouts and admins". Left out, the inviter
+   * reads as an admin from before roles (Staff and Admin).
+   */
+  viewer?: TeamViewer;
 };
 
+const LEGACY_ADMIN_VIEWER: TeamViewer = { staffId: null, isOwner: false, billingPayoutsAdmins: true, rolesKnown: false };
 
 /**
  * Bottom sheet for inviting a new staff member (admin only).
- * Fields: email (required), name (optional), role (Staff/Admin),
- * and calendar assignments for staff-role users.
+ * Fields: email (required), name (optional), role (Staff, Front desk or Admin),
+ * and calendar assignments for Front desk and Staff.
  */
 export function InviteStaffSheet({
   visible,
   onClose,
   practitioners,
+  viewer = LEGACY_ADMIN_VIEWER,
 }: InviteStaffSheetProps) {
   const { colors } = useTheme();
   const toast = useToast();
   const invite = useInviteStaff();
+  const roleOptions = roleOptionsFor(viewer);
 
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
-  const [role, setRole] = useState<StaffRole>('staff');
+  const [role, setRole] = useState<RoleChoice>('staff');
   const [selectedCalendarIds, setSelectedCalendarIds] = useState<string[]>([]);
   const [emailError, setEmailError] = useState<string | undefined>();
 
@@ -85,8 +89,9 @@ export function InviteStaffSheet({
       const result = await invite.mutateAsync({
         email: trimmedEmail,
         name: name.trim() || undefined,
-        role,
-        ...(role === 'staff' && selectedCalendarIds.length > 0
+        // `role_key` names the role on a server with the four roles; `role` keeps an older one working.
+        ...roleChoiceBody(role),
+        ...(role !== 'admin' && selectedCalendarIds.length > 0
           ? { calendar_ids: selectedCalendarIds }
           : {}),
       });
@@ -102,9 +107,8 @@ export function InviteStaffSheet({
       onClose();
     } catch (err) {
       hapticError();
-      const msg =
-        err instanceof ApiError ? err.message : 'Failed to send invitation. Please try again.';
-      toast.error(msg);
+      // The server's own words for the roles refusals and the daily invite limit (429).
+      toast.error(teamErrorMessage(err, 'Failed to send invitation. Please try again.'));
     }
   }
 
@@ -146,7 +150,7 @@ export function InviteStaffSheet({
             Role
           </Text>
           <Segmented
-            options={ROLE_OPTIONS}
+            options={roleOptions}
             value={role}
             onChange={(v) => {
               setRole(v);
@@ -154,13 +158,11 @@ export function InviteStaffSheet({
             }}
           />
           <Text variant="caption" tone="muted">
-            {role === 'admin'
-              ? 'Full access to all settings, staff, and bookings.'
-              : 'Day-to-day access for assigned calendars.'}
+            {roleDescription(role)}
           </Text>
         </View>
 
-        {role === 'staff' && (
+        {role !== 'admin' && (
           <View style={styles.field}>
             <View style={styles.calendarHeader}>
               <Text variant="label" tone="secondary">

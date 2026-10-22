@@ -216,35 +216,37 @@ export const SETTINGS_COPY = {
   'set.ptypes.switchedOff': '{name} is switched off.',
   'set.ptypes.orderSaved': 'Order saved.',
 
+  // Who can do what (web roles plan §5.13): one map per role, Front desk and Staff. The web names
+  // its Settings, Staff tab; the app says the Team screen. "Team member" is now "Staff".
   'set.caps.presets.title': 'Who can do what',
   'set.caps.presets.help':
-    'Choose what your team can do in Checkout. This applies to everyone with a team member login.',
+    'Choose what Front desk and Staff can do in Checkout. You give each person their role on the Team screen.',
   'set.caps.preset.owner': 'Owner and admins',
-  'set.caps.preset.owner.body': 'Can always do everything. You make someone an admin in Settings, Staff.',
+  'set.caps.preset.owner.body': 'Can always do everything. You make someone an admin on the Team screen.',
   'set.caps.preset.frontDesk': 'Front desk',
   'set.caps.preset.frontDesk.body':
     'Can check out and take payments, give refunds, change prices, charge cards on file, look after gift vouchers and loyalty cards, and adjust stock.',
-  'set.caps.preset.team': 'Team member',
+  'set.caps.preset.team': 'Staff',
   'set.caps.preset.team.body':
     "Can check out and take payments, give discounts up to your limit, and see their own sales. Can't give refunds or change prices.",
-  'set.caps.preset.custom': 'Your own mix. See Advanced.',
-  'set.caps.preset.confirm.title': 'Use the {preset} permissions?',
-  'set.caps.preset.confirm.body':
-    'Everyone with a team member login will be able to do what this allows. You can fine-tune it under Advanced.',
-  'set.caps.preset.confirm.label': 'Use {preset}',
-  'set.caps.preset.saved': '{preset} permissions saved.',
-  'set.caps.advanced': 'Advanced',
-  'set.caps.title': 'Team permissions',
-  'set.caps.help': 'Choose what team members can do in Checkout. Admins can always do everything.',
+  'set.caps.preset.custom': 'Your own mix.',
+  'set.caps.role.choose': 'Show the permissions for',
+  'set.caps.role.edit': 'Change what {role} can do',
+  'set.caps.role.standard.frontDesk': 'This is the standard Front desk set.',
+  'set.caps.role.standard.team': 'This is the standard Staff set.',
+  'set.caps.title': '{role} permissions',
+  'set.caps.help': 'Choose what {role} can do in Checkout. The owner and admins can always do everything.',
   'set.caps.sharedDevice':
     'These limits follow the login a device is signed in with. A device signed in as an admin can do everything, whoever is serving.',
   'set.caps.alwaysAdmin':
     'Refunds to a different method from the original payment, and free replacements for lost orders, always need an admin.',
-  'set.caps.reset': 'Use the standard permissions',
+  'set.caps.reset': 'Use the standard Staff permissions',
+  'set.caps.reset.frontDesk': 'Use the standard Front desk permissions',
   'set.caps.reset.title': 'Go back to the standard permissions?',
   'set.caps.reset.body': 'Every switch here goes back to how ResNeo sets it up.',
+  'set.caps.reset.frontDesk.body': 'Every switch for Front desk goes back to how ResNeo sets it up.',
   'set.caps.reset.saved': 'Standard permissions saved.',
-  'set.caps.saved': 'Team permissions saved.',
+  'set.caps.saved': '{role} permissions saved.',
   'set.caps.upTo': '{label} (up to {percent}%)',
 
   'set.tills.title': 'Tills',

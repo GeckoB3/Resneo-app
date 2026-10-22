@@ -48,6 +48,7 @@ import {
   type PlanStatus,
 } from '@/lib/queries/useBillingStatus';
 import { useSmsUsage } from '@/lib/queries/useSmsUsage';
+import { ROLES_COPY, venueBillingPayoutsAdmins } from '@/lib/roles/roles';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -198,6 +199,10 @@ export default function PlanScreen() {
   const { colors } = useTheme();
 
   const isAdmin = venue?.current_user_role === 'admin';
+  // Plan, billing, invoices, payouts and closing the business (web roles plan §5.3): the owner, or an
+  // admin with "Billing, payouts and admins". Every other admin sees the plan read only, as the web
+  // does; the routes refuse them anyway. A server before roles says nothing, so every admin has it.
+  const canManageBilling = isAdmin && venueBillingPayoutsAdmins(venue);
 
   // Reader-app posture: on native app-store builds the ResNeo subscription can be
   // VIEWED and MANAGED here, but PURCHASES / plan changes are routed to the web
@@ -205,13 +210,13 @@ export default function PlanScreen() {
   // taking client payments is unaffected. See lib/billing/store-billing-policy.ts.
   const manageOnWeb = mustManageSubscriptionOnWeb();
 
-  // Billing status is admin-only on the server (403 otherwise).
+  // Billing status needs the billing switch on the server (403 otherwise), so only they ask.
   const {
     data: billing,
     isLoading: billingLoading,
     isError: billingError,
     refetch: refetchBilling,
-  } = useBillingStatus(isAdmin);
+  } = useBillingStatus(canManageBilling);
 
   // Any team member may read the Stripe status (web Payments tab, read only for staff).
   const {
@@ -277,7 +282,7 @@ export default function PlanScreen() {
   }, [refetchBilling, refetchStripe, refetchSmsUsage, refetchVenue]);
 
   function handleManageBilling() {
-    if (!isAdmin) return;
+    if (!canManageBilling) return;
     setActionError(null);
     setSuccessMsg(null);
     portalMutation.mutate(undefined, {
@@ -479,7 +484,7 @@ export default function PlanScreen() {
             message="Your last payment failed. Update your payment method in Stripe so invoicing can retry and keep your plan active."
             buttonLabel={portalMutation.isPending ? 'Opening…' : 'Update payment method'}
             loading={portalMutation.isPending}
-            onPress={isAdmin ? handleManageBilling : undefined}
+            onPress={canManageBilling ? handleManageBilling : undefined}
           />
         )}
 
@@ -491,7 +496,7 @@ export default function PlanScreen() {
             message={`You keep access to your current plan until ${formatDate(periodEnd)}. Stripe will not charge again unless the subscription is restarted before then. Changed your mind?`}
             buttonLabel={changePlanMutation.isPending ? 'Resuming…' : 'Keep my plan'}
             loading={changePlanMutation.isPending}
-            onPress={isAdmin ? handleResume : undefined}
+            onPress={canManageBilling ? handleResume : undefined}
           />
         )}
 
@@ -522,7 +527,7 @@ export default function PlanScreen() {
                   : 'Resubscribe'
             }
             loading={!manageOnWeb && changePlanMutation.isPending}
-            onPress={isAdmin ? handleResubscribe : undefined}
+            onPress={canManageBilling ? handleResubscribe : undefined}
           />
         )}
 
@@ -643,7 +648,7 @@ export default function PlanScreen() {
             )}
           </View>
 
-          {isAdmin && billingError && (
+          {canManageBilling && billingError && (
             <View style={[styles.billingErrorBox, { backgroundColor: colors.dangerSurface }]}>
               <Text variant="caption" color={colors.danger} style={styles.billingErrorText}>
                 Couldn’t load live billing details from Stripe.
@@ -662,8 +667,8 @@ export default function PlanScreen() {
             invoices, receipts, billing address, and cancellation), use the Stripe Customer Portal.
           </Text>
 
-          {/* Admin billing actions */}
-          {isAdmin ? (
+          {/* Billing actions: the owner, or an admin with the billing switch */}
+          {canManageBilling ? (
             <View style={styles.actions}>
               <Button
                 label={portalMutation.isPending ? 'Opening…' : 'Manage billing'}
@@ -691,7 +696,7 @@ export default function PlanScreen() {
           ) : (
             <View style={styles.actions}>
               <Text variant="caption" tone="muted">
-                Contact your admin to manage billing.
+                {isAdmin ? ROLES_COPY['billing.plan'] : 'Contact your admin to manage billing.'}
               </Text>
               <Button
                 label="View plan on web"
@@ -704,7 +709,7 @@ export default function PlanScreen() {
         </Card>
 
         {/* Change Appointments plan — Light / Plus / Pro with proration previews */}
-        {isAdmin && isAppointmentsTier(pricingTier) && !subscriptionExpired && (
+        {canManageBilling && isAppointmentsTier(pricingTier) && !subscriptionExpired && (
           <PlanChangeSection
             currentTier={pricingTier}
             planStatus={planStatus}
@@ -719,9 +724,10 @@ export default function PlanScreen() {
           />
         )}
 
-        {/* Stripe Connect (web Settings → Payments tab) */}
+        {/* Stripe Connect (web Settings → Payments tab). Payouts need the billing switch. */}
         <StripeConnectCard
-          isAdmin={isAdmin}
+          isAdmin={canManageBilling}
+          restrictedNote={isAdmin && !canManageBilling ? ROLES_COPY['billing.only'] : null}
           hasAccountId={hasStripeAccount}
           chargesEnabled={chargesEnabled}
           detailsSubmitted={detailsSubmitted}
@@ -741,7 +747,9 @@ export default function PlanScreen() {
           onRetry={() => void refetchStripe()}
         />
 
-        {/* Danger zone — self-serve venue deletion (admin only, web parity). */}
+        {/* Danger zone — self-serve venue deletion (admin only, web parity). Every admin can see
+            whether a closure is scheduled; only the owner, or an admin with the billing switch,
+            can schedule or cancel one (roles plan §5.3). */}
         {isAdmin && (
           <Card>
             <View style={styles.cardHeader}>
@@ -756,10 +764,15 @@ export default function PlanScreen() {
               Schedule a 30-day grace-period deletion of this venue and all of its data. You can
               cancel any time before the grace period ends.
             </Text>
+            {!canManageBilling ? (
+              <Text variant="caption" tone="muted" style={styles.cancelNotice}>
+                {ROLES_COPY['billing.close']}
+              </Text>
+            ) : null}
             <View style={styles.actions}>
               <Button
-                label="Delete this venue…"
-                variant="danger"
+                label={canManageBilling ? 'Delete this venue…' : 'See closure status'}
+                variant={canManageBilling ? 'danger' : 'secondary'}
                 fullWidth
                 onPress={() => setShowDeleteVenue(true)}
               />
@@ -774,6 +787,7 @@ export default function PlanScreen() {
       <DeleteVenueSheet
         visible={showDeleteVenue}
         venueName={venue.name ?? ''}
+        canAct={canManageBilling}
         onClose={() => setShowDeleteVenue(false)}
       />
     </Screen>

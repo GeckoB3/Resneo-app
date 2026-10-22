@@ -60,11 +60,17 @@ jest.mock('@/lib/pos/api', () => ({
 
 import CardReadersScreen from './card-readers';
 
-function settings(over: { is_admin?: boolean; manage_readers?: boolean } = {}) {
+function settings(over: { is_admin?: boolean; manage_readers?: boolean; can_manage_readers?: boolean } = {}) {
   return {
     settings: { trading_name: null, track_stock_enabled: false, version: 3 },
     staff_capability_map: { manage_readers: over.manage_readers ?? false },
-    can: { is_admin: over.is_admin ?? true, manage_settings: over.is_admin ?? true, edit_capabilities: over.is_admin ?? true },
+    can: {
+      is_admin: over.is_admin ?? true,
+      manage_settings: over.is_admin ?? true,
+      edit_capabilities: over.is_admin ?? true,
+      // The caller's own right (roles plan §5.13); left out, as an older server does, unless given.
+      ...(over.can_manage_readers !== undefined ? { manage_readers: over.can_manage_readers } : {}),
+    },
     venue: { name: 'Studio', currency: 'GBP', timezone: 'Europe/London' },
   };
 }
@@ -142,6 +148,21 @@ it('is for admins and logins with manage_readers only', async () => {
   await show();
   expect(await screen.findByText('For admins')).toBeTruthy();
   expect(mockCalls.some((c) => c.path.startsWith('/api/venue/pos/readers'))).toBe(false);
+});
+
+describe("the caller's own right, not the Staff map (roles plan §5.13)", () => {
+  it('opens for Front desk with manage_readers while the Staff map has it off', async () => {
+    mockHandler = baseHandler({ settings: settings({ is_admin: false, manage_readers: false, can_manage_readers: true }) });
+    await show();
+    expect(await screen.findByText('Front desk')).toBeTruthy();
+  });
+
+  it('stays shut for Front desk without it while the Staff map has it on', async () => {
+    mockHandler = baseHandler({ settings: settings({ is_admin: false, manage_readers: true, can_manage_readers: false }) });
+    await show();
+    expect(await screen.findByText('For admins')).toBeTruthy();
+    expect(mockCalls.some((c) => c.path.startsWith('/api/venue/pos/readers'))).toBe(false);
+  });
 });
 
 it('lists the readers, asking Stripe for their status when it opens', async () => {

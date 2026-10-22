@@ -55,14 +55,19 @@ jest.mock('@/lib/queries/usePos', () => ({ usePosBootstrap: () => ({ data: undef
 jest.mock('@/lib/queries/useNotifications', () => ({
   useNotifications: () => ({ data: { unreadCount: 0 } }),
 }));
+let mockStaff: Record<string, unknown> = { name: 'Sam Staff', email: 'sam@example.com', role: 'admin' };
 jest.mock('@/lib/queries/useStaffMe', () => ({
   useStaffMe: () => ({
-    data: { staff: { name: 'Sam Staff', email: 'sam@example.com', role: 'admin' } },
+    data: { staff: mockStaff },
     isLoading: false,
   }),
 }));
+const mockUseBillingStatus = jest.fn();
 jest.mock('@/lib/queries/useBillingStatus', () => ({
-  useBillingStatus: () => ({ data: undefined }),
+  useBillingStatus: (enabled: boolean) => {
+    mockUseBillingStatus(enabled);
+    return { data: undefined };
+  },
 }));
 // The in-person payments switch mutates through this; mocked like every other
 // query hook here, since the screen is rendered without a QueryClientProvider.
@@ -103,5 +108,23 @@ describe('More tab — Ask ResNeo', () => {
       fireEvent.press(screen.getByLabelText('Ask ResNeo'));
     });
     expect(mockPush).toHaveBeenCalledWith('/assistant');
+  });
+});
+
+describe('More tab — the billing nudge (roles plan §5.3)', () => {
+  afterEach(() => {
+    mockStaff = { name: 'Sam Staff', email: 'sam@example.com', role: 'admin' };
+    mockUseBillingStatus.mockClear();
+  });
+
+  it('asks for the billing status for an admin with "Billing, payouts and admins"', async () => {
+    await render(<MoreScreen />);
+    expect(mockUseBillingStatus).toHaveBeenLastCalledWith(true);
+  });
+
+  it('does not ask for an admin without it, who would only be refused', async () => {
+    mockStaff = { ...mockStaff, role_key: 'admin', is_owner: false, permissions: { billing_payouts_admins: false } };
+    await render(<MoreScreen />);
+    expect(mockUseBillingStatus).toHaveBeenLastCalledWith(false);
   });
 });

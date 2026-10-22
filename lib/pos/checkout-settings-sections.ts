@@ -1,5 +1,6 @@
 import type { SymbolViewProps } from 'expo-symbols';
 
+import { canManageReadersFrom } from '@/lib/pos/my-capabilities';
 import type { SettingsCopyId } from '@/lib/pos/settings-copy';
 
 /**
@@ -31,11 +32,15 @@ export type CheckoutSettingsSlug =
   | 'stock'
   | 'shop';
 
-/** What the gates read: the settings GET's `can` and map, and the venue's feature switches. */
+/** What the gates read: the settings GET's `can` and this login's rights, and the venue's feature switches. */
 export interface CheckoutSettingsGateInput {
-  can: { is_admin: boolean; manage_settings: boolean; edit_capabilities: boolean };
-  /** The venue's staff capability map (the settings GET's `staff_capability_map`). */
-  staffCapabilityMap: Record<string, boolean | undefined> | null | undefined;
+  /** `manage_readers` is this login's own right (web roles plan §5.13); an older server leaves it out. */
+  can: { is_admin: boolean; manage_settings: boolean; edit_capabilities: boolean; manage_readers?: boolean };
+  /**
+   * This login's own till rights (`myCapabilitiesFrom`: the settings GET's `my_capabilities`, or the
+   * Staff map on a server before roles). Never the Staff map as such: Front desk has its own.
+   */
+  myCapabilities: Record<string, boolean | undefined> | null | undefined;
   trackStockEnabled: boolean;
   /** The venue's resolved `pos_gift_vouchers_enabled`. */
   vouchersEnabled: boolean;
@@ -149,12 +154,12 @@ export const CHECKOUT_SETTINGS_SECTIONS: readonly CheckoutSettingsSection[] = [
     visible: always,
   },
   {
-    // Admins, and staff with manage_readers (UX spec §2.3).
+    // Admins, and team members whose own role map has manage_readers (UX spec §2.3; roles plan §5.13).
     slug: 'card-readers',
     title: 'app.set.title.readers',
     hint: 'app.set.row.readers',
     icon: { ios: 'wave.3.right', android: 'contactless', web: 'contactless' },
-    visible: (i) => i.can.is_admin || i.staffCapabilityMap?.manage_readers === true,
+    visible: (i) => canManageReadersFrom({ can: i.can, my_capabilities: i.myCapabilities }),
   },
   {
     slug: 'cash',

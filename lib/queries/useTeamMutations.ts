@@ -38,6 +38,37 @@ export function useInviteStaff() {
   });
 }
 
+/**
+ * A team member as a role or switch change will leave them (web `team-policy.ts`), for the list
+ * while the PATCH is on its way; the refetch afterwards has the server's word. `role_key` wins over
+ * `role`; a stored role change without one clears Front desk; someone made an admin starts without
+ * "Billing, payouts and admins"; `permissions.billing_payouts_admins` null puts it back to absent.
+ */
+export function optimisticTeamMember(member: TeamMember, body: PatchStaffBody): TeamMember {
+  const next: TeamMember = { ...member, permissions: { ...(member.permissions ?? {}) } };
+  const permissions = next.permissions!;
+  if (body.name !== undefined) next.name = body.name;
+  const wasAdmin = member.role === 'admin';
+  const toRole = body.role_key ? (body.role_key === 'admin' ? 'admin' : 'staff') : body.role;
+  if (toRole) {
+    next.role = toRole;
+    if (toRole === 'admin') {
+      delete permissions.role_key;
+      if (!wasAdmin) permissions.billing_payouts_admins = false;
+      if (!member.is_owner) next.role_key = 'admin';
+    } else {
+      delete permissions.billing_payouts_admins;
+      if (body.role_key === 'front_desk') permissions.role_key = 'front_desk';
+      else if (body.role_key === 'staff' || wasAdmin) delete permissions.role_key;
+      next.role_key = permissions.role_key === 'front_desk' ? 'front_desk' : 'staff';
+    }
+  }
+  const billing = body.permissions?.billing_payouts_admins;
+  if (billing === null) delete permissions.billing_payouts_admins;
+  else if (typeof billing === 'boolean') permissions.billing_payouts_admins = billing;
+  return next;
+}
+
 /** PATCH /api/venue/staff/[id] — admin updates role or name. */
 export function usePatchStaffMember() {
   const accessToken = useAccessToken();
@@ -59,16 +90,14 @@ export function usePatchStaffMember() {
       });
     },
     onMutate: async ({ id, body }) => {
-      // Optimistic update of the role in the list cache.
+      // Optimistic update of the role and switches in the list cache.
       await queryClient.cancelQueries({ queryKey: queryKeys.team.all() });
       const prev = queryClient.getQueryData<TeamListResponse>(
         queryKeys.team.list(accessToken),
       );
-      if (prev && body.role) {
+      if (prev && (body.role || body.role_key || body.permissions)) {
         queryClient.setQueryData<TeamListResponse>(queryKeys.team.list(accessToken), {
-          staff: prev.staff.map((m) =>
-            m.id === id ? { ...m, role: body.role as TeamMember['role'] } : m,
-          ),
+          staff: prev.staff.map((m) => (m.id === id ? optimisticTeamMember(m, body) : m)),
         });
       }
       return { prev };

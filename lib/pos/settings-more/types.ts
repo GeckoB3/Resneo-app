@@ -23,9 +23,13 @@ export interface PosCheckoutSettings {
 
 export interface PosSettingsResponse {
   settings: PosCheckoutSettings;
+  /** The Staff map: not the caller's own rights (roles plan §5.13). Read `my_capabilities`. */
   staff_capability_map: PosCapabilityMap;
+  /** The caller's own till rights. An older server leaves it out. */
+  my_capabilities?: PosCapabilityMap;
   capability_defaults?: PosCapabilityMap;
-  can: { is_admin: boolean; manage_settings: boolean; edit_capabilities: boolean };
+  /** `manage_readers`: the caller's own right to manage card readers. An older server leaves it out. */
+  can: { is_admin: boolean; manage_settings: boolean; edit_capabilities: boolean; manage_readers?: boolean };
   venue: { name: string; currency: string; timezone: string };
 }
 

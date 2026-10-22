@@ -49,6 +49,7 @@ import {
   normaliseGoogleReviewUrl,
 } from '@/lib/reviews/google-review-link';
 import { useBillingStatus } from '@/lib/queries/useBillingStatus';
+import { venueBillingPayoutsAdmins } from '@/lib/roles/roles';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { fonts, minTouchTarget, radius, spacing } from '@/theme/index';
@@ -604,7 +605,9 @@ export default function CommunicationsScreen() {
   // takes guests' payments and says nothing about the plan, so a venue paying
   // for its plan without Connect saw it and one with Connect but no card did not.
   const isLightTier = venue?.pricing_tier === 'light';
-  const billingStatus = useBillingStatus(isAdmin && isLightTier);
+  // The billing status needs the owner or an admin with "Billing, payouts and admins" (roles plan
+  // §5.3); anyone else would only get a 403, so they do not ask and see no banner.
+  const billingStatus = useBillingStatus(isAdmin && isLightTier && venueBillingPayoutsAdmins(venue));
   const showSmsLightBanner =
     isLightTier && billingStatus.data != null && !billingStatus.data.stripe_subscription_id?.trim();
 

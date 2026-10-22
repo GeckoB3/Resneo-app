@@ -71,7 +71,13 @@ export interface PosCheckoutSettings {
   legacy_cash_till_id?: string | null;
   eod_email_enabled?: boolean;
   eod_email_staff_ids?: string[];
+  /** The Staff map: what people with the Staff role may do at the till. */
   staff_capabilities: Record<string, boolean | undefined>;
+  /**
+   * The Front desk map (web roles plan §5.13); null means the Front desk preset. A save sends null
+   * to go back to it. An older server leaves it out and does not know the key.
+   */
+  front_desk_capabilities?: Record<string, boolean | undefined> | null;
   version: number;
 }
 
@@ -82,9 +88,20 @@ export type PosSettingsCapabilityMap = Record<string, boolean | undefined>;
 
 export interface PosSettingsResponse {
   settings: PosCheckoutSettings;
+  /**
+   * The Staff map, resolved. It is NOT the caller's own rights (a Front desk person has their own
+   * map): read `my_capabilities`, falling back to this only for a server before roles.
+   */
   staff_capability_map: PosSettingsCapabilityMap;
+  /** The Front desk map, resolved (roles plan §5.13). An older server leaves it out. */
+  front_desk_capability_map?: PosSettingsCapabilityMap;
+  /** Whether the venue saved its own Front desk map (false: the Front desk preset applies). */
+  front_desk_custom?: boolean;
+  /** The caller's own till rights, whichever role map they have. */
+  my_capabilities?: PosSettingsCapabilityMap;
   capability_defaults: PosSettingsCapabilityMap;
-  can: { is_admin: boolean; manage_settings: boolean; edit_capabilities: boolean };
+  /** `manage_readers` is the caller's own right to manage card readers (an older server leaves it out). */
+  can: { is_admin: boolean; manage_settings: boolean; edit_capabilities: boolean; manage_readers?: boolean };
   venue: { name: string; currency: string; timezone: string };
   /**
    * OB5 (POS Part 4): what receipts show for the name, address, email and phone, and whether each

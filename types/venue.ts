@@ -1,7 +1,7 @@
 import type { BookingPageConfig } from '@/lib/booking/bookingPageConfig';
 import type { ComplianceConfig } from '@/lib/compliance/config';
 import type { VenueFeatureOffers } from '@/types/pos-switches';
-import type { StaffRole } from '@/types/staff';
+import type { RoleKey, StaffPermissions, StaffRole } from '@/types/staff';
 
 export type { BookingPageConfig };
 
@@ -134,6 +134,18 @@ export interface VenueBootstrap {
   pricing_tier: string | null;
   terminology: VenueTerminology | null;
   current_user_role: StaffRole;
+  /**
+   * The four roles (web roles plan §5.10, A1). An older server leaves these out, which reads as
+   * today's admin or staff with every admin power.
+   */
+  current_user_is_owner?: boolean;
+  current_user_role_key?: RoleKey;
+  current_user_permissions?: StaffPermissions | null;
+  /**
+   * True for the owner and for an admin whose "Billing, payouts and admins" switch is on or absent:
+   * the plan, billing, payouts, closing the business and acting on other admins (§5.3).
+   */
+  current_user_billing_payouts_admins?: boolean;
   feature_flags: VenueFeatureFlagsPayload;
   /** Settings fields (present on full GET; optional for older cached payloads). */
   address?: string | null;

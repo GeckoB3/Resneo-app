@@ -27,11 +27,16 @@ import { useSessionSettings } from '@/lib/queries/useSessionSettings';
 import { useStaffList } from '@/lib/queries/useStaffList';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { usePractitioners } from '@/lib/queries/usePractitioners';
+import { ROLES_COPY, roleBadgeTone, roleLabelOf, teamViewerOf } from '@/lib/roles/roles';
 import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { AssignablePractitioner, TeamMember } from '@/types/staff';
 
-/** Team logins & roles — full in-app management for admins, My Account for all staff. */
+/**
+ * Team logins & roles — full in-app management for admins, My Account for all staff. The four roles
+ * (web roles plan A1): Owner, Admin, Front desk and Staff. Nobody else acts on the owner's row; an
+ * admin without "Billing, payouts and admins" cannot act on other admins or make admins.
+ */
 export default function TeamScreen() {
   const { colors } = useTheme();
 
@@ -39,6 +44,7 @@ export default function TeamScreen() {
   const { data: staffMeData, isLoading: staffMeLoading } = useStaffMe();
   const staffMe = staffMeData?.staff ?? null;
   const isAdmin = staffMe?.role === 'admin';
+  const viewer = teamViewerOf(staffMe);
 
 
   const query = useStaffList(isAdmin);
@@ -47,11 +53,14 @@ export default function TeamScreen() {
 
   // Sheet state
   const [showInvite, setShowInvite] = useState(false);
-  const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null);
+  // The open member by id, read from the list, so a saved change (a role, the billing switch) shows
+  // in the open sheet as soon as the list has it.
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [showMyAccount, setShowMyAccount] = useState(false);
   const [showSecurity, setShowSecurity] = useState(false);
 
-  const members = query.data?.staff ?? [];
+  const members: TeamMember[] = query.data?.staff ?? [];
+  const selectedMember = members.find((m) => m.id === selectedMemberId) ?? null;
 
   // Map practitioners to AssignablePractitioner for components
   const assignablePractitioners: AssignablePractitioner[] = (
@@ -134,10 +143,7 @@ export default function TeamScreen() {
                   </Text>
                 ) : null}
               </View>
-              <Badge
-                label={isAdmin ? 'Admin' : 'Staff'}
-                tone={isAdmin ? 'brand' : 'neutral'}
-              />
+              <Badge label={roleLabelOf(staffMe)} tone={roleBadgeTone(staffMe)} />
               <Text variant="caption" tone="muted" style={styles.chevron}>
                 ›
               </Text>
@@ -171,7 +177,7 @@ export default function TeamScreen() {
                       isLast={index === members.length - 1}
                       onPress={() => {
                         hapticSelect();
-                        setSelectedMember(member);
+                        setSelectedMemberId(member.id);
                       }}
                     />
                   ))}
@@ -188,14 +194,31 @@ export default function TeamScreen() {
                   Role permissions
                 </Text>
                 <Text variant="caption" tone="secondary" style={styles.infoText}>
+                  {/* Owner and Front desk exist only on a server with the four roles. */}
+                  {viewer.rolesKnown ? (
+                    <>
+                      <Text variant="caption" style={{ fontFamily: fonts.semibold }}>
+                        Owner
+                      </Text>
+                      {`: ${ROLES_COPY['role.owner']}\n`}
+                    </>
+                  ) : null}
                   <Text variant="caption" style={{ fontFamily: fonts.semibold }}>
                     Admin
                   </Text>
-                  {': full access to all settings, staff management, reports and bookings.\n'}
+                  {`: ${ROLES_COPY['role.admin']}\n`}
+                  {viewer.rolesKnown ? (
+                    <>
+                      <Text variant="caption" style={{ fontFamily: fonts.semibold }}>
+                        Front desk
+                      </Text>
+                      {`: ${ROLES_COPY['role.front_desk']}\n`}
+                    </>
+                  ) : null}
                   <Text variant="caption" style={{ fontFamily: fonts.semibold }}>
                     Staff
                   </Text>
-                  {': day-to-day access to assigned calendars, bookings and guest details.\n'}
+                  {`: ${ROLES_COPY['role.staff']}\n`}
                   Tap a member to manage their role, calendars, password or invitation.
                 </Text>
               </View>
@@ -244,6 +267,7 @@ export default function TeamScreen() {
         visible={showInvite}
         onClose={() => setShowInvite(false)}
         practitioners={assignablePractitioners}
+        viewer={viewer}
       />
 
       {/* Member management sheet */}
@@ -251,9 +275,10 @@ export default function TeamScreen() {
         visible={selectedMember !== null}
         member={selectedMember}
         isSelf={selectedMember?.id === staffMe?.id}
+        viewer={viewer}
         practitioners={assignablePractitioners}
-        onClose={() => setSelectedMember(null)}
-        onDeleted={() => setSelectedMember(null)}
+        onClose={() => setSelectedMemberId(null)}
+        onDeleted={() => setSelectedMemberId(null)}
       />
 
       {/* My Account sheet */}
@@ -305,7 +330,7 @@ function MemberRow({
           pressed && { backgroundColor: colors.surface },
         ]}
         accessibilityRole="button"
-        accessibilityLabel={`${member.name ?? member.email ?? 'Staff member'}, ${member.role}`}>
+        accessibilityLabel={`${member.name ?? member.email ?? 'Staff member'}, ${roleLabelOf(member)}`}>
         <View style={styles.avatarWrap}>
           <Avatar name={member.name ?? member.email ?? 'Staff'} size={40} />
           {isSelf && (
@@ -340,10 +365,7 @@ function MemberRow({
           ) : null}
         </View>
         <View style={styles.memberRight}>
-          <Badge
-            label={member.role === 'admin' ? 'Admin' : 'Staff'}
-            tone={member.role === 'admin' ? 'brand' : 'neutral'}
-          />
+          <Badge label={roleLabelOf(member)} tone={roleBadgeTone(member)} />
           <Text variant="caption" tone="muted" style={styles.chevron}>
             ›
           </Text>

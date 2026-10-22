@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Text } from '@/components/ui/Text';
 import { setupT } from '@/lib/pos/setup/copy';
 import { useStripeConnect, useStripeConnectLink } from '@/lib/queries/useBillingStatus';
+import { ROLES_COPY } from '@/lib/roles/roles';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { spacing } from '@/theme/index';
 
@@ -37,12 +38,16 @@ export function useStripeState(): { state: StripeState; loading: boolean; refetc
 /**
  * The Stripe part of W3 and of "Get this phone ready": "First, connect Stripe" with the button
  * (Stripe's own pages open in the in-app browser, as Plan & payments does), "Stripe is checking your
- * details", or "Stripe is connected". Only an admin can connect.
+ * details", or "Stripe is connected". Only an admin can connect, and only the owner or an admin
+ * with "Billing, payouts and admins" (web roles plan §5.3): connecting sets up payouts, which
+ * `POST /api/venue/stripe-connect` refuses anyone else. A server before roles says nothing, so
+ * every admin can.
  */
 export function StripeBlock({ isAdmin, title = true }: { isAdmin: boolean; title?: boolean }) {
   const { state, loading, refetch } = useStripeState();
   const link = useStripeConnectLink();
-  const { refetch: refetchVenue } = useVenueContext();
+  const { venue, refetch: refetchVenue } = useVenueContext();
+  const canConnect = isAdmin && venue?.current_user_billing_payouts_admins !== false;
   const [error, setError] = useState<string | null>(null);
 
   if (loading) return null;
@@ -75,11 +80,11 @@ export function StripeBlock({ isAdmin, title = true }: { isAdmin: boolean; title
       <Text variant="bodySmall" tone="secondary">
         {setupT('setup.cards.stripe.none.body')}
       </Text>
-      {isAdmin ? (
+      {canConnect ? (
         <Button label={setupT('setup.cards.stripe.none.button')} onPress={connect} loading={link.isPending} fullWidth />
       ) : (
         <Text variant="caption" tone="muted">
-          {setupT('app.setup.cards.stripe.adminOnly')}
+          {isAdmin ? ROLES_COPY['billing.only'] : setupT('app.setup.cards.stripe.adminOnly')}
         </Text>
       )}
       {error ? (

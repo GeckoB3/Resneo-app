@@ -20,8 +20,9 @@ import { spacing } from '@/theme/index';
 /**
  * W6, "Your team at the till" (design 6.3, drawn as B7): only for a team (the status says so). The
  * permissions question shows when there are team logins besides the admins, the commission question
- * with two or more calendars. "Team member" or "Front desk" saves that preset's whole map, as
- * Checkout settings' preset cards do; the discount limit goes with it. Commission adds one rate for
+ * with two or more calendars. "Staff" (formerly "Team member") or "Front desk" saves that preset's
+ * whole map to the Staff map (`staff_capabilities`, roles plan §5.13: Front desk people have their
+ * own map, set in Checkout settings); the discount limit goes with it. Commission adds one rate for
  * services and one for products, from today (`POST /api/venue/pos/commission/rates`); gift vouchers
  * earn nothing when sold.
  */

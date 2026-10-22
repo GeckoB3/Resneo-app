@@ -110,12 +110,15 @@ export function capabilityGroups(words: { client: string }): CapabilityGroup[] {
   ];
 }
 
-/** "Team member", the default: the server's defaults (served by the settings GET). */
+/** "Staff" (called "Team member" before the four roles), the default: the server's defaults (served by the settings GET). */
 export function teamPreset(defaults: PosSettingsCapabilityMap): PosSettingsCapabilityMap {
   return { ...defaults };
 }
 
-/** "Front desk": the team-member preset plus the money and stock extras (UX spec §9.7). */
+/**
+ * "Front desk": the Staff preset plus the money and stock extras (UX spec §9.7). The web's
+ * `frontDeskPreset` (`src/lib/pos/capability-presets.ts`); a venue whose Front desk map is null gets it.
+ */
 export function frontDeskPreset(defaults: PosSettingsCapabilityMap): PosSettingsCapabilityMap {
   return {
     ...defaults,

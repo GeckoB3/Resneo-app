@@ -8,6 +8,7 @@ import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { hapticError, hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { ROLES_COPY } from '@/lib/roles/roles';
 import {
   useCancelVenueDeletion,
   useRequestVenueDeletion,
@@ -20,6 +21,11 @@ type DeleteVenueSheetProps = {
   visible: boolean;
   /** Venue name to type-to-confirm against (fallback when the GET hasn't resolved). */
   venueName: string;
+  /**
+   * The owner, or an admin with "Billing, payouts and admins" (web roles plan §5.3). Every admin
+   * sees whether a closure is scheduled; only these can schedule or cancel one. Defaults to true.
+   */
+  canAct?: boolean;
   onClose: () => void;
 };
 
@@ -45,7 +51,7 @@ function formatScheduledDate(iso: string | null): string {
  * Admin-only (the caller gates on role). NO `Alert.alert` — the destructive
  * action is armed by typing the exact venue name, mirroring the web confirm.
  */
-export function DeleteVenueSheet({ visible, venueName, onClose }: DeleteVenueSheetProps) {
+export function DeleteVenueSheet({ visible, venueName, canAct = true, onClose }: DeleteVenueSheetProps) {
   const { colors } = useTheme();
 
   // Only fetch the live state while the sheet is open (admin-only route).
@@ -85,7 +91,7 @@ export function DeleteVenueSheet({ visible, venueName, onClose }: DeleteVenueShe
     confirmation.trim().toLowerCase() === resolvedName.toLowerCase();
 
   async function handleRequest() {
-    if (!confirmMatches) return;
+    if (!canAct || !confirmMatches) return;
     hapticWarning();
     setFeedback(null);
     try {
@@ -108,6 +114,7 @@ export function DeleteVenueSheet({ visible, venueName, onClose }: DeleteVenueShe
   }
 
   async function handleCancel() {
+    if (!canAct) return;
     setFeedback(null);
     try {
       await cancelMutation.mutateAsync();
@@ -145,6 +152,11 @@ export function DeleteVenueSheet({ visible, venueName, onClose }: DeleteVenueShe
         contentContainerStyle={styles.body}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}>
+        {!canAct ? (
+          <Text variant="bodySmall" tone="secondary">
+            {ROLES_COPY['billing.close']}
+          </Text>
+        ) : null}
         <View
           style={[
             styles.dangerBox,
@@ -176,15 +188,22 @@ export function DeleteVenueSheet({ visible, venueName, onClose }: DeleteVenueShe
                   {feedback.text}
                 </Text>
               ) : null}
-              <Button
-                label={cancelMutation.isPending ? 'Working…' : 'Cancel scheduled deletion'}
-                variant="secondary"
-                fullWidth
-                loading={cancelMutation.isPending}
-                disabled={busy}
-                onPress={() => void handleCancel()}
-              />
+              {canAct ? (
+                <Button
+                  label={cancelMutation.isPending ? 'Working…' : 'Cancel scheduled deletion'}
+                  variant="secondary"
+                  fullWidth
+                  loading={cancelMutation.isPending}
+                  disabled={busy}
+                  onPress={() => void handleCancel()}
+                />
+              ) : null}
             </View>
+          ) : !canAct ? (
+            // ----- Nothing scheduled, and this admin cannot schedule it -----
+            <Text variant="bodySmall" tone="secondary">
+              No deletion is scheduled for this venue.
+            </Text>
           ) : (
             // ----- Request form (armed type-to-confirm) -----
             <View style={styles.section}>
@@ -226,7 +245,7 @@ export function DeleteVenueSheet({ visible, venueName, onClose }: DeleteVenueShe
           )}
         </View>
 
-        <Button label="Keep my venue" variant="ghost" fullWidth onPress={handleClose} />
+        <Button label={canAct ? 'Keep my venue' : 'Close'} variant="ghost" fullWidth onPress={handleClose} />
       </ScrollView>
     </Sheet>
   );
