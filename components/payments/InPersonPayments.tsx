@@ -30,8 +30,8 @@ export function inPersonPaymentsInBookingSettings(input: { isAdmin: boolean; pri
 
 /**
  * The words for "Card payments in person", word for word the web's (`InPersonPaymentsSection`;
- * owner, 2026-10-22), except that the Stripe line says it is connected on the web. The description says what the switch really gates, which depends on
- * Checkout: with it off, every payment on an appointment in the app (cash included); with it on,
+ * owner, 2026-10-22), except that the Stripe line points to the app's own Plan & payments. The
+ * description says what the switch really gates, which depends on Checkout: with it off, every payment on an appointment in the app (cash included); with it on,
  * the till's cards in person.
  */
 export const CARD_PAYMENTS_COPY = {
@@ -47,9 +47,9 @@ export const CARD_PAYMENTS_COPY = {
   offCheckoutOff: 'While this is off, nobody can take payment on an appointment in the ResNeo app.',
   offCheckoutOn:
     "Checkout is on, but it can't take cards in person until you turn this on. It can still take cash, pay links and gift vouchers.",
-  // The web's sentence, with "on the web": Stripe is connected there, never in the app.
+  // The web's sentence, pointing to the app's Plan & payments, where Stripe is connected too.
   stripe:
-    'Connect Stripe first, on the web under Settings, then Payments. Card payments go into your own Stripe account, so this has no effect until that is set up.',
+    'Connect Stripe first, in More, then Plan & payments. Card payments go into your own Stripe account, so this has no effect until that is set up.',
   phones:
     'Your team also needs the latest ResNeo app on a supported phone: iPhone XS or newer (iOS 16.4+), or an Android phone with contactless (NFC) running Android 13 or newer.',
   choice:
@@ -154,8 +154,8 @@ export function InPersonPaymentsSwitch() {
       ) : null}
 
       {/* The flag alone does nothing without a connected account: `card_present_ready` is
-          `enabled && stripe_connected_account_id`. Connect onboarding is a hosted Stripe flow, so
-          it stays on web. */}
+          `enabled && stripe_connected_account_id`. Connecting opens Stripe's own pages from Plan &
+          payments (`openStripeOnboarding`). */}
       {enabled && !stripeConnected ? (
         <View style={styles.noticeRow}>
           <Text variant="caption" color={colors.warning}>

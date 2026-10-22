@@ -1,4 +1,5 @@
 import { webUrlToAppRoute } from '@/lib/navigation/web-url-to-app-route';
+import { isStripeReturnLink } from '@/lib/payments/stripe-return';
 
 /**
  * Rewrite an incoming deep link before Expo Router tries to resolve it.
@@ -18,6 +19,10 @@ import { webUrlToAppRoute } from '@/lib/navigation/web-url-to-app-route';
  */
 export function redirectSystemPath({ path }: { path: string; initial: boolean }): string {
   try {
+    // Stripe handing back to the app (`lib/payments/stripe-return.ts`): the auth session that
+    // opened Stripe takes it, and on Android it also arrives here, where no screen matches it.
+    // An empty path navigates nowhere, so the owner stays on the screen they connected from.
+    if (isStripeReturnLink(path)) return '';
     return webUrlToAppRoute(path);
   } catch {
     /*

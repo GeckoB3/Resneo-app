@@ -36,6 +36,7 @@ import { resolveResumeSubscriptionOutcome } from '@/lib/billing/resume-subscript
 import { mustManageSubscriptionOnWeb } from '@/lib/billing/store-billing-policy';
 import { getWebUrl } from '@/lib/env';
 import { hapticError, hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { openStripeOnboarding, STRIPE_ONBOARDING_COPY } from '@/lib/payments/stripe-onboarding';
 import {
   isSuperuserFreeBillingAccess,
   useBillingPortalSession,
@@ -368,10 +369,20 @@ export default function PlanScreen() {
     });
   }
 
+  // Stripe's pages close themselves when Stripe hands back (`/stripe-return`), and on iOS that
+  // never sends the app to the background, so the status is read again here, not only by the
+  // AppState listener above.
   function handleStripeConnect() {
     setConnectError(null);
     stripeConnectLinkMutation.mutate(undefined, {
-      onSuccess: ({ url }) => openExternal(url),
+      onSuccess: ({ url }) => {
+        void openStripeOnboarding(url).then((outcome) => {
+          if (outcome === 'expired') setConnectError(STRIPE_ONBOARDING_COPY.expired);
+          if (outcome === 'failed') setConnectError(STRIPE_ONBOARDING_COPY.failed);
+          void refetchStripe();
+          void refetchVenue();
+        });
+      },
       onError: (err: Error) => {
         hapticError();
         setConnectError(err.message);

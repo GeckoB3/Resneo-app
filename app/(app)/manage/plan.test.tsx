@@ -11,7 +11,15 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
 jest.mock('expo-router', () => ({ Stack: { Screen: () => null } }));
-jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn(() => Promise.resolve()) }));
+jest.mock('expo-web-browser', () => ({
+  openBrowserAsync: jest.fn(() => Promise.resolve()),
+  openAuthSessionAsync: jest.fn(),
+}));
+// The app's own link, as a build makes it (jest has no app manifest for expo-linking to read).
+jest.mock('expo-linking', () => ({
+  ...jest.requireActual<typeof import('expo-linking')>('expo-linking'),
+  createURL: (path: string) => `resneo://${path}`,
+}));
 jest.mock('@/lib/billing/store-billing-policy', () => ({ mustManageSubscriptionOnWeb: () => false }));
 
 let mockVenue: Record<string, unknown> = {};
@@ -21,6 +29,8 @@ jest.mock('@/providers/VenueProvider', () => ({
 
 const mockUseBillingStatus = jest.fn();
 const mockPortal = jest.fn();
+const mockConnectMutate = jest.fn();
+const mockRefetchStripe = jest.fn();
 jest.mock('@/lib/queries/useBillingStatus', () => {
   const actual = jest.requireActual<typeof import('@/lib/queries/useBillingStatus')>('@/lib/queries/useBillingStatus');
   const mutation = () => ({ mutate: jest.fn(), isPending: false });
@@ -35,10 +45,15 @@ jest.mock('@/lib/queries/useBillingStatus', () => {
         refetch: jest.fn(),
       };
     },
-    useStripeConnect: () => ({ data: { charges_enabled: false, details_submitted: false }, isLoading: false, error: null, refetch: jest.fn() }),
+    useStripeConnect: () => ({
+      data: { charges_enabled: false, details_submitted: false },
+      isLoading: false,
+      error: null,
+      refetch: mockRefetchStripe,
+    }),
     useBillingPortalSession: () => ({ mutate: mockPortal, isPending: false }),
     useChangePlan: mutation,
-    useStripeConnectLink: mutation,
+    useStripeConnectLink: () => ({ mutate: mockConnectMutate, isPending: false }),
     useStripeDashboardLink: mutation,
   };
 });
@@ -154,5 +169,30 @@ describe('opening the plan on the web', () => {
       fireEvent.press(screen.getByText('View plan on web'));
     });
     expect(openBrowser).toHaveBeenCalledWith(expect.stringMatching(new RegExp(`/dashboard/settings\\?tab=plan&site=${venueId}$`)));
+  });
+});
+
+describe('connecting Stripe from the app (owner, 2026-10-22)', () => {
+  it('opens Stripe in a window that closes when Stripe hands back, then reads Stripe again', async () => {
+    mockVenue = { ...BASE, current_user_role: 'admin', current_user_role_key: 'owner', current_user_is_owner: true };
+    const openAuthSession = jest.mocked(
+      jest.requireMock<typeof import('expo-web-browser')>('expo-web-browser').openAuthSessionAsync,
+    );
+    openAuthSession.mockResolvedValue({ type: 'success', url: 'resneo://stripe-return?status=expired' });
+    mockConnectMutate.mockImplementation((_: unknown, opts: { onSuccess: (r: { url: string }) => void }) =>
+      opts.onSuccess({ url: 'https://connect.stripe.com/setup/e/acct_1/abc' }),
+    );
+    mockRefetchStripe.mockClear();
+    await render(<PlanScreen />);
+    await act(async () => {
+      fireEvent.press(screen.getByText('Continue setup'));
+    });
+    expect(openAuthSession).toHaveBeenCalledWith(
+      'https://connect.stripe.com/setup/e/acct_1/abc',
+      expect.stringContaining('stripe-return'),
+      expect.objectContaining({ preferEphemeralSession: true }),
+    );
+    expect(mockRefetchStripe).toHaveBeenCalled();
+    expect(screen.getByText('That link to Stripe expired. Tap the button again to get a new one.')).toBeTruthy();
   });
 });

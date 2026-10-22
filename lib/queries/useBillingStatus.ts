@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api/client';
 import type { VenueTrialBreakdown } from '@/lib/billing/trial-breakdown';
 import { isBackendConfigured } from '@/lib/env';
+import { stripeConnectReturnBody } from '@/lib/payments/stripe-onboarding';
 import { keyScope } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 
@@ -200,6 +201,7 @@ export interface StripeConnectLinkResponse {
   url: string;
 }
 
+/** Opened with `openStripeOnboarding`, which waits for the app link `/stripe-return` moves on to. */
 export function useStripeConnectLink() {
   const accessToken = useAccessToken();
 
@@ -209,6 +211,7 @@ export function useStripeConnectLink() {
       return apiFetch<StripeConnectLinkResponse>('/api/venue/stripe-connect', {
         accessToken,
         method: 'POST',
+        body: JSON.stringify(stripeConnectReturnBody()),
       });
     },
   });

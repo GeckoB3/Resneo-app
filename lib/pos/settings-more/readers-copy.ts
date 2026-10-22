@@ -6,7 +6,8 @@ import { fillText, type CopyVars } from './copy';
  */
 export const READERS_COPY = {
   'set.readers.title': 'Card readers',
-  'set.readers.needStripe': 'Connect Stripe in Settings, Payments before adding a card reader.',
+  // (app) the web says "Settings, Payments"; in the app, Stripe is connected in Plan & payments.
+  'set.readers.needStripe': 'Connect Stripe in More, then Plan & payments, before adding a card reader.',
   // (app) the web says "Settings, then Booking Settings"; in the app, Booking settings is under More.
   'set.readers.inPersonOff':
     "Card payments in person are switched off, so your readers can't take payments yet. An admin can turn them on in More, then Booking settings.",

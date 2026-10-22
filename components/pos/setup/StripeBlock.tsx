@@ -1,10 +1,10 @@
-import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useState } from 'react';
-import { AppState, Linking, StyleSheet, View } from 'react-native';
+import { AppState, StyleSheet, View } from 'react-native';
 
 import { StatusLine } from '@/components/pos/setup/parts';
 import { Button } from '@/components/ui/Button';
 import { Text } from '@/components/ui/Text';
+import { openStripeOnboarding, STRIPE_ONBOARDING_COPY } from '@/lib/payments/stripe-onboarding';
 import { setupT } from '@/lib/pos/setup/copy';
 import { useStripeConnect, useStripeConnectLink } from '@/lib/queries/useBillingStatus';
 import { ROLES_COPY } from '@/lib/roles/roles';
@@ -37,7 +37,8 @@ export function useStripeState(): { state: StripeState; loading: boolean; refetc
 
 /**
  * The Stripe part of W3 and of "Get this phone ready": "First, connect Stripe" with the button
- * (Stripe's own pages open in the in-app browser, as Plan & payments does), "Stripe is checking your
+ * (Stripe's own pages open in an auth session that closes when Stripe hands back, as Plan &
+ * payments does: `openStripeOnboarding`), "Stripe is checking your
  * details", or "Stripe is connected". Only an admin can connect, and only the owner or an admin
  * with "Billing, payouts and admins" (web roles plan §5.3): connecting sets up payouts, which
  * `POST /api/venue/stripe-connect` refuses anyone else. A server before roles says nothing, so
@@ -58,13 +59,12 @@ export function StripeBlock({ isAdmin, title = true }: { isAdmin: boolean; title
     setError(null);
     link.mutate(undefined, {
       onSuccess: ({ url }) => {
-        void WebBrowser.openBrowserAsync(url)
-          .catch(() => Linking.openURL(url))
-          .catch(() => setError(setupT('app.setup.cards.stripe.failed')))
-          .finally(() => {
-            refetch();
-            refetchVenue();
-          });
+        void openStripeOnboarding(url).then((outcome) => {
+          if (outcome === 'expired') setError(STRIPE_ONBOARDING_COPY.expired);
+          if (outcome === 'failed') setError(setupT('app.setup.cards.stripe.failed'));
+          refetch();
+          refetchVenue();
+        });
       },
       onError: () => setError(setupT('app.setup.cards.stripe.failed')),
     });

@@ -2645,8 +2645,8 @@ export default function ServicesScreen() {
             {paymentReq !== 'none' && !stripeConnected ? (
               <View style={[styles.stripeWarning, { backgroundColor: colors.warningSurface }]}>
                 <Text variant="caption" color={colors.warning}>
-                  Stripe is not connected. Connect your Stripe account in Settings before guests can
-                  pay online.
+                  Stripe is not connected. Connect your Stripe account in More, then Plan &amp; payments,
+                  before guests can pay online.
                 </Text>
               </View>
             ) : null}

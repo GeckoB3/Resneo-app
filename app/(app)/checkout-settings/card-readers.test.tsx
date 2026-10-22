@@ -252,6 +252,6 @@ it('offers a test reader in test mode, with the simulated code filled in', async
 it('says to connect Stripe first when cards cannot be taken', async () => {
   mockHandler = baseHandler({ list: { readers: [], can_take_cards: false, in_person_payments_enabled: false, test_mode: false } });
   await show();
-  expect(await screen.findByText('Connect Stripe in Settings, Payments before adding a card reader.')).toBeTruthy();
+  expect(await screen.findByText('Connect Stripe in More, then Plan & payments, before adding a card reader.')).toBeTruthy();
   expect(screen.queryByText('Add a card reader')).toBeNull();
 });

@@ -170,7 +170,7 @@ describe('Booking settings: Payments at your venue', () => {
     await render(<BookingSettingsScreen />);
     expect(
       screen.getByText(
-        'Connect Stripe first, on the web under Settings, then Payments. Card payments go into your own Stripe account, so this has no effect until that is set up.',
+        'Connect Stripe first, in More, then Plan & payments. Card payments go into your own Stripe account, so this has no effect until that is set up.',
       ),
     ).toBeTruthy();
   });
