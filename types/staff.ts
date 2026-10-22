@@ -100,12 +100,26 @@ export interface InviteStaffBody {
   role_key?: RoleChoice;
   name?: string;
   calendar_ids?: string[];
+  /**
+   * The person's settings, sent with the invitation (web roles plan §5.5): for Front desk and Staff
+   * `client_contact`, `other_diaries` and `export_clients`; for an admin invited by the owner
+   * `billing_payouts_admins` and `export_clients`. The server writes the standard settings for
+   * anything left out. Only sent to a server that knows the four roles.
+   */
+  permissions?: {
+    client_contact?: boolean;
+    other_diaries?: 'book' | 'view' | 'hidden';
+    export_clients?: boolean;
+    billing_payouts_admins?: boolean;
+  };
 }
 
 /** POST /api/venue/staff/invite response. */
 export interface InviteStaffResponse {
   message: string;
   invite_email_sent: boolean;
+  /** They already had a ResNeo login: the email asks them to join, with no password to set (roles plan §6.3). */
+  joins_existing_login?: boolean;
   staff: TeamMember;
 }
 

@@ -98,12 +98,12 @@ describe('the Team screen viewer', () => {
     const admin = { id: 'a9', role: 'admin' };
     const desk = { id: 'f1', role: 'staff', role_key: 'front_desk' };
     expect(memberAccess(ADMIN_WITH, owner)).toBe('owner_protected');
-    expect(memberAccess(OWNER, owner)).toBe('manage');
+    expect(memberAccess(OWNER, owner)).toBe('self');
     expect(memberAccess(ADMIN_WITHOUT, admin)).toBe('billing_locked');
     expect(memberAccess(ADMIN_WITH, admin)).toBe('manage');
     expect(memberAccess(ADMIN_WITHOUT, desk)).toBe('manage');
-    // Their own row stays theirs.
-    expect(memberAccess(ADMIN_WITHOUT, { id: 'a2', role: 'admin' })).toBe('manage');
+    // Nobody manages their own row (web MemberCard): the owner or another admin does.
+    expect(memberAccess(ADMIN_WITHOUT, { id: 'a2', role: 'admin' })).toBe('self');
   });
 
   it('offers Front desk on a server that knows it, and Admin only with the switch', () => {

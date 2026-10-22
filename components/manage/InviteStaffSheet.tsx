@@ -1,18 +1,26 @@
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { ScrollView, StyleSheet, View } from 'react-native';
 
+import {
+  AccessSettingsFields,
+  CalendarChecklist,
+  RoleChoiceList,
+  SettingSwitch,
+  STANDARD_ACCESS,
+  StepHeading,
+  type AccessValue,
+} from '@/components/manage/TeamSettingsControls';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { Segmented } from '@/components/ui/Segmented';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { hapticError, hapticSuccess } from '@/lib/haptics';
 import { useInviteStaff } from '@/lib/queries/useTeamMutations';
-import { roleChoiceBody, roleDescription, roleOptionsFor, teamErrorMessage, type TeamViewer } from '@/lib/roles/roles';
-import { useToast } from '@/providers/ToastProvider';
+import { roleChoiceBody, roleOptionsFor, teamErrorMessage, type TeamViewer } from '@/lib/roles/roles';
+import { invitedNotice, SETTING_COPY, teamT, type InviteOutcome } from '@/lib/roles/team-copy';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
-import type { AssignablePractitioner, RoleChoice } from '@/types/staff';
+import type { AssignablePractitioner, InviteStaffBody, RoleChoice } from '@/types/staff';
 
 type InviteStaffSheetProps = {
   visible: boolean;
@@ -24,42 +32,62 @@ type InviteStaffSheetProps = {
    * reads as an admin from before roles (Staff and Admin).
    */
   viewer?: TeamViewer;
+  /** The business's name, for the confirmation to someone who already has a ResNeo login. */
+  businessName?: string;
 };
 
 const LEGACY_ADMIN_VIEWER: TeamViewer = { staffId: null, isOwner: false, billingPayoutsAdmins: true, rolesKnown: false };
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 /**
- * Bottom sheet for inviting a new staff member (admin only).
- * Fields: email (required), name (optional), role (Staff, Front desk or Admin),
- * and calendar assignments for Front desk and Staff.
+ * Inviting someone (web roles plan §5.1, §5.3, §5.5; the web's `team/InviteForm`), in numbered
+ * steps an owner who has never used ResNeo can follow: who they are, what they will do, and for
+ * Front desk or Staff their calendars and what they can see. The owner inviting an admin chooses
+ * what else that admin can manage. Everything goes in one request, and the server writes the
+ * standard settings for anything not sent. When it is sent, the sheet says what happened, in the
+ * web's words for each case (invited, an existing login, added without an email).
  */
 export function InviteStaffSheet({
   visible,
   onClose,
   practitioners,
   viewer = LEGACY_ADMIN_VIEWER,
+  businessName = 'your business',
 }: InviteStaffSheetProps) {
   const { colors } = useTheme();
-  const toast = useToast();
   const invite = useInviteStaff();
-  const roleOptions = roleOptionsFor(viewer);
+  const roleOptions = roleOptionsFor(viewer).map((o) => o.value);
+  const scrollRef = useRef<ScrollView>(null);
 
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [role, setRole] = useState<RoleChoice>('staff');
-  const [selectedCalendarIds, setSelectedCalendarIds] = useState<string[]>([]);
+  const [calendarIds, setCalendarIds] = useState<string[]>([]);
+  const [access, setAccess] = useState<AccessValue>(STANDARD_ACCESS);
+  const [billing, setBilling] = useState(false);
+  const [adminExport, setAdminExport] = useState(false);
   const [emailError, setEmailError] = useState<string | undefined>();
+  const [formError, setFormError] = useState<string | null>(null);
+  const [done, setDone] = useState<InviteOutcome | null>(null);
 
-  const activePractitioners = practitioners.filter(
-    (p) => p.is_active && (p.calendar_type ?? 'practitioner') !== 'resource',
-  );
+  const calendars = practitioners
+    .filter((p) => p.is_active && (p.calendar_type ?? 'practitioner') !== 'resource')
+    .map((p) => ({ id: p.id, name: p.name }));
+  const personName = name.trim().split(/\s+/)[0] || 'This person';
+  const busy = invite.isPending;
 
   function resetForm() {
     setEmail('');
     setName('');
     setRole('staff');
-    setSelectedCalendarIds([]);
+    setCalendarIds([]);
+    setAccess(STANDARD_ACCESS);
+    setBilling(false);
+    setAdminExport(false);
     setEmailError(undefined);
+    setFormError(null);
+    setDone(null);
   }
 
   function handleClose() {
@@ -67,194 +95,227 @@ export function InviteStaffSheet({
     onClose();
   }
 
-  function toggleCalendar(id: string) {
-    setSelectedCalendarIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
+  function inviteAnother() {
+    resetForm();
+    scrollRef.current?.scrollTo?.({ y: 0, animated: false });
+  }
+
+  function chooseRole(next: RoleChoice) {
+    setRole(next);
+    if (next === 'admin') setCalendarIds([]);
+  }
+
+  /**
+   * The settings to send: Front desk and Staff send all three; the owner inviting an admin sends
+   * the two switches; anyone else inviting an admin sends none (the server writes them off). A
+   * server from before the four roles gets none, as it knows none of them.
+   */
+  function permissionsToSend(): InviteStaffBody['permissions'] {
+    if (!viewer.rolesKnown) return undefined;
+    if (role !== 'admin') return { ...access };
+    return viewer.isOwner ? { billing_payouts_admins: billing, export_clients: adminExport } : undefined;
   }
 
   async function handleSubmit() {
-    const trimmedEmail = email.trim().toLowerCase();
-    if (!trimmedEmail) {
-      setEmailError('Email is required');
+    const address = email.trim().toLowerCase();
+    const problem = !address ? teamT('invite.email.missing') : EMAIL_PATTERN.test(address) ? undefined : teamT('invite.email.invalid');
+    setEmailError(problem);
+    setFormError(null);
+    if (problem) {
+      hapticError();
+      scrollRef.current?.scrollTo?.({ y: 0, animated: true });
       return;
     }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      setEmailError('Please enter a valid email address');
-      return;
-    }
-    setEmailError(undefined);
-
+    const permissions = permissionsToSend();
     try {
       const result = await invite.mutateAsync({
-        email: trimmedEmail,
+        email: address,
         name: name.trim() || undefined,
         // `role_key` names the role on a server with the four roles; `role` keeps an older one working.
         ...roleChoiceBody(role),
-        ...(role !== 'admin' && selectedCalendarIds.length > 0
-          ? { calendar_ids: selectedCalendarIds }
-          : {}),
+        ...(permissions ? { permissions } : {}),
+        ...(role !== 'admin' && calendarIds.length > 0 ? { calendar_ids: calendarIds } : {}),
       });
       hapticSuccess();
-      const sent = result.invite_email_sent;
-      // Toast + close fire off the resolved mutation — Alert.alert is a no-op on web.
-      toast.success(
-        sent
-          ? `Invite sent to ${trimmedEmail}. They'll get a secure link to set their password.`
-          : `${trimmedEmail} was added to the team. They can sign in if they already have an account.`,
-      );
-      resetForm();
-      onClose();
+      // The list is read again (useInviteStaff invalidates it): the server writes the standard
+      // settings, so the rows show what it stored rather than a guess.
+      setDone({
+        email: address,
+        name: name.trim() || null,
+        role,
+        inviteEmailSent: result.invite_email_sent === true,
+        joinsExistingLogin: result.joins_existing_login === true,
+      });
+      scrollRef.current?.scrollTo?.({ y: 0, animated: false });
     } catch (err) {
       hapticError();
       // The server's own words for the roles refusals and the daily invite limit (429).
-      toast.error(teamErrorMessage(err, 'Failed to send invitation. Please try again.'));
+      setFormError(teamErrorMessage(err, teamT('invite.error')));
     }
   }
+
+  const outcome = done ? invitedNotice(done, businessName) : null;
 
   return (
     <Sheet visible={visible} onClose={handleClose} maxHeight="90%" fill>
       <View style={styles.header}>
-        <Text variant="subheading">Invite team member</Text>
-        <Text variant="bodySmall" tone="muted" style={styles.headerSub}>
-          We&apos;ll email them a secure link to set their password.
-        </Text>
+        <Text variant="subheading">{outcome ? outcome.title : teamT('invite.title')}</Text>
+        {outcome ? null : (
+          <Text variant="bodySmall" tone="secondary">
+            {teamT('invite.intro')}
+          </Text>
+        )}
       </View>
 
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={styles.body}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}>
-        <Input
-          label="Email *"
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoCorrect={false}
-          placeholder="user@example.com"
-          error={emailError}
-          editable={!invite.isPending}
-        />
-
-        <Input
-          label="Full name (optional)"
-          value={name}
-          onChangeText={setName}
-          placeholder="Jane Smith"
-          editable={!invite.isPending}
-        />
-
-        <View style={styles.field}>
-          <Text variant="label" tone="secondary" style={styles.fieldLabel}>
-            Role
-          </Text>
-          <Segmented
-            options={roleOptions}
-            value={role}
-            onChange={(v) => {
-              setRole(v);
-              if (v === 'admin') setSelectedCalendarIds([]);
-            }}
-          />
-          <Text variant="caption" tone="muted">
-            {roleDescription(role)}
-          </Text>
-        </View>
-
-        {role !== 'admin' && (
-          <View style={styles.field}>
-            <View style={styles.calendarHeader}>
-              <Text variant="label" tone="secondary">
-                Calendars they manage
+        {outcome ? (
+          <View style={styles.section}>
+            <View
+              accessibilityRole="alert"
+              style={[styles.doneBox, { backgroundColor: colors.successSurface, borderColor: colors.success }]}>
+              <Text variant="body" color={colors.text}>
+                {outcome.text}
               </Text>
-              {activePractitioners.length > 0 && (
-                <View style={styles.calendarActions}>
-                  <Pressable
-                    onPress={() =>
-                      setSelectedCalendarIds(activePractitioners.map((p) => p.id))
-                    }
-                    hitSlop={8}>
-                    <Text variant="caption" color={colors.brand}>
-                      All
-                    </Text>
-                  </Pressable>
-                  <Pressable onPress={() => setSelectedCalendarIds([])} hitSlop={8}>
-                    <Text variant="caption" tone="muted">
-                      None
-                    </Text>
-                  </Pressable>
-                </View>
-              )}
+            </View>
+            <View style={styles.actions}>
+              <Button label={teamT('invite.done.close')} onPress={handleClose} fullWidth />
+              <Button label={teamT('invite.done.another')} variant="secondary" onPress={inviteAnother} fullWidth />
+            </View>
+          </View>
+        ) : (
+          <>
+            {/* 1. Who are you inviting? */}
+            <View style={styles.section}>
+              <StepHeading title={teamT('invite.step.who')} />
+              <Input
+                label={teamT('invite.name')}
+                value={name}
+                onChangeText={setName}
+                placeholder={teamT('invite.name.placeholder')}
+                autoComplete="off"
+                editable={!busy}
+              />
+              <Input
+                label={teamT('invite.email')}
+                required
+                value={email}
+                onChangeText={(text) => {
+                  setEmail(text);
+                  if (emailError) setEmailError(undefined);
+                }}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="off"
+                placeholder="name@example.com"
+                helper={teamT('invite.email.help')}
+                error={emailError}
+                editable={!busy}
+              />
             </View>
 
-            {activePractitioners.length === 0 ? (
-              <Text variant="bodySmall" tone="muted">
-                No active bookable calendars yet.
+            {/* 2. What will they do? */}
+            <View style={styles.section}>
+              <StepHeading title={teamT('invite.step.role')} />
+              <RoleChoiceList options={roleOptions} value={role} onChange={chooseRole} disabled={busy} />
+              <Text variant="bodySmall" tone="secondary">
+                {teamT('invite.role.notSure')}
               </Text>
-            ) : (
-              <View
-                style={[
-                  styles.calendarList,
-                  { borderColor: colors.border, backgroundColor: colors.surface },
-                ]}>
-                {activePractitioners.map((p, index) => {
-                  const isChecked = selectedCalendarIds.includes(p.id);
-                  return (
-                    <View key={p.id}>
-                      {index > 0 && (
-                        <View
-                          style={[styles.calendarDivider, { backgroundColor: colors.border }]}
-                        />
-                      )}
-                      <Pressable
-                        onPress={() => toggleCalendar(p.id)}
-                        style={({ pressed }) => [
-                          styles.calendarRow,
-                          pressed && { backgroundColor: colors.surfaceRaised },
-                        ]}>
-                        <View
-                          style={[
-                            styles.checkbox,
-                            {
-                              borderColor: isChecked ? colors.brand : colors.borderStrong,
-                              backgroundColor: isChecked ? colors.brand : 'transparent',
-                            },
-                          ]}>
-                          {isChecked && (
-                            <Text variant="caption" color={colors.onBrand} style={styles.checkmark}>
-                              ✓
-                            </Text>
-                          )}
-                        </View>
-                        <Text variant="body">{p.name}</Text>
-                      </Pressable>
-                    </View>
-                  );
-                })}
-              </View>
-            )}
-            <Text variant="caption" tone="muted">
-              Optional. You can update calendar assignments anytime.
-            </Text>
-          </View>
-        )}
+              {!viewer.billingPayoutsAdmins ? (
+                <Text variant="bodySmall" tone="muted">
+                  {teamT('invite.role.noAdmin')}
+                </Text>
+              ) : null}
+            </View>
 
-        <View style={styles.actions}>
-          <Button
-            label={invite.isPending ? 'Sending…' : 'Send invitation'}
-            loading={invite.isPending}
-            onPress={() => void handleSubmit()}
-            fullWidth
-          />
-          <Button
-            label="Cancel"
-            variant="secondary"
-            onPress={handleClose}
-            fullWidth
-            disabled={invite.isPending}
-          />
-        </View>
+            {role !== 'admin' ? (
+              <>
+                {/* 3. Which calendars are theirs? */}
+                <View style={styles.section}>
+                  <StepHeading
+                    title={teamT('invite.step.calendars')}
+                    help={role === 'front_desk' ? teamT('invite.calendars.frontDesk') : null}
+                  />
+                  {calendars.length > 0 ? (
+                    <Text variant="bodySmall" tone="secondary">
+                      {SETTING_COPY.calendarsHelp}
+                    </Text>
+                  ) : null}
+                  <CalendarChecklist
+                    calendars={calendars}
+                    selected={calendarIds}
+                    disabled={busy}
+                    onToggle={(id, checked) =>
+                      setCalendarIds((prev) => (checked ? [...new Set([...prev, id])] : prev.filter((x) => x !== id)))
+                    }
+                    onSetAll={(all) => setCalendarIds(all ? calendars.map((c) => c.id) : [])}
+                  />
+                </View>
+
+                {/* 4. What can they see? (a server that knows the four roles) */}
+                {viewer.rolesKnown ? (
+                  <View style={styles.section}>
+                    <StepHeading title={teamT('invite.step.see')} help={teamT('invite.see.standard')} />
+                    <AccessSettingsFields
+                      value={access}
+                      disabled={busy}
+                      onChange={(patch) => setAccess((prev) => ({ ...prev, ...patch }))}
+                      personName={personName}
+                      hasCalendar={calendarIds.length > 0}
+                    />
+                  </View>
+                ) : null}
+              </>
+            ) : viewer.isOwner ? (
+              /* 3. What else can they manage? (the owner inviting an admin) */
+              <View style={styles.section}>
+                <StepHeading title={teamT('invite.step.manage')} />
+                <SettingSwitch
+                  label={SETTING_COPY.billingLabel}
+                  help={SETTING_COPY.billingHelp}
+                  value={billing}
+                  disabled={busy}
+                  onChange={setBilling}
+                />
+                <SettingSwitch
+                  label={SETTING_COPY.exportLabel}
+                  help={SETTING_COPY.exportHelp}
+                  value={adminExport}
+                  disabled={busy}
+                  onChange={setAdminExport}
+                />
+              </View>
+            ) : viewer.rolesKnown ? (
+              <Text variant="bodySmall" tone="secondary">
+                {teamT('invite.admin.notOwner')}
+              </Text>
+            ) : null}
+
+            {formError ? (
+              <View
+                accessibilityRole="alert"
+                style={[styles.errorBox, { backgroundColor: colors.dangerSurface, borderColor: colors.danger }]}>
+                <Text variant="bodySmall" color={colors.danger}>
+                  {formError}
+                </Text>
+              </View>
+            ) : null}
+
+            <View style={styles.actions}>
+              <Button
+                label={busy ? teamT('invite.sending') : teamT('invite.send')}
+                loading={busy}
+                onPress={() => void handleSubmit()}
+                fullWidth
+              />
+              <Button label={teamT('invite.cancel')} variant="secondary" onPress={handleClose} fullWidth disabled={busy} />
+            </View>
+          </>
+        )}
       </ScrollView>
     </Sheet>
   );
@@ -266,59 +327,27 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.sm,
     gap: spacing.xs,
   },
-  headerSub: {
-    marginTop: 2,
-  },
   body: {
     paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
     paddingBottom: spacing['2xl'],
-    gap: spacing.lg,
+    gap: spacing.xl,
   },
-  field: {
-    gap: spacing.sm,
-  },
-  fieldLabel: {
-    marginBottom: 2,
-  },
-  calendarHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  calendarActions: {
-    flexDirection: 'row',
+  section: {
     gap: spacing.md,
   },
-  calendarList: {
+  doneBox: {
     borderRadius: radius.md,
     borderWidth: 1,
-    overflow: 'hidden',
+    padding: spacing.base,
   },
-  calendarRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.base,
-  },
-  calendarDivider: {
-    height: StyleSheet.hairlineWidth,
-    marginLeft: spacing.base + 20 + spacing.md,
-  },
-  checkbox: {
-    width: 20,
-    height: 20,
-    borderRadius: 4,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkmark: {
-    fontSize: 12,
-    lineHeight: 14,
+  errorBox: {
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   actions: {
     gap: spacing.sm,
-    paddingTop: spacing.xs,
   },
 });

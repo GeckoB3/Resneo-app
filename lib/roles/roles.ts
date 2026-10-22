@@ -427,16 +427,17 @@ export function teamViewerOf(me: Pick<StaffMe, 'id' | 'role' | 'is_owner' | 'rol
 }
 
 /**
- * What the viewer may do on a member's row (web Settings, Staff; `team-policy.ts`):
+ * What the viewer may do on a member's row (web Settings, Staff `MemberCard`; `team-policy.ts`):
+ *   - `self`: the viewer's own row. Nobody manages themself; the owner or another admin does.
  *   - `owner_protected`: the owner's row, opened by someone else. Nothing to do there.
  *   - `billing_locked`: another admin, opened by an admin without the billing switch.
- *   - `manage`: everything the sheet offers (the viewer's own row keeps its own limits).
+ *   - `manage`: everything the sheet offers.
  */
-export type MemberAccess = 'owner_protected' | 'billing_locked' | 'manage';
+export type MemberAccess = 'self' | 'owner_protected' | 'billing_locked' | 'manage';
 
 export function memberAccess(viewer: TeamViewer, member: RoleSubject & { id: string }): MemberAccess {
   const isSelf = viewer.staffId !== null && member.id === viewer.staffId;
-  if (isSelf) return 'manage';
+  if (isSelf) return 'self';
   if (isOwnerPerson(member)) return 'owner_protected';
   if (member.role === 'admin' && !viewer.billingPayoutsAdmins) return 'billing_locked';
   return 'manage';

@@ -1,9 +1,17 @@
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { ScrollView, StyleSheet, View } from 'react-native';
 
+import {
+  AccessSettingsFields,
+  CalendarChecklist,
+  RoleChoiceList,
+  SettingSwitch,
+  StepHeading,
+} from '@/components/manage/TeamSettingsControls';
+import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { ConfirmPanel } from '@/components/ui/ConfirmPanel';
 import { PasswordInput } from '@/components/ui/PasswordInput';
-import { Segmented } from '@/components/ui/Segmented';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { hapticError, hapticSuccess, hapticWarning } from '@/lib/haptics';
@@ -21,27 +29,34 @@ import {
   exportSwitchOn,
   isOwnerPerson,
   memberAccess,
-  memberHasCalendar,
-  ROLE_LABELS,
-  ROLES_COPY,
+  roleBadgeTone,
   roleChoiceBody,
   roleChoiceOf,
-  roleDescription,
+  roleKeyOf,
   roleOptionsFor,
-  rolesT,
   showsAdminExportSwitch,
   showsBillingSwitch,
   showsPersonSwitches,
   teamErrorMessage,
-  type DiaryAccess,
+  type MemberAccess,
   type TeamViewer,
 } from '@/lib/roles/roles';
+import {
+  displayNameOf,
+  firstNameOf,
+  memberCalendarIds,
+  memberCalendarNames,
+  memberSettingsSummary,
+  memberStatus,
+  ROLE_INFO,
+  roleChangeQuestion,
+  SETTING_COPY,
+  teamT,
+} from '@/lib/roles/team-copy';
 import { useToast } from '@/providers/ToastProvider';
-import { fonts, radius, spacing } from '@/theme/index';
+import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { AssignablePractitioner, PatchStaffBody, RoleChoice, TeamMember } from '@/types/staff';
-
-type Tab = 'actions' | 'role' | 'password' | 'calendars';
 
 type StaffMemberSheetProps = {
   visible: boolean;
@@ -53,25 +68,28 @@ type StaffMemberSheetProps = {
    */
   viewer?: TeamViewer;
   practitioners: AssignablePractitioner[];
+  /** The business's name, for what removing someone means. */
+  businessName?: string;
   onClose: () => void;
   onDeleted: () => void;
 };
 
 const LEGACY_ADMIN_VIEWER: TeamViewer = { staffId: null, isOwner: false, billingPayoutsAdmins: true, rolesKnown: false };
 
+/** How long "Saved" stays after a change. */
+const SAVED_MS = 2500;
+
+type Notice = { tone: 'success' | 'error'; text: string };
+
 /**
- * Full management sheet for a single staff member (admin only).
- * Tabs: Actions (resend invite), Change Role, Reset Password, Calendars.
+ * One person on the team (web roles plan §5.1 to §5.5, §5.11; the web's `team/MemberCard`), in
+ * sections an owner can read top to bottom: whether they have signed in, their role (changing it
+ * asks first), their calendars, what they can see, what else an admin can manage, signing in, and
+ * removing them. Each change saves at once and says "Saved", or what went wrong, inside the sheet.
  *
- * The four roles (web roles plan A1): nobody but the owner acts on the owner's row, so anyone else
- * opening it sees only who can change it; an admin without "Billing, payouts and admins" sees the
- * same for another admin. The owner sees "Billing, payouts and admins" on each admin, and their own
- * row says transferring ownership is done on the web (UR30).
- *
- * A2 switches, on the Role tab (web Settings, Staff `PersonSwitches` and `ExportSwitch`): the owner
- * or any admin sets "Can see client phone numbers and emails", "Other people's diaries" and "Can
- * export client data" on a Front desk or Staff row; the owner alone sets "Can export client data"
- * on another admin. Never on your own row. Each saves as soon as it changes.
+ * Nobody manages the owner's row or their own: those, and another admin opened by an admin without
+ * "Billing, payouts and admins", show who can change them instead. Questions are asked inline
+ * (`ConfirmPanel`), never as a second sheet over this one, which iOS would drop.
  */
 export function StaffMemberSheet({
   visible,
@@ -79,699 +97,570 @@ export function StaffMemberSheet({
   isSelf,
   viewer = LEGACY_ADMIN_VIEWER,
   practitioners,
+  businessName = 'your business',
   onClose,
   onDeleted,
 }: StaffMemberSheetProps) {
   const { colors } = useTheme();
   const toast = useToast();
-  const [tab, setTab] = useState<Tab>('actions');
-  // Inline two-step confirm for removing a member (Alert.alert confirm is a no-op on web).
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
-  // Role change
-  const [pendingRole, setPendingRole] = useState<RoleChoice>('staff');
-  const patchMember = usePatchStaffMember();
-  // "Billing, payouts and admins" (owner only): saved as soon as it is switched.
-  const patchSwitch = usePatchStaffMember();
+  // The person stays on screen while the sheet slides away after the screen lets go of them.
+  const [shown, setShown] = useState<TeamMember | null>(member);
+  if (member && member !== shown) setShown(member);
+  const person = member ?? shown;
 
-  // Password reset
+  // The role waiting for "Change role" or "Keep it as it is".
+  const [pendingRole, setPendingRole] = useState<RoleChoice | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [passwordOpen, setPasswordOpen] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [passwordError, setPasswordError] = useState<string | undefined>();
-  const resetPassword = useResetStaffPassword();
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  // Where "Signing in" sits in the scroll, so the password form can be brought above the keyboard.
+  const signInY = useRef(0);
 
-  // Calendar assignments
-  const [selectedCalendarIds, setSelectedCalendarIds] = useState<string[]>([]);
-  const [calendarsDirty, setCalendarsDirty] = useState(false);
+  const patchRole = usePatchStaffMember();
+  // The switches: each saves as soon as it changes.
+  const patchSwitch = usePatchStaffMember();
   const patchCalendar = usePatchStaffCalendar();
-
-  // Mutations
   const resendInvite = useResendInvite();
+  const resetPassword = useResetStaffPassword();
   const deleteStaff = useDeleteStaffMember();
 
-  const activePractitioners = practitioners.filter(
-    (p) => p.is_active && (p.calendar_type ?? 'practitioner') !== 'resource',
+  useEffect(
+    () => () => {
+      if (savedTimer.current) clearTimeout(savedTimer.current);
+    },
+    [],
   );
 
-  function handleOpen() {
-    if (!member) return;
-    setTab('actions');
-    setPendingRole(roleChoiceOf(member));
-    setSelectedCalendarIds(member.linked_calendar_ids ?? []);
-    setCalendarsDirty(false);
-    setNewPassword('');
-    setPasswordError(undefined);
-    setConfirmingDelete(false);
-  }
-
-  // Call handleOpen when sheet becomes visible with a member
+  // A fresh start each time the sheet opens.
   const [prevVisible, setPrevVisible] = useState(false);
   if (visible !== prevVisible) {
     setPrevVisible(visible);
-    if (visible) handleOpen();
+    if (visible) {
+      setPendingRole(null);
+      setNotice(null);
+      setPasswordOpen(false);
+      setNewPassword('');
+      setPasswordError(undefined);
+      setConfirmingRemove(false);
+    }
   }
 
+  function showNotice(next: Notice) {
+    if (savedTimer.current) clearTimeout(savedTimer.current);
+    savedTimer.current = null;
+    setNotice(next);
+  }
+
+  function showSaved() {
+    hapticSuccess();
+    showNotice({ tone: 'success', text: teamT('member.saved') });
+    savedTimer.current = setTimeout(() => setNotice(null), SAVED_MS);
+  }
+
+  function showError(err: unknown, fallback: string) {
+    hapticError();
+    showNotice({ tone: 'error', text: teamErrorMessage(err, fallback) });
+  }
+
+  const calendars = practitioners
+    .filter((p) => p.is_active && (p.calendar_type ?? 'practitioner') !== 'resource')
+    .map((p) => ({ id: p.id, name: p.name }));
+
+  if (!person) {
+    return <Sheet visible={false} onClose={onClose}>{null}</Sheet>;
+  }
+
+  const name = displayNameOf(person);
+  const firstName = firstNameOf(person);
+  const email = person.email ?? '';
+  const roleKey = roleKeyOf(person);
+  const currentRole = roleChoiceOf(person);
+  const isAdminRow = person.role === 'admin';
+  const status = memberStatus(person);
+  const access: MemberAccess = isSelf ? 'self' : memberAccess(viewer, person);
+  const assigned = memberCalendarIds(person);
+  const activeIds = calendars.map((c) => c.id);
+  const switchedOff = calendars.length > 0 ? assigned.filter((id) => !activeIds.includes(id)).length : 0;
+  const saving = patchRole.isPending || patchSwitch.isPending || patchCalendar.isPending;
+  const personSwitches = showsPersonSwitches(viewer, person);
+  const billingSwitch = showsBillingSwitch(viewer, person) && isAdminRow;
+  const adminExportSwitch = showsAdminExportSwitch(viewer, person) && isAdminRow;
+
   function handleClose() {
-    setNewPassword('');
-    setPasswordError(undefined);
     onClose();
   }
 
-  async function handleResendInvite() {
-    if (!member) return;
-    try {
-      const res = await resendInvite.mutateAsync(member.id);
-      hapticSuccess();
-      toast.success(res.message ?? 'A new sign-in link was emailed to them.');
-    } catch (err) {
-      hapticError();
-      toast.error(teamErrorMessage(err, 'Could not resend the invitation.'));
-    }
-  }
-
-  async function handleRoleChange() {
-    if (!member) return;
-    if (isSelf) {
-      toast.info('You cannot change your own role.');
-      return;
-    }
+  async function confirmRole() {
+    if (!person || !pendingRole) return;
     try {
       // `role_key` names the role on a server with the four roles; `role` keeps an older one working.
-      await patchMember.mutateAsync({ id: member.id, body: roleChoiceBody(pendingRole) });
-      hapticSuccess();
-      toast.success(`${member.name ?? member.email} is now ${ROLE_LABELS[pendingRole]}.`);
-      handleClose();
+      await patchRole.mutateAsync({ id: person.id, body: roleChoiceBody(pendingRole) });
+      setPendingRole(null);
+      showSaved();
     } catch (err) {
-      hapticError();
-      toast.error(teamErrorMessage(err, 'Could not update the role.'));
+      setPendingRole(null);
+      showError(err, teamT('member.role.error'));
     }
   }
 
-  /**
-   * A switch on this person, saved as soon as it changes. The list shows the change at once and
-   * puts it back if the server refuses (usePatchStaffMember's optimistic update).
-   */
-  async function handleSwitch(permissions: NonNullable<PatchStaffBody['permissions']>) {
-    if (!member) return;
+  /** A switch on this person, saved as soon as it changes (the list shows it at once, and puts it back on a refusal). */
+  async function saveSwitch(permissions: NonNullable<PatchStaffBody['permissions']>) {
+    if (!person) return;
     try {
-      await patchSwitch.mutateAsync({ id: member.id, body: { permissions } });
-      hapticSuccess();
-      toast.success('Saved.');
+      await patchSwitch.mutateAsync({ id: person.id, body: { permissions } });
+      showSaved();
     } catch (err) {
-      hapticError();
-      toast.error(teamErrorMessage(err, 'Could not save that change.'));
+      showError(err, teamT('member.switch.error'));
     }
   }
 
-  async function handlePasswordReset() {
-    if (!member) return;
+  async function saveCalendars(ids: string[]) {
+    if (!person) return;
+    try {
+      await patchCalendar.mutateAsync({ id: person.id, body: { calendar_ids: ids } });
+      showSaved();
+    } catch (err) {
+      showError(err, teamT('member.calendars.error'));
+    }
+  }
+
+  async function sendLink() {
+    if (!person) return;
+    try {
+      const res = await resendInvite.mutateAsync(person.id);
+      hapticSuccess();
+      showNotice({
+        tone: 'success',
+        text: teamT('member.link.sent', { said: res.message?.trim() || teamT('member.link.sentDefault'), email }),
+      });
+    } catch (err) {
+      showError(err, teamT('member.link.error'));
+    }
+  }
+
+  async function savePassword() {
+    if (!person) return;
     if (newPassword.length < 8) {
-      setPasswordError('Password must be at least 8 characters');
+      setPasswordError(teamT('member.password.short'));
       return;
     }
     setPasswordError(undefined);
     try {
-      await resetPassword.mutateAsync({ id: member.id, body: { new_password: newPassword } });
+      await resetPassword.mutateAsync({ id: person.id, body: { new_password: newPassword } });
       hapticSuccess();
       setNewPassword('');
-      toast.success(`Password for ${member.email ?? 'this user'} has been updated.`);
-      handleClose();
+      setPasswordOpen(false);
+      showNotice({ tone: 'success', text: teamT('member.password.done', { name }) });
     } catch (err) {
       hapticError();
-      setPasswordError(teamErrorMessage(err, 'Password reset failed.'));
+      setPasswordError(teamErrorMessage(err, teamT('member.password.error')));
     }
   }
 
-  async function handleCalendarSave() {
-    if (!member) return;
+  async function remove() {
+    if (!person) return;
     try {
-      await patchCalendar.mutateAsync({
-        id: member.id,
-        body: { calendar_ids: selectedCalendarIds },
-      });
+      await deleteStaff.mutateAsync(person.id);
       hapticSuccess();
-      setCalendarsDirty(false);
-      toast.success('Calendar assignments saved.');
-      handleClose();
-    } catch (err) {
-      hapticError();
-      toast.error(teamErrorMessage(err, 'Could not update calendar assignments.'));
-    }
-  }
-
-  async function handleDelete() {
-    if (!member) return;
-    try {
-      await deleteStaff.mutateAsync(member.id);
-      hapticSuccess();
-      setConfirmingDelete(false);
+      setConfirmingRemove(false);
+      toast.success(teamT('member.remove.done', { name }));
       onDeleted();
       onClose();
     } catch (err) {
-      hapticError();
-      toast.error(teamErrorMessage(err, 'Could not remove the member.'));
+      setConfirmingRemove(false);
+      showError(err, teamT('member.remove.error'));
     }
   }
 
-  function toggleCalendar(id: string) {
-    setSelectedCalendarIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
-    setCalendarsDirty(true);
-  }
-
-  if (!member) return null;
-
-  const displayName = member.name ?? member.email ?? 'Team member';
-  const inactiveAssigned = (member.linked_calendar_ids ?? []).filter(
-    (id) => !activePractitioners.some((p) => p.id === id),
-  );
-  const access = memberAccess(viewer, member);
-  const ownerSelf = isSelf && isOwnerPerson(member);
-  const roleOptions = roleOptionsFor(viewer);
-  const currentRole = roleChoiceOf(member);
-  const billingSwitch = showsBillingSwitch(viewer, member);
-  const personSwitches = showsPersonSwitches(viewer, member);
-  const adminExportSwitch = showsAdminExportSwitch(viewer, member);
-  const diaries = diaryChoiceOf(member);
-  // Roles plan §5.11 (A2 and A2b): book and change, look only, or see none of anyone else's bookings.
-  const diaryOptions: { value: DiaryAccess; label: string }[] = [
-    { value: 'book', label: ROLES_COPY['switch.other_diaries.book'] },
-    { value: 'view', label: ROLES_COPY['switch.other_diaries.view'] },
-    { value: 'hidden', label: ROLES_COPY['switch.other_diaries.hidden'] },
-  ];
-
-  const exportSwitchRow = (
-    <SwitchRow
-      label={ROLES_COPY['switch.export_clients']}
-      help={ROLES_COPY['switch.export_clients.help']}
-      value={exportSwitchOn(member)}
-      disabled={patchSwitch.isPending}
-      onChange={(on) => void handleSwitch({ export_clients: on })}
-    />
-  );
-
-  const header = (
-    <View style={styles.header}>
-      <Text variant="subheading" numberOfLines={1}>
-        {displayName}
-      </Text>
-      {member.name && member.email ? (
-        <Text variant="caption" tone="muted" numberOfLines={1}>
-          {member.email}
-        </Text>
-      ) : null}
-    </View>
-  );
-
-  // The owner's row, opened by someone else, or another admin opened by an admin without the
-  // billing switch: nothing to do here, only who can.
-  if (access !== 'manage') {
-    return (
-      <Sheet visible={visible} onClose={handleClose}>
-        {header}
-        <View style={[styles.body, styles.section]}>
-          <Text variant="body" tone="secondary">
-            {access === 'owner_protected'
-              ? rolesT('owner.protected', { owner: displayName })
-              : ROLES_COPY['billing.only']}
-          </Text>
-          <Button label="Close" variant="secondary" onPress={handleClose} fullWidth />
-        </View>
-      </Sheet>
-    );
-  }
-
-  const transferLine = ownerSelf ? (
-    <Text variant="caption" tone="muted" style={styles.selfNote}>
-      {ROLES_COPY['owner.transfer']}
-    </Text>
-  ) : null;
+  const summary = memberSettingsSummary(person, memberCalendarNames(person, calendars));
+  const question = pendingRole ? roleChangeQuestion(person, pendingRole, viewer.isOwner) : null;
 
   return (
-    <Sheet visible={visible} onClose={handleClose} maxHeight="90%" fill>
-      {header}
-
-      {/* Tab bar */}
-      <View style={[styles.tabBar, { borderBottomColor: colors.border }]}>
-        {(['actions', 'role', 'password', 'calendars'] as Tab[]).map((t) => {
-          const labels: Record<Tab, string> = {
-            actions: 'Actions',
-            role: 'Role',
-            password: 'Password',
-            calendars: 'Calendars',
-          };
-          const isActive = t === tab;
-          return (
-            <Pressable key={t} onPress={() => setTab(t)} style={styles.tabItem}>
-              <Text
-                variant="label"
-                color={isActive ? colors.brand : colors.textMuted}
-                style={isActive ? styles.tabActive : undefined}>
-                {labels[t]}
-              </Text>
-              {isActive && (
-                <View style={[styles.tabIndicator, { backgroundColor: colors.brand }]} />
-              )}
-            </Pressable>
-          );
-        })}
+    <Sheet visible={visible && member !== null} onClose={handleClose} maxHeight="90%" fill>
+      <View style={styles.header}>
+        <Text variant="subheading" numberOfLines={1}>
+          {name}
+        </Text>
+        {person.name && person.email ? (
+          <Text variant="bodySmall" tone="muted" numberOfLines={1}>
+            {person.email}
+          </Text>
+        ) : null}
+        <View style={styles.badges}>
+          <Badge label={ROLE_INFO[roleKey].label} tone={roleBadgeTone(person)} />
+          {status ? <Badge label={status.label} tone={status.tone} /> : null}
+          {isSelf ? <Badge label={teamT('row.you')} tone="success" /> : null}
+        </View>
       </View>
 
+      {notice ? (
+        <View
+          accessibilityRole={notice.tone === 'error' ? 'alert' : 'text'}
+          accessibilityLiveRegion="polite"
+          style={[
+            styles.notice,
+            notice.tone === 'error'
+              ? { backgroundColor: colors.dangerSurface, borderColor: colors.danger }
+              : { backgroundColor: colors.successSurface, borderColor: colors.success },
+          ]}>
+          <Text variant="bodySmall" color={notice.tone === 'error' ? colors.danger : colors.text}>
+            {notice.text}
+          </Text>
+        </View>
+      ) : null}
+
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={styles.body}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}>
-        {/* Actions tab */}
-        {tab === 'actions' && (
+        {access !== 'manage' ? (
+          /* Nothing to manage here: what their role is, and who can change it. */
           <View style={styles.section}>
-            <Button
-              label={resendInvite.isPending ? 'Sending…' : 'Resend invitation email'}
-              variant="secondary"
-              loading={resendInvite.isPending}
-              onPress={() => void handleResendInvite()}
-              fullWidth
-            />
-            <Text variant="caption" tone="muted">
-              Sends a new sign-in link to {member.email}. Useful if they didn&apos;t receive
-              the original email.
+            <Text variant="body" tone="secondary">
+              {ROLE_INFO[roleKey].summary}
             </Text>
+            {summary.length > 0 ? (
+              <View style={styles.summaryList}>
+                {summary.map((line) => (
+                  <Text key={line} variant="bodySmall" tone="secondary">
+                    {`• ${line}`}
+                  </Text>
+                ))}
+              </View>
+            ) : null}
+            <View style={[styles.infoBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              {access === 'self' && isOwnerPerson(person) ? (
+                <>
+                  <Text variant="bodySmall">{teamT('member.self.owner')}</Text>
+                  <Text variant="bodySmall">{teamT('member.transfer')}</Text>
+                </>
+              ) : (
+                <Text variant="bodySmall">{lockedLine(access, name)}</Text>
+              )}
+            </View>
+            <Button label={teamT('member.close')} variant="secondary" onPress={handleClose} fullWidth />
+          </View>
+        ) : (
+          <>
+            {status ? (
+              <View style={[styles.infoBox, { backgroundColor: colors.warningSurface, borderColor: colors.warning }]}>
+                <Text variant="bodySmall" color={colors.text}>
+                  {status.text}
+                </Text>
+              </View>
+            ) : null}
 
-            {!isSelf && (
-              <>
-                <View style={[styles.divider, { backgroundColor: colors.border }]} />
-                {confirmingDelete ? (
-                  <>
-                    <Text variant="bodySmall" tone="danger">
-                      Remove {member.name ?? member.email ?? 'this person'} from the team? They
-                      will lose dashboard access immediately.
-                    </Text>
-                    <View style={styles.confirmRow}>
-                      <Button
-                        label="Cancel"
-                        variant="secondary"
-                        style={styles.flex1}
-                        onPress={() => setConfirmingDelete(false)}
-                      />
-                      <Button
-                        label={deleteStaff.isPending ? 'Removing…' : 'Remove'}
-                        variant="danger"
-                        style={styles.flex1}
-                        loading={deleteStaff.isPending}
-                        onPress={() => void handleDelete()}
-                      />
-                    </View>
-                  </>
-                ) : (
-                  <>
+            {/* Role */}
+            <View style={styles.section}>
+              <StepHeading title={teamT('member.role')} />
+              <RoleChoiceList
+                options={roleOptionsFor(viewer).map((o) => o.value)}
+                value={pendingRole ?? currentRole}
+                disabled={saving || pendingRole !== null}
+                showGoodFor={false}
+                onChange={(next) => {
+                  if (next === currentRole) return;
+                  setNotice(null);
+                  setPendingRole(next);
+                }}
+              />
+              {question ? (
+                <ConfirmPanel
+                  title={question.title}
+                  message={question.message}
+                  confirmLabel={teamT('member.role.confirm')}
+                  cancelLabel={teamT('member.role.keep')}
+                  loading={patchRole.isPending}
+                  onConfirm={() => void confirmRole()}
+                  onCancel={() => setPendingRole(null)}
+                />
+              ) : (
+                <Text variant="bodySmall" tone="muted">
+                  {ROLE_INFO[currentRole].goodFor}
+                </Text>
+              )}
+            </View>
+
+            {/* Their calendars: Front desk and Staff (admins see every calendar) */}
+            {!isAdminRow ? (
+              <View style={styles.section}>
+                <StepHeading title={SETTING_COPY.calendarsLabel} help={calendars.length > 0 ? SETTING_COPY.calendarsHelp : null} />
+                <CalendarChecklist
+                  calendars={calendars}
+                  selected={assigned}
+                  disabled={saving}
+                  onToggle={(id, checked) => {
+                    const next = new Set(assigned);
+                    if (checked) next.add(id);
+                    else next.delete(id);
+                    void saveCalendars([...next]);
+                  }}
+                  onSetAll={(all) =>
+                    void saveCalendars(all ? [...new Set([...assigned, ...activeIds])] : [])
+                  }
+                />
+                {switchedOff > 0 ? (
+                  <Text variant="bodySmall" color={colors.warning}>
+                    {teamT(switchedOff === 1 ? 'member.calendars.switchedOff.one' : 'member.calendars.switchedOff.many', {
+                      name: firstName,
+                      count: switchedOff,
+                    })}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+
+            {/* What they can see: Front desk and Staff */}
+            {personSwitches && !isAdminRow ? (
+              <View style={styles.section}>
+                <StepHeading title={teamT('member.see')} />
+                <AccessSettingsFields
+                  value={{
+                    client_contact: contactSwitchOn(person),
+                    other_diaries: diaryChoiceOf(person),
+                    export_clients: exportSwitchOn(person),
+                  }}
+                  disabled={saving}
+                  onChange={(patch) => void saveSwitch(patch)}
+                  personName={firstName}
+                  hasCalendar={assigned.length > 0}
+                />
+              </View>
+            ) : null}
+
+            {/* What else they can manage: the owner, on another admin */}
+            {billingSwitch || adminExportSwitch ? (
+              <View style={styles.section}>
+                <StepHeading title={teamT('member.manage')} />
+                {billingSwitch ? (
+                  <SettingSwitch
+                    label={SETTING_COPY.billingLabel}
+                    help={SETTING_COPY.billingHelp}
+                    value={billingSwitchOn(person)}
+                    disabled={saving}
+                    onChange={(on) => void saveSwitch({ billing_payouts_admins: on })}
+                  />
+                ) : null}
+                {adminExportSwitch ? (
+                  <SettingSwitch
+                    label={SETTING_COPY.exportLabel}
+                    help={SETTING_COPY.exportHelp}
+                    value={exportSwitchOn(person)}
+                    disabled={saving}
+                    onChange={(on) => void saveSwitch({ export_clients: on })}
+                  />
+                ) : null}
+              </View>
+            ) : null}
+
+            {/* Signing in */}
+            <View style={styles.section} onLayout={(e) => (signInY.current = e.nativeEvent.layout.y)}>
+              <StepHeading
+                title={teamT('member.signIn')}
+                help={
+                  person.invite_pending
+                    ? teamT('member.signIn.pending', { name: firstName, email })
+                    : teamT('member.signIn.active', { name: firstName })
+                }
+              />
+              {person.invite_pending ? (
+                <View style={styles.action}>
+                  <Button
+                    label={resendInvite.isPending ? teamT('member.sending') : teamT('member.resend')}
+                    variant="secondary"
+                    loading={resendInvite.isPending}
+                    onPress={() => void sendLink()}
+                    fullWidth
+                  />
+                  <Text variant="caption" tone="muted">
+                    {teamT('member.resend.help', { email })}
+                  </Text>
+                </View>
+              ) : (
+                <>
+                  <View style={styles.action}>
                     <Button
-                      label="Remove from team"
-                      variant="danger"
-                      onPress={() => {
-                        hapticWarning();
-                        setConfirmingDelete(true);
-                      }}
+                      label={resendInvite.isPending ? teamT('member.sending') : teamT('member.link')}
+                      variant="secondary"
+                      loading={resendInvite.isPending}
+                      onPress={() => void sendLink()}
                       fullWidth
                     />
                     <Text variant="caption" tone="muted">
-                      This will immediately revoke their dashboard access.
+                      {teamT('member.link.help', { email })}
                     </Text>
-                  </>
-                )}
-              </>
-            )}
-
-            {isSelf && (
-              <Text variant="caption" tone="muted" style={styles.selfNote}>
-                You cannot remove yourself from the team.
-              </Text>
-            )}
-            {transferLine}
-          </View>
-        )}
-
-        {/* Role tab */}
-        {tab === 'role' && (
-          <View style={styles.section}>
-            {isSelf ? (
-              <>
-                <Text variant="body" tone="muted">
-                  You cannot change your own role.
-                </Text>
-                {transferLine}
-              </>
-            ) : (
-              <>
-                <Segmented
-                  options={roleOptions}
-                  value={pendingRole}
-                  onChange={setPendingRole}
-                />
-                <Text variant="caption" tone="muted">
-                  {roleDescription(pendingRole)}
-                </Text>
-                <Button
-                  label={patchMember.isPending ? 'Saving…' : 'Save role'}
-                  loading={patchMember.isPending}
-                  onPress={() => void handleRoleChange()}
-                  fullWidth
-                  disabled={pendingRole === currentRole}
-                />
-              </>
-            )}
-
-            {/* "Billing, payouts and admins" on an admin: the owner only (roles plan §5.3). */}
-            {billingSwitch && currentRole === 'admin' ? (
-              <>
-                <View style={[styles.divider, { backgroundColor: colors.border }]} />
-                <SwitchRow
-                  label={ROLES_COPY['billing.switch']}
-                  help={ROLES_COPY['billing.switch.help']}
-                  value={billingSwitchOn(member)}
-                  disabled={patchSwitch.isPending}
-                  onChange={(on) => void handleSwitch({ billing_payouts_admins: on })}
-                />
-              </>
-            ) : null}
-
-            {/* "Can export client data" on an admin: the owner only (roles plan §5.5). */}
-            {adminExportSwitch && currentRole === 'admin' ? (
-              <>
-                <View style={[styles.divider, { backgroundColor: colors.border }]} />
-                {exportSwitchRow}
-              </>
-            ) : null}
-
-            {/* Front desk and Staff: contacts, other diaries and exports, set by the owner or any
-                admin, never on your own row (roles plan §5.5, §5.6, §5.11). */}
-            {personSwitches && currentRole !== 'admin' ? (
-              <>
-                <View style={[styles.divider, { backgroundColor: colors.border }]} />
-                <SwitchRow
-                  label={ROLES_COPY['switch.client_contact']}
-                  help={ROLES_COPY['switch.client_contact.help']}
-                  value={contactSwitchOn(member)}
-                  disabled={patchSwitch.isPending}
-                  onChange={(on) => void handleSwitch({ client_contact: on })}
-                />
-                <View style={styles.diaryBlock}>
-                  <Text variant="bodyMedium">{ROLES_COPY['switch.other_diaries']}</Text>
-                  <Segmented
-                    options={diaryOptions}
-                    value={diaries}
-                    onChange={(next) => {
-                      if (next === diaries || patchSwitch.isPending) return;
-                      void handleSwitch({ other_diaries: next });
-                    }}
-                  />
-                  {diaries !== 'book' && !memberHasCalendar(member) ? (
-                    <Text variant="caption" color={colors.warning}>
-                      {rolesT('switch.other_diaries.no_calendar', { name: displayName })}
-                    </Text>
-                  ) : null}
-                </View>
-                {exportSwitchRow}
-              </>
-            ) : null}
-          </View>
-        )}
-
-        {/* Password reset tab */}
-        {tab === 'password' && (
-          <View style={styles.section}>
-            <Text variant="bodySmall" tone="secondary">
-              Set a new password for {member.email ?? displayName}.
-            </Text>
-            <PasswordInput
-              label="New password"
-              value={newPassword}
-              onChangeText={setNewPassword}
-              placeholder="Min 8 characters"
-              error={passwordError}
-              editable={!resetPassword.isPending}
-            />
-            <Button
-              label={resetPassword.isPending ? 'Resetting…' : 'Reset password'}
-              loading={resetPassword.isPending}
-              onPress={() => void handlePasswordReset()}
-              fullWidth
-              disabled={newPassword.length < 8}
-            />
-          </View>
-        )}
-
-        {/* Calendars tab */}
-        {tab === 'calendars' && (
-          <View style={styles.section}>
-            {member.role === 'admin' ? (
-              <Text variant="body" tone="muted">
-                Admin users have access to all calendars. Calendar restrictions only apply to
-                Front desk and Staff.
-              </Text>
-            ) : (
-              <>
-                <View style={styles.calendarHeader}>
-                  <Text variant="bodySmall" tone="secondary">
-                    Calendars this person can manage
-                  </Text>
-                  {activePractitioners.length > 0 && (
-                    <View style={styles.calendarActions}>
-                      <Pressable
-                        onPress={() => {
-                          setSelectedCalendarIds(activePractitioners.map((p) => p.id));
-                          setCalendarsDirty(true);
+                  </View>
+                  {passwordOpen ? (
+                    <View
+                      style={[styles.passwordBox, { borderColor: colors.border, backgroundColor: colors.surface }]}
+                      onLayout={(e) =>
+                        scrollRef.current?.scrollTo?.({ y: Math.max(0, signInY.current + e.nativeEvent.layout.y - spacing.sm), animated: true })
+                      }>
+                      <Text variant="bodyMedium">{teamT('member.password.title', { name })}</Text>
+                      <Text variant="bodySmall" tone="secondary">
+                        {teamT('member.password.intro')}
+                      </Text>
+                      <PasswordInput
+                        label={teamT('member.password.field')}
+                        accessibilityLabel={teamT('member.password.field')}
+                        value={newPassword}
+                        onChangeText={(text) => {
+                          setNewPassword(text);
+                          if (passwordError) setPasswordError(undefined);
                         }}
-                        hitSlop={8}>
-                        <Text variant="caption" color={colors.brand}>
-                          All
-                        </Text>
-                      </Pressable>
-                      <Pressable
+                        placeholder={teamT('member.password.placeholder')}
+                        autoComplete="new-password"
+                        error={passwordError}
+                        editable={!resetPassword.isPending}
+                      />
+                      <View style={styles.row}>
+                        <Button
+                          label={teamT('member.password.cancel')}
+                          variant="secondary"
+                          style={styles.flex1}
+                          disabled={resetPassword.isPending}
+                          onPress={() => {
+                            setPasswordOpen(false);
+                            setNewPassword('');
+                            setPasswordError(undefined);
+                          }}
+                        />
+                        <Button
+                          label={resetPassword.isPending ? teamT('member.password.saving') : teamT('member.password.save')}
+                          style={styles.flex1}
+                          loading={resetPassword.isPending}
+                          onPress={() => void savePassword()}
+                        />
+                      </View>
+                    </View>
+                  ) : (
+                    <View style={styles.action}>
+                      <Button
+                        label={teamT('member.password')}
+                        variant="secondary"
                         onPress={() => {
-                          setSelectedCalendarIds([]);
-                          setCalendarsDirty(true);
+                          setNotice(null);
+                          setPasswordOpen(true);
                         }}
-                        hitSlop={8}>
-                        <Text variant="caption" tone="muted">
-                          None
-                        </Text>
-                      </Pressable>
+                        fullWidth
+                      />
+                      <Text variant="caption" tone="muted">
+                        {teamT('member.password.help')}
+                      </Text>
                     </View>
                   )}
+                </>
+              )}
+            </View>
+
+            {/* Remove from your team */}
+            <View style={[styles.section, styles.removeSection, { borderTopColor: colors.border }]}>
+              <StepHeading
+                title={teamT('member.remove')}
+                help={teamT('member.remove.help', { name: firstName, business: businessName })}
+              />
+              {confirmingRemove ? (
+                // The question opens at the foot of a long sheet: bring it into view on a phone.
+                <View onLayout={() => scrollRef.current?.scrollToEnd?.({ animated: true })}>
+                  <ConfirmPanel
+                    title={teamT('member.remove.title', { name })}
+                    message={teamT('member.remove.body', { business: businessName })}
+                    confirmLabel={deleteStaff.isPending ? teamT('member.remove.removing') : teamT('member.remove.confirm')}
+                    cancelLabel={teamT('member.remove.cancel')}
+                    destructive
+                    loading={deleteStaff.isPending}
+                    onConfirm={() => void remove()}
+                    onCancel={() => setConfirmingRemove(false)}
+                  />
                 </View>
-
-                {activePractitioners.length === 0 ? (
-                  <Text variant="bodySmall" tone="muted">
-                    No active bookable calendars yet.
-                  </Text>
-                ) : (
-                  <View
-                    style={[
-                      styles.calendarList,
-                      { borderColor: colors.border, backgroundColor: colors.surface },
-                    ]}>
-                    {activePractitioners.map((p, index) => {
-                      const isChecked = selectedCalendarIds.includes(p.id);
-                      return (
-                        <View key={p.id}>
-                          {index > 0 && (
-                            <View
-                              style={[
-                                styles.calendarDivider,
-                                { backgroundColor: colors.border },
-                              ]}
-                            />
-                          )}
-                          <Pressable
-                            onPress={() => toggleCalendar(p.id)}
-                            style={({ pressed }) => [
-                              styles.calendarRow,
-                              pressed && { backgroundColor: colors.surfaceRaised },
-                            ]}>
-                            <View
-                              style={[
-                                styles.checkbox,
-                                {
-                                  borderColor: isChecked ? colors.brand : colors.borderStrong,
-                                  backgroundColor: isChecked ? colors.brand : 'transparent',
-                                },
-                              ]}>
-                              {isChecked && (
-                                <Text
-                                  variant="caption"
-                                  color={colors.onBrand}
-                                  style={styles.checkmark}>
-                                  ✓
-                                </Text>
-                              )}
-                            </View>
-                            <Text variant="body">{p.name}</Text>
-                          </Pressable>
-                        </View>
-                      );
-                    })}
-                  </View>
-                )}
-
-                {inactiveAssigned.length > 0 && (
-                  <View
-                    style={[
-                      styles.warningBox,
-                      { backgroundColor: colors.warningSurface, borderColor: colors.warning },
-                    ]}>
-                    <Text variant="caption" color={colors.warning}>
-                      {inactiveAssigned.length === 1 ? '1 assigned calendar is' : `${inactiveAssigned.length} assigned calendars are`} inactive. Activate them or update assignments in Calendar availability.
-                    </Text>
-                  </View>
-                )}
-
+              ) : (
                 <Button
-                  label={patchCalendar.isPending ? 'Saving…' : 'Save calendars'}
-                  loading={patchCalendar.isPending}
-                  onPress={() => void handleCalendarSave()}
+                  label={teamT('member.remove.button', { name: firstName })}
+                  variant="danger"
+                  onPress={() => {
+                    hapticWarning();
+                    setConfirmingRemove(true);
+                  }}
                   fullWidth
-                  disabled={!calendarsDirty || patchCalendar.isPending}
                 />
-              </>
-            )}
-          </View>
+              )}
+            </View>
+          </>
         )}
       </ScrollView>
     </Sheet>
   );
 }
 
-/** A labelled switch with its help line, as on the web Team screen (Appendix C). */
-function SwitchRow({
-  label,
-  help,
-  value,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  help: string;
-  value: boolean;
-  disabled: boolean;
-  onChange: (on: boolean) => void;
-}) {
-  return (
-    <View style={styles.switchRow}>
-      <View style={styles.flex1}>
-        <Text variant="bodyMedium">{label}</Text>
-        <Text variant="caption" tone="muted">
-          {help}
-        </Text>
-      </View>
-      <Switch
-        value={value}
-        onValueChange={onChange}
-        disabled={disabled}
-        accessibilityLabel={label}
-        accessibilityState={{ checked: value, disabled }}
-      />
-    </View>
-  );
+/** Who can change a row this viewer cannot (Appendix C; web `MemberCard`). */
+function lockedLine(access: MemberAccess, ownerName: string): string {
+  if (access === 'owner_protected') return teamT('member.ownerProtected', { owner: ownerName });
+  if (access === 'billing_locked') return teamT('member.adminLocked');
+  return teamT('member.self');
 }
 
 const styles = StyleSheet.create({
-  diaryBlock: {
-    gap: spacing.sm,
-  },
   header: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.sm,
     gap: 2,
   },
-  tabBar: {
+  badges: {
     flexDirection: 'row',
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  notice: {
     marginHorizontal: spacing.lg,
-  },
-  tabItem: {
-    flex: 1,
-    alignItems: 'center',
+    marginBottom: spacing.sm,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    position: 'relative',
-  },
-  tabActive: {
-    fontFamily: fonts.semibold,
-  },
-  tabIndicator: {
-    position: 'absolute',
-    bottom: 0,
-    left: '15%',
-    right: '15%',
-    height: 2,
-    borderRadius: 1,
   },
   body: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
+    paddingTop: spacing.sm,
     paddingBottom: spacing['2xl'],
+    gap: spacing.xl,
   },
   section: {
     gap: spacing.md,
   },
-  confirmRow: {
+  summaryList: {
+    gap: spacing.xxs,
+  },
+  infoBox: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  action: {
+    gap: spacing.xs,
+  },
+  passwordBox: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  row: {
     flexDirection: 'row',
-    gap: spacing.md,
+    gap: spacing.sm,
   },
   flex1: {
     flex: 1,
   },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    marginVertical: spacing.xs,
-  },
-  selfNote: {
-    fontStyle: 'italic',
-  },
-  switchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  calendarHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  calendarActions: {
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  calendarList: {
-    borderRadius: radius.md,
-    borderWidth: 1,
-    overflow: 'hidden',
-  },
-  calendarRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.base,
-  },
-  calendarDivider: {
-    height: StyleSheet.hairlineWidth,
-    marginLeft: spacing.base + 20 + spacing.md,
-  },
-  checkbox: {
-    width: 20,
-    height: 20,
-    borderRadius: 4,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkmark: {
-    fontSize: 12,
-    lineHeight: 14,
-  },
-  warningBox: {
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    paddingHorizontal: spacing.base,
-    paddingVertical: spacing.sm,
+  removeSection: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: spacing.lg,
   },
 });

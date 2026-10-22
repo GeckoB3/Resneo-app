@@ -293,7 +293,7 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
 
   // ── Team & clients — people, messaging & client data. ──────────────────────
   if (isAdmin) {
-    list.push({ id: 'team', label: 'Team', hint: 'Staff logins & roles', icon: { ios: 'person.2.fill', android: 'group', web: 'group' }, tile: TILE.emerald, group: 'people', kind: 'route', target: '/manage/team', keywords: ['settings', 'staff', 'roles', 'permissions'] });
+    list.push({ id: 'team', label: 'Team', hint: 'Invite people and choose what they can do', icon: { ios: 'person.2.fill', android: 'group', web: 'group' }, tile: TILE.emerald, group: 'people', kind: 'route', target: '/manage/team', keywords: ['settings', 'staff', 'roles', 'permissions', 'invite', 'team', 'users'] });
     // Commission splits (2026-10-14): what the team earns and the shares agreed with businesses you
     // work with. Beside Team, because it is about the people who work your calendars, and outside
     // Checkout set-up, because it no longer needs Checkout on.

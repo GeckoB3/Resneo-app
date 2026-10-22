@@ -7,6 +7,7 @@ import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { hapticError, hapticSelect, hapticSuccess } from '@/lib/haptics';
 import { useUpdateSessionSettings } from '@/lib/queries/useTeamMutations';
+import { formatSignOutAfter, teamT } from '@/lib/roles/team-copy';
 import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -28,7 +29,10 @@ const TIMEOUT_OPTIONS: { minutes: number; label: string }[] = [
   { minutes: 10080, label: '7 days' },
 ];
 
-/** Admin-only sheet to configure the staff session auto-logout timer. */
+/**
+ * "Signing out after a break" (admins only): how long someone can leave the web dashboard idle
+ * before they are signed out (web Settings, Staff). The web applies it; the app has its own lock.
+ */
 export function SessionSettingsSheet({
   visible,
   currentMinutes,
@@ -50,27 +54,28 @@ export function SessionSettingsSheet({
     try {
       await update.mutateAsync({ session_timeout_minutes: selected });
       hapticSuccess();
-      const label =
-        TIMEOUT_OPTIONS.find((o) => o.minutes === selected)?.label ?? `${selected} minutes`;
-      // Toast + close fire off the resolved mutation — Alert.alert's callback is a no-op on web.
-      toast.success(`Staff will be logged out after ${label} of inactivity.`);
+      // Toast + close fire off the resolved mutation: Alert.alert's callback is a no-op on web.
+      toast.success(teamT('timeout.saved', { time: formatSignOutAfter(selected) }));
       onClose();
     } catch (err) {
       hapticError();
-      toast.error(err instanceof ApiError ? err.message : 'Failed to update session settings.');
+      toast.error(err instanceof ApiError ? err.message : teamT('timeout.error'));
     }
   }
 
   return (
     <Sheet visible={visible} onClose={onClose} maxHeight="80%" fill>
       <View style={styles.header}>
-        <Text variant="subheading">Session timeout</Text>
-        <Text variant="caption" tone="muted">
-          Staff are logged out automatically after this period of inactivity.
+        <Text variant="subheading">{teamT('timeout.title')}</Text>
+        <Text variant="bodySmall" tone="secondary">
+          {teamT('timeout.help')}
         </Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
+        <Text variant="label" tone="secondary">
+          {teamT('timeout.label')}
+        </Text>
         <View
           style={[styles.list, { borderColor: colors.border, backgroundColor: colors.surface }]}>
           {TIMEOUT_OPTIONS.map((option, index) => {
@@ -81,6 +86,8 @@ export function SessionSettingsSheet({
                   <View style={[styles.divider, { backgroundColor: colors.border }]} />
                 )}
                 <Pressable
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: isSelected }}
                   onPress={() => {
                     hapticSelect();
                     setSelected(option.minutes);
@@ -105,6 +112,9 @@ export function SessionSettingsSheet({
             );
           })}
         </View>
+        <Text variant="caption" tone="muted">
+          {teamT('timeout.hint')}
+        </Text>
 
         <Button
           label={update.isPending ? 'Saving…' : 'Save'}
