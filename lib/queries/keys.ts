@@ -163,6 +163,40 @@ export const queryKeys = {
       [...queryKeys.compliance.all(), 'booking', keyScope(accessToken), bookingId ?? null] as const,
   },
 
+  /** Treatment records (web plan §9): lists, records, the editor's context, alerts and the switch. */
+  treatmentRecords: {
+    all: () => [...queryKeys.all, 'treatmentRecords'] as const,
+    /** The records list for a booking or a client. */
+    list: (accessToken?: string | null, scope?: { bookingId?: string | null; guestId?: string | null }) =>
+      [
+        ...queryKeys.treatmentRecords.all(),
+        'list',
+        keyScope(accessToken),
+        scope?.bookingId ?? null,
+        scope?.guestId ?? null,
+      ] as const,
+    detail: (accessToken?: string | null, recordId?: string | null) =>
+      [...queryKeys.treatmentRecords.all(), 'detail', keyScope(accessToken), recordId ?? null] as const,
+    context: (accessToken?: string | null, scope?: { bookingId?: string | null; guestId?: string | null }) =>
+      [
+        ...queryKeys.treatmentRecords.all(),
+        'context',
+        keyScope(accessToken),
+        scope?.bookingId ?? null,
+        scope?.guestId ?? null,
+      ] as const,
+    versions: (accessToken?: string | null, recordId?: string | null) =>
+      [...queryKeys.treatmentRecords.all(), 'versions', keyScope(accessToken), recordId ?? null] as const,
+    suggestions: (accessToken?: string | null, ownerVenueId?: string | null) =>
+      [...queryKeys.treatmentRecords.all(), 'suggestions', keyScope(accessToken), ownerVenueId ?? null] as const,
+    alerts: (accessToken?: string | null, guestId?: string | null, withRemoved = false) =>
+      [...queryKeys.treatmentRecords.all(), 'alerts', keyScope(accessToken), guestId ?? null, withRemoved] as const,
+    switchState: (accessToken?: string | null) =>
+      [...queryKeys.treatmentRecords.all(), 'switch', keyScope(accessToken)] as const,
+    eraseCounts: (accessToken?: string | null, guestId?: string | null) =>
+      [...queryKeys.treatmentRecords.all(), 'eraseCounts', keyScope(accessToken), guestId ?? null] as const,
+  },
+
   addonGroups: {
     all: () => [...queryKeys.all, 'addonGroups'] as const,
     list: (accessToken?: string | null) =>

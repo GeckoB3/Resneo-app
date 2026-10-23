@@ -423,10 +423,8 @@ export function DocumentsSection({
   return (
     <>
       {collapsible ? (
-        <CollapsibleCard title="Records" summary={summary} defaultExpanded={defaultExpanded}>
-          <Text variant="overline" tone="muted">
-            Documents and photos
-          </Text>
+        <CollapsibleCard title="Documents and photos" summary={summary} defaultExpanded={defaultExpanded}>
+          {/* "Records" until treatment records arrived (web plan TR5): two cards called Records would read as one. */}
           {body}
           {canChange ? addButtons : null}
         </CollapsibleCard>

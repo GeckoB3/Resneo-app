@@ -48,6 +48,8 @@ function mockStub(text: string) {
 }
 jest.mock('@/components/payments/TapToPaySettings', () => ({ TapToPaySettings: () => mockStub('Tap to Pay settings') }));
 jest.mock('@/components/pos/switches/CheckoutSwitchCard', () => ({ CheckoutSwitchCard: () => mockStub('Checkout switch card') }));
+// Treatment records' own switch reads and writes through react-query; its suite covers it.
+jest.mock('@/components/treatment-records/TreatmentRecordsSwitchCard', () => ({ TreatmentRecordsSwitchCard: () => null }));
 const mockReaderSheet = jest.fn((_props: { visible: boolean }) => null);
 jest.mock('@/components/bookings/ReaderSettingsSheet', () => ({
   ReaderSettingsSheet: (props: { visible: boolean }) => mockReaderSheet(props),

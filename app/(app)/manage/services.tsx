@@ -145,6 +145,7 @@ import {
 import { staffMayCustomizeAny } from '@/lib/services/service-override';
 import { affectedCalendarIds, type ServiceRemovalMove } from '@/lib/services/service-removal';
 import { useServiceRemovalFlow } from '@/lib/services/useServiceRemovalFlow';
+import { TR_COPY } from '@/lib/treatment-records/copy';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
@@ -748,6 +749,8 @@ export default function ServicesScreen() {
   // Per-service compliance requirements editor is gated on the venue's
   // compliance feature flag (resolved server-side) and admin role.
   const complianceEnabled = venue?.feature_flags?.resolved?.compliance_records_enabled ?? false;
+  // The service's starter text for treatment records (web plan TR27): admins, while the feature is on.
+  const treatmentRecordsOn = venue?.feature_flags?.resolved?.treatment_records_enabled === true;
   // Named read-only inside the service form's requirements editor (admin, edit mode).
   const venueWideRequirementNames = useVenueWideRequirementNames(isAdmin && complianceEnabled);
 
@@ -840,6 +843,8 @@ export default function ServicesScreen() {
   // Sheet form state (shared between edit + create).
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  // Null until the form has loaded the service's value, so an untouched form never sends it.
+  const [recordTemplate, setRecordTemplate] = useState<string | null>(null);
   const [duration, setDuration] = useState('');
   const [buffer, setBuffer] = useState('0');
   const [price, setPrice] = useState('');
@@ -1246,6 +1251,8 @@ export default function ServicesScreen() {
     const linked = linkedCalendarIds(service.id);
     setName(service.name);
     setDescription(service.description ?? '');
+    // An older server sends no template: leave it out of the save rather than clear it.
+    setRecordTemplate(service.treatment_record_template === undefined ? null : (service.treatment_record_template ?? ''));
     setDuration(String(service.duration_minutes));
     setBuffer(String(service.buffer_minutes ?? 0));
     setPrice(penceToPoundsInput(service.price_pence));
@@ -1312,6 +1319,7 @@ export default function ServicesScreen() {
   const openCreate = () => {
     setName('');
     setDescription('');
+    setRecordTemplate('');
     setDuration('30');
     setProcessingFitDuration(30);
     setInitialDurationMinutes(null);
@@ -1606,6 +1614,10 @@ export default function ServicesScreen() {
         online_meeting_url: locationType === 'online' ? normalizeMeetingUrl(meetingUrl) || null : null,
         online_meeting_info:
           locationType === 'online' ? (meetingInfo.trim() || null) : null,
+        // Treatment record starter text (TR27): only while the feature is on and the form loaded it.
+        ...(treatmentRecordsOn && recordTemplate !== null
+          ? { treatment_record_template: recordTemplate.trim() || null }
+          : {}),
       } : {}),
     };
 
@@ -2479,6 +2491,18 @@ export default function ServicesScreen() {
               style={styles.multiline}
               maxLength={1000}
             />
+            {treatmentRecordsOn && isAdmin && recordTemplate !== null ? (
+              <Input
+                label={TR_COPY.serviceTemplateLabel}
+                helper={TR_COPY.serviceTemplateHint}
+                value={recordTemplate}
+                onChangeText={setRecordTemplate}
+                multiline
+                optional
+                style={styles.multiline}
+                maxLength={4000}
+              />
+            ) : null}
             {!usesVariants ? (
               <View style={styles.moneyRow}>
                 <View style={styles.moneyField}>

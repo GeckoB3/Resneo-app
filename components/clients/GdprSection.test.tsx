@@ -24,8 +24,14 @@ const mockExport = jest.fn();
 jest.mock('@/lib/queries/useContactsBulk', () => ({
   fetchGuestGdprExport: (...args: unknown[]) => mockExport(...args),
 }));
+const mockErase = jest.fn();
 jest.mock('@/lib/queries/useGuestMutations', () => ({
-  useEraseGuest: () => ({ mutateAsync: jest.fn(), isPending: false }),
+  useEraseGuest: () => ({ mutateAsync: (...args: unknown[]) => mockErase(...args), isPending: false }),
+}));
+// What erasing also removes (treatment records TR17): records and alerts mean a reason is needed.
+let mockHeld: { treatment_records: number; client_alerts: number } | null = null;
+jest.mock('@/lib/queries/useTreatmentRecords', () => ({
+  useEraseHeldCounts: () => ({ data: mockHeld, isLoading: false }),
 }));
 
 import { GdprSection } from './GdprSection';
@@ -61,5 +67,75 @@ describe('GdprSection and "Can export client data"', () => {
       fireEvent.press(screen.getByText('Export data (JSON)'));
     });
     expect(mockToast.error).toHaveBeenCalledWith(message);
+  });
+});
+
+describe('GdprSection and treatment records (TR17)', () => {
+  beforeEach(() => {
+    mockErase.mockReset();
+    mockHeld = null;
+  });
+
+  async function openErase() {
+    await renderAs(FULL_VIEWER_ACCESS);
+    await act(async () => {
+      fireEvent.press(screen.getByText('Erase data'));
+    });
+  }
+
+  it('warns about the records and needs a reason, which it sends', async () => {
+    mockHeld = { treatment_records: 2, client_alerts: 1 };
+    mockErase.mockResolvedValue({ ok: true });
+    await openErase();
+    expect(screen.getByText(/Ada Lovelace has 2 treatment records\. Clinical records are usually kept for 8 years/)).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Continue'));
+    });
+    expect(screen.queryByText('Final confirmation')).toBeNull();
+
+    await act(async () => {
+      fireEvent.changeText(screen.getByLabelText('Why are you erasing this client?'), '  Client asked  ');
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByText('Continue'));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByText('Yes, erase permanently'));
+    });
+    expect(mockErase).toHaveBeenCalledWith({ guestId: 'g1', reason: 'Client asked' });
+  });
+
+  it('names alerts alone when there are no records', async () => {
+    mockHeld = { treatment_records: 0, client_alerts: 2 };
+    await openErase();
+    expect(screen.getByText('Ada Lovelace has alerts on file. Erasing removes them permanently.')).toBeTruthy();
+  });
+
+  it('asks nothing extra for a client with neither', async () => {
+    mockHeld = { treatment_records: 0, client_alerts: 0 };
+    mockErase.mockResolvedValue({ ok: true });
+    await openErase();
+    expect(screen.queryByLabelText('Why are you erasing this client?')).toBeNull();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Continue'));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByText('Yes, erase permanently'));
+    });
+    expect(mockErase).toHaveBeenCalledWith({ guestId: 'g1', reason: null });
+  });
+
+  it('asks for the reason when the server says one is needed', async () => {
+    const message = 'This client has treatment records, so we need a reason before erasing them.';
+    mockErase.mockRejectedValue(new ApiError(message, 400, { error: message, code: 'ERASE_REASON_REQUIRED' }));
+    await openErase();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Continue'));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByText('Yes, erase permanently'));
+    });
+    expect(mockToast.error).toHaveBeenCalledWith(message);
+    expect(screen.getByLabelText('Why are you erasing this client?')).toBeTruthy();
   });
 });

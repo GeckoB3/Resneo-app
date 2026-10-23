@@ -180,6 +180,14 @@ export default function AppLayout() {
           title: 'Product',
         }}
       />
+      {/* Treatment records (web plan §9): a pushed screen, so it never opens over the booking sheet. */}
+      <Stack.Screen
+        name="treatment-record/[id]"
+        options={{
+          headerShown: true,
+          title: 'Treatment record',
+        }}
+      />
       <Stack.Screen
         name="stock/purchase-order/[id]"
         options={{

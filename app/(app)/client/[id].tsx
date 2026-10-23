@@ -20,6 +20,8 @@ import { DocumentsSection } from '@/components/clients/DocumentsSection';
 import { GdprSection } from '@/components/clients/GdprSection';
 import { GuestEditSheet, type GuestEditTarget } from '@/components/clients/GuestEditSheet';
 import { GuestTagEditor } from '@/components/clients/GuestTagEditor';
+import { TreatmentRecordsSection } from '@/components/clients/TreatmentRecordsSection';
+import { ClientAlertsStrip } from '@/components/treatment-records/ClientAlertsStrip';
 import { HouseholdSection } from '@/components/clients/HouseholdSection';
 import { MarketingPreferencesCard } from '@/components/clients/MarketingPreferencesCard';
 import { MergeContactDetailSheet } from '@/components/clients/MergeContactDetailSheet';
@@ -240,6 +242,9 @@ export default function ClientDetailScreen() {
   const isAdmin = staffQuery.data?.staff?.role === 'admin';
   const { featureFlags, terminology, venue } = useVenueContext();
   const complianceEnabled = featureFlags?.resolved?.compliance_records_enabled === true;
+  // Treatment records (web plan §9): the feature on and this person reaching records here.
+  const treatmentRecordsEnabled =
+    featureFlags?.resolved?.treatment_records_enabled === true && venue?.treatment_records_access === true;
 
   const updateGuest = useUpdateGuest(guestId ?? '');
   const sendMessage = useSendGuestMessage(guestId ?? '');
@@ -514,6 +519,12 @@ export default function ClientDetailScreen() {
                 <Badge key={tag} label={tag} tone="brand" />
               ))}
             </View>
+            {/* The client's alerts (web plan TR24), for someone who reaches treatment records. */}
+            {treatmentRecordsEnabled && guestId ? (
+              <View style={styles.alertsRow}>
+                <ClientAlertsStrip guestId={guestId} />
+              </View>
+            ) : null}
             <View style={styles.quickRow}>
               {canCall ? (
                 <QuickAction
@@ -695,6 +706,9 @@ export default function ClientDetailScreen() {
       {/* Compliance — per-guest records + audit trail (feature-flagged, read-only) */}
       {complianceEnabled ? <ComplianceSection guestId={guestId} /> : null}
 
+      {/* Treatment records (web plan §9): the list, Add record and Print all records. */}
+      {treatmentRecordsEnabled ? <TreatmentRecordsSection guestId={guestId} /> : null}
+
       {/* Message history — default-opens when there is history (web parity) */}
       <CommunicationsSection communications={communications} contactsHidden={contactHidden} collapsible />
 
@@ -836,6 +850,10 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'center',
     gap: spacing.sm,
+  },
+  alertsRow: {
+    alignSelf: 'stretch',
+    marginTop: spacing.md,
   },
   quickRow: {
     flexDirection: 'row',

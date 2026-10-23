@@ -34,6 +34,7 @@ const NOT_THE_API: Record<string, string> = {
   'components/reports/vouchers/VoucherImportSheet.tsx': 'reads the file the person picked (a local uri)',
   'lib/retail/read-picked-file.ts': 'reads the file the person picked (a local uri)',
   'lib/queries/useGuestDocuments.ts': 'uploads to the signed storage URL the API hands back, not to the API',
+  'lib/queries/useTreatmentRecords.ts': 'uploads treatment photos to the signed storage URL the API hands back, not to the API',
 };
 
 /** Download helpers that reach the API and must add the site header themselves. */

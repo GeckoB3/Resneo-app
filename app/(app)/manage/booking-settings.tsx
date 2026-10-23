@@ -28,6 +28,7 @@ import {
   type FeatureFlagsCalendar,
 } from '@/lib/queries/useVenueSettings';
 import { useWebDashboardLink } from '@/lib/sites/useWebDashboardLink';
+import { TreatmentRecordsSwitchCard } from '@/components/treatment-records/TreatmentRecordsSwitchCard';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
@@ -1124,6 +1125,14 @@ export default function BookingSettingsScreen() {
             resolvedFlags={resolvedFlags}
             rawFlags={rawFlags}
             disabled={false}
+          />
+        ) : null}
+
+        {/* Treatment records (web plan TR3): its own switch, with an acknowledgement to switch on. */}
+        {appointmentsPlan ? (
+          <TreatmentRecordsSwitchCard
+            enabled={resolvedFlags?.treatment_records_enabled === true}
+            onChanged={() => void refetch()}
           />
         ) : null}
 

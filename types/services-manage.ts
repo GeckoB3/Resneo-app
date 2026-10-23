@@ -66,6 +66,11 @@ export interface ManagedService {
   created_by_staff_id?: string | null;
   name: string;
   description?: string | null;
+  /**
+   * Starter text for this service's treatment records (web plan TR27). Absent on an older server,
+   * which the service form reads as "leave it alone".
+   */
+  treatment_record_template?: string | null;
   duration_minutes: number;
   buffer_minutes?: number | null;
   price_pence?: number | null;

@@ -35,7 +35,13 @@ export type AppointmentsFeatureFlagKey =
   | 'any_available_practitioner'
   | 'compliance_records_enabled'
   | 'class_commerce_enabled'
-  | 'staff_first_booking_flow';
+  | 'staff_first_booking_flow'
+  /**
+   * Treatment records (web plan TR3). Switched only through `POST /api/venue/treatment-records/switch`
+   * with an acknowledgement: the feature-flags PATCH strips it. An older server leaves it out, which
+   * reads as off.
+   */
+  | 'treatment_records_enabled';
 
 /**
  * Appointment-waitlist mode stored on `feature_flags.waitlist_config.mode`.
@@ -213,4 +219,10 @@ export interface VenueBootstrap {
   feature_offers?: Partial<VenueFeatureOffers> | null;
   /** The prompts this admin hid, kept on the staff row (`pos_offer`, `pos_setup`). Admins only. */
   dismissed_prompts?: string[] | null;
+  /**
+   * Whether this person reaches treatment records here (web plan §5): the feature is on, the venue
+   * is on an Appointments plan, and they are an admin or a team member with a calendar. Absent on
+   * an older deploy, which reads as no.
+   */
+  treatment_records_access?: boolean;
 }

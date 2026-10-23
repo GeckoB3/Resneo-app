@@ -17,7 +17,9 @@ import {
 import { GroupVisitCards } from '@/components/bookings/GroupVisitCards';
 import { VisitSummary, type VisitSummaryBadge } from '@/components/bookings/VisitSummary';
 import { MessageGuestSection } from '@/components/bookings/MessageGuestSection';
+import { TreatmentRecordCard } from '@/components/bookings/TreatmentRecordCard';
 import { HiddenContactValue } from '@/components/roles/HiddenContact';
+import { ClientAlertsStrip } from '@/components/treatment-records/ClientAlertsStrip';
 import {
   ModifyBookingSheet,
   type ModifyBookingTarget,
@@ -178,6 +180,11 @@ type BookingDetailContentProps = {
    * this panel in a sheet can close the sheet rather than leave it over the sale screen.
    */
   onOpenedSale?: () => void;
+  /**
+   * Called as the treatment record screen opens (web plan §9), so a host that shows this panel in
+   * a sheet can close the sheet rather than leave a Modal over the pushed screen.
+   */
+  onOpenedRecord?: () => void;
 };
 
 const TERMINAL_STATUSES = new Set<BookingStatus>(['Cancelled', 'Completed', 'No-Show']);
@@ -568,6 +575,7 @@ export function BookingDetailContent({
   detailPending = false,
   linked = null,
   onOpenedSale,
+  onOpenedRecord,
 }: BookingDetailContentProps) {
   const { colors } = useTheme();
   const router = useRouter();
@@ -861,6 +869,15 @@ export function BookingDetailContent({
     featureFlags?.resolved?.compliance_records_enabled === true &&
     !!booking.guest &&
     !!(booking.appointment_service_id || booking.service_item_id);
+  // Treatment records (web plan §9): the feature on and this person reaching records here. A
+  // linked venue's booking asks the owning venue instead, so the card shows once the list answers.
+  const treatmentRecordsHere =
+    featureFlags?.resolved?.treatment_records_enabled === true && venue?.treatment_records_access === true;
+  const treatmentGuestId = booking.guest?.id ?? booking.guest_id ?? null;
+  const treatmentRecordsShown =
+    Boolean(treatmentGuestId) &&
+    !!(booking.appointment_service_id || booking.service_item_id) &&
+    (linked ? policy.linked : treatmentRecordsHere);
 
   /**
    * What a visit hands the editing sheets, or null for an ordinary booking.
@@ -1298,6 +1315,13 @@ export function BookingDetailContent({
               </Text>
             </View>
           </View>
+
+          {/* The client's alerts (web plan TR24), for someone who reaches treatment records. */}
+          {treatmentRecordsShown && treatmentGuestId ? (
+            <View style={styles.heroAlerts}>
+              <ClientAlertsStrip guestId={treatmentGuestId} />
+            </View>
+          ) : null}
 
           {/* The visit at a glance (web #190): when and how long, each service with
               its time, length, status and price, the total, and what is owed. */}
@@ -1835,6 +1859,17 @@ export function BookingDetailContent({
         />
       ) : null}
 
+      {/* Treatment records (web plan §9): straight after Compliance. The editor is a pushed
+          screen, so a sheet host closes itself as it opens. */}
+      {treatmentRecordsShown && treatmentGuestId ? (
+        <TreatmentRecordCard
+          bookingId={booking.id}
+          guestId={treatmentGuestId}
+          linked={Boolean(linked)}
+          onNavigate={onOpenedRecord}
+        />
+      ) : null}
+
       {/* Payments & confirmation — deposit state, actions, resend (web parity) */}
       {showDepositActions ||
       hasDeposit ||
@@ -2178,6 +2213,9 @@ const styles = StyleSheet.create({
   openContact: {
     paddingVertical: 4,
     paddingHorizontal: 2,
+  },
+  heroAlerts: {
+    marginTop: spacing.md,
   },
   heroBlock: {
     marginTop: spacing.base,

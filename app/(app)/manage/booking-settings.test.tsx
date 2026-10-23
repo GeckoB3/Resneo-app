@@ -35,6 +35,8 @@ jest.mock('react-native-safe-area-context', () => {
 
 // Taking payment in person has its own suite (booking-settings.in-person-payments).
 jest.mock('@/components/payments/InPersonPayments', () => ({ BookingSettingsPayments: () => null }));
+// Treatment records' own switch reads and writes through react-query; its suite covers it.
+jest.mock('@/components/treatment-records/TreatmentRecordsSwitchCard', () => ({ TreatmentRecordsSwitchCard: () => null }));
 
 const mockToast = { success: jest.fn(), error: jest.fn(), info: jest.fn() };
 jest.mock('@/providers/ToastProvider', () => ({ useToast: () => mockToast }));

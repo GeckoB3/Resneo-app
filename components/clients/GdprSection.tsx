@@ -3,17 +3,21 @@ import { Share, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { Input } from '@/components/ui/Input';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
-import { ApiError } from '@/lib/api/client';
+import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { fetchGuestGdprExport } from '@/lib/queries/useContactsBulk';
 import { useEraseGuest } from '@/lib/queries/useGuestMutations';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
+import { useEraseHeldCounts } from '@/lib/queries/useTreatmentRecords';
+import { TR_COPY } from '@/lib/treatment-records/copy';
 import { accessRefusalMessage } from '@/lib/roles/roles';
 import { useToast } from '@/providers/ToastProvider';
 import { useViewerAccess } from '@/providers/ViewerAccessProvider';
-import { spacing } from '@/theme/index';
+import { radius, spacing } from '@/theme/index';
+import { useTheme } from '@/theme/useTheme';
 
 type GdprSectionProps = {
   guestId: string;
@@ -40,6 +44,16 @@ export function GdprSection({ guestId, guestName, onErased, bare = false }: Gdpr
   const [exporting, setExporting] = useState(false);
   // 0 = closed, 1 = first confirm, 2 = final confirm.
   const [confirmStep, setConfirmStep] = useState<0 | 1 | 2>(0);
+  const { colors } = useTheme();
+  // What erasing also removes (web plan TR17): the client's treatment records and alerts. With
+  // either, the erase needs a reason, which the server keeps in its audit.
+  const held = useEraseHeldCounts(guestId, confirmStep !== 0);
+  const [reason, setReason] = useState('');
+  // The server asked for a reason this sheet did not know was needed (records added meanwhile).
+  const [reasonAsked, setReasonAsked] = useState(false);
+  const records = held.data?.treatment_records ?? 0;
+  const alerts = held.data?.client_alerts ?? 0;
+  const needsReason = records > 0 || alerts > 0 || reasonAsked;
 
   async function handleExport() {
     if (!accessToken) return;
@@ -62,16 +76,27 @@ export function GdprSection({ guestId, guestName, onErased, bare = false }: Gdpr
 
   async function handleErase() {
     try {
-      await eraseMutation.mutateAsync({ guestId });
+      await eraseMutation.mutateAsync({ guestId, reason: reason.trim() || null });
       setConfirmStep(0);
+      setReason('');
       // Feedback + navigation fire directly off the resolved mutation — never
       // from an Alert callback (which is a no-op on web).
       toast.success('Personal data anonymised. The booking record is retained.');
       onErased();
     } catch (e) {
       hapticWarning();
+      if (apiErrorCode(e) === 'ERASE_REASON_REQUIRED') {
+        setReasonAsked(true);
+        setConfirmStep(1);
+      }
       toast.error(e instanceof ApiError ? e.message : 'Could not erase data.');
     }
+  }
+
+  function closeSheet() {
+    setConfirmStep(0);
+    setReason('');
+    setReasonAsked(false);
   }
 
   const body = (
@@ -112,7 +137,7 @@ export function GdprSection({ guestId, guestName, onErased, bare = false }: Gdpr
     <>
       {bare ? body : <Card>{body}</Card>}
 
-      <Sheet visible={confirmStep !== 0} onClose={() => setConfirmStep(0)}>
+      <Sheet visible={confirmStep !== 0} onClose={closeSheet}>
         <View style={styles.sheetBody}>
           {confirmStep === 1 ? (
             <>
@@ -121,17 +146,34 @@ export function GdprSection({ guestId, guestName, onErased, bare = false }: Gdpr
                 This permanently anonymises {guestName}&apos;s personal data (name, email, phone,
                 notes). Their booking history is retained anonymously. This cannot be undone.
               </Text>
+              {needsReason ? (
+                <View style={[styles.held, { backgroundColor: colors.warningSurface, borderColor: colors.warning }]}>
+                  <Text variant="bodySmall">
+                    {records > 0 || reasonAsked
+                      ? TR_COPY.eraseWarning(guestName, Math.max(records, 1))
+                      : TR_COPY.eraseAlertsOnly(guestName)}
+                  </Text>
+                  <Input
+                    label={TR_COPY.eraseReasonLabel}
+                    value={reason}
+                    onChangeText={setReason}
+                    maxLength={500}
+                    multiline
+                  />
+                </View>
+              ) : null}
               <View style={styles.sheetActions}>
                 <Button
                   label="Cancel"
                   variant="secondary"
                   style={styles.flex1}
-                  onPress={() => setConfirmStep(0)}
+                  onPress={closeSheet}
                 />
                 <Button
                   label="Continue"
                   variant="danger"
                   style={styles.flex1}
+                  disabled={held.isLoading || (needsReason && !reason.trim())}
                   onPress={() => setConfirmStep(2)}
                 />
               </View>
@@ -182,6 +224,12 @@ const styles = StyleSheet.create({
   },
   sheetBody: {
     gap: spacing.md,
+  },
+  held: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radius.sm,
+    padding: spacing.md,
+    gap: spacing.sm,
   },
   sheetActions: {
     flexDirection: 'row',

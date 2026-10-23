@@ -126,11 +126,12 @@ export function useEraseGuest() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ guestId }: { guestId: string }): Promise<unknown> => {
+    mutationFn: async ({ guestId, reason }: { guestId: string; reason?: string | null }): Promise<unknown> => {
       if (!accessToken) throw new Error('Missing access token');
       return apiFetch<unknown>('/api/venue/gdpr/erase-guest', {
         method: 'POST',
-        body: JSON.stringify({ guest_id: guestId }),
+        // The reason is required when the client has treatment records or alerts (web plan TR17).
+        body: JSON.stringify({ guest_id: guestId, ...(reason?.trim() ? { reason: reason.trim() } : {}) }),
         accessToken,
       });
     },
