@@ -6,7 +6,7 @@
  *
  * jest hoists mock factories above imports, so closed-over vars are `mock*`.
  */
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 
@@ -286,6 +286,29 @@ describe('TreatmentRecordScreen', () => {
     });
     expect(screen.getByText('• Juvederm, batch JV-1, expires 31 Mar 2027, 1 ml, Lips')).toBeTruthy();
   });
+
+  it('holds a save while offline, says so, and saves on reconnecting', async () => {
+    mockParams = { id: 'r-1', guestId: 'g-1' };
+    mockDetail = detail();
+    mockSave.mockResolvedValue({ version: 4 });
+    onlineManager.setOnline(false);
+    try {
+      await renderScreen();
+      await act(async () => {
+        fireEvent.changeText(screen.getByDisplayValue('Areas treated: top lip'), 'Areas treated: top lip, offline');
+      });
+      await waitFor(() => expect(screen.getByText('Not saved yet. You’re offline.')).toBeTruthy(), { timeout: 3000 });
+      expect(mockSave).not.toHaveBeenCalled();
+
+      await act(async () => {
+        onlineManager.setOnline(true);
+      });
+      await waitFor(() => expect(mockSave).toHaveBeenCalledWith('tok', 'r-1', { version: 3, note: 'Areas treated: top lip, offline' }));
+      await waitFor(() => expect(screen.getByText('Saved')).toBeTruthy());
+    } finally {
+      onlineManager.setOnline(true);
+    }
+  }, 10_000);
 
   it('deletes with a reason, then goes back', async () => {
     mockParams = { id: 'r-1', guestId: 'g-1' };
