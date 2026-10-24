@@ -330,6 +330,35 @@ describe('TreatmentRecordScreen', () => {
     expect(mockRouter.back).toHaveBeenCalled();
   });
 
+  it('says in the delete sheet why a delete failed, where a toast would be hidden behind it', async () => {
+    mockParams = { id: 'r-1', guestId: 'g-1' };
+    mockDetail = detail();
+    mockDelete.mockRejectedValue(new ApiError('This record was deleted on another screen.', 410));
+    await renderScreen();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Delete record'));
+    });
+    const buttons = screen.getAllByText('Delete record');
+    await act(async () => {
+      fireEvent.press(buttons[buttons.length - 1]!);
+    });
+    expect(screen.getByText('This record was deleted on another screen.')).toBeTruthy();
+    expect(mockRouter.back).not.toHaveBeenCalled();
+  });
+
+  it('shows "Edited by" and See changes as soon as a save keeps a version', async () => {
+    mockParams = { id: 'r-1', guestId: 'g-1' };
+    mockDetail = detail();
+    mockSave.mockResolvedValue({ version: 4, version_count: 1, last_edited_by_name: 'Ali', last_edited_at: '2026-10-23T11:00:00Z' });
+    await renderScreen();
+    expect(screen.queryByText(/Edited by/)).toBeNull();
+    await act(async () => {
+      fireEvent.changeText(screen.getByDisplayValue('Areas treated: top lip'), 'Areas treated: top lip, review in 2 weeks');
+    });
+    await waitFor(() => expect(screen.getByText(/Edited by Ali on 23 Oct 2026/)).toBeTruthy(), { timeout: 3000 });
+    expect(screen.getByText('See changes')).toBeTruthy();
+  });
+
   it('shows a deleted record read only, with who deleted it', async () => {
     mockParams = { id: 'r-1', guestId: 'g-1' };
     mockDetail = detail({ deleted_at: '2026-10-23T09:00:00Z', deleted_by_name: 'Ali', deleted_reason: 'Wrong client' });

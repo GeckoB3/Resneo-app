@@ -35,8 +35,16 @@ jest.mock('react-native-safe-area-context', () => {
 
 // Taking payment in person has its own suite (booking-settings.in-person-payments).
 jest.mock('@/components/payments/InPersonPayments', () => ({ BookingSettingsPayments: () => null }));
-// Treatment records' own switch reads and writes through react-query; its suite covers it.
-jest.mock('@/components/treatment-records/TreatmentRecordsSwitchCard', () => ({ TreatmentRecordsSwitchCard: () => null }));
+// Treatment records' own switch reads and writes through react-query; its suite covers it. Here a
+// marker says only whether the screen shows it, and in which state.
+jest.mock('@/components/treatment-records/TreatmentRecordsSwitchCard', () => {
+  const React = jest.requireActual<typeof import('react')>('react');
+  const { Text } = jest.requireActual<typeof import('react-native')>('react-native');
+  return {
+    TreatmentRecordsSwitchCard: ({ enabled }: { enabled: boolean }) =>
+      React.createElement(Text, null, `Treatment records switch: ${enabled ? 'on' : 'off'}`),
+  };
+});
 
 const mockToast = { success: jest.fn(), error: jest.fn(), info: jest.fn() };
 jest.mock('@/providers/ToastProvider', () => ({ useToast: () => mockToast }));
@@ -140,6 +148,20 @@ describe('Booking settings — waitlist enable + mode', () => {
     const patch = mockUpdateFlagsAsync.mock.calls[0][0] as Record<string, unknown>;
     expect(patch.waitlist_v2).toBe(true);
     expect(patch.waitlist_config).toEqual({ mode: 'notify_in_order' });
+  });
+});
+
+describe('Booking settings: treatment records switch', () => {
+  it('shows the switch in the state the server resolves', async () => {
+    mockResolvedFlags = { waitlist_v2: true, treatment_records_enabled: true };
+    await render(<BookingSettingsScreen />);
+    expect(screen.getByText('Treatment records switch: on')).toBeTruthy();
+  });
+
+  it('offers no switch when the server does not know the feature (an older deployment)', async () => {
+    mockResolvedFlags = { waitlist_v2: true };
+    await render(<BookingSettingsScreen />);
+    expect(screen.queryByText(/Treatment records switch/)).toBeNull();
   });
 });
 

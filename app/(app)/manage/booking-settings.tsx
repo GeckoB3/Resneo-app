@@ -1128,8 +1128,10 @@ export default function BookingSettingsScreen() {
           />
         ) : null}
 
-        {/* Treatment records (web plan TR3): its own switch, with an acknowledgement to switch on. */}
-        {appointmentsPlan ? (
+        {/* Treatment records (web plan TR3): its own switch, with an acknowledgement to switch on.
+            Shown only when the server resolves the key, so a server without the feature (an older
+            deployment) never offers a switch that cannot work. */}
+        {appointmentsPlan && resolvedFlags?.treatment_records_enabled !== undefined ? (
           <TreatmentRecordsSwitchCard
             enabled={resolvedFlags?.treatment_records_enabled === true}
             onChanged={() => void refetch()}

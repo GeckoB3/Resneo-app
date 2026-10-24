@@ -30,11 +30,13 @@ let mockList: { data: { records: TreatmentRecordSummary[]; linked: boolean } | n
 let mockAlerts: { data: ClientAlert[] | null | undefined };
 const mockSwitch = jest.fn();
 const mockShare = jest.fn();
+const mockAddAlert = jest.fn();
+const mockRemoveAlert = jest.fn();
 jest.mock('@/lib/queries/useTreatmentRecords', () => ({
   useTreatmentRecordsList: () => mockList,
   useClientAlerts: () => mockAlerts,
-  useAddClientAlert: () => ({ mutate: jest.fn(), isPending: false }),
-  useRemoveClientAlert: () => ({ mutate: jest.fn(), isPending: false }),
+  useAddClientAlert: () => ({ mutate: mockAddAlert, isPending: false }),
+  useRemoveClientAlert: () => ({ mutate: mockRemoveAlert, isPending: false }),
   useTreatmentRecordsSwitchState: () => ({ data: { linked_venues: [{ venue_id: 'v-2', name: 'Sept 20 Hair' }] } }),
   useSwitchTreatmentRecords: () => ({ mutate: mockSwitch, isPending: false }),
   shareTreatmentPdf: (...args: unknown[]) => mockShare(...args),
@@ -44,6 +46,7 @@ import { TreatmentRecordCard } from '@/components/bookings/TreatmentRecordCard';
 import { TreatmentRecordsSection } from '@/components/clients/TreatmentRecordsSection';
 import { ClientAlertsStrip } from '@/components/treatment-records/ClientAlertsStrip';
 import { TreatmentRecordsSwitchCard } from '@/components/treatment-records/TreatmentRecordsSwitchCard';
+import { ApiError } from '@/lib/api/client';
 import { FULL_VIEWER_ACCESS, type ViewerAccess } from '@/lib/roles/roles';
 import { ViewerAccessProvider } from '@/providers/ViewerAccessProvider';
 
@@ -81,6 +84,8 @@ beforeEach(() => {
   mockRouter.push.mockClear();
   mockSwitch.mockReset();
   mockShare.mockReset();
+  mockAddAlert.mockReset();
+  mockRemoveAlert.mockReset();
   mockToast.error.mockClear();
   mockList = { data: { records: [], linked: false } };
   mockAlerts = { data: [] };
@@ -153,6 +158,42 @@ describe('ClientAlertsStrip', () => {
     expect(screen.getByText('Add alert')).toBeTruthy();
   });
 
+  it('says in the sheet when an alert cannot be added, where a toast would be hidden behind it', async () => {
+    mockAlerts = { data: [{ id: 'a-1', text: 'Pregnant', created_by_name: 'Sam', created_at: '2026-10-02T10:00:00Z' }] };
+    mockAddAlert.mockImplementation((_text: string, opts: { onError: (e: unknown) => void }) =>
+      opts.onError(new ApiError('A client has at most 10 alerts.', 400)),
+    );
+    await render(<ClientAlertsStrip guestId="g-1" />);
+    await act(async () => {
+      fireEvent.press(screen.getByText('Edit alerts'));
+    });
+    await act(async () => {
+      fireEvent.changeText(screen.getByPlaceholderText('For example: Allergic to lidocaine'), 'Allergic to latex');
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByText('Add alert'));
+    });
+    expect(screen.getByText('A client has at most 10 alerts.')).toBeTruthy();
+    expect(mockToast.error).not.toHaveBeenCalled();
+  });
+
+  it('keeps the sheet open after its last alert is removed', async () => {
+    mockAlerts = { data: [{ id: 'a-1', text: 'Pregnant', created_by_name: 'Sam', created_at: '2026-10-02T10:00:00Z' }] };
+    mockRemoveAlert.mockImplementation(() => {
+      mockAlerts = { data: [] };
+    });
+    const view = await render(<ClientAlertsStrip guestId="g-1" />);
+    await act(async () => {
+      fireEvent.press(screen.getByText('Edit alerts'));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Remove Pregnant'));
+    });
+    await view.rerender(<ClientAlertsStrip guestId="g-1" />);
+    expect(screen.queryByLabelText('Alerts: Pregnant')).toBeNull();
+    expect(screen.getByText('No alerts.')).toBeTruthy();
+  });
+
   it('shows nothing for a client with no alerts, or for someone without access', async () => {
     const none = await render(<ClientAlertsStrip guestId="g-1" />);
     expect(none.toJSON()).toBeNull();
@@ -223,6 +264,40 @@ describe('TreatmentRecordsSwitchCard', () => {
     });
     expect(mockSwitch).toHaveBeenCalledWith(true, expect.anything());
     expect(onChanged).toHaveBeenCalled();
+  });
+
+  it('says in the sheet why switching on failed, where a toast would be hidden behind it', async () => {
+    mockSwitch.mockImplementation((_on: boolean, opts: { onError: (e: unknown) => void }) =>
+      opts.onError(new ApiError('Your plan needs attention.', 409)),
+    );
+    await render(<TreatmentRecordsSwitchCard enabled={false} onChanged={jest.fn()} />);
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Treatment records'), 'valueChange', true);
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByText('I understand that my business is responsible for the health information it keeps in ResNeo.'));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByText('Switch on'));
+    });
+    expect(screen.getByText('Your plan needs attention.')).toBeTruthy();
+    expect(screen.getByText('Switch on treatment records?')).toBeTruthy();
+    expect(mockToast.error).not.toHaveBeenCalled();
+  });
+
+  it('closes the switch-off sheet before saying why it failed', async () => {
+    mockSwitch.mockImplementation((_on: boolean, opts: { onError: (e: unknown) => void }) =>
+      opts.onError(new ApiError('Something went wrong.', 500)),
+    );
+    await render(<TreatmentRecordsSwitchCard enabled onChanged={jest.fn()} />);
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Treatment records'), 'valueChange', false);
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByText('Switch off'));
+    });
+    expect(screen.queryByText(/Nothing is deleted/)).toBeNull();
+    expect(mockToast.error).toHaveBeenCalledWith('Something went wrong.');
   });
 
   it('asks before switching off, and says nothing is deleted', async () => {

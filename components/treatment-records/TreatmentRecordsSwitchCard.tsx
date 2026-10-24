@@ -28,22 +28,37 @@ export function TreatmentRecordsSwitchCard({ enabled, onChanged }: { enabled: bo
   const [sheetOpen, setSheetOpen] = useState(false);
   const [confirmOff, setConfirmOff] = useState(false);
   const [ticked, setTicked] = useState(false);
+  // A sheet is its own native window, so a toast raised while it is open is drawn behind it: the
+  // switch-on sheet says what went wrong itself, and the switch-off sheet closes first.
+  const [error, setError] = useState<string | null>(null);
   const state = useTreatmentRecordsSwitchState(sheetOpen);
   const linked = state.data?.linked_venues ?? [];
 
+  function closeSheet() {
+    setSheetOpen(false);
+    setTicked(false);
+    setError(null);
+  }
+
   function run(on: boolean) {
+    setError(null);
     toggle.mutate(on, {
       onSuccess: () => {
         hapticSuccess();
-        setSheetOpen(false);
+        closeSheet();
         setConfirmOff(false);
-        setTicked(false);
         toast.success(on ? 'Treatment records are on.' : 'Treatment records are off. Nothing was deleted.');
         onChanged();
       },
       onError: (e) => {
         hapticWarning();
-        toast.error(e instanceof ApiError ? e.message : 'Could not change treatment records.');
+        const message = e instanceof ApiError ? e.message : 'Could not change treatment records.';
+        if (on) {
+          setError(message);
+        } else {
+          setConfirmOff(false);
+          toast.error(message);
+        }
       },
     });
   }
@@ -70,12 +85,7 @@ export function TreatmentRecordsSwitchCard({ enabled, onChanged }: { enabled: bo
         </View>
       </SectionCard.Body>
 
-      <Sheet
-        visible={sheetOpen}
-        onClose={() => {
-          setSheetOpen(false);
-          setTicked(false);
-        }}>
+      <Sheet visible={sheetOpen} onClose={closeSheet}>
         <ScrollView contentContainerStyle={styles.sheetBody}>
           <Text variant="subheading">{TR_COPY.switchOnTitle}</Text>
           <Text variant="bodySmall" tone="secondary">
@@ -92,17 +102,13 @@ export function TreatmentRecordsSwitchCard({ enabled, onChanged }: { enabled: bo
             </View>
           ) : null}
           <TickRow title={TR_COPY.switchOnAcknowledge} checked={ticked} onChange={setTicked} plain />
+          {error ? (
+            <Text variant="bodySmall" tone="danger" accessibilityRole="alert">
+              {error}
+            </Text>
+          ) : null}
           <View style={styles.actions}>
-            <Button
-              label="Cancel"
-              variant="secondary"
-              style={styles.flex1}
-              disabled={toggle.isPending}
-              onPress={() => {
-                setSheetOpen(false);
-                setTicked(false);
-              }}
-            />
+            <Button label="Cancel" variant="secondary" style={styles.flex1} disabled={toggle.isPending} onPress={closeSheet} />
             <Button
               label={TR_COPY.switchOnButton}
               style={styles.flex1}

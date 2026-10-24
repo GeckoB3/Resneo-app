@@ -36,7 +36,7 @@ import {
 } from '@/lib/queries/useTreatmentRecords';
 import { useScreenCaptureProtection } from '@/lib/security/useScreenCaptureProtection';
 import { PHOTO_LABELS, TR_COPY } from '@/lib/treatment-records/copy';
-import { canOfferCopy, changesBetween, draftFromDetail, photoMimeType, savedProducts, type TreatmentDraft } from '@/lib/treatment-records/draft';
+import { canOfferCopy, changesBetween, draftFromDetail, photoMimeType, savedProducts, savedRecordFields, type TreatmentDraft } from '@/lib/treatment-records/draft';
 import { formatDay, formatTime, ymdIn } from '@/lib/treatment-records/format';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
@@ -158,6 +158,8 @@ function TreatmentRecordEditor({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [removingPhoto, setRemovingPhoto] = useState<string | null>(null);
   const [deleteReason, setDeleteReason] = useState('');
+  // Shown in the delete sheet: a toast raised while a sheet is open is drawn behind it.
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [busy, setBusy] = useState<'copy' | 'delete' | 'print' | null>(null);
   const [leaving, setLeaving] = useState<Parameters<typeof navigation.dispatch>[0] | null>(null);
 
@@ -236,6 +238,8 @@ function TreatmentRecordEditor({
             const out = await saveTreatmentRecord(accessToken, recordIdRef.current, { version: versionRef.current ?? 1, ...changes });
             versionRef.current = out.version;
             savedRef.current = current;
+            // A save that kept a version shows "Edited by" and See changes straight away.
+            setDetail((d) => (d ? { ...d, record: { ...d.record, ...savedRecordFields(out) } } : d));
             invalidateLists();
           }
           setSave('saved');
@@ -435,6 +439,7 @@ function TreatmentRecordEditor({
   async function confirmDelete() {
     if (!recordIdRef.current || !accessToken) return;
     setBusy('delete');
+    setDeleteError(null);
     try {
       await flush();
       await deleteTreatmentRecord(accessToken, recordIdRef.current, deleteReason.trim() || null);
@@ -445,10 +450,15 @@ function TreatmentRecordEditor({
       router.back();
     } catch (err) {
       hapticWarning();
-      toast.error(err instanceof ApiError ? err.message : 'Could not delete the record.');
+      setDeleteError(err instanceof ApiError ? err.message : 'Could not delete the record.');
     } finally {
       setBusy(null);
     }
+  }
+
+  function closeDelete() {
+    setDeleteOpen(false);
+    setDeleteError(null);
   }
 
   async function reloadAfterConflict() {
@@ -669,15 +679,20 @@ function TreatmentRecordEditor({
         ) : null}
       </Sheet>
 
-      <Sheet visible={deleteOpen} onClose={() => setDeleteOpen(false)}>
+      <Sheet visible={deleteOpen} onClose={closeDelete}>
         <View style={styles.sheetBody}>
           <Text variant="subheading">{TR_COPY.deleteTitle}</Text>
           <Text variant="bodySmall" tone="secondary">
             {TR_COPY.deleteMessage(context.client.name)}
           </Text>
           <Input label={TR_COPY.deleteReason} value={deleteReason} onChangeText={setDeleteReason} maxLength={500} multiline />
+          {deleteError ? (
+            <Text variant="bodySmall" tone="danger" accessibilityRole="alert">
+              {deleteError}
+            </Text>
+          ) : null}
           <View style={styles.actions}>
-            <Button label="Cancel" variant="secondary" style={styles.flex1} disabled={busy === 'delete'} onPress={() => setDeleteOpen(false)} />
+            <Button label="Cancel" variant="secondary" style={styles.flex1} disabled={busy === 'delete'} onPress={closeDelete} />
             <Button label={TR_COPY.deleteButton} variant="danger" style={styles.flex1} loading={busy === 'delete'} onPress={() => void confirmDelete()} />
           </View>
         </View>

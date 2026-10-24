@@ -1,6 +1,6 @@
 import { TR_COPY } from '@/lib/treatment-records/copy';
 import { formatDay, formatTime } from '@/lib/treatment-records/format';
-import type { TreatmentProductLine, TreatmentRecordDetail, TreatmentRecordSummary } from '@/types/treatment-records';
+import type { TreatmentProductLine, TreatmentRecordDetail, TreatmentRecordSaveResult, TreatmentRecordSummary } from '@/types/treatment-records';
 
 /**
  * The editor's draft and what an autosave sends (web plan §8, the same rules as the web editor):
@@ -49,6 +49,16 @@ export function changesBetween(saved: TreatmentDraft, current: TreatmentDraft): 
   if (current.note !== saved.note) changes.note = current.note;
   if (!sameProducts(current.products, saved.products)) changes.products = savedProducts(current.products);
   return Object.keys(changes).length === 0 ? null : changes;
+}
+
+/** The record fields an autosave answers with, ready to merge into the open record. */
+export function savedRecordFields(out: TreatmentRecordSaveResult): Partial<TreatmentRecordDetail['record']> {
+  return {
+    version: out.version,
+    ...(out.updated_at ? { updated_at: out.updated_at } : {}),
+    ...(out.version_count !== undefined ? { version_count: out.version_count } : {}),
+    ...(out.last_edited_at ? { last_edited_at: out.last_edited_at, last_edited_by_name: out.last_edited_by_name ?? null } : {}),
+  };
 }
 
 /** "Copy from last record" is offered only while a new record holds nothing, or only its starter text. */

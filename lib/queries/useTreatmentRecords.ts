@@ -12,6 +12,7 @@ import type {
   TreatmentPhotoLabel,
   TreatmentProductLine,
   TreatmentRecordDetail,
+  TreatmentRecordSaveResult,
   TreatmentRecordsListResponse,
   TreatmentRecordsSwitchState,
   TreatmentSuggestions,
@@ -206,8 +207,8 @@ export async function saveTreatmentRecord(
   accessToken: string,
   recordId: string,
   body: { version: number } & Record<string, unknown>,
-): Promise<{ version: number }> {
-  return apiFetch<{ version: number }>(`${BASE}/${recordId}`, { accessToken, method: 'PATCH', body: JSON.stringify(body) });
+): Promise<TreatmentRecordSaveResult> {
+  return apiFetch<TreatmentRecordSaveResult>(`${BASE}/${recordId}`, { accessToken, method: 'PATCH', body: JSON.stringify(body) });
 }
 
 export async function deleteTreatmentRecord(accessToken: string, recordId: string, reason: string | null): Promise<void> {

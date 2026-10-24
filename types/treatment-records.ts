@@ -86,6 +86,15 @@ export interface TreatmentRecordDetail {
   can_see_views: boolean;
 }
 
+/** PATCH /api/venue/treatment-records/[id]: the new version and what "Edited by" reads. Older servers sent only `version`. */
+export interface TreatmentRecordSaveResult {
+  version: number;
+  updated_at?: string | null;
+  version_count?: number;
+  last_edited_by_name?: string | null;
+  last_edited_at?: string | null;
+}
+
 export type TreatmentFormState = 'valid' | 'expired' | 'missing';
 
 /** GET /api/venue/treatment-records/context?booking_id= or ?guest_id=: everything a new record needs. */

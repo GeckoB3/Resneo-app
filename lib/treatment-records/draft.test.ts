@@ -10,6 +10,7 @@ import {
   photoMimeType,
   recordListLines,
   savedProducts,
+  savedRecordFields,
 } from '@/lib/treatment-records/draft';
 import { formatYmd, isPastDay, ymdIn } from '@/lib/treatment-records/format';
 import type { TreatmentRecordSummary } from '@/types/treatment-records';
@@ -64,6 +65,22 @@ describe('changesBetween', () => {
     expect(changesBetween(saved, { note: saved.note, products })).toEqual({
       products: [{ product_name: 'Juvederm', batch_number: null, expiry_date: null, amount: null, unit: null, area: null }],
     });
+  });
+});
+
+describe('savedRecordFields', () => {
+  it('takes the version count and the last edit from a save', () => {
+    expect(savedRecordFields({ version: 4, updated_at: 'u', version_count: 2, last_edited_by_name: 'Ali', last_edited_at: 'e' })).toEqual({
+      version: 4,
+      updated_at: 'u',
+      version_count: 2,
+      last_edited_by_name: 'Ali',
+      last_edited_at: 'e',
+    });
+  });
+
+  it('changes only the version when an older server answers with nothing else', () => {
+    expect(savedRecordFields({ version: 4 })).toEqual({ version: 4 });
   });
 });
 

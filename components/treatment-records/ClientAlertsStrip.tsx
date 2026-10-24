@@ -10,7 +10,6 @@ import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useAddClientAlert, useClientAlerts, useRemoveClientAlert } from '@/lib/queries/useTreatmentRecords';
 import { TR_COPY } from '@/lib/treatment-records/copy';
 import { formatDay } from '@/lib/treatment-records/format';
-import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
@@ -24,25 +23,28 @@ export function ClientAlertsStrip({ guestId, enabled = true }: { guestId: string
   const alerts = useClientAlerts(guestId, enabled);
   const [editing, setEditing] = useState(false);
   const list = alerts.data ?? [];
-  if (list.length === 0) return null;
+  // The sheet stays open after its last alert is removed; the strip goes once it closes.
+  if (list.length === 0 && !editing) return null;
   return (
     <>
-      <View
-        accessibilityRole="alert"
-        accessibilityLabel={`${TR_COPY.alertsLabel}: ${list.map((a) => a.text).join('; ')}`}
-        style={[styles.strip, { backgroundColor: colors.warningSurface, borderColor: colors.warning }]}>
-        <Text variant="bodySmall" style={styles.stripText}>
-          <Text variant="bodySmall" style={styles.bold}>
-            {`${TR_COPY.alertsLabel}: `}
+      {list.length > 0 ? (
+        <View
+          accessibilityRole="alert"
+          accessibilityLabel={`${TR_COPY.alertsLabel}: ${list.map((a) => a.text).join('; ')}`}
+          style={[styles.strip, { backgroundColor: colors.warningSurface, borderColor: colors.warning }]}>
+          <Text variant="bodySmall" style={styles.stripText}>
+            <Text variant="bodySmall" style={styles.bold}>
+              {`${TR_COPY.alertsLabel}: `}
+            </Text>
+            {list.map((a) => a.text).join('; ')}
           </Text>
-          {list.map((a) => a.text).join('; ')}
-        </Text>
-        <Pressable accessibilityRole="button" hitSlop={8} onPress={() => setEditing(true)}>
-          <Text variant="caption" style={styles.editLink}>
-            {TR_COPY.editAlerts}
-          </Text>
-        </Pressable>
-      </View>
+          <Pressable accessibilityRole="button" hitSlop={8} onPress={() => setEditing(true)}>
+            <Text variant="caption" style={styles.editLink}>
+              {TR_COPY.editAlerts}
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
       <ClientAlertsSheet guestId={guestId} visible={editing} onClose={() => setEditing(false)} />
     </>
   );
@@ -51,17 +53,19 @@ export function ClientAlertsStrip({ guestId, enabled = true }: { guestId: string
 /** Add and remove a client's alerts. An alert is never edited: a change is a removal and a new one. */
 export function ClientAlertsSheet({ guestId, visible, onClose }: { guestId: string; visible: boolean; onClose: () => void }) {
   const { colors } = useTheme();
-  const toast = useToast();
   const alerts = useClientAlerts(guestId, visible);
   const add = useAddClientAlert(guestId);
   const remove = useRemoveClientAlert();
   const [text, setText] = useState('');
+  // Shown in the sheet: a toast raised while a sheet is open is drawn behind it.
+  const [error, setError] = useState<string | null>(null);
   const showing = alerts.data ?? [];
   const full = showing.length >= 10;
 
   function submit() {
     const value = text.trim();
     if (!value) return;
+    setError(null);
     add.mutate(value, {
       onSuccess: () => {
         hapticSuccess();
@@ -69,13 +73,18 @@ export function ClientAlertsSheet({ guestId, visible, onClose }: { guestId: stri
       },
       onError: (e) => {
         hapticWarning();
-        toast.error(e instanceof ApiError ? e.message : 'Could not add the alert.');
+        setError(e instanceof ApiError ? e.message : 'Could not add the alert.');
       },
     });
   }
 
+  function close() {
+    setError(null);
+    onClose();
+  }
+
   return (
-    <Sheet visible={visible} onClose={onClose}>
+    <Sheet visible={visible} onClose={close}>
       <ScrollView contentContainerStyle={styles.sheetBody} keyboardShouldPersistTaps="handled">
         <Text variant="subheading">{TR_COPY.alertsLabel}</Text>
         {showing.length === 0 ? (
@@ -97,11 +106,15 @@ export function ClientAlertsSheet({ guestId, visible, onClose }: { guestId: stri
                 size="sm"
                 disabled={remove.isPending}
                 accessibilityLabel={`Remove ${a.text}`}
-                onPress={() =>
+                onPress={() => {
+                  setError(null);
                   remove.mutate(a.id, {
-                    onError: (e) => toast.error(e instanceof ApiError ? e.message : 'Could not remove the alert.'),
-                  })
-                }
+                    onError: (e) => {
+                      hapticWarning();
+                      setError(e instanceof ApiError ? e.message : 'Could not remove the alert.');
+                    },
+                  });
+                }}
               />
             </View>
           ))
@@ -121,8 +134,13 @@ export function ClientAlertsSheet({ guestId, visible, onClose }: { guestId: stri
             A client has at most 10 alerts. Remove one first.
           </Text>
         ) : null}
+        {error ? (
+          <Text variant="bodySmall" tone="danger" accessibilityRole="alert">
+            {error}
+          </Text>
+        ) : null}
         <Button label={TR_COPY.addAlert} loading={add.isPending} disabled={!text.trim() || full} onPress={submit} fullWidth />
-        <Button label="Done" variant="secondary" onPress={onClose} fullWidth />
+        <Button label="Done" variant="secondary" onPress={close} fullWidth />
       </ScrollView>
     </Sheet>
   );
