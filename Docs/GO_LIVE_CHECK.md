@@ -1,5 +1,128 @@
 # Go-live check — Resneo app
 
+## Run 2026-10-25: record photos, Save and close, tap targets, commission, team, booking wizard, iOS 1.3.0 and Android 1.3.0, from `8c4e239`
+
+**Scope:** `5db7bf9..8c4e239`, two commits:
+- `c469ac6`: the 2026-10-25 polish round. Treatment records: photos shrink to 2,000 px and an 85%
+  JPEG before upload where the resizer exists (`lib/treatment-records/photo-prepare.ts`), the
+  20-photo and 10 MB checks run before upload, and Save and close sits at the foot of a record.
+  `CollapsibleCard` gives its padding to the header, so a tap anywhere across the top of a card
+  opens or shuts it; the contact screen uses `removeClippedSubviews` on Android only. The booking
+  wizards drop the back arrow once a booking is made, and the time and review steps name the day.
+  Commission splits, team and sites wording to match the web.
+- `8c4e239`: CI runs on Node 24 instead of Node 20. No app code.
+
+`CHANGELOG.md` has it under "Unreleased OTA: record photos, Save and close, tap targets, commission,
+team". It also now records the three updates published on 22 and 24 October, which had no entry.
+
+**Verdict: cleared to publish, one update per platform (§6).** One native-side change, the
+`expo-image-manipulator` package, is deliberate and safe for an update (§2): the 1.3.0 binaries do
+not have it, and on them photos upload as before, at the picker's 0.7 quality and full size.
+Resizing starts with the next store build. Tested on an Android tablet in Expo Go (§5); not on an
+iPhone or a store binary.
+
+### 1. Version and reach
+
+| Check | Result |
+|---|---|
+| Published tip | `update:list --branch production`: groups `d140d0db` (iOS) and `86582c96` (Android), "Treatment records: notes, products, photos and alerts", from `5db7bf9`, 2026-10-24 11:36 and 11:34 UTC, runtime 1.3.0. Before them: `7ef8e39f` / `2974ccb5` from `e15ca55` and `e84a4223` / `b64a2137` from `c7e5e14`, both 2026-10-22 |
+| Channel | `channel:view production`: not paused, mapped to branch `production` |
+| Store binaries | `build:list`: iOS 1.3.0 build 27 and Android 1.3.0 versionCode 19, production, from `7a5de9a` (2026-10-18). No newer store build. (An Android 1.3.0 preview build from `e19088b`, 2026-10-21, exists for testing only) |
+| Runtime | `app.json` root `version` and `android.version` 1.3.0, `appVersion` policy: the update reaches 1.3.0 installs only, as the live ones do |
+
+### 2. One native-side change, safe for an update
+
+`git diff 7a5de9a 8c4e239` over `package.json`, `package-lock.json`, `app.json`, `app.config.js`,
+`eas.json`, `metro.config.js`, `babel.config.js`, `modules`, `patches` and `plugins`: only
+`package.json` and `package-lock.json` (14 lines), adding `expo-image-manipulator` 57.0.21. Its one
+dependency, `expo-image-loader`, was already installed and is unchanged. Nothing else moved.
+
+The binaries have no `ExpoImageManipulator` native module, so the app never loads the package on
+them:
+- `photo-prepare.ts` asks `requireOptionalNativeModule('ExpoImageManipulator')` first, and only then
+  `require`s the package, inside the function. Metro runs a module's code only when it is first
+  required, so the package's own `requireNativeModule` call never runs on 1.3.0.
+- Without the module, `preparePhotoForUpload` returns the picker's file and `pickerQuality()` stays
+  0.7, which is exactly what 1.3.0 does today. Covered by `photo-prepare.test.ts` ("a build without
+  the resizer").
+- Nothing else imports the package (`components/retail/ai-import/prepare.ts` only mentions it in a
+  comment).
+
+### 3. Verified on this machine
+
+- Node 24.22.1 (the patched release), eas-cli 23.0.0, signed in as `resneo` (Owner).
+- `npm ci`: 1,245 packages (last run's 1,244 plus the resizer), patches applied.
+- `tsc --noEmit`: clean. `jest`: **597 suites / 5,674 tests pass**. `expo lint`: 0 errors,
+  598 warnings (507 at the last run; the rise is `import/first` in tests and the like, no errors).
+- EAS `production` environment (`eas env:list`): `EXPO_PUBLIC_API_URL` www.resneo.com,
+  `EXPO_PUBLIC_SUPABASE_URL` njualfobtudvlugqkqho (live), the live publishable key and Sentry DSN,
+  each identical to `eas.json`'s production profile, plus the `pk_live_` Stripe key; all PUBLIC and
+  unchanged since August. No `TERMINAL_SIMULATED`, `ALLOW_SCREENSHOTS`, `TAP_TO_PAY_IOS` or
+  `USE_RN_FETCH`.
+- `NODE_ENV` is unset at process, user and machine level. There is no `.env` or `.env.local`.
+- Cleared-cache export under `eas env:exec production`, both Hermes bundles (iOS and Android, about
+  15 MB each). Full values were counted under the same environment, not prefixes:
+
+| Marker | iOS | Android |
+|---|---|---|
+| live Supabase URL / live publishable key / `www.resneo.com` | 1 / 1 / 1 | 1 / 1 / 1 |
+| full live Stripe key / `pk_live_` / full Sentry DSN | 1 / 1 / 1 | 1 / 1 / 1 |
+| `zkppmyyvkjvbsvemakbb` / dev publishable key / dev Stripe key / `pk_test_` | none | none |
+| `192.168.` / `10.0.2.2` | none / none | none / none |
+| `reserve-ni.vercel.app` | once: the `getWebUrl()` fallbacks | same |
+| `localhost:3000` | once: expo-router's `head/url.js` fallback | none |
+| `localhost:8081` | once: React Native's `getDevServer` fallback | same |
+| `TERMINAL_SIMULATED` / `ALLOW_SCREENSHOTS` | none / none | none / none |
+| `TAP_TO_PAY_IOS` | once: the code constant, as before | same |
+| `EXPO_PUBLIC_*` names left | `EXPO_PUBLIC_API_URL` and `EXPO_PUBLIC_USE_RN_FETCH_PREVIEW_ENABLED`, as before | same |
+| New code: `ExpoImageManipulator`, "Save and close", "Treatment record saved", `client@example.com`, "This split was never agreed" | each present | each present |
+
+### 4. Web
+
+Nothing new is needed from the server: the two commits add no route and change no response type
+under `types/`. The new reads (`ended_on`, `your_calendars`, each set of terms' `status`) are in
+production's `src/lib/commission/types.ts` on `main`. The web's own polish round and Node fix
+(`12692bf9`, `d8175e10`) were merged to `main` on 2026-10-25 and are live: www.resneo.com's help
+article shows "Save and close" and "up to 20 on a record". The app's wording now matches the web's
+(Cancel invitation, the resend sentence from the server).
+
+### 5. Device testing
+
+On a Lenovo tablet (TB-J616F, Android), Expo Go, the local bundle against the local web server and
+the staging database, signed in as sept19 (Owner):
+- **Concertinas:** taps at the very top and bottom edges of the contact screen's cards opened and
+  shut them 6 times out of 6; the booking sheet's Details card 4 out of 4; Guest history loads on
+  first open.
+- **Treatment record:** a 9 MB, 4000×3000 test JPEG was stored at 2000×1500 (Expo Go has the
+  resizer). Save and close pressed straight after typing saved the text, returned to the client and
+  showed "Treatment record saved". The test record was deleted.
+- **Commission:** a withdrawn proposal reads "Proposed: you pay …" and says it has no statements.
+- **Team:** the role guide, member list and sign-out row render.
+- **Booking wizard:** a Fringe Trim booking made end to end, with the day named on the time and
+  review steps; the booking was cancelled and deleted.
+- **Not tested:** an iPhone (where the missed taps were reported), and the 1.3.0 store binaries,
+  where the no-resizer path is covered by unit tests only. After publishing, add a treatment photo
+  from a store install to confirm it uploads.
+
+### 6. Publish
+
+Run from `C:\Resneo-app` on a clean `main` (`eas.json` requires a commit):
+
+```
+npx eas-cli update --channel production --platform ios --environment production --clear-cache --message "Record photos, Save and close, tap targets, commission, team"
+npx eas-cli update --channel production --platform android --environment production --clear-cache --message "Record photos, Save and close, tap targets, commission, team"
+```
+
+To roll back, republish the treatment records groups:
+`npx eas-cli update:republish --group d140d0db-96aa-4619-b7fb-91665126b3d8 --message "Roll back"`
+(iOS) and `npx eas-cli update:republish --group 86582c96-f370-4f7d-98a2-da35bb436d40 --message "Roll back"`
+(Android).
+
+After publishing, retitle the changelog entry "OTA on iOS 1.3.0 / Android 1.3.0 — 2026-10-25" with
+the two groups, and watch Sentry for new crashes over the next day.
+
+---
+
 ## Run 2026-10-20: number fields keep their first digit, iOS 1.3.0 and Android 1.3.0, from `514dc13`
 
 **Scope:** `7a5de9a..514dc13`, one commit:

@@ -15,6 +15,60 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ---
 
+## Unreleased OTA: record photos, Save and close, tap targets, commission, team
+
+From `8c4e239` (`c469ac6` is the app change; `8c4e239` moves CI to Node 24). Checks in the
+2026-10-25 run in `Docs/GO_LIVE_CHECK.md`.
+
+### Treatment records (owner, 2026-10-25)
+
+A record has **Save and close** at the bottom: it saves anything still waiting, goes back and says
+"Treatment record saved". A record you can't change offers Close. Photos are checked before they
+upload: at most 20 on a record and 10 MB each, and a photo that fails no longer stops the rest; one
+message then says what went wrong. The keyboard no longer pops back up over the photos after the
+picker closes.
+
+Photos are also shrunk to 2,000 px before they upload, as on the web, which drops their location
+data. That needs a native module (`expo-image-manipulator`) the 1.3.0 binaries do not have, so on
+them photos upload as before, at full size, until the next store build. The app checks for the
+module first, so the update is safe on 1.3.0.
+
+### Taps that missed (owner, 2026-10-25, seen on iPhone)
+
+The fold-out cards on the booking and client screens now open or shut from a tap anywhere across
+the card's header. Only the title line answered before, so a tap near the card's edge did nothing.
+The client screen's list also stops detaching off-screen cards on iPhone, as every other list
+already did. The compliance cards' "Audit trail" toggles are full height.
+
+### Booking
+
+Once a booking is made, the back arrow goes: it reopened the filled-in details, two taps from
+booking the same visit again. The time and review steps name the day you picked. The details step
+reads for the team: `client@example.com`, and "What the client asked for" in the comments box.
+
+### Commission splits, team and sites (wording matched to the web)
+
+A declined or withdrawn proposal reads "Proposed: …" and says it has no statements. Proposing terms
+identical to the current ones is refused. Rate history says "Stopped" or "Back to your standard
+rate". Accepted terms from a later date show a "From …" line. Past splits offer "See details".
+"Share with a business" lists only calendars a business can share. On Team, role lines leave out
+the till where Checkout is off, a pending invitation is cancelled rather than removed, and the
+sign-out timer says "24 hours". All sites shows Free trial, Ending soon and Subscription ended.
+
+## OTA on iOS 1.3.0 / Android 1.3.0 — 2026-10-24: treatment records
+
+Published as groups `d140d0db` (iOS) and `86582c96` (Android), from `5db7bf9`, 2026-10-24.
+Recorded here on 2026-10-25 from EAS: treatment records in the app (notes, products, photos and
+alerts), with the second live run's fixes. The web plan's Appendix F has the detail.
+
+## OTA on iOS 1.3.0 / Android 1.3.0 — 2026-10-22: team roles, then payments wording
+
+Two updates, recorded here on 2026-10-25 from EAS:
+- Groups `e84a4223` (iOS) and `b64a2137` (Android), from `c7e5e14`, 2026-10-22 19:50 UTC: team
+  roles, View only and Hidden diaries, and one login across sites.
+- Groups `7ef8e39f` (iOS) and `2974ccb5` (Android), from `e15ca55`, 2026-10-22 22:18 UTC: "Payments
+  at your venue" wording, and Stripe set-up handing back to the app.
+
 ## OTA on iOS 1.3.0 / Android 1.3.0 — 2026-10-20: number fields keep their first digit
 
 Published as groups `e73c8739` (iOS) and `d764df29` (Android), from `4b335f5`.
