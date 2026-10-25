@@ -350,7 +350,7 @@ export function GuestDetailsStep({
               label="Email"
               optional
               onChangeText={(email) => editContact({ email })}
-              placeholder="you@example.com"
+              placeholder="client@example.com"
               textContentType="emailAddress"
               value={value.email}
             />
@@ -431,7 +431,7 @@ export function GuestDetailsStep({
         <Input
           label="Comments or requests"
           optional
-          placeholder="Anything we should know (access needs, preferences, running late…)"
+          placeholder="What the client asked for, such as access needs or preferences"
           value={value.special_requests ?? ''}
           onChangeText={(special_requests) =>
             onChange({ ...value, special_requests: special_requests || undefined })

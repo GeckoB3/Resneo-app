@@ -184,30 +184,52 @@ export function nextChangeSentence(view: PersonShareView, dayText: (ymd: string)
   return splitsT('cal.team.next', { date: dayText(first.next.date), what });
 }
 
-/** The live terms a split row describes: the agreed ones, else what is waiting for an answer. */
+/**
+ * The live terms a split row describes: the agreed ones, else what is waiting for an answer. A split
+ * that was declined or withdrawn before anything was agreed shows what was proposed, as proposed, so
+ * it never reads as if it counts.
+ */
 export function splitShownTerms(s: SplitView): { terms: SplitTermsView; proposed: boolean } | null {
   if (s.terms) return { terms: s.terms, proposed: false };
   if (s.pending) return { terms: s.pending, proposed: true };
   const last = s.history[0];
-  return last ? { terms: last, proposed: false } : null;
+  return last ? { terms: last, proposed: last.status !== 'accepted' } : null;
 }
 
 /** "You pay Aura 20% of services, as rent." or "Proposed: Aura pays you 40% of services, as rent." */
 export function splitSentence(s: SplitView): string {
   const shown = splitShownTerms(s);
-  const what = shown ? termsWhat(shown.terms) : '';
-  const vars = { partner: s.partner.name, what, label: asLabel(s.label) };
-  if (shown?.proposed) return splitsT(s.role === 'payer' ? 'cal.biz.proposedYouPay' : 'cal.biz.proposedTheyPay', vars);
+  return shown ? splitTermsSentence(s, shown.terms, shown.proposed) : splitTermsSentence(s, { services_rate_bps: 0, products_rate_bps: null });
+}
+
+/**
+ * "Aura pays you 40% of services, as rent." for one version of a split's terms, or "Proposed: ..."
+ * for terms that were never agreed.
+ */
+export function splitTermsSentence(
+  s: Pick<SplitView, 'role' | 'partner' | 'label'>,
+  terms: Pick<SplitTermsView, 'services_rate_bps' | 'products_rate_bps'>,
+  proposed = false,
+): string {
+  const vars = { partner: s.partner.name, what: termsWhat(terms), label: asLabel(s.label) };
+  if (proposed) return splitsT(s.role === 'payer' ? 'cal.biz.proposedYouPay' : 'cal.biz.proposedTheyPay', vars);
   return splitsT(s.role === 'payer' ? 'cal.biz.youPay' : 'cal.biz.theyPay', vars);
 }
 
-/** "Aura pays you 40% of services, as rent." for one version of a split's terms. */
-export function splitTermsSentence(s: Pick<SplitView, 'role' | 'partner' | 'label'>, terms: Pick<SplitTermsView, 'services_rate_bps' | 'products_rate_bps'>): string {
-  return splitsT(s.role === 'payer' ? 'cal.biz.youPay' : 'cal.biz.theyPay', {
-    partner: s.partner.name,
-    what: termsWhat(terms),
-    label: asLabel(s.label),
-  });
+/**
+ * "From 2 November 2026: 35% of services." when new terms are agreed from a later day, so the line
+ * that shows today's terms also says what comes next.
+ */
+export function nextTermsSentence(
+  s: Pick<SplitView, 'history' | 'status' | 'terms' | 'ended_on'>,
+  today: string,
+  dayText: (ymd: string) => string,
+): string | null {
+  if (s.status !== 'active' && s.status !== 'ended') return null;
+  const next = s.history
+    .filter((t) => t.status === 'accepted' && t.effective_from > today && t.id !== s.terms?.id && (!s.ended_on || t.effective_from <= s.ended_on))
+    .sort((a, b) => a.effective_from.localeCompare(b.effective_from))[0];
+  return next ? splitsT('cal.team.next', { date: dayText(next.effective_from), what: termsWhat(next) }) : null;
 }
 
 /** "Worked out before VAT, from 1 November 2026. Settle up weekly." */

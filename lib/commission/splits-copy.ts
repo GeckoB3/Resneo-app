@@ -60,7 +60,7 @@ export const SPLITS_COPY = {
   'cal.counting.title': 'How figures are worked out',
   'cal.counting.help': 'These apply to the shares you pay your team.',
   'cal.past.title': 'Past splits',
-  'cal.past.help': 'Splits that ended, were declined or were withdrawn. Their statements stay here to read.',
+  'cal.past.help': 'Splits that ended, were declined or were withdrawn. An ended split keeps its statements here to read.',
   'cal.past.show': 'Show past splits ({count})',
   'cal.past.hide': 'Hide',
 
@@ -130,6 +130,8 @@ export const SPLITS_COPY = {
   'rate.type': 'Type',
   'rate.category': 'Category',
   'rate.category.choose': 'Choose a category',
+  'rate.stopped': 'Stopped',
+  'rate.standardAgain': 'Back to your standard rate',
   'sum.team': 'From {date}, you pay {name} {what} on their calendar, {label}.',
   'sum.team.login': 'From {date}, you pay {name} {what} from their sales at Checkout, {label}.',
   'sum.team.nothing': 'From {date}, you pay {name} nothing.',
@@ -232,6 +234,7 @@ export const SPLITS_COPY = {
   'change.now': 'Now: {summary}.',
   'change.mustFollow': 'New terms must start after {date}, when the current terms began.',
   'change.sent': 'Sent. The current terms stay in force until {partner} accepts.',
+  'change.same': 'These are the terms in force now. Change a share or how VAT is handled to propose new terms.',
   'withdraw': 'Withdraw',
   'withdraw.done': 'Withdrawn.',
   'withdraw.help': '{partner} will no longer be asked to accept these terms.',
@@ -299,6 +302,7 @@ export const SPLITS_COPY = {
   'stmt.undone': 'No longer marked as paid.',
   'stmt.done': 'Marked as paid.',
   'stmt.empty': 'No periods yet. Statements start once the split is agreed.',
+  'stmt.never': 'This split was never agreed, so it has no statements.',
 
   // Errors the app checks before sending, or says itself (the routes answer with the same sentences)
   'err.notAllowed':

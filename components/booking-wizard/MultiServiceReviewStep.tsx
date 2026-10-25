@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { addMinutesToTime } from '@/lib/booking/booking-format';
+import { formatDayHeading } from '@/lib/dates/venue-dates';
 import type { MultiServiceSegment } from '@/lib/booking/multi-service-chain';
 import { chainTotalPence } from '@/lib/booking/multi-service-chain';
 import { formatPence } from '@/lib/format';
@@ -26,6 +27,8 @@ function fmtTime(time: string): string {
 
 type MultiServiceReviewStepProps = {
   segments: MultiServiceSegment[];
+  /** The visit's day (YYYY-MM-DD), named above the times. */
+  date?: string | null;
   /** The practitioner the whole visit is with (concrete, never the "any" sentinel). */
   visitPractitioner: AppointmentCatalogPractitioner | null;
   /**
@@ -53,6 +56,7 @@ type MultiServiceReviewStepProps = {
  */
 export function MultiServiceReviewStep({
   segments,
+  date = null,
   visitPractitioner,
   onChangeServices,
   onRemoveSegment,
@@ -67,7 +71,8 @@ export function MultiServiceReviewStep({
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <Text variant="heading">Review your services</Text>
+        <Text variant="heading">Review the services</Text>
+        {date ? <Text variant="bodyMedium">{formatDayHeading(date)}</Text> : null}
         <Text variant="bodySmall" tone="muted">
           {practitionerName
             ? `Same visit with ${practitionerName}, back-to-back. Change the services or continue to details.`

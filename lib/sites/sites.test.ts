@@ -48,10 +48,12 @@ it('names roles as the Team screen does', () => {
   expect(siteRoleLabel({ role_key: null })).toBe('Staff');
 });
 
-it('words plan statuses as the Plan page does', () => {
-  expect(planStatusLabel('trialing')).toBe('Active');
+it("words plan statuses as the web's Sites page and All sites cards do", () => {
+  expect(planStatusLabel('active')).toBe('Active');
+  expect(planStatusLabel('trialing')).toBe('Free trial');
   expect(planStatusLabel('past_due')).toBe('Payment due');
-  expect(planStatusLabel('cancelling')).toBe('Cancelling');
+  expect(planStatusLabel('cancelling')).toBe('Ending soon');
+  expect(planStatusLabel('cancelled')).toBe('Subscription ended');
 });
 
 it('notes a total that leaves a site out, and sites past the first 20', () => {

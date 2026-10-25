@@ -204,7 +204,7 @@ describe('ServiceBookingFlow — multi-service buffer (regression)', () => {
     await press(() => screen.getByText('__pick_slot__'));
     await press(() => screen.getByText('__time_continue__'));
 
-    await waitFor(() => expect(screen.getByText('Review your services')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Review the services')).toBeTruthy());
 
     // The time step was asked for starts where the WHOLE visit fits: the chain
     // names both services in visit order (web's `services` parameter).

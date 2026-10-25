@@ -56,11 +56,16 @@ export function currentOf(rows: CommissionRate[], today: string): CommissionRate
   return [...rows].reverse().find((r) => r.effective_from <= today) ?? rows[rows.length - 1]!;
 }
 
-/** "40%, from 1 October 2026", or "Stop this rate, from ..." for a stop. */
-export function rateText(r: Pick<CommissionRate, 'rate_bps' | 'effective_from'>): string {
-  return `${r.rate_bps === null ? commT('set.comm.stop') : `${bpsToPercentText(r.rate_bps)}%`}, ${lowerFirst(
-    commT('set.comm.from', { date: longDay(r.effective_from) }),
-  )}`;
+/**
+ * "40%, from 1 October 2026". A row with no rate stops one: "Stopped, from ..." for a category rate,
+ * or "Back to your standard rate, from ..." for a person's own rate for a type (web `rateText`).
+ */
+export function rateText(
+  r: Pick<CommissionRate, 'rate_bps' | 'effective_from'> & Partial<Pick<CommissionRate, 'category_id' | 'calendar_id' | 'staff_id'>>,
+): string {
+  const backToStandard = !r.category_id && Boolean(r.calendar_id || r.staff_id);
+  const what = r.rate_bps === null ? splitsT(backToStandard ? 'rate.standardAgain' : 'rate.stopped') : `${bpsToPercentText(r.rate_bps)}%`;
+  return `${what}, ${lowerFirst(commT('set.comm.from', { date: longDay(r.effective_from) }))}`;
 }
 
 const SOURCE_WORDS: Record<CommissionSource, string> = {

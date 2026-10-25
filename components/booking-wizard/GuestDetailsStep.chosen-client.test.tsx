@@ -143,7 +143,7 @@ describe('someone whose client contacts are hidden', () => {
     expect(latest).toMatchObject({ first_name: 'Ana', last_name: 'Lopez', phone: '', email: '', guest_id: 'g-1' });
     expect(screen.getAllByDisplayValue('Hidden')).toHaveLength(2);
     expect(screen.getAllByText('Your business has hidden client phone numbers and emails for you.')).toHaveLength(2);
-    expect(screen.queryByPlaceholderText('you@example.com')).toBeNull();
+    expect(screen.queryByPlaceholderText('client@example.com')).toBeNull();
     await act(async () => {
       fireEvent.press(screen.getByText('Continue'));
     });
@@ -153,9 +153,9 @@ describe('someone whose client contacts are hidden', () => {
   it('types a new client as usual', async () => {
     await renderAs(HIDDEN_VIEWER);
     expect(screen.queryByDisplayValue('Hidden')).toBeNull();
-    expect(screen.getByPlaceholderText('you@example.com')).toBeTruthy();
+    expect(screen.getByPlaceholderText('client@example.com')).toBeTruthy();
     await act(async () => {
-      fireEvent.changeText(screen.getByPlaceholderText('you@example.com'), 'new@example.com');
+      fireEvent.changeText(screen.getByPlaceholderText('client@example.com'), 'new@example.com');
     });
     expect(latest.email).toBe('new@example.com');
     expect(latest.guest_id).toBeUndefined();
@@ -170,6 +170,6 @@ describe('someone whose client contacts are hidden', () => {
     expect(latest).toMatchObject({ first_name: 'Anna', phone: '', email: '' });
     expect(latest.guest_id).toBeUndefined();
     expect(screen.queryByDisplayValue('Hidden')).toBeNull();
-    expect(screen.getByPlaceholderText('you@example.com')).toBeTruthy();
+    expect(screen.getByPlaceholderText('client@example.com')).toBeTruthy();
   });
 });

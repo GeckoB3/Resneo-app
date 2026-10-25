@@ -15,7 +15,7 @@ import { Screen } from '@/components/ui/Screen';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { commissionErrorMessage, isReadOnlySplit, isSplitNotFound } from '@/lib/commission/api';
-import { splitTermsSentence, termsDetail } from '@/lib/commission/describe';
+import { nextTermsSentence, splitTermsSentence, termsDetail } from '@/lib/commission/describe';
 import { splitsT } from '@/lib/commission/splits-copy';
 import {
   basisWords,
@@ -148,6 +148,7 @@ export default function SplitDetailScreen() {
   const agreed = split.terms ?? (split.status === 'proposed' ? null : (split.history.find((t) => t.status === 'accepted') ?? null));
   const summaryTerms = agreed ?? (pending ? null : (split.history[0] ?? null));
   const headTerms = summaryTerms ?? pending;
+  const nextTerms = nextTermsSentence(split, today, formatLongDay);
 
   const refresh = async () => {
     setRefreshing(true);
@@ -214,10 +215,18 @@ export default function SplitDetailScreen() {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} />}>
         <SettingsCard title={calendarAt(split)}>
-          <Text variant="bodyMedium">{headTerms ? splitTermsSentence(split, headTerms) : directionLine(split)}</Text>
+          {/* Terms never agreed (waiting, declined or withdrawn) read as proposed, never as if they count. */}
+          <Text variant="bodyMedium">
+            {headTerms ? splitTermsSentence(split, headTerms, headTerms.status !== 'accepted') : directionLine(split)}
+          </Text>
           {headTerms ? (
             <Text variant="caption" tone="muted">
               {termsDetail(split, headTerms, formatLongDay)}
+            </Text>
+          ) : null}
+          {nextTerms ? (
+            <Text variant="caption" tone="secondary">
+              {nextTerms}
             </Text>
           ) : null}
           <View style={styles.badges}>
@@ -324,18 +333,25 @@ export default function SplitDetailScreen() {
           </View>
         ) : null}
 
-        <StatementsCard
-          split={split}
-          data={statements.data ?? null}
-          loading={statements.isLoading}
-          loadError={statements.isError ? commissionErrorMessage(statements.error, splitsT('ui.loadError')) : null}
-          onRetry={() => void statements.refetch()}
-          currency={currency}
-          // A split the link or collective no longer allows is read only (`err.readOnly`).
-          onMarkPaid={readOnly ? null : (period) => setSheet({ kind: 'paid', period })}
-          onUndo={readOnly ? null : setUndoing}
-          undoError={error?.where === 'statement' ? error : null}
-        />
+        {split.status === 'declined' || split.status === 'withdrawn' ? (
+          // Never agreed, so nothing ever counted: no totals of £0.00 and no "once the split is agreed".
+          <Text variant="bodySmall" tone="secondary">
+            {splitsT('stmt.never')}
+          </Text>
+        ) : (
+          <StatementsCard
+            split={split}
+            data={statements.data ?? null}
+            loading={statements.isLoading}
+            loadError={statements.isError ? commissionErrorMessage(statements.error, splitsT('ui.loadError')) : null}
+            onRetry={() => void statements.refetch()}
+            currency={currency}
+            // A split the link or collective no longer allows is read only (`err.readOnly`).
+            onMarkPaid={readOnly ? null : (period) => setSheet({ kind: 'paid', period })}
+            onUndo={readOnly ? null : setUndoing}
+            undoError={error?.where === 'statement' ? error : null}
+          />
+        )}
 
         {split.can.end ? (
           // Last, set apart and in red: it ends the split for both businesses.
@@ -419,7 +435,8 @@ function StatementsCard({
   const money = (pence: number) => splitMoney(pence, currency);
   const youPay = split.role === 'payer';
   const owedWord = splitsT(youPay ? 'rep.biz.youOwe' : 'rep.biz.owedToYou');
-  const withProducts = split.history.some((t) => t.products_rate_bps !== null);
+  // Products show only once agreed terms include them (a withdrawn or declined offer of products never counted).
+  const withProducts = split.history.some((t) => t.status === 'accepted' && t.products_rate_bps !== null);
   const periods = data ? [...data.periods].sort((a, b) => (a.start < b.start ? 1 : a.start > b.start ? -1 : 0)) : [];
   return (
     <SettingsCard

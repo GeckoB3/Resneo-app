@@ -111,8 +111,18 @@ export function TermsSheet({
       return;
     }
     setChecks({ services: null, products: null, start: null });
-    setError(null);
     setFields([]);
+    // The same terms again would only ask the other business to agree to nothing new (web the same).
+    if (
+      current &&
+      Math.round(check.services * 100) === current.services_rate_bps &&
+      (check.products === null ? null : Math.round(check.products * 100)) === current.products_rate_bps &&
+      draft.vat === current.vat_basis
+    ) {
+      setError(splitsT('change.same'));
+      return;
+    }
+    setError(null);
     try {
       await propose.mutateAsync({
         splitId: split.id,

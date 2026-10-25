@@ -60,8 +60,11 @@ export function SetUpSplitSheet({
   const [calendar, setCalendar] = useState(initialCalendar ?? '');
   const [earner, setEarner] = useState('');
 
-  const yours = settings.people.filter((p) => p.calendar_id);
-  const logins = showLogins ? settings.people.filter((p) => !p.calendar_id) : [];
+  // "Share with a business" lists only what a business can share: your calendars a business can see,
+  // and theirs. Logins never share with a business (web the same).
+  const sharable = (calendarId: string) => list.partners.some((p) => p.your_calendars.some((c) => c.id === calendarId));
+  const yours = settings.people.filter((p) => p.calendar_id && (!businessOnly || sharable(p.calendar_id)));
+  const logins = showLogins && !businessOnly ? settings.people.filter((p) => !p.calendar_id) : [];
   const live = list.splits.filter((s) => isLiveSplit(s, list.today));
   const hasLive = (calendarId: string, partnerId: string) => live.some((s) => s.calendar.id === calendarId && s.partner.venue_id === partnerId);
 

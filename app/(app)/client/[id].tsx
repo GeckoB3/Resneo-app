@@ -3,6 +3,7 @@ import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
   Linking,
+  Platform,
   Pressable,
   RefreshControl,
   SectionList,
@@ -768,7 +769,9 @@ export default function ClientDetailScreen() {
         contentContainerStyle={styles.scrollContent}
         initialNumToRender={12}
         windowSize={11}
-        removeClippedSubviews
+        // Android only, as on every other list: on iOS it can leave the cards below the rows
+        // (the collapsible sections in the footer) ignoring taps after they open or shut.
+        removeClippedSubviews={Platform.OS === 'android'}
         refreshControl={
           <RefreshControl
             refreshing={detailQuery.isRefetching}

@@ -6,6 +6,8 @@ import { isBackendConfigured } from '@/lib/env';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { downloadAndShareFile } from '@/lib/share/share-binary-file';
+import { TR_COPY } from '@/lib/treatment-records/copy';
+import { PHOTO_MAX_BYTES } from '@/lib/treatment-records/photo-prepare';
 import type {
   ClientAlert,
   TreatmentEditorContext,
@@ -224,6 +226,7 @@ export async function uploadTreatmentPhoto(
   const info = await FileSystem.getInfoAsync(photo.uri);
   if (!info.exists) throw new ApiError('This photo could not be read from this device.', 400);
   const size = info.size > 0 ? info.size : 0;
+  if (size > PHOTO_MAX_BYTES) throw new ApiError(TR_COPY.photoTooLarge, 400);
   const signed = await apiFetch<{ photo_id: string; signed_url: string; mime_type: string }>(`${BASE}/${recordId}/photos/sign`, {
     accessToken,
     method: 'POST',
@@ -256,7 +259,7 @@ export async function uploadTreatmentPhoto(
     // An upload that did not arrive is deleted at once, so it never shows half there.
     await removeTreatmentPhoto(accessToken, recordId, signed.photo_id).catch(() => undefined);
     throw new ApiError(
-      timedOut ? 'Upload timed out. Check your connection and try again.' : 'A photo did not upload. Check your connection and try again.',
+      timedOut ? 'Upload timed out. Check your connection and try again.' : TR_COPY.photoNotUploaded,
       put?.status ?? 408,
     );
   }

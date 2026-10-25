@@ -245,6 +245,14 @@ describe('the split', () => {
     expect(screen.getByText('Version 1: 50% of services, before VAT, from 1 October 2026 (declined)')).toBeTruthy();
   });
 
+  it('says when agreed terms change on a later day', async () => {
+    const later = terms({ id: 't-later', version: 2, services_rate_bps: 3500, effective_from: '2026-12-01' });
+    current = statements({ split: split({ history: [later, terms()] }) });
+    await show();
+    expect(await screen.findByText('Sam Cuts pays you 40% of services, as rent.')).toBeTruthy();
+    expect(screen.getByText('From 1 December 2026: 35% of services.')).toBeTruthy();
+  });
+
   it("answers the other business's proposal, with the worked example", async () => {
     const pending = terms({ id: 't-9', status: 'proposed', proposed_by_you: false, effective_from: '2026-11-01' });
     current = statements({
@@ -254,8 +262,8 @@ describe('the split', () => {
     await show();
     expect(await screen.findByText('Sam Cuts proposed this split')).toBeTruthy();
     expect(screen.getByText('Needs your answer')).toBeTruthy();
-    // Nothing is agreed yet, so the head says what was proposed, once.
-    expect(screen.getByText('Sam Cuts pays you 40% of services, as rent.')).toBeTruthy();
+    // Nothing is agreed yet, so the head says what was proposed, once, as proposed.
+    expect(screen.getByText('Proposed: Sam Cuts pays you 40% of services, as rent.')).toBeTruthy();
     expect(screen.getByText('Worked out before VAT, from 1 November 2026. Settle up monthly.')).toBeTruthy();
     expect(screen.queryByText('40% of services from 1 November 2026')).toBeNull();
     expect(await screen.findByText('Last month this would have come to £220.00.', {}, { timeout: 3000 })).toBeTruthy();
@@ -336,6 +344,10 @@ describe('changing and ending', () => {
     await act(async () => {
       fireEvent(within(sheet).getByLabelText('New terms start on'), 'valueChange', {}, new Date(2026, 11, 1, 12));
     });
+    // The same terms again ask nothing new of the other business.
+    await press(within(sheet).getByText('Send to Sam Cuts'));
+    expect(within(sheet).getByText('These are the terms in force now. Change a share or how VAT is handled to propose new terms.')).toBeTruthy();
+    expect(writes()).toHaveLength(0);
     await act(async () => {
       fireEvent.changeText(within(sheet).getByLabelText('Share of services (%)'), '35');
     });
@@ -369,6 +381,24 @@ describe('changing and ending', () => {
 });
 
 describe('statements', () => {
+  it('says a withdrawn proposal has no statements, rather than totals of nothing', async () => {
+    current = statements({
+      split: split({
+        status: 'withdrawn',
+        terms: null,
+        history: [terms({ status: 'withdrawn' })],
+        can: { respond: false, withdraw: false, propose_change: false, end: false },
+      }),
+      periods: [],
+      outstanding_pence: 0,
+      paid_pence: 0,
+    });
+    await show();
+    expect(await screen.findByText('This split was never agreed, so it has no statements.')).toBeTruthy();
+    expect(screen.queryByText(/still owes you/)).toBeNull();
+    expect(screen.queryByText('No periods yet. Statements start once the split is agreed.')).toBeNull();
+  });
+
   it('lists each period newest first, with the totals, who marked it paid and what changed since', async () => {
     await show();
     expect(await screen.findByText('Sam Cuts still owes you: £360.00')).toBeTruthy();
@@ -436,7 +466,8 @@ describe('statements', () => {
       periods: [],
     });
     await show();
-    expect(await screen.findByText('Sam Cuts pays you 35% of services, as rent.')).toBeTruthy();
+    // Never agreed, so it never reads as if it counts.
+    expect(await screen.findByText('Proposed: Sam Cuts pays you 35% of services, as rent.')).toBeTruthy();
     expect(screen.getByText('Worked out before VAT, from 1 November 2026. Settle up monthly.')).toBeTruthy();
     expect(screen.getByText('Declined')).toBeTruthy();
   });

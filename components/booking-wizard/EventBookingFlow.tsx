@@ -176,7 +176,9 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
 
   const stepIndex = Math.max(0, STEPS.indexOf(step));
   // Header arrow steps back a page (hidden on the first step); the ✕ exits.
-  const chrome = <BookingWizardHeader canGoBack={stepIndex > 0} onBack={goBack} />;
+  // Not once the booking exists: back would reopen its filled-in details, one tap from a duplicate.
+  const [created, setCreated] = useState(false);
+  const chrome = <BookingWizardHeader canGoBack={stepIndex > 0 && !created} onBack={goBack} />;
 
   // ----- event step -----
   if (step === 'event') {
@@ -455,6 +457,7 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
             ...(createOwnerVenueId ? { owner_venue_id: createOwnerVenueId } : {}),
           })}
           onCreated={(bookingId) => {
+            setCreated(true);
             track(ANALYTICS_EVENTS.createBookingCompleted, { mode: 'event' });
             onCreated(bookingId);
           }}

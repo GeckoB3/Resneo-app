@@ -34,6 +34,8 @@ type InviteStaffSheetProps = {
   viewer?: TeamViewer;
   /** The business's name, for the confirmation to someone who already has a ResNeo login. */
   businessName?: string;
+  /** Checkout on: the role lines mention the till. */
+  checkoutOn?: boolean;
 };
 
 const LEGACY_ADMIN_VIEWER: TeamViewer = { staffId: null, isOwner: false, billingPayoutsAdmins: true, rolesKnown: false };
@@ -54,6 +56,7 @@ export function InviteStaffSheet({
   practitioners,
   viewer = LEGACY_ADMIN_VIEWER,
   businessName = 'your business',
+  checkoutOn = true,
 }: InviteStaffSheetProps) {
   const { colors } = useTheme();
   const invite = useInviteStaff();
@@ -221,7 +224,7 @@ export function InviteStaffSheet({
             {/* 2. What will they do? */}
             <View style={styles.section}>
               <StepHeading title={teamT('invite.step.role')} />
-              <RoleChoiceList options={roleOptions} value={role} onChange={chooseRole} disabled={busy} />
+              <RoleChoiceList options={roleOptions} value={role} onChange={chooseRole} disabled={busy} checkoutOn={checkoutOn} />
               <Text variant="bodySmall" tone="secondary">
                 {teamT('invite.role.notSure')}
               </Text>

@@ -199,7 +199,7 @@ async function walkToGuestStep() {
   await press(() => screen.getByText('Continue'));
   await press(() => screen.getByText('__pick_slot__'));
   await press(() => screen.getByText('__time_continue__'));
-  await waitFor(() => expect(screen.getByText('Review your services')).toBeTruthy());
+  await waitFor(() => expect(screen.getByText('Review the services')).toBeTruthy());
   await press(() => screen.getByText('Continue to details'));
 }
 

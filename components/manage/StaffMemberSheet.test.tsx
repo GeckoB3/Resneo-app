@@ -332,6 +332,9 @@ describe('what else an admin can manage', () => {
     await flip('Can export client data', true);
     expect(mockPatch).toHaveBeenLastCalledWith({ id: 'a9', body: { permissions: { export_clients: true } } });
     expect(screen.queryByText('Can see client phone numbers and emails')).toBeNull();
+    // An admin has no contact switch, so the export help doesn't point to one.
+    expect(screen.getByText(/Admins always see client phone numbers and emails/)).toBeTruthy();
+    expect(screen.queryByText(/switch off 'Can see client phone numbers and emails'/)).toBeNull();
   });
 
   it('is not shown to an admin', async () => {
@@ -403,6 +406,27 @@ describe('removing someone', () => {
     expect(mockDelete).toHaveBeenCalledWith('s1');
     expect(mockToast.success).toHaveBeenCalledWith('Cal Jones is no longer on your team.');
     expect(mockOnDeleted).toHaveBeenCalled();
+  });
+
+  it('calls it cancelling the invitation for someone who never joined', async () => {
+    mockDelete.mockResolvedValue(undefined);
+    await open({ ...staff, invite_pending: true, has_signed_in: false }, ADMIN_VIEWER);
+    expect(screen.getByText('Cancel their invitation')).toBeTruthy();
+    expect(screen.queryByText('Remove Cal')).toBeNull();
+    await press('Cancel invitation');
+    expect(screen.getByText('Cancel the invitation for Cal Jones?')).toBeTruthy();
+    expect(
+      screen.getByText('The email we sent them will no longer let them into Glow Studio. You can invite them again any time.'),
+    ).toBeTruthy();
+    await press('Keep invitation');
+    expect(mockDelete).not.toHaveBeenCalled();
+    await press('Cancel invitation');
+    const buttons = screen.getAllByText('Cancel invitation');
+    await act(async () => {
+      fireEvent.press(buttons[buttons.length - 1]!);
+    });
+    expect(mockDelete).toHaveBeenCalledWith('s1');
+    expect(mockToast.success).toHaveBeenCalledWith('The invitation for Cal Jones is cancelled.');
   });
 
   it('keeps them when you cancel, and shows a refusal inside the sheet', async () => {

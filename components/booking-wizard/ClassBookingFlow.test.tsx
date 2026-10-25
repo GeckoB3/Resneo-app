@@ -228,6 +228,23 @@ describe("ClassBookingFlow: a collective's own unlisted classes (E-5)", () => {
     mockLinkedOwner = COLLECTIVE;
   });
 
+  it('drops the back arrow once the booking is made, so its details are not one tap from a duplicate', async () => {
+    mockOfferings = {
+      venue_id: COLLECTIVE,
+      from: '',
+      to: '',
+      classes: [summary({ venue_id: 'own-venue', venue_name: 'Glow' })],
+      instances: [slot({ venue_id: 'own-venue', venue_name: 'Glow' })],
+    };
+    await bookFirstClass();
+    expect(screen.getByLabelText('Back')).toBeTruthy();
+    const confirm = mockConfirmProps[mockConfirmProps.length - 1]!;
+    await act(async () => {
+      (confirm.onCreated as (id: string) => void)('b-1');
+    });
+    expect(screen.queryByLabelText('Back')).toBeNull();
+  });
+
   it('reads the staff route for the collective', async () => {
     mockOfferings = { venue_id: COLLECTIVE, from: '', to: '', classes: [], instances: [] };
     await renderFlow();

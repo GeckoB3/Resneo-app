@@ -32,6 +32,7 @@ import {
   memberStatus,
   ROLE_GUIDE_ORDER,
   ROLE_INFO,
+  roleInfo,
   rolesHelpUrl,
   teamT,
   TILL_NOTE,
@@ -56,7 +57,9 @@ const SIGN_OUT_DEFAULT_MINUTES = 7 * 24 * 60;
  */
 export default function TeamScreen() {
   const { colors } = useTheme();
-  const { venue } = useVenueContext();
+  const { venue, featureFlags } = useVenueContext();
+  // No till to talk about at a business without Checkout (web `roleInfo`); unknown flags keep the lines.
+  const checkoutOn = featureFlags ? featureFlags.resolved?.pos_enabled === true : true;
   const businessName = venue?.name?.trim() || 'your business';
 
   // Use staff/me for a reliable role check (avoids VenueProvider dual-source-of-truth bug).
@@ -173,7 +176,7 @@ export default function TeamScreen() {
             <CollapsibleCard title={teamT('guide.title')} defaultExpanded={members.length <= 1}>
               <View style={styles.guide}>
                 {guideRoles.map((key) => (
-                  <RoleGuideEntry key={key} role={key} />
+                  <RoleGuideEntry key={key} role={key} checkoutOn={checkoutOn} />
                 ))}
                 <Text variant="bodySmall" tone="secondary">
                   {teamT('guide.notSure.lead')}
@@ -182,7 +185,7 @@ export default function TeamScreen() {
                   </Text>
                   {teamT('guide.notSure.rest')}
                 </Text>
-                {viewer.rolesKnown ? (
+                {viewer.rolesKnown && checkoutOn ? (
                   <Text variant="bodySmall" tone="secondary">
                     {TILL_NOTE}
                   </Text>
@@ -287,6 +290,7 @@ export default function TeamScreen() {
         practitioners={assignablePractitioners}
         viewer={viewer}
         businessName={businessName}
+        checkoutOn={checkoutOn}
       />
 
       <StaffMemberSheet
@@ -296,6 +300,7 @@ export default function TeamScreen() {
         viewer={viewer}
         practitioners={assignablePractitioners}
         businessName={businessName}
+        checkoutOn={checkoutOn}
         onClose={() => setSelectedMemberId(null)}
         onDeleted={() => setSelectedMemberId(null)}
       />
@@ -308,9 +313,9 @@ export default function TeamScreen() {
 }
 
 /** One role in the guide: what it is, who it suits, and what it can and can't do (web `RoleGuide`). */
-function RoleGuideEntry({ role }: { role: RoleKey }) {
+function RoleGuideEntry({ role, checkoutOn }: { role: RoleKey; checkoutOn: boolean }) {
   const { colors } = useTheme();
-  const info = ROLE_INFO[role];
+  const info = roleInfo(role, checkoutOn);
   return (
     <View
       accessibilityLabel={info.label}

@@ -79,6 +79,21 @@ export const ROLE_INFO: Record<RoleKey, RoleInfo> = {
 export const ROLE_GUIDE_ORDER: readonly RoleKey[] = ['owner', 'admin', 'front_desk', 'staff'];
 
 /**
+ * A business without Checkout has no till, so its role lines leave the till out (web
+ * `roleInfo`, word for word).
+ */
+const NO_TILL: Partial<Record<RoleKey, Pick<RoleInfo, 'summary' | 'goodFor'>>> = {
+  front_desk: { summary: 'Takes bookings for everyone.', goodFor: 'A receptionist who books for everyone.' },
+  staff: { summary: 'Works with clients.', goodFor: ROLE_INFO.staff.goodFor },
+};
+
+export function roleInfo(key: RoleKey, checkoutOn: boolean): RoleInfo {
+  const info = ROLE_INFO[key];
+  if (checkoutOn) return info;
+  return { ...info, ...NO_TILL[key], can: info.can.filter((line) => !line.includes('at the till')) };
+}
+
+/**
  * What Front desk and Staff can do at the till is the role's. The web says "Settings, then
  * Checkout, then Who can do what"; in the app it is Checkout settings, then Who can do what.
  */
@@ -105,6 +120,9 @@ export const SETTING_COPY = {
   exportLabel: 'Can export client data',
   exportHelp:
     "Shows or hides the buttons that download client lists. It can't stop someone copying details they can already see. To keep phone numbers and emails private, switch off 'Can see client phone numbers and emails'.",
+  /** An admin has no contact switch to point to: admins always see phone numbers and emails (web `exportHelpAdmin`). */
+  exportHelpAdmin:
+    "Shows or hides the buttons that download client lists. Admins always see client phone numbers and emails, so it can't stop them copying details they can see.",
   billingLabel: 'Billing, payouts and admins',
   billingHelp: 'Lets this admin manage your plan, payouts and other admins. Only you can change this.',
   calendarsLabel: 'Their calendars',
@@ -265,6 +283,17 @@ export const TEAM_COPY = {
   'member.remove.cancel': 'Cancel',
   'member.remove.done': '{name} is no longer on your team.',
   'member.remove.error': 'We could not remove them. Please try again.',
+  // Someone who hasn't accepted yet: removing them cancels the invitation (web `CANCEL_INVITE_COPY`).
+  'member.cancelInvite': 'Cancel their invitation',
+  'member.cancelInvite.help':
+    "They haven't joined yet. Cancel the invitation and it no longer lets them into {business}. You can invite them again any time.",
+  'member.cancelInvite.button': 'Cancel invitation',
+  'member.cancelInvite.title': 'Cancel the invitation for {name}?',
+  'member.cancelInvite.body': 'The email we sent them will no longer let them into {business}. You can invite them again any time.',
+  'member.cancelInvite.confirm': 'Cancel invitation',
+  'member.cancelInvite.cancelling': 'Cancelling…',
+  'member.cancelInvite.keep': 'Keep invitation',
+  'member.cancelInvite.done': 'The invitation for {name} is cancelled.',
   'member.close': 'Close',
 
   // Rows nobody manages from here (Appendix C; web MemberCard)
@@ -374,9 +403,10 @@ export function roleChangeQuestion(
   member: Pick<TeamMember, 'name' | 'email' | 'role'> & RoleSubject,
   next: RoleChoice,
   viewerIsOwner: boolean,
+  checkoutOn = true,
 ): { title: string; message: string } {
   const name = firstNameOf(member);
-  const info = ROLE_INFO[next];
+  const info = roleInfo(next, checkoutOn);
   if (next === 'admin') {
     return {
       title: teamT('member.role.title.admin', { name }),
@@ -420,9 +450,9 @@ export function invitedNotice(result: InviteOutcome, businessName: string): { ti
   return { title: teamT('invite.done.added'), text: teamT('invite.result.added', { who, role }) };
 }
 
-/** "8 hours", "7 days", "30 minutes" (web `formatSessionTimeoutLabel`). */
+/** "8 hours", "24 hours", "7 days", "30 minutes", as the choices say them (web `formatSessionTimeoutLabel`). */
 export function formatSignOutAfter(minutes: number): string {
-  if (minutes >= 1440 && minutes % 1440 === 0) {
+  if (minutes > 1440 && minutes % 1440 === 0) {
     const days = minutes / 1440;
     return `${days} day${days === 1 ? '' : 's'}`;
   }

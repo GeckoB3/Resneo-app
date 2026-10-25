@@ -220,7 +220,7 @@ async function bookWithCustomDuration() {
   await press(() => screen.getByText('__pick_slot__'));
   await press(() => screen.getByText('__time_continue__'));
 
-  await waitFor(() => expect(screen.getByText('Review your services')).toBeTruthy());
+  await waitFor(() => expect(screen.getByText('Review the services')).toBeTruthy());
   await press(() => screen.getByText('Continue to details'));
   await press(() => screen.getByText('__guest_continue__'));
   await waitFor(() => expect(screen.getByText('__confirm__')).toBeTruthy());
@@ -260,7 +260,7 @@ describe('ServiceBookingFlow — what the review step shows', () => {
     await press(() => screen.getByText('__pick_slot__'));
     await press(() => screen.getByText('__time_continue__'));
 
-    await waitFor(() => expect(screen.getByText('Review your services')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Review the services')).toBeTruthy());
     // 09:00 + 90 min = 10:30. The natural 30 min would read 9:00am–9:30am.
     expect(screen.getByText(/9:00am–10:30am/)).toBeTruthy();
   });

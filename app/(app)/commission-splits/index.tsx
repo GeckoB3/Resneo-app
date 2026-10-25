@@ -22,6 +22,7 @@ import {
   exceptionsSentence,
   isLiveSplit,
   nextChangeSentence,
+  nextTermsSentence,
   personShare,
   personShareSentence,
   shareWhat,
@@ -236,17 +237,20 @@ export default function CommissionSplitsScreen() {
 
   const splitLine = (s: SplitView) => {
     const status = splitStatus(s, today);
+    // A past split has nothing left to manage: its button just opens the record (web the same).
+    const word = splitsT(isLiveSplit(s, today) ? 'cal.manage' : 'answer.details');
     return (
       <LineRow
         key={s.id}
         text={splitSentence(s)}
+        extra={nextTermsSentence(s, today, formatLongDay)}
         badge={{ label: status.text, tone: status.tone }}
         action={
           <Button
-            label={splitsT('cal.manage')}
+            label={word}
             size="sm"
             variant={s.can.respond ? 'primary' : 'secondary'}
-            accessibilityLabel={`${splitsT('cal.manage')}: ${calendarAt(s)}`}
+            accessibilityLabel={`${word}: ${calendarAt(s)}`}
             onPress={() => openSplit(s)}
           />
         }

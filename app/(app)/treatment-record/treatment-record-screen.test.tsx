@@ -14,10 +14,17 @@ import { ApiError } from '@/lib/api/client';
 import type { TreatmentEditorContext, TreatmentRecordDetail, TreatmentVersionsResponse } from '@/types/treatment-records';
 
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
+const mockLaunchLibrary = jest.fn();
 jest.mock('expo-image-picker', () => ({
   requestCameraPermissionsAsync: jest.fn(),
   launchCameraAsync: jest.fn(),
-  launchImageLibraryAsync: jest.fn(),
+  launchImageLibraryAsync: (...args: unknown[]) => mockLaunchLibrary(...args),
+}));
+const mockPrepare = jest.fn();
+jest.mock('@/lib/treatment-records/photo-prepare', () => ({
+  ...jest.requireActual('@/lib/treatment-records/photo-prepare'),
+  pickerQuality: () => 0.9,
+  preparePhotoForUpload: (...args: unknown[]) => mockPrepare(...args),
 }));
 jest.mock('@/components/ui/Sheet', () => {
   const React = jest.requireActual<typeof import('react')>('react');
@@ -50,6 +57,7 @@ let mockVersions: TreatmentVersionsResponse | undefined;
 const mockCreate = jest.fn();
 const mockSave = jest.fn();
 const mockDelete = jest.fn();
+const mockUpload = jest.fn();
 jest.mock('@/lib/queries/useTreatmentRecords', () => ({
   useTreatmentRecord: (id: string | null) => ({ data: id ? mockDetail : undefined, error: null }),
   useTreatmentContext: () => ({ data: mockContext, error: null, refetch: jest.fn() }),
@@ -65,7 +73,7 @@ jest.mock('@/lib/queries/useTreatmentRecords', () => ({
   fetchTreatmentPhotoUrl: jest.fn(),
   labelTreatmentPhoto: jest.fn(),
   removeTreatmentPhoto: jest.fn(),
-  uploadTreatmentPhoto: jest.fn(),
+  uploadTreatmentPhoto: (...args: unknown[]) => mockUpload(...args),
   shareTreatmentPdf: jest.fn(),
 }));
 
@@ -148,8 +156,12 @@ beforeEach(() => {
   mockCreate.mockReset();
   mockSave.mockReset();
   mockDelete.mockReset();
+  mockUpload.mockReset();
+  mockPrepare.mockReset();
+  mockLaunchLibrary.mockReset();
   mockRouter.back.mockClear();
   mockToast.error.mockClear();
+  mockToast.success.mockClear();
 });
 
 describe('TreatmentRecordScreen', () => {
@@ -366,5 +378,106 @@ describe('TreatmentRecordScreen', () => {
     expect(screen.getByText('Deleted by Ali on 23 Oct 2026: Wrong client')).toBeTruthy();
     expect(screen.getByDisplayValue('Areas treated: top lip').props.editable).toBe(false);
     expect(screen.queryByText('Delete record')).toBeNull();
+  });
+
+  it('Save and close saves what is waiting, says it saved, and goes back', async () => {
+    mockParams = { id: 'r-1', guestId: 'g-1' };
+    mockDetail = detail();
+    mockSave.mockResolvedValue({ version: 4 });
+    await renderScreen();
+    await act(async () => {
+      fireEvent.changeText(screen.getByDisplayValue('Areas treated: top lip'), 'Areas treated: top lip, 2 ml');
+    });
+    // Pressed before the autosave runs: the save goes first.
+    await act(async () => {
+      fireEvent.press(screen.getByText('Save and close'));
+    });
+    await waitFor(() => expect(mockRouter.back).toHaveBeenCalled());
+    expect(mockSave).toHaveBeenCalledWith('tok', 'r-1', { version: 3, note: 'Areas treated: top lip, 2 ml' });
+    expect(mockToast.success).toHaveBeenCalledWith('Treatment record saved');
+  });
+
+  it('Save and close on an untouched record just goes back', async () => {
+    mockParams = { id: 'r-1', guestId: 'g-1' };
+    mockDetail = detail();
+    await renderScreen();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Save and close'));
+    });
+    expect(mockRouter.back).toHaveBeenCalled();
+    expect(mockSave).not.toHaveBeenCalled();
+    expect(mockToast.success).not.toHaveBeenCalled();
+  });
+
+  it('offers Close, not Save and close, on a record it cannot change', async () => {
+    mockParams = { id: 'r-1', guestId: 'g-1' };
+    mockDetail = detail({}, { can_edit: false });
+    await renderScreen();
+    expect(screen.queryByText('Save and close')).toBeNull();
+    expect(screen.getByText('Close')).toBeTruthy();
+  });
+
+  it('shrinks each photo before it uploads, and asks only for the photos the record has room for', async () => {
+    mockParams = { id: 'r-1', guestId: 'g-1' };
+    const shown = Array.from({ length: 18 }, (_, i) => ({
+      id: `p-${i}`,
+      label: 'other' as const,
+      preview_url: null,
+      uploaded_by_name: 'Sam',
+      uploaded_at: '2026-10-22T13:40:00Z',
+    }));
+    mockDetail = detail({}, { photos: shown as unknown as TreatmentRecordDetail['photos'] });
+    mockLaunchLibrary.mockResolvedValue({
+      canceled: false,
+      assets: [
+        { uri: 'file:///big-1.jpg', mimeType: 'image/jpeg', width: 4000, height: 3000 },
+        { uri: 'file:///big-2.jpg', mimeType: 'image/jpeg', width: 4000, height: 3000 },
+      ],
+    });
+    mockPrepare.mockImplementation(async (asset: { uri: string }) => ({ uri: asset.uri.replace('big', 'small'), mimeType: 'image/jpeg' }));
+    mockUpload.mockImplementation(async (_tok: string, _id: string, photo: { uri: string }) => ({ photoId: photo.uri }));
+    await renderScreen();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Choose photos'));
+    });
+    expect(mockLaunchLibrary).toHaveBeenCalledWith(expect.objectContaining({ selectionLimit: 2, quality: 0.9 }));
+    await waitFor(() => expect(mockUpload).toHaveBeenCalledTimes(2));
+    expect(mockUpload).toHaveBeenCalledWith('tok', 'r-1', { uri: 'file:///small-1.jpg', mimeType: 'image/jpeg' });
+    expect(mockUpload).toHaveBeenCalledWith('tok', 'r-1', { uri: 'file:///small-2.jpg', mimeType: 'image/jpeg' });
+  });
+
+  it('says the record is full instead of opening the picker at 20 photos', async () => {
+    mockParams = { id: 'r-1', guestId: 'g-1' };
+    const shown = Array.from({ length: 20 }, (_, i) => ({ id: `p-${i}`, label: 'other' as const, preview_url: null, uploaded_by_name: 'Sam' }));
+    mockDetail = detail({}, { photos: shown as unknown as TreatmentRecordDetail['photos'] });
+    await renderScreen();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Choose photos'));
+    });
+    expect(mockLaunchLibrary).not.toHaveBeenCalled();
+    expect(screen.getByText('A record holds up to 20 photos. Remove one to add another.')).toBeTruthy();
+  });
+
+  it('keeps going past a photo that fails, and says why once they have all had a turn', async () => {
+    mockParams = { id: 'r-1', guestId: 'g-1' };
+    mockDetail = detail();
+    mockLaunchLibrary.mockResolvedValue({
+      canceled: false,
+      assets: [
+        { uri: 'file:///a.heic', mimeType: 'image/heic' },
+        { uri: 'file:///b.jpg', mimeType: 'image/jpeg' },
+      ],
+    });
+    mockPrepare.mockImplementation(async (asset: { uri: string; mimeType: string }) => ({
+      uri: asset.uri,
+      mimeType: asset.mimeType === 'image/jpeg' ? 'image/jpeg' : null,
+    }));
+    mockUpload.mockResolvedValue({ photoId: 'p-new' });
+    await renderScreen();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Choose photos'));
+    });
+    await waitFor(() => expect(mockUpload).toHaveBeenCalledTimes(1));
+    expect(screen.getByText('This photo format isn’t supported. Use a JPEG or PNG photo.')).toBeTruthy();
   });
 });

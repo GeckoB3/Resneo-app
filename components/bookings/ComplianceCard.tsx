@@ -20,7 +20,7 @@ import {
   type ComplianceSendVia,
 } from '@/lib/queries/useBookingCompliance';
 import { useGuestCompliance, useResendFormLink } from '@/lib/queries/useCompliance';
-import { spacing } from '@/theme/index';
+import { minTouchTarget, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import {
   complianceJoinedTypeName,
@@ -123,7 +123,7 @@ function AuditTrail({ events }: { events: ComplianceAuditEvent[] }) {
     <View style={[styles.auditContainer, { borderColor: colors.border }]}>
       <Pressable
         onPress={() => setExpanded((v) => !v)}
-        style={styles.auditToggle}
+        style={({ pressed }) => [styles.auditToggle, pressed ? styles.pressed : null]}
         accessibilityRole="button"
         accessibilityLabel={expanded ? 'Collapse audit trail' : 'Expand audit trail'}>
         <Text variant="caption" tone="muted" style={styles.auditToggleLabel}>
@@ -600,8 +600,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    minHeight: minTouchTarget,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+  },
+  pressed: {
+    opacity: 0.6,
   },
   auditToggleLabel: {
     textTransform: 'uppercase',

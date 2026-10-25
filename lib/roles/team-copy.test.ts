@@ -168,11 +168,23 @@ it('reads the sign-out time as the web does', () => {
   expect(formatSignOutAfter(30)).toBe('30 minutes');
   expect(formatSignOutAfter(60)).toBe('1 hour');
   expect(formatSignOutAfter(480)).toBe('8 hours');
-  expect(formatSignOutAfter(1440)).toBe('1 day');
+  expect(formatSignOutAfter(1440)).toBe('24 hours');
   expect(formatSignOutAfter(10080)).toBe('7 days');
 });
 
 it('links the roles help article on the web', () => {
   expect(rolesHelpUrl('https://staging.example.com')).toBe('https://staging.example.com/help/settings/roles-and-permissions');
   expect(rolesHelpUrl('')).toBe('https://www.resneo.com/help/settings/roles-and-permissions');
+});
+
+describe('roleInfo', () => {
+  it('leaves the till out of the role lines at a business without Checkout', () => {
+    const { roleInfo } = jest.requireActual<typeof import('@/lib/roles/team-copy')>('@/lib/roles/team-copy');
+    expect(roleInfo('front_desk', true).summary).toBe('Takes bookings and payments, with the Front desk till settings.');
+    const frontDesk = roleInfo('front_desk', false);
+    expect(frontDesk.summary).toBe('Takes bookings for everyone.');
+    expect(frontDesk.can.some((line) => line.includes('till'))).toBe(false);
+    expect(roleInfo('staff', false).summary).toBe('Works with clients.');
+    expect(roleInfo('admin', false)).toEqual(roleInfo('admin', true));
+  });
 });

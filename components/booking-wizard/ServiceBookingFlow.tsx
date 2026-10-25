@@ -977,7 +977,11 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     goToStep,
   ]);
 
+  /** The booking this run made: the confirmation shows, and the back arrow goes. */
+  const [createdBookingId, setCreatedBookingId] = useState<string | null>(null);
+
   const resetWizard = useCallback(() => {
+    setCreatedBookingId(null);
     setOverrideWarnings(null);
     setSelectedService(null);
     setNeedsPractitionerStep(false);
@@ -1008,6 +1012,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   }, [isWalkInIntent, timeZone, isStaffFirst]);
 
   const handleBookingCreated = (bookingId: string) => {
+    setCreatedBookingId(bookingId);
     // Non-PII funnel completion: how the booking was created, not who for.
     track(ANALYTICS_EVENTS.createBookingCompleted, {
       mode: 'appointment',
@@ -1049,7 +1054,9 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   const phaseIndex = appointmentWizardPhase(activeKey);
   // Past the first step the header arrow steps back a page; on step one it's
   // hidden so only the ✕ leaves the form.
-  const canGoBack = stepNumber > 0;
+  // Not once the booking exists: back would reopen its filled-in details, one tap from a duplicate.
+  // "Book another" starts afresh instead.
+  const canGoBack = stepNumber > 0 && createdBookingId === null;
   const selectedAddons = addonGroups
     .flatMap((group) => group.addons)
     .filter((addon) => selectedAddonIds.includes(addon.id));
@@ -1449,6 +1456,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
       {activeKey === 'multi_service' && multiServiceSegments && multiServiceSegments.length > 0 ? (
         <MultiServiceReviewStep
           segments={multiServiceSegments}
+          date={selectedDate}
           visitPractitioner={visitPractitioner}
           onChangeServices={changeServices}
           onRemoveSegment={removeServiceFromChain}

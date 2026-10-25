@@ -49,6 +49,7 @@ import {
   memberSettingsSummary,
   memberStatus,
   ROLE_INFO,
+  roleInfo,
   roleChangeQuestion,
   SETTING_COPY,
   teamT,
@@ -70,6 +71,8 @@ type StaffMemberSheetProps = {
   practitioners: AssignablePractitioner[];
   /** The business's name, for what removing someone means. */
   businessName?: string;
+  /** Checkout on: the role lines mention the till. */
+  checkoutOn?: boolean;
   onClose: () => void;
   onDeleted: () => void;
 };
@@ -98,6 +101,7 @@ export function StaffMemberSheet({
   viewer = LEGACY_ADMIN_VIEWER,
   practitioners,
   businessName = 'your business',
+  checkoutOn = true,
   onClose,
   onDeleted,
 }: StaffMemberSheetProps) {
@@ -182,6 +186,8 @@ export function StaffMemberSheet({
   const currentRole = roleChoiceOf(person);
   const isAdminRow = person.role === 'admin';
   const status = memberStatus(person);
+  // Never joined: removing them cancels the invitation, and the words say so.
+  const pending = person.invite_pending === true;
   const access: MemberAccess = isSelf ? 'self' : memberAccess(viewer, person);
   const assigned = memberCalendarIds(person);
   const activeIds = calendars.map((c) => c.id);
@@ -268,7 +274,7 @@ export function StaffMemberSheet({
       await deleteStaff.mutateAsync(person.id);
       hapticSuccess();
       setConfirmingRemove(false);
-      toast.success(teamT('member.remove.done', { name }));
+      toast.success(teamT(pending ? 'member.cancelInvite.done' : 'member.remove.done', { name }));
       onDeleted();
       onClose();
     } catch (err) {
@@ -278,7 +284,7 @@ export function StaffMemberSheet({
   }
 
   const summary = memberSettingsSummary(person, memberCalendarNames(person, calendars));
-  const question = pendingRole ? roleChangeQuestion(person, pendingRole, viewer.isOwner) : null;
+  const question = pendingRole ? roleChangeQuestion(person, pendingRole, viewer.isOwner, checkoutOn) : null;
 
   return (
     <Sheet visible={visible && member !== null} onClose={handleClose} maxHeight="90%" fill>
@@ -323,7 +329,7 @@ export function StaffMemberSheet({
           /* Nothing to manage here: what their role is, and who can change it. */
           <View style={styles.section}>
             <Text variant="body" tone="secondary">
-              {ROLE_INFO[roleKey].summary}
+              {roleInfo(roleKey, checkoutOn).summary}
             </Text>
             {summary.length > 0 ? (
               <View style={styles.summaryList}>
@@ -364,6 +370,7 @@ export function StaffMemberSheet({
                 value={pendingRole ?? currentRole}
                 disabled={saving || pendingRole !== null}
                 showGoodFor={false}
+                checkoutOn={checkoutOn}
                 onChange={(next) => {
                   if (next === currentRole) return;
                   setNotice(null);
@@ -382,7 +389,7 @@ export function StaffMemberSheet({
                 />
               ) : (
                 <Text variant="bodySmall" tone="muted">
-                  {ROLE_INFO[currentRole].goodFor}
+                  {roleInfo(currentRole, checkoutOn).goodFor}
                 </Text>
               )}
             </View>
@@ -450,7 +457,7 @@ export function StaffMemberSheet({
                 {adminExportSwitch ? (
                   <SettingSwitch
                     label={SETTING_COPY.exportLabel}
-                    help={SETTING_COPY.exportHelp}
+                    help={SETTING_COPY.exportHelpAdmin}
                     value={exportSwitchOn(person)}
                     disabled={saving}
                     onChange={(on) => void saveSwitch({ export_clients: on })}
@@ -559,20 +566,28 @@ export function StaffMemberSheet({
               )}
             </View>
 
-            {/* Remove from your team */}
+            {/* Remove from your team (for someone who hasn't joined yet, cancel their invitation) */}
             <View style={[styles.section, styles.removeSection, { borderTopColor: colors.border }]}>
               <StepHeading
-                title={teamT('member.remove')}
-                help={teamT('member.remove.help', { name: firstName, business: businessName })}
+                title={teamT(pending ? 'member.cancelInvite' : 'member.remove')}
+                help={
+                  pending
+                    ? teamT('member.cancelInvite.help', { business: businessName })
+                    : teamT('member.remove.help', { name: firstName, business: businessName })
+                }
               />
               {confirmingRemove ? (
                 // The question opens at the foot of a long sheet: bring it into view on a phone.
                 <View onLayout={() => scrollRef.current?.scrollToEnd?.({ animated: true })}>
                   <ConfirmPanel
-                    title={teamT('member.remove.title', { name })}
-                    message={teamT('member.remove.body', { business: businessName })}
-                    confirmLabel={deleteStaff.isPending ? teamT('member.remove.removing') : teamT('member.remove.confirm')}
-                    cancelLabel={teamT('member.remove.cancel')}
+                    title={teamT(pending ? 'member.cancelInvite.title' : 'member.remove.title', { name })}
+                    message={teamT(pending ? 'member.cancelInvite.body' : 'member.remove.body', { business: businessName })}
+                    confirmLabel={
+                      pending
+                        ? teamT(deleteStaff.isPending ? 'member.cancelInvite.cancelling' : 'member.cancelInvite.confirm')
+                        : teamT(deleteStaff.isPending ? 'member.remove.removing' : 'member.remove.confirm')
+                    }
+                    cancelLabel={teamT(pending ? 'member.cancelInvite.keep' : 'member.remove.cancel')}
                     destructive
                     loading={deleteStaff.isPending}
                     onConfirm={() => void remove()}
@@ -581,7 +596,7 @@ export function StaffMemberSheet({
                 </View>
               ) : (
                 <Button
-                  label={teamT('member.remove.button', { name: firstName })}
+                  label={pending ? teamT('member.cancelInvite.button') : teamT('member.remove.button', { name: firstName })}
                   variant="danger"
                   onPress={() => {
                     hapticWarning();

@@ -246,7 +246,9 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
 
   const stepIndex = Math.max(0, STEPS.indexOf(step));
   // Header arrow steps back a page (hidden on the first step); the ✕ exits.
-  const chrome = <BookingWizardHeader canGoBack={stepIndex > 0} onBack={goBack} />;
+  // Not once the booking exists: back would reopen its filled-in details, one tap from a duplicate.
+  const [created, setCreated] = useState(false);
+  const chrome = <BookingWizardHeader canGoBack={stepIndex > 0 && !created} onBack={goBack} />;
 
   // ----- resource step -----
   if (step === 'resource') {
@@ -477,6 +479,7 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
             ...(ownerVenueId ? { owner_venue_id: ownerVenueId } : {}),
           })}
           onCreated={(bookingId) => {
+            setCreated(true);
             track(ANALYTICS_EVENTS.createBookingCompleted, { mode: 'resource' });
             onCreated(bookingId);
           }}

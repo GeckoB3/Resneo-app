@@ -13,6 +13,7 @@ import {
   type GroupBusyInterval,
 } from '@/lib/booking/group-slot-availability';
 import { getDateTimeFormat } from '@/lib/dates/formatters';
+import { formatDayHeading } from '@/lib/dates/venue-dates';
 import { hapticSelect } from '@/lib/haptics';
 import type { ServiceChainSegmentParam } from '@/lib/booking/service-chain';
 import {
@@ -353,7 +354,13 @@ export function TimeSlotStep({
   return (
     <View style={styles.container}>
       <View style={styles.titleRow}>
-        <Text variant="heading">Choose a time</Text>
+        <View>
+          <Text variant="heading">Choose a time</Text>
+          {/* The day picked on the step before, so the times never read as undated. */}
+          <Text variant="bodySmall" tone="secondary">
+            {formatDayHeading(date)}
+          </Text>
+        </View>
         {isFetching ? <ActivityIndicator color={colors.brand} /> : null}
       </View>
 

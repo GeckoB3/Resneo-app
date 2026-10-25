@@ -2,7 +2,7 @@ import { onlineManager, useQueryClient } from '@tanstack/react-query';
 import * as ImagePicker from 'expo-image-picker';
 import { Stack, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Image, Linking, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Image, Keyboard, Linking, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { ComplianceCaptureSheet } from '@/components/compliance/ComplianceCaptureSheet';
 import { ClientAlertsStrip } from '@/components/treatment-records/ClientAlertsStrip';
@@ -36,8 +36,9 @@ import {
 } from '@/lib/queries/useTreatmentRecords';
 import { useScreenCaptureProtection } from '@/lib/security/useScreenCaptureProtection';
 import { PHOTO_LABELS, TR_COPY } from '@/lib/treatment-records/copy';
-import { canOfferCopy, changesBetween, draftFromDetail, photoMimeType, savedProducts, savedRecordFields, type TreatmentDraft } from '@/lib/treatment-records/draft';
+import { canOfferCopy, changesBetween, draftFromDetail, savedProducts, savedRecordFields, type TreatmentDraft } from '@/lib/treatment-records/draft';
 import { formatDay, formatTime, ymdIn } from '@/lib/treatment-records/format';
+import { PHOTOS_MAX, pickerQuality, preparePhotoForUpload } from '@/lib/treatment-records/photo-prepare';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { useViewerAccess } from '@/providers/ViewerAccessProvider';
@@ -160,7 +161,7 @@ function TreatmentRecordEditor({
   const [deleteReason, setDeleteReason] = useState('');
   // Shown in the delete sheet: a toast raised while a sheet is open is drawn behind it.
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<'copy' | 'delete' | 'print' | null>(null);
+  const [busy, setBusy] = useState<'copy' | 'delete' | 'print' | 'close' | null>(null);
   const [leaving, setLeaving] = useState<Parameters<typeof navigation.dispatch>[0] | null>(null);
 
   const readOnly = saveState === 'deleted' || saveState === 'conflict' || Boolean(detail && !detail.can_edit);
@@ -349,8 +350,16 @@ function TreatmentRecordEditor({
   }
 
   async function addPhotos(source: 'camera' | 'library') {
-    if (!accessToken) return;
+    if (!accessToken || uploadProgress !== null) return;
+    // Otherwise Android hands focus back to the notes when the picker closes, and the keyboard
+    // covers the photos as they upload.
+    Keyboard.dismiss();
     setPhotoNotice(null);
+    const room = PHOTOS_MAX - photos.length;
+    if (room <= 0) {
+      setPhotoNotice({ text: TR_COPY.photosFull(PHOTOS_MAX), settings: false });
+      return;
+    }
     let result: ImagePicker.ImagePickerResult;
     if (source === 'camera') {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -358,12 +367,24 @@ function TreatmentRecordEditor({
         setPhotoNotice({ text: TR_COPY.cameraDenied, settings: permission.canAskAgain === false });
         return;
       }
-      result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.7 });
+      result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: pickerQuality() });
     } else {
-      result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsMultipleSelection: true, selectionLimit: 20, quality: 0.7 });
+      result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsMultipleSelection: true,
+        selectionLimit: room,
+        quality: pickerQuality(),
+      });
     }
-    const assets = result.canceled ? [] : (result.assets ?? []);
-    if (assets.length === 0) return;
+    const picked = result.canceled ? [] : (result.assets ?? []);
+    if (picked.length === 0) return;
+    // Android's picker can ignore the selection limit.
+    const assets = picked.slice(0, room);
+    // One message per kind of problem, shown together once every photo has had its turn.
+    const problems = new Set<string>();
+    if (picked.length > assets.length) problems.add(TR_COPY.photosOverLimit(assets.length, PHOTOS_MAX));
+    let added = 0;
+    setUploadProgress(TR_COPY.uploading(1, assets.length));
     try {
       // Waiting saves go first, so the record the photos land on holds the latest text.
       await flush();
@@ -371,21 +392,31 @@ function TreatmentRecordEditor({
       for (let i = 0; i < assets.length; i++) {
         const asset = assets[i]!;
         setUploadProgress(TR_COPY.uploading(i + 1, assets.length));
-        const mimeType = photoMimeType(asset.mimeType, asset.uri);
-        if (!mimeType) {
-          setPhotoNotice({ text: TR_COPY.wrongFormat, settings: false });
-          continue;
+        try {
+          // Shrunk to 2,000 px and saved as a JPEG, which also drops the photo's location data.
+          const photo = await preparePhotoForUpload(asset);
+          if (!photo.mimeType) {
+            problems.add(TR_COPY.wrongFormat);
+            continue;
+          }
+          const { photoId } = await uploadTreatmentPhoto(accessToken, id, { uri: photo.uri, mimeType: photo.mimeType });
+          added += 1;
+          setPhotos((ps) => [...ps, { id: photoId, label: 'other', uri: photo.uri }]);
+        } catch (err) {
+          problems.add(err instanceof ApiError ? err.message : TR_COPY.photoNotUploaded);
         }
-        const { photoId } = await uploadTreatmentPhoto(accessToken, id, { uri: asset.uri, mimeType });
-        setPhotos((ps) => [...ps, { id: photoId, label: 'other', uri: asset.uri }]);
       }
-      hapticSuccess();
-      invalidateLists();
     } catch (err) {
-      hapticWarning();
-      setPhotoNotice({ text: err instanceof ApiError ? err.message : 'A photo did not upload.', settings: false });
+      problems.add(err instanceof ApiError ? err.message : TR_COPY.photoNotUploaded);
     } finally {
       setUploadProgress(null);
+    }
+    if (added > 0) invalidateLists();
+    if (problems.size > 0) {
+      hapticWarning();
+      setPhotoNotice({ text: [...problems].join(' '), settings: false });
+    } else {
+      hapticSuccess();
     }
   }
 
@@ -454,6 +485,24 @@ function TreatmentRecordEditor({
     } finally {
       setBusy(null);
     }
+  }
+
+  /** Save and close: what is waiting saves first, and a record that holds changes says it saved. */
+  async function saveAndClose() {
+    if (!readOnly) {
+      setBusy('close');
+      try {
+        await flush();
+      } finally {
+        setBusy(null);
+      }
+      if (!hasUnsaved() && touched && recordIdRef.current) {
+        hapticSuccess();
+        toast.success(TR_COPY.savedToast);
+      }
+    }
+    // Still unsaved (offline, or the save failed): leaving asks first, as the back button does.
+    router.back();
   }
 
   function closeDelete() {
@@ -667,6 +716,14 @@ function TreatmentRecordEditor({
             ) : null}
           </View>
         ) : null}
+
+        <Button
+          label={readOnly ? TR_COPY.close : TR_COPY.saveAndClose}
+          fullWidth
+          loading={busy === 'close'}
+          disabled={uploadProgress !== null}
+          onPress={() => void saveAndClose()}
+        />
       </ScrollView>
 
       <Sheet visible={viewing !== null} onClose={() => setViewing(null)} maxHeight="90%">

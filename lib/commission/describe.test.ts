@@ -7,6 +7,7 @@ import {
   exceptionsSentence,
   isLiveSplit,
   nextChangeSentence,
+  nextTermsSentence,
   personShare,
   personShareSentence,
   shareWhat,
@@ -105,6 +106,25 @@ describe('sentences', () => {
       'Proposed: Sam Cuts pays you 40% of services and 10% of products, as rent.',
     );
     expect(splitSentence({ ...s, terms: t, pending: null, history: [t] } as SplitView)).toBe('Sam Cuts pays you 40% of services and 10% of products, as rent.');
+    expect(splitTermsSentence({ ...s, role: 'payer' }, t, true)).toBe('Proposed: you pay Sam Cuts 40% of services and 10% of products, as rent.');
+  });
+
+  it('never reads a declined or withdrawn proposal as if it counts', () => {
+    const t = { id: 't1', services_rate_bps: 3000, products_rate_bps: null, status: 'withdrawn' } as SplitTermsView;
+    const s = { role: 'payer', partner: { venue_id: 'v', name: 'Bloom' }, label: 'rent', status: 'withdrawn', terms: null, pending: null, history: [t] } as unknown as SplitView;
+    expect(splitSentence(s)).toBe('Proposed: you pay Bloom 30% of services, as rent.');
+    expect(splitSentence({ ...s, status: 'declined', history: [{ ...t, status: 'declined' }] })).toBe('Proposed: you pay Bloom 30% of services, as rent.');
+  });
+
+  it('says when agreed terms change on a later day', () => {
+    const now = { id: 'v1', services_rate_bps: 4000, products_rate_bps: null, status: 'accepted', effective_from: '2026-09-01' } as SplitTermsView;
+    const later = { id: 'v2', services_rate_bps: 3500, products_rate_bps: 1000, status: 'accepted', effective_from: '2026-11-02' } as SplitTermsView;
+    const s = { status: 'active', ended_on: null, terms: now, history: [later, now] } as unknown as SplitView;
+    expect(nextTermsSentence(s, TODAY, day)).toBe('From 2026-11-02: 35% of services and 10% of products.');
+    expect(nextTermsSentence({ ...s, history: [now] }, TODAY, day)).toBeNull();
+    expect(nextTermsSentence({ ...s, history: [{ ...later, status: 'proposed' }, now] }, TODAY, day)).toBeNull();
+    // Ending before the new terms start: they never count.
+    expect(nextTermsSentence({ ...s, status: 'ended', ended_on: '2026-10-31' }, TODAY, day)).toBeNull();
   });
 
   it('sums up a form before it saves', () => {

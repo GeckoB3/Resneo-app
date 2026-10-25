@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Switch, View } from 'react-native';
 import { Text } from '@/components/ui/Text';
 import { hapticSelect } from '@/lib/haptics';
 import type { DiaryAccess } from '@/lib/roles/roles';
-import { DIARY_CHOICES, ROLE_INFO, SETTING_COPY, teamT } from '@/lib/roles/team-copy';
+import { DIARY_CHOICES, SETTING_COPY, roleInfo, teamT } from '@/lib/roles/team-copy';
 import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { RoleChoice } from '@/types/staff';
@@ -68,18 +68,21 @@ export function RoleChoiceList({
   onChange,
   disabled = false,
   showGoodFor = true,
+  checkoutOn = true,
 }: {
   options: RoleChoice[];
   value: RoleChoice;
   onChange: (role: RoleChoice) => void;
   disabled?: boolean;
   showGoodFor?: boolean;
+  /** Checkout on: the role lines mention the till. */
+  checkoutOn?: boolean;
 }) {
   const { colors } = useTheme();
   return (
     <View accessibilityRole="radiogroup" style={styles.roleList}>
       {options.map((key) => {
-        const info = ROLE_INFO[key];
+        const info = roleInfo(key, checkoutOn);
         const selected = key === value;
         return (
           <Pressable

@@ -411,6 +411,8 @@ describe('what the screen says', () => {
     await press(within(past).getByText('Show past splits (1)'));
     expect(within(past).getByText('Old at Sam Cuts')).toBeTruthy();
     expect(within(past).getByText('Ended')).toBeTruthy();
+    // Nothing is left to manage on a past split: its button opens the record (web the same).
+    expect(within(past).getByLabelText('See details: Old at Sam Cuts')).toBeTruthy();
     await press(within(past).getByText('Hide'));
     expect(within(past).queryByText('Old at Sam Cuts')).toBeNull();
   });

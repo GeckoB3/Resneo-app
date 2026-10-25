@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { hapticSelect } from '@/lib/haptics';
 import { layoutSafe, motionSafe, useReduceMotion } from '@/lib/motion';
-import { motion, spacing } from '@/theme/index';
+import { minTouchTarget, motion, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
 type CollapsibleCardProps = {
@@ -75,8 +75,11 @@ export function CollapsibleCard({
   // nothing to show, so a header-only card carries no empty gap.
   const showBody = children != null && children !== false && (expanded || (!lazy && hasExpanded));
 
+  // The card's padding belongs to the header, so a tap anywhere across the top of the card opens or
+  // shuts it: with the padding on the card, only the title line (about 20 points) answered, and a tap
+  // on the card's edge did nothing (found on iPhone, 2026-10-25).
   return (
-    <Card>
+    <Card padded={false}>
       <Animated.View
         layout={
           animateLayout
@@ -88,7 +91,11 @@ export function CollapsibleCard({
           accessibilityLabel={title}
           accessibilityState={{ expanded }}
           onPress={toggle}
-          style={({ pressed }) => [styles.header, { opacity: pressed ? 0.55 : 1 }]}>
+          style={({ pressed }) => [
+            styles.header,
+            expanded && showBody ? styles.headerOpen : null,
+            { opacity: pressed ? 0.55 : 1 },
+          ]}>
           <Text variant="label">{title}</Text>
           <View style={styles.headerRight}>
             {marker ?? null}
@@ -126,6 +133,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.md,
+    minHeight: minTouchTarget,
+    padding: spacing.base,
+  },
+  // Open, the body follows the title closely, as it did when the padding sat on the card.
+  headerOpen: {
+    paddingBottom: spacing.sm,
   },
   headerRight: {
     flexDirection: 'row',
@@ -138,7 +151,8 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   body: {
-    marginTop: spacing.sm,
+    paddingHorizontal: spacing.base,
+    paddingBottom: spacing.base,
   },
   bodyHidden: {
     display: 'none',

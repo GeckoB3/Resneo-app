@@ -68,18 +68,22 @@ export function offersSitePickerAfterSignIn(me: MeSites | null | undefined): boo
   return (me.sites?.length ?? 0) > 1 || (me.pending_invites?.length ?? 0) > 0;
 }
 
-/** The plan's status as the Plan page words it (the web overview's `planStatusLabel`). */
+/**
+ * A site's plan status in words, as the web's Sites page and All sites cards say it (web
+ * `sitePlanStatusLabel` in src/lib/sites/sites-page.ts), so one site reads the same everywhere.
+ */
 export function planStatusLabel(status: string): string {
   switch (status) {
     case 'active':
-    case 'trialing':
       return 'Active';
+    case 'trialing':
+      return 'Free trial';
     case 'past_due':
       return 'Payment due';
     case 'cancelling':
-      return 'Cancelling';
+      return 'Ending soon';
     case 'cancelled':
-      return 'Cancelled';
+      return SITES_COPY.subscriptionEnded;
     default:
       return status ? status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, ' ') : '';
   }
