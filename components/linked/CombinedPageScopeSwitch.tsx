@@ -21,10 +21,13 @@ export function CombinedPageScopeSwitch({
   collective,
   scope,
   onScopeChange,
+  statusLine = null,
 }: {
   collective: SettingsCollectiveNote;
   scope: BookingPageScope;
   onScopeChange: (scope: BookingPageScope) => void;
+  /** What this venue's own page does now (web `bp.status.*`), from `own_page` on GET /api/venue/collectives. */
+  statusLine?: string | null;
 }) {
   const { colors } = useTheme();
   return (
@@ -35,9 +38,14 @@ export function CombinedPageScopeSwitch({
       <Text variant="subheading">{`This venue is part of ${collective.name}`}</Text>
       <Text variant="bodySmall" tone="secondary">
         {collective.isHost
-          ? `This venue shares one booking page with the other members of ${collective.name}, and hosts it. Guests who book with you use the combined page. This venue’s own page is separate.`
-          : `This venue shares one booking page with the other members of ${collective.name}. ${collective.hostVenueName} hosts it. Guests who book with you use the combined page. This venue’s own page is separate.`}
+          ? `This venue shares one booking page with the other members of ${collective.name}, and hosts it. Guests who book with you use the combined page.`
+          : `This venue shares one booking page with the other members of ${collective.name}. ${collective.hostVenueName} hosts it. Guests who book with you use the combined page.`}
       </Text>
+      {statusLine ? (
+        <Text variant="bodySmall" tone="secondary" testID="own-page-status">
+          {statusLine}
+        </Text>
+      ) : null}
       {collective.adoptedThisVenue ? (
         <Text variant="bodySmall" tone="secondary">
           The combined page is served at this venue’s own address, so its settings are what guests

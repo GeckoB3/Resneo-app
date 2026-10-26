@@ -41,11 +41,15 @@ export function isSharedServices(collective: { serviceModel?: string | null }): 
   return collective.serviceModel === 'replicas';
 }
 
-/** The host's note under "Settings that follow the host venue". */
+/**
+ * The last line of the collective's booking settings summary (web `CollectiveBookingSettingsSummary`):
+ * whose services the page shows, and where each booking belongs. Sign-in is now the collective's own
+ * setting, listed above it, so it is no longer described here.
+ */
 export function hostSettingsNote(collective: { serviceModel?: string | null }, hostName: string): string {
   return isSharedServices(collective)
-    ? `The services on the page, with their prices, lengths, deposits, options, add-ons and forms, are ${hostName}'s, and apply at every venue. Guests are asked to sign in only when ${hostName} asks for it. Each booking, its payment and the client record belong to the venue the guest books with.`
-    : 'Prices, durations, deposits and cancellation notice come from each member venue\u2019s own service, because every booking is made with that venue. If any member requires customers to sign in to book, the combined page asks them to sign in too.';
+    ? `The services on the page, with their prices, lengths, deposits, options, add-ons and forms, are ${hostName}'s, and apply at every venue. Each booking, its payment, its messages and the client record belong to the venue the guest books with.`
+    : 'Prices, durations, deposits and cancellation notice come from each member venue\u2019s own service, because every booking is made with that venue.';
 }
 
 /** What a member reads at the top of its combined-page summary. */

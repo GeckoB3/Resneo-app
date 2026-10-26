@@ -1,4 +1,6 @@
 import { memberSummaryIntro } from '@/lib/linked/collective-membership-copy';
+import { CollectiveBookingSettingsSummary } from '@/components/linked/CollectiveBookingSettingsSummary';
+import { collectiveSettingsCopy } from '@/lib/linked/collective-settings-copy';
 import { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -95,6 +97,19 @@ export function CombinedPageMemberSummary({
           <Button label="Open Linked venues" size="sm" variant="ghost" onPress={onOpenLinkedVenues} />
         ) : null}
       </Card>
+
+      {/* Web collective booking settings plan §7.6: where the member's people on the page come from. */}
+      <Card style={styles.card} testID="collective-your-people">
+        <Text variant="label">{collectiveSettingsCopy.yourPeopleTitle}</Text>
+        <Text variant="bodySmall" tone="secondary">
+          {collectiveSettingsCopy.yourPeopleBody(collective.name)}
+        </Text>
+        <Text variant="caption" tone="muted">
+          Switch to This venue&rsquo;s own page above, then open Meet the team.
+        </Text>
+      </Card>
+
+      <CollectiveBookingSettingsSummary collective={collective} />
     </View>
   );
 }

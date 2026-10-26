@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { FeatureFlagsCollective } from '@/lib/linked/collective-settings-copy';
 
 import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
@@ -92,6 +93,9 @@ export function useUpdateVenue() {
 export interface FeatureFlagsCalendar {
   id: string;
   name: string;
+  /** In a live collective the list covers every venue in it: the calendar's venue. */
+  venue_id?: string;
+  venue_name?: string;
 }
 
 /** Any-available-practitioner config returned by the feature-flags endpoint. */
@@ -106,6 +110,12 @@ export interface FeatureFlagsResponse {
   resolved: Record<string, boolean>;
   any_available_practitioner_config?: AnyAvailablePractitionerConfig;
   calendars?: FeatureFlagsCalendar[];
+  /**
+   * The live collective whose booking settings this venue books under (web collective booking
+   * settings plan §8), or null. `raw` and `resolved` already carry its values for the keys it decides.
+   * Absent on servers before that change.
+   */
+  collective?: FeatureFlagsCollective | null;
 }
 
 /** Local query key for the feature-flags GET, scoped under the venue namespace so

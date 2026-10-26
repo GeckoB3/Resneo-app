@@ -20,6 +20,8 @@
  * home for it); the older `availability/calendars` route redirects there.
  */
 import * as Clipboard from 'expo-clipboard';
+import { collectiveSettingsCopy } from '@/lib/linked/collective-settings-copy';
+import type { VenueBootstrap } from '@/types/venue';
 import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -157,6 +159,7 @@ function CalendarCard({
   index,
   total,
   venueSlug,
+  collectiveLinks,
   assignments,
   busy,
   onMove,
@@ -175,6 +178,8 @@ function CalendarCard({
   index: number;
   total: number;
   venueSlug: string | null;
+  /** While the venue is live in a collective: each person's own link on its page (CBS-7). */
+  collectiveLinks: VenueBootstrap['collective_person_links'];
   assignments: AssignmentMaps;
   busy: boolean;
   onMove: (offset: -1 | 1) => void;
@@ -262,6 +267,26 @@ function CalendarCard({
     venueSlug && savedSlug
       ? `${getWebUrl() || 'https://app.resneo.com'}/book/${encodeURIComponent(venueSlug)}/${encodeURIComponent(savedSlug)}`
       : null;
+
+  // Only a person the collective page offers has a link there; anyone else's goes back to the own page.
+  const onCollectivePage = collectiveLinks?.calendar_ids?.includes(calendar.id) ?? true;
+  const collectiveUrl =
+    collectiveLinks && onCollectivePage && venueSlug && savedSlug
+      ? `${getWebUrl() || 'https://app.resneo.com'}/book/c/${encodeURIComponent(collectiveLinks.collective_slug)}/${encodeURIComponent(venueSlug)}/${encodeURIComponent(savedSlug)}`
+      : null;
+  const [collectiveCopied, setCollectiveCopied] = useState(false);
+
+  async function handleCopyCollective() {
+    if (!collectiveUrl) return;
+    try {
+      await Clipboard.setStringAsync(collectiveUrl);
+      hapticSuccess();
+      setCollectiveCopied(true);
+      setTimeout(() => setCollectiveCopied(false), 2000);
+    } catch {
+      hapticWarning();
+    }
+  }
 
   async function handleCopy() {
     if (!canCopy || !bookingUrl) return;
@@ -452,6 +477,27 @@ function CalendarCard({
                 size="sm"
                 onPress={() => void handleOpenPage()}
               />
+            ) : null}
+            {collectiveUrl && collectiveLinks ? (
+              <View testID="collective-person-link" style={styles.slugBlock}>
+                <Text variant="caption" tone="brand">
+                  {collectiveSettingsCopy.linkCollective({
+                    collective: collectiveLinks.collective_name,
+                    page: collectiveLinks.public_name,
+                    host: '',
+                    person: calendar.name,
+                  })}
+                </Text>
+                <Text variant="caption" tone="muted" selectable>
+                  {collectiveUrl.replace(/^https?:\/\//, '')}
+                </Text>
+                <Button
+                  label={collectiveCopied ? 'Copied' : 'Copy collective link'}
+                  variant="ghost"
+                  size="sm"
+                  onPress={() => void handleCopyCollective()}
+                />
+              </View>
             ) : null}
           </>
         ) : (
@@ -993,6 +1039,7 @@ export function BookableCalendarsManager() {
             index={idx}
             total={calendars.length}
             venueSlug={venueSlug}
+            collectiveLinks={venue?.collective_person_links ?? null}
             assignments={assignments}
             busy={busyId === c.id}
             onMove={(offset) => void moveCalendar(c.id, offset)}

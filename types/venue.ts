@@ -171,6 +171,18 @@ export interface VenueBootstrap {
   stripe_subscription_id?: string | null;
   require_account_login_for_bookings?: boolean;
   /**
+   * While the venue is live in a collective, where each person's own link on its page lives (web
+   * collective booking settings plan CBS-7): `/book/c/{collective_slug}/{venue slug}/{calendar slug}`.
+   * Null outside one; absent on older servers. `calendar_ids` lists this venue's calendars on the
+   * collective page, the only ones with a link there (absent on older servers: show for all).
+   */
+  collective_person_links?: {
+    collective_slug: string;
+    collective_name: string;
+    public_name: string;
+    calendar_ids?: string[];
+  } | null;
+  /**
    * In-person payments (Tap to Pay / Terminal) master switch (§6.7). When false
    * or absent, the app renders NO payment surface and makes no Terminal calls —
    * the frictionless-off hard requirement (§1.3/§3.2).

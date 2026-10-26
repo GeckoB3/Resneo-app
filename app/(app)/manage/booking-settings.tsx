@@ -1,4 +1,5 @@
 import { Stack, useRouter } from 'expo-router';
+import { COLLECTIVE_FLAG_ROWS, collectiveSettingsCopy, collectiveSettingsParams } from '@/lib/linked/collective-settings-copy';
 import { useEffect, useState } from 'react';
 import {
   Linking,
@@ -301,6 +302,11 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
   const featureFlags = useFeatureFlags();
   const calendars = featureFlags.data?.calendars ?? EMPTY_CALENDARS;
   const savedConfig = featureFlags.data?.any_available_practitioner_config;
+  // A live collective decides four of these for every venue in it (web collective booking settings
+  // plan CBS-1): the host saves them for all, a member sees them read-only.
+  const collective = featureFlags.data?.collective ?? null;
+  const collectiveParams = collective ? collectiveSettingsParams(collective) : null;
+  const memberReadOnly = Boolean(collective && !collective.is_host);
   const [localResolved, setLocalResolved] =
     useState<ResolvedAppointmentsFeatureFlags>(resolvedFlags);
   const [localRaw, setLocalRaw] = useState<VenueFeatureFlagsRaw>(rawFlags);
@@ -409,7 +415,9 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
   }
 
   function toggleFlag(key: AppointmentsFeatureFlagKey) {
+    if (memberReadOnly && COLLECTIVE_FLAG_ROWS.has(key)) return;
     hapticTap();
+    const forCollective = Boolean(collectiveParams && COLLECTIVE_FLAG_ROWS.has(key));
     const nextEnabled = !localResolved[key];
     const patch: VenueFeatureFlagsRaw = { ...localRaw };
     if (nextEnabled) {
@@ -420,8 +428,12 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
       void persist(
         patch,
         key === 'waitlist_v2'
-          ? 'Waitlist is on. Adjust email/SMS under Settings → Communications → Waitlist invites.'
-          : 'Setting saved.',
+          ? forCollective && collectiveParams
+            ? `Waitlist is on for ${collectiveParams.collective}. Each venue can adjust email and SMS under Settings, Communications, Waitlist invites.`
+            : 'Waitlist is on. Adjust email/SMS under Settings → Communications → Waitlist invites.'
+          : forCollective && collectiveParams
+            ? collectiveSettingsCopy.savedForCollective(collectiveParams)
+            : 'Setting saved.',
       );
     } else {
       patch[key] = false;
@@ -431,7 +443,11 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
       if (key === 'waitlist_v2') {
         delete (patch as Record<string, unknown>).waitlist_config;
       }
-      void persist(patch, undefined, key);
+      void persist(
+        patch,
+        forCollective && collectiveParams ? collectiveSettingsCopy.savedForCollective(collectiveParams) : undefined,
+        key,
+      );
     }
   }
 
@@ -447,10 +463,14 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
       // unused, but we keep it so a later switch back to priority is preserved.
       any_available_practitioner_config: { mode, calendar_order: calendarOrder },
     } as VenueFeatureFlagsRaw;
-    return persist(patch, successMsg);
+    return persist(
+      patch,
+      successMsg ?? (collectiveParams ? collectiveSettingsCopy.savedForCollective(collectiveParams) : undefined),
+    );
   }
 
   function saveAnyAvailableMode(mode: 'priority' | 'random') {
+    if (memberReadOnly) return;
     hapticTap();
     setAnyAvailableMode(mode);
     void persistAnyAvailable(mode, order);
@@ -459,7 +479,7 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
   /** Swap a calendar with its neighbour (-1 up / +1 down) and persist. */
   function moveCalendar(index: number, direction: -1 | 1) {
     const target = index + direction;
-    if (target < 0 || target >= orderedCalendars.length) return;
+    if (target < 0 || target >= orderedCalendars.length || memberReadOnly) return;
     hapticTap();
     // orderedCalendars is the visible (filtered) order; rebuild `order` from it
     // so dropped ids stay dropped after the move.
@@ -476,6 +496,7 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
   }
 
   function saveWaitlistMode(mode: WaitlistMode) {
+    if (memberReadOnly) return;
     hapticTap();
     setWaitlistMode(mode);
     const patch: VenueFeatureFlagsRaw = {
@@ -483,7 +504,7 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
       waitlist_v2: true,
       waitlist_config: { mode },
     } as VenueFeatureFlagsRaw;
-    void persist(patch);
+    void persist(patch, collectiveParams ? collectiveSettingsCopy.savedForCollective(collectiveParams) : undefined);
   }
 
   const isSaving = updateFlags.isPending;
@@ -515,6 +536,8 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
         {FLAG_META.map(({ key, title, description, webOnly }, idx) => {
           const enabled = Boolean(localResolved[key]);
           const isLast = idx === FLAG_META.length - 1;
+          const byCollective = Boolean(collectiveParams && COLLECTIVE_FLAG_ROWS.has(key));
+          const readOnly = byCollective && memberReadOnly;
           return (
             <View key={key}>
               <View
@@ -534,11 +557,18 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
                       Manage from web dashboard
                     </Text>
                   ) : null}
+                  {byCollective && collectiveParams ? (
+                    <Text variant="caption" tone="brand" style={styles.webOnlyBadge}>
+                      {readOnly
+                        ? collectiveSettingsCopy.setByHost(collectiveParams)
+                        : `For every venue in ${collectiveParams.collective}`}
+                    </Text>
+                  ) : null}
                 </View>
                 <Switch
                   value={enabled}
                   onValueChange={() => toggleFlag(key)}
-                  disabled={disabled || isSaving || webOnly}
+                  disabled={disabled || isSaving || webOnly || readOnly}
                   accessibilityLabel={title}
                   trackColor={{ true: colors.brand }}
                 />
@@ -571,7 +601,7 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
                         hint={modeLabels[mode].hint}
                         selected={anyAvailableMode === mode}
                         onPress={() => saveAnyAvailableMode(mode)}
-                        disabled={isSaving}
+                        disabled={isSaving || readOnly}
                       />
                     );
                   })}
@@ -629,6 +659,7 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
                                   style={styles.priorityName}
                                 >
                                   {index + 1}. {cal.name}
+                                  {cal.venue_name ? ` at ${cal.venue_name}` : ''}
                                 </Text>
                                 <View style={styles.priorityControls}>
                                   <IconButton
@@ -640,7 +671,7 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
                                     variant="bordered"
                                     size={36}
                                     iconSize={18}
-                                    disabled={isSaving || isFirst}
+                                    disabled={isSaving || isFirst || readOnly}
                                     onPress={() => moveCalendar(index, -1)}
                                     accessibilityLabel={`Move ${cal.name} up`}
                                   />
@@ -653,7 +684,7 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
                                     variant="bordered"
                                     size={36}
                                     iconSize={18}
-                                    disabled={isSaving || isLastCal}
+                                    disabled={isSaving || isLastCal || readOnly}
                                     onPress={() => moveCalendar(index, 1)}
                                     accessibilityLabel={`Move ${cal.name} down`}
                                   />
@@ -681,7 +712,7 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
                       hint={modeDesc}
                       selected={waitlistMode === mode}
                       onPress={() => saveWaitlistMode(mode)}
-                      disabled={isSaving}
+                      disabled={isSaving || readOnly}
                     />
                   ))}
                   <Text variant="caption" tone="muted" style={styles.waitlistNote}>
@@ -772,6 +803,11 @@ export default function BookingSettingsScreen() {
   const appointmentsPlan = isAppointmentsPlanTier(venue?.pricing_tier ?? null);
   const { colors } = useTheme();
   const siteLink = useWebDashboardLink();
+  // The live collective this venue books under, if any (web collective booking settings plan §7.5).
+  const featureFlagsQuery = useFeatureFlags();
+  const collective = featureFlagsQuery.data?.collective ?? null;
+  const collectiveParams = collective ? collectiveSettingsParams(collective) : null;
+  const signInReadOnly = Boolean(collective && !collective.is_host);
 
   // --- Booking models state (lazy initialiser, no render-phase side effects) ---
   const [models, setModels] = useState<BookingModel[]>(() => {
@@ -893,12 +929,14 @@ export default function BookingSettingsScreen() {
   // ---------------------------------------------------------------------------
 
   async function handleRequireLoginChange(value: boolean) {
+    if (signInReadOnly) return;
     hapticTap();
     setRequireLogin(value);
     setLoginSaving(true);
     try {
       await update.mutateAsync({ require_account_login_for_bookings: value });
       hapticSuccess();
+      if (collectiveParams) toast.success(collectiveSettingsCopy.savedForCollective(collectiveParams));
     } catch (e) {
       hapticWarning();
       // Revert on error
@@ -975,8 +1013,8 @@ export default function BookingSettingsScreen() {
                         onValueChange={(v) => toggleModel(row.model, v)}
                         accessibilityLabel={`Enable ${row.label}`}
                         trackColor={{ true: colors.brand }}
-                        // Must keep at least one model active
-                        disabled={active && models.length === 1}
+                        // Must keep at least one model active; a collective needs appointments (BM-02).
+                        disabled={(active && models.length === 1) || (Boolean(collective) && row.model === 'unified_scheduling')}
                       />
                     </View>
                   </View>
@@ -1101,16 +1139,42 @@ export default function BookingSettingsScreen() {
             tintColor={colors.brand}
           />
         }>
+        {collective && collectiveParams ? (
+          <Card>
+            <Text variant="bodyMedium">
+              {collective.is_host
+                ? collectiveSettingsCopy.hostBanner(collectiveParams)
+                : collectiveSettingsCopy.memberBanner(collectiveParams)}
+            </Text>
+            <Text variant="caption" tone="muted" style={{ marginTop: spacing.xs }}>
+              {collectiveSettingsCopy.ownKept(collectiveParams)}
+            </Text>
+          </Card>
+        ) : null}
+
         {renderBookingModels()}
+        {collective && appointmentsPlan ? (
+          <Text variant="caption" tone="muted">
+            {collectiveSettingsCopy.appointmentsLocked(venue.name ?? 'your venue')}
+          </Text>
+        ) : null}
 
         <Card>
           <Text variant="label">Guest accounts</Text>
           <SettingRow
             label="Require sign-in to book"
-            hint="Guests must verify their email before completing an online booking."
+            hint={
+              collectiveParams
+                ? `Guests must verify their email before completing an online booking. ${
+                    signInReadOnly
+                      ? collectiveSettingsCopy.setByHost(collectiveParams)
+                      : `For every venue in ${collectiveParams.collective}.`
+                  }`
+                : 'Guests must verify their email before completing an online booking.'
+            }
             value={requireLogin}
             onValueChange={(v) => void handleRequireLoginChange(v)}
-            disabled={loginSaving}
+            disabled={loginSaving || signInReadOnly}
             isLast
           />
         </Card>
@@ -1118,6 +1182,11 @@ export default function BookingSettingsScreen() {
         {/* Payments at your venue (the web's group of the same name, Appointments plans only):
             Card payments in person, the card reader, Tap to Pay on iPhone and the Checkout
             switch. Moved here from More (owner, 2026-10-15). */}
+        {appointmentsPlan && collectiveParams ? (
+          <Text variant="caption" tone="muted">
+            {collectiveSettingsCopy.perVenuePayments(collectiveParams)}
+          </Text>
+        ) : null}
         {appointmentsPlan ? <BookingSettingsPayments /> : null}
 
         {appointmentsPlan && resolvedFlags && rawFlags ? (

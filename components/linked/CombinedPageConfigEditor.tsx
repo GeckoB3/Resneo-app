@@ -1,4 +1,5 @@
 import { Image } from 'expo-image';
+import { CollectiveBookingSettingsSummary } from '@/components/linked/CollectiveBookingSettingsSummary';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Switch, View } from 'react-native';
 
@@ -15,7 +16,6 @@ import { Input } from '@/components/ui/Input';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { Segmented } from '@/components/ui/Segmented';
 import { Text } from '@/components/ui/Text';
-import { hostSettingsNote } from '@/lib/linked/collective-membership-copy';
 import { ApiError } from '@/lib/api/client';
 import {
   BOOKING_ABOUT_MAX,
@@ -622,7 +622,8 @@ export function CombinedPageConfigEditor({
       <CombinedPageGallery collectiveId={collective.id} config={cfg} onChanged={onChanged} />
 
       {/* Settings the combined page follows from the host venue (web 2026-09-05). */}
-      <HostInheritedSettingsNote collective={collective} />
+      <SectionHeader title="Booking settings" />
+      <CollectiveBookingSettingsSummary collective={collective} />
 
       {colourError ? (
         <Text variant="bodySmall" tone="danger">
@@ -659,42 +660,6 @@ export function CombinedPageConfigEditor({
 // ---------------------------------------------------------------------------
 // Sub-components (ported from the venue booking-page editor)
 // ---------------------------------------------------------------------------
-
-/**
- * The combined page has no settings of its own for the things below: it works
- * like one venue and follows the HOST venue. Say so, because a host looking
- * for these switches here would otherwise conclude the combined page cannot do
- * them (web 2026-09-05, `HostInheritedSettingsNote`, copy verbatim).
- */
-function HostInheritedSettingsNote({ collective }: { collective: CollectiveView }) {
-  const host =
-    collective.members.find((m) => m.venueId === collective.hostVenueId)?.venueName ??
-    'the host venue';
-  const anyAvailable = collective.hostAnyAvailablePractitioner ? 'on' : 'off';
-  const staffFirst = collective.hostStaffFirstBookingFlow ? 'on' : 'off';
-  return (
-    <>
-      <SectionHeader title="Settings that follow the host venue" />
-      <Card style={styles.card}>
-        <Text variant="caption" tone="muted">
-          {`Your combined page follows ${host} for these. Change them in that venue's Settings and the combined page updates with it.`}
-        </Text>
-        <Text variant="bodySmall" tone="secondary">
-          {`Any available practitioner (currently ${anyAvailable}) and staff-first booking (currently ${staffFirst}): Settings, Booking settings.`}
-        </Text>
-        <Text variant="bodySmall" tone="secondary">
-          Address, phone, website and opening hours shown in the header: Settings, Profile.
-        </Text>
-        <Text variant="bodySmall" tone="secondary">
-          Currency and wording (for example &ldquo;appointment&rdquo;): Settings, Profile.
-        </Text>
-        <Text variant="caption" tone="muted">
-          {hostSettingsNote(collective, host)}
-        </Text>
-      </Card>
-    </>
-  );
-}
 
 function RadioRow({
   label,

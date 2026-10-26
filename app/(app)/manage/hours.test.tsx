@@ -75,6 +75,8 @@ jest.mock('react-native-safe-area-context', () => {
 
 const mockUpdateMutateAsync = jest.fn();
 jest.mock('@/lib/queries/useVenueSettings', () => ({
+  // The collective note's hook: outside a collective here.
+  useFeatureFlags: () => ({ data: undefined }),
   useUpdateOpeningHours: () => ({ mutateAsync: mockUpdateMutateAsync, isPending: false }),
 }));
 

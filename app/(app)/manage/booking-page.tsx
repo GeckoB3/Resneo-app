@@ -1,4 +1,5 @@
 import * as Clipboard from 'expo-clipboard';
+import { collectiveSettingsCopy, ownPageStatusLine } from '@/lib/linked/collective-settings-copy';
 import { Image } from 'expo-image';
 import { Stack, useRouter, type Href } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
@@ -173,6 +174,25 @@ export default function BookingPageScreen() {
     () => settingsCollectiveNote(collectivesQuery.data?.collectives ?? [], venue?.id),
     [collectivesQuery.data?.collectives, venue?.id],
   );
+  // What this venue's own page does while it is in the collective (web §6.9, collective booking
+  // settings plan §7.6), and the name guests see on the collective page.
+  const ownPage = collectivesQuery.data?.own_page ?? null;
+  const collectivePublicName =
+    (collectivesQuery.data?.collectives ?? []).find((c) => c.id === collectiveNote?.id)?.publicName ??
+    collectiveNote?.name ??
+    '';
+  const ownPageParams = collectiveNote
+    ? { collective: collectiveNote.name, page: collectivePublicName, host: collectiveNote.hostVenueName }
+    : null;
+  const ownPageStatus =
+    collectiveNote && ownPage && ownPageParams ? ownPageStatusLine(ownPage, ownPageParams) : null;
+  const ownScopeNote = ownPageParams
+    ? ownPage?.status === 'handing_over'
+      ? collectiveSettingsCopy.ownHandedOver(ownPageParams)
+      : ownPage?.status === 'partial' && ownPage.still_shows
+        ? collectiveSettingsCopy.ownPartial({ ...ownPageParams, list: ownPage.still_shows })
+        : `These settings shape your own booking page at /book/${venue?.slug ?? ''}, which guests can still open.`
+    : null;
   const [scope, setScope] = useState<BookingPageScope>('combined');
 
   const updateConfig = useUpdateBookingPageConfig();
@@ -539,7 +559,12 @@ export default function BookingPageScreen() {
     return (
       <Screen scroll contentContainerStyle={styles.content}>
         <Stack.Screen options={{ headerShown: true, title: 'Booking page' }} />
-        <CombinedPageScopeSwitch collective={collectiveNote} scope={scope} onScopeChange={setScope} />
+        <CombinedPageScopeSwitch
+          collective={collectiveNote}
+          scope={scope}
+          onScopeChange={setScope}
+          statusLine={ownPageStatus}
+        />
         <CombinedPageScopeContent
           collectiveId={collectiveNote.id}
           onOpenLinkedVenues={() => router.push('/linked-venues' as Href)}
@@ -580,9 +605,14 @@ export default function BookingPageScreen() {
 
       {collectiveNote ? (
         <>
-          <CombinedPageScopeSwitch collective={collectiveNote} scope={scope} onScopeChange={setScope} />
-          <Text variant="bodySmall" tone="secondary">
-            {`These settings shape this venue’s own booking page at /book/${slug ?? ''}. Guests in the collective do not use this page unless they are sent its address.`}
+          <CombinedPageScopeSwitch
+            collective={collectiveNote}
+            scope={scope}
+            onScopeChange={setScope}
+            statusLine={ownPageStatus}
+          />
+          <Text variant="bodySmall" tone="secondary" testID="own-page-scope-note">
+            {ownScopeNote}
           </Text>
         </>
       ) : null}

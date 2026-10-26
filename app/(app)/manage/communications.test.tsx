@@ -72,6 +72,8 @@ jest.mock('@/lib/queries/useCommunications', () => ({
 // --- The owner-alert PATCH mutation (useUpdateVenue). ------------------------
 const mockUpdateVenueAsync = jest.fn(() => Promise.resolve({}));
 jest.mock('@/lib/queries/useVenueSettings', () => ({
+  // The collective note's hook: outside a collective here.
+  useFeatureFlags: () => ({ data: undefined }),
   useUpdateVenue: () => ({ mutateAsync: mockUpdateVenueAsync, isPending: false }),
 }));
 

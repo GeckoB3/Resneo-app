@@ -44,6 +44,8 @@ jest.mock('@/lib/queries/useCommunications', () => ({
   usePreviewCommunication: () => ({ mutateAsync: jest.fn(), isPending: false }),
 }));
 jest.mock('@/lib/queries/useVenueSettings', () => ({
+  // The collective note's hook: outside a collective here.
+  useFeatureFlags: () => ({ data: undefined }),
   useUpdateVenue: () => ({ mutateAsync: jest.fn(() => Promise.resolve({})), isPending: false }),
 }));
 

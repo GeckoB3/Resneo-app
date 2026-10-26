@@ -1,4 +1,6 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
+import { useLiveCollectiveSettings } from '@/lib/linked/useLiveCollectiveSettings';
+import { collectiveSettingsCopy } from '@/lib/linked/collective-settings-copy';
 import { useEffect, useRef, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -90,6 +92,8 @@ export default function BusinessHoursScreen() {
   const insets = useSafeAreaInsets();
   const update = useUpdateOpeningHours();
   const isAdmin = venue?.current_user_role === 'admin';
+  // In a live collective: what these hours decide, and that the host's show on its page (§7.7).
+  const liveCollective = useLiveCollectiveSettings();
   /** `?date=` from the diary's clock button: the closures card opens with that day picked. */
   const params = useLocalSearchParams<{ date?: string | string[] }>();
   const seededDate = Array.isArray(params.date) ? params.date[0] : params.date;
@@ -222,6 +226,14 @@ export default function BusinessHoursScreen() {
             tintColor={colors.brand}
           />
         }>
+
+        {liveCollective ? (
+          <Text variant="caption" tone="muted" testID="collective-hours-note">
+            {liveCollective.collective.is_host
+              ? collectiveSettingsCopy.hostHours(liveCollective.params)
+              : collectiveSettingsCopy.perVenueHours(liveCollective.params)}
+          </Text>
+        ) : null}
 
         {/* ---- Weekly hours card ---- */}
         <View style={styles.sectionHeader}>

@@ -1,4 +1,6 @@
 import { Stack } from 'expo-router';
+import { useLiveCollectiveSettings } from '@/lib/linked/useLiveCollectiveSettings';
+import { collectiveSettingsCopy } from '@/lib/linked/collective-settings-copy';
 import { useEffect, useState } from 'react';
 import {
   Animated,
@@ -586,6 +588,8 @@ const SMS_OVERAGE_GBP_PER_MESSAGE = 0.06;
 export default function CommunicationsScreen() {
   const { venue, featureFlags, refetch: refetchVenue } = useVenueContext();
   const { colors } = useTheme();
+  // In a live collective these stay each venue's own (§7.7): say so.
+  const liveCollective = useLiveCollectiveSettings();
   const insets = useSafeAreaInsets();
   /**
    * The sticky bar's measured height, so the scroll content can clear it while
@@ -908,6 +912,11 @@ export default function CommunicationsScreen() {
           Messages for appointments and other bookings. Switch each one on or off, choose
           email and/or SMS, and optionally add an extra line to the standard template.
         </Text>
+        {liveCollective ? (
+          <Text variant="caption" tone="muted" testID="collective-messages-note">
+            {`${collectiveSettingsCopy.perVenueMessages(liveCollective.params)} ${collectiveSettingsCopy.perVenueSms(liveCollective.params)}`}
+          </Text>
+        ) : null}
 
         {/* SMS Light-plan upsell */}
         {showSmsLightBanner ? <SmsLightBanner /> : null}

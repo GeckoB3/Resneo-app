@@ -111,9 +111,23 @@ export interface CollectiveView {
     /** The host venue's `opening_hours` JSON, keyed "0" (Sun) to "6" (Sat). */
     openingHours: Record<string, unknown> | null;
   };
-  /** The host venue's two flow flags, which the combined page follows (shown in the manager's note). */
+  /**
+   * The collective's "Any available" and staff-first settings, which the combined page follows
+   * (named for the host from before the collective had its own settings).
+   */
   hostAnyAvailablePractitioner?: boolean;
   hostStaffFirstBookingFlow?: boolean;
+  /** The name guests see on the page (web D58). Optional: older payloads omit it. */
+  publicName?: string;
+  /** Every booking setting the collective decides, resolved (web collective booking settings plan). */
+  bookingSettings?: {
+    requireAccountLogin: boolean;
+    guestSelfReschedule: boolean;
+    waitlist: boolean;
+    waitlistMode: string;
+    anyAvailablePractitioner: boolean;
+    staffFirstBookingFlow: boolean;
+  };
   myVenueId: string;
   myMembershipStatus: CollectiveMemberStatus | null;
   myConfig: {
@@ -400,6 +414,18 @@ export interface AdoptionReview {
 
 export interface CollectivesListResponse {
   collectives: CollectiveView[];
+  /**
+   * What this venue's own page does while it is in a shared-services collective (web §6.9):
+   * `handing_over` (guests are sent to the collective page), `partial` (it still shows
+   * `still_shows`) or `showing` (with `reason`). Null outside one; absent on older servers.
+   */
+  own_page?: {
+    collective_id: string;
+    status: 'handing_over' | 'partial' | 'showing';
+    reason: string | null;
+    still_shows: string | null;
+    own_path: string | null;
+  } | null;
 }
 export interface CollectiveResponse {
   collective: CollectiveView | null;

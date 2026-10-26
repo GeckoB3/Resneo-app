@@ -95,11 +95,12 @@ export interface CollectiveEmbedOption {
 
 type CollectiveEmbedView = Pick<
   CollectiveView,
-  'slug' | 'name' | 'status' | 'activeMemberCount' | 'slugStrategy' | 'adoptedVenueId'
+  'slug' | 'name' | 'status' | 'activeMemberCount' | 'slugStrategy' | 'adoptedVenueId' | 'publicName'
 > & { members: Pick<CollectiveMemberView, 'venueId' | 'venueSlug'>[] };
 
+/** The QR label and embed name: the name guests see on the page (web D58), else the collective's. */
 function toEmbedOption(c: CollectiveEmbedView): CollectiveEmbedOption {
-  return { slug: c.slug, name: c.name, path: collectivePublicPath(c) };
+  return { slug: c.slug, name: c.publicName ?? c.name, path: collectivePublicPath(c) };
 }
 
 /**

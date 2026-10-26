@@ -1,4 +1,6 @@
 import { Image } from 'expo-image';
+import { useLiveCollectiveSettings } from '@/lib/linked/useLiveCollectiveSettings';
+import { collectiveSettingsCopy } from '@/lib/linked/collective-settings-copy';
 import * as Linking from 'expo-linking';
 import { SymbolView } from 'expo-symbols';
 import * as WebBrowser from 'expo-web-browser';
@@ -192,6 +194,9 @@ export default function VenueProfileScreen() {
   const uploadLogo = useUploadVenueLogo();
   const uploadCover = useUploadVenueCover();
   const { colors } = useTheme();
+  // A live collective shares one timezone, and the host's contact details show on its page (web
+  // collective booking settings plan §7.7): said here rather than after a refused save.
+  const liveCollective = useLiveCollectiveSettings();
 
   const isAdmin = venue?.current_user_role === 'admin';
   const isAppointments = isAppointmentPlanTier(venue?.pricing_tier);
@@ -713,6 +718,11 @@ export default function VenueProfileScreen() {
 
           {/* Contact */}
           <SectionHeader title="Contact" />
+          {liveCollective?.collective.is_host ? (
+            <Text variant="caption" tone="muted">
+              {collectiveSettingsCopy.hostProfile(liveCollective.params)}
+            </Text>
+          ) : null}
 
           <PhoneInput
             label="Phone"
@@ -836,6 +846,7 @@ export default function VenueProfileScreen() {
             </Text>
             <Pressable
               onPress={openTzPicker}
+              disabled={Boolean(liveCollective)}
               accessibilityRole="button"
               accessibilityLabel={`Timezone, ${timezone || 'not set'}. Tap to change.`}
               style={[
@@ -861,6 +872,10 @@ export default function VenueProfileScreen() {
             {timezoneError ? (
               <Text variant="caption" tone="danger">
                 {timezoneError}
+              </Text>
+            ) : liveCollective ? (
+              <Text variant="caption" tone="muted">
+                {collectiveSettingsCopy.timezoneLocked(liveCollective.params)}
               </Text>
             ) : (
               <Text variant="caption" tone="muted">
