@@ -24,7 +24,7 @@ export const POS_COPY = {
   'hist.banner': 'Checkout is switched off for {venue}. You can still see past sales and give refunds.',
   'hist.link': 'Sales history',
   'support.banner':
-    "You're signed in as ResNeo support. You can look at everything, but you can't take payments, refund, void, cash up or add card readers.",
+    "You're signed in as ResNeo support. You can set up and change Checkout, but you can't take payments, refund, void or cash up.",
   'support.disabled': "ResNeo support can't do this.",
 
   // §18.3 Checkout home, queue and sales lists
