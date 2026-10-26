@@ -109,7 +109,6 @@ export const DEFAULT_LINK_GRANT: LinkGrant = {
 };
 
 export const MAX_PENDING_OUTGOING_REQUESTS = 10;
-export const REJECTED_REQUEST_COOLDOWN_DAYS = 7;
 export const PENDING_REQUEST_EXPIRY_DAYS = 30;
 export const SUSPENDED_LINK_EXPIRY_DAYS = 30;
 /** Soft UI warning when live link count reaches this threshold (§3). */

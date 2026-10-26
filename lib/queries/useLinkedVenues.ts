@@ -199,7 +199,7 @@ export function useMyCalendars() {
 /**
  * POST /api/venue/account-links — send a new link request. Spinner + invalidate
  * on success (a new pending link must appear in the list); the caller surfaces
- * 409/429/cooldown errors inline.
+ * 409/429 errors inline.
  */
 export function useSendLink() {
   const accessToken = useAccessToken();

@@ -59,7 +59,7 @@ PAST_LINK_STATUSES = ['rejected','revoked','expired'];
 DEFAULT_LINK_GRANT  = { calendar:'full_details', pii:true, act:'edit_existing' };
 
 MAX_PENDING_OUTGOING_REQUESTS = 10;
-REJECTED_REQUEST_COOLDOWN_DAYS = 7;
+// REJECTED_REQUEST_COOLDOWN_DAYS was removed from the web on 2026-10-26: a declined request can be sent again at once.
 PENDING_REQUEST_EXPIRY_DAYS    = 30;
 SUSPENDED_LINK_EXPIRY_DAYS     = 30;
 LINK_COUNT_SOFT_WARNING        = 10;
@@ -119,7 +119,7 @@ interface AccountLinkView {
 | METHOD | PATH | Body | Success | Notable errors |
 |---|---|---|---|---|
 | GET | `/api/venue/account-links` | — | `{ eligibility, venue:{id,name,slug}, links:AccountLinkView[], outgoingPendingCount, maxOutgoingPending:10 }` | 401; 403 `!feature`; 500 |
-| POST | `/api/venue/account-links` | `createLinkSchema` | `201 { link }` | 400 invalid/zero-way/self/target-ineligible; 404 slug; 409 already-linked; 429 over-max / 7-day cooldown |
+| POST | `/api/venue/account-links` | `createLinkSchema` | `201 { link }` | 400 invalid/zero-way/self/target-ineligible; 404 slug; 409 already-linked; 429 over-max (the 7-day cooldown after a decline was removed 2026-10-26) |
 | GET | `…/incoming` | — | `{ incomingRequests:[{id,otherVenueName,createdAt}], pendingChanges:[{id,otherVenueName}] }` (never hard-errors) | — |
 | GET | `…/lookup?slug=` | — | `{found:false}` or `{found:true,eligible,name,slug,reason}` | 400; 403 |
 | GET | `…/search?q=` (≥2 chars) | — | `{ results:[{name,slug,eligible,reason}], truncated }` (≤8) | 403 |
