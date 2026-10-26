@@ -15,10 +15,51 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ---
 
-## Unreleased OTA: record photos, Save and close, tap targets, commission, team
+## Unreleased OTA: collective booking settings, declined requests, Checkout support banner
 
-From `8c4e239` (`c469ac6` is the app change; `8c4e239` moves CI to Node 24). Checks in the
-2026-10-25 run in `Docs/GO_LIVE_CHECK.md`.
+From `3f7946a` (three commits above `1ab01af`). Checks in the 2026-10-26 run in
+`Docs/GO_LIVE_CHECK.md`. Publish only once the web merge of 2026-10-26 (staging `613ce871`) is live
+on www.resneo.com; the production database already has migration `20270413120000`.
+
+### Collective booking settings (owner, 2026-10-26)
+
+While a venue is in a live collective, five booking settings belong to the collective and apply at
+every venue in it: sign-in to book, guests changing their own appointments, the waitlist (and what
+happens when a slot opens), "Any available" (and who gets those bookings) and staff-first booking.
+
+- **Booking settings:** a box at the top says so. The host's rows are marked with the collective's
+  name and a change says "Saved for {collective}." A member sees the collective's values greyed
+  out, with "{host} sets this for {collective}." under each. Appointments show as locked on up
+  front instead of being refused after a tap.
+- **Booking page:** a line under the scope switch says what the venue's own page does now (handing
+  over to the collective page, still showing classes or events, or still showing), and the
+  collective's settings are summarised. A member sees "Your people on the page". The QR label uses
+  the page's public name, as on the web.
+- **Profile, Business hours, Communications:** a line says what reaches the collective page and
+  what stays the venue's own. The timezone shows as locked up front.
+- **Calendar availability:** each person on the collective page gets their collective link
+  (`/book/c/...`) with Copy collective link. People not on the page get none.
+
+On an older server the new fields are absent and the screens show what they showed before.
+
+### Linked venues
+
+After a declined link or collective request, either venue can send a new one straight away (the
+server no longer waits 7 days). The app's unused copy of the wait is gone.
+
+### Checkout
+
+In a ResNeo support session the Checkout banner now reads "You can set up and change Checkout, but
+you can't take payments, refund, void or cash up.", matching what the server allows.
+
+---
+
+## OTA on iOS 1.3.0 / Android 1.3.0, 2026-10-25: record photos, Save and close, tap targets, commission, team
+
+Published 2026-10-25 from `1ab01af` (the app change is `c469ac6`; `8c4e239` moves CI to Node 24):
+iOS group `b5a35db7-b03a-43f2-a2c5-cea39b67f586` (its message was entered as "Team roles, View only
+and Hidden, and one login across sites", but it holds this release) and Android group
+`ba139b40-8be5-46ef-9ddf-3f491eafd1e7`. Checks in the 2026-10-25 run in `Docs/GO_LIVE_CHECK.md`.
 
 ### Treatment records (owner, 2026-10-25)
 

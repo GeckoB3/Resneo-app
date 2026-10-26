@@ -1,5 +1,95 @@
 # Go-live check — Resneo app
 
+## Run 2026-10-26: collective booking settings, declined requests, Checkout support banner, iOS 1.3.0 and Android 1.3.0, from `3f7946a`
+
+**Scope:** `1ab01af..3f7946a`, three commits:
+- `09070c8`: linked venues, the unused 7-day wait after a decline goes (the server decides; web
+  `c592c62d`). Comments and one type only.
+- `3b1a188`: the Checkout support banner, one line of copy (web `e3032929`).
+- `3f7946a`: collective booking settings (web `613ce871`, `Docs/collective-booking-settings-plan.md`
+  in the web repo): Booking settings, Booking page, Profile, Business hours, Communications and
+  Calendar availability show the collective's settings for host and member.
+
+`CHANGELOG.md` has it under "Unreleased OTA: collective booking settings, declined requests,
+Checkout support banner". The 2026-10-25 entry is retitled as published, with its groups.
+
+**Verdict: cleared to publish, one update per platform (§6).** Nothing native moved. The web side
+is live.
+
+### 1. Version and reach
+
+| Check | Result |
+|---|---|
+| Published tip | iOS `b5a35db7` and Android `ba139b40`, both from `1ab01af`, 2026-10-25 12:52 and 12:50 UTC, runtime 1.3.0. The iOS group's message reads "Team roles, View only and Hidden, and one login across sites", but `update:view` shows it was built from `1ab01af`, the same code as Android's "Record photos, Save and close, …" |
+| Store binaries | `build:list --profile production`: iOS 1.3.0 build 27 and Android 1.3.0 build 19, from `7a5de9a` (2026-10-18). No newer store build |
+| Runtime | `app.json` root `version` and `android.version` 1.3.0, `appVersion` policy: the update reaches the 1.3.0 installs |
+
+### 2. Nothing native moved
+
+`git diff 8c4e239 3f7946a` over `package.json`, `package-lock.json`, `app.json`, `app.config.js`,
+`eas.json`, `metro.config.js`, `babel.config.js`, `modules`, `patches` and `plugins`: empty. Since
+the store build (`7a5de9a`) the only native-side change is still `expo-image-manipulator`, cleared
+for updates in the 2026-10-25 run (§2 there).
+
+### 3. Verified on this machine
+
+- `tsc --noEmit`: clean. `jest`: **598 suites / 5,678 tests pass**. `expo lint`: 0 errors,
+  601 warnings (598 at the last run).
+- EAS `production` environment (`eas env:list`): `EXPO_PUBLIC_API_URL` www.resneo.com,
+  `EXPO_PUBLIC_SUPABASE_URL` njualfobtudvlugqkqho (live), the live publishable key, the `pk_live_`
+  Stripe key and the Sentry DSN; all PUBLIC, unchanged.
+- Cleared-cache export under `eas env:exec production` (`npx expo export --clear --platform all`),
+  both Hermes bundles (iOS 15.3 MB, Android 15.5 MB). Counts:
+
+| Marker | iOS | Android |
+|---|---|---|
+| live Supabase URL / `www.resneo.com` / `pk_live_` / Sentry ingest host | 1 / 1 / 1 / 1 | 1 / 1 / 1 / 1 |
+| `zkppmyyvkjvbsvemakbb` / full dev publishable key / full dev Stripe key / `pk_test_` | none | none |
+| `192.168.` / `10.0.2.2` | none / none | none / none |
+| `reserve-ni.vercel.app` | once: the `getWebUrl()` fallbacks | same |
+| `localhost:3000` | once: expo-router's `head/url.js` fallback | none |
+| `localhost:8081` | once: React Native's `getDevServer` fallback | same |
+| `TERMINAL_SIMULATED` / `ALLOW_SCREENSHOTS` | none / none | none / none |
+| New code: "Copy collective link", "sets this for", "Your people on the page", the support banner | each present | each present |
+
+### 4. Web
+
+The three commits read fields the web added on `staging` and the owner merged to `main` on
+2026-10-26, after applying migration `20270413120000` to the production database:
+`GET /api/venue/feature-flags`'s `collective` block, `GET /api/venue`'s `collective_person_links`,
+`GET /api/venue/collectives`'s `own_page` and `bookingSettings`. Each is optional in the app's types,
+and on an older server the screens show what they did before. The merge is live: www.resneo.com's
+help article "Venue collectives" shows "Your settings in a collective" and "Links for each person".
+
+### 5. Device testing
+
+On an Android phone (Expo Go, the local bundle against the local web server and the staging
+database, signed in as sept19, the host of "Sept 19 and Sept 20"): Booking settings (banner,
+appointments lock, each collective row saying it is for every venue, staff-first saved "Saved for
+Sept 19 and Sept 20."), Booking page (status line, own-scope note, summary values), and Calendar
+availability (Andrew's collective link and Copy collective link, before and after the change that
+limits links to people on the page). **Not tested:** a member's screens (needs a Sept 20 login;
+covered by `booking-settings.collective.test.tsx`), an iPhone, and the store binaries.
+
+### 6. Publish
+
+Run from `C:\Resneo-app` on a clean `main` (`eas.json` requires a commit):
+
+```
+npx eas-cli update --channel production --platform ios --environment production --clear-cache --message "Collective booking settings, declined requests, Checkout support banner"
+npx eas-cli update --channel production --platform android --environment production --clear-cache --message "Collective booking settings, declined requests, Checkout support banner"
+```
+
+To roll back, republish the 2026-10-25 groups:
+`npx eas-cli update:republish --group b5a35db7-b03a-43f2-a2c5-cea39b67f586 --message "Roll back"`
+(iOS) and `npx eas-cli update:republish --group ba139b40-8be5-46ef-9ddf-3f491eafd1e7 --message "Roll back"`
+(Android).
+
+After publishing, retitle the changelog entry as published with the two groups, and watch Sentry
+for new crashes over the next day.
+
+---
+
 ## Run 2026-10-25: record photos, Save and close, tap targets, commission, team, booking wizard, iOS 1.3.0 and Android 1.3.0, from `8c4e239`
 
 **Scope:** `5db7bf9..8c4e239`, two commits:
