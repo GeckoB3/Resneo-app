@@ -17,7 +17,11 @@ export interface JoinDraft {
 
 const norm = (name: string) => name.trim().toLowerCase();
 
-/** Defaults: use the venue's own same-name service, match options by name, park the rest, keep its forms. */
+/**
+ * Defaults: use the venue's own same-name service, match options by name, suggest every other
+ * service to the host (it adds them all at once, or some, on Manage Collective; web 2026-10-27),
+ * keep its forms. An unticked service is parked.
+ */
 export function defaultJoinDraft(preview: JoinPreview): JoinDraft {
   const optionMap: Record<string, string | null> = {};
   for (const pair of preview.same_name) {
@@ -28,7 +32,7 @@ export function defaultJoinDraft(preview: JoinPreview): JoinDraft {
   return {
     sameName: Object.fromEntries(preview.same_name.map((s) => [s.item_id, 'use_mine' as const])),
     optionMap,
-    own: Object.fromEntries(preview.own_services.map((s) => [s.id, 'park' as const])),
+    own: Object.fromEntries(preview.own_services.map((s) => [s.id, 'ask' as const])),
     forms: Object.fromEntries(preview.forms.map((f) => [f.host_type_id, 'use_existing' as const])),
   };
 }
@@ -57,6 +61,16 @@ export function joinChoicesFrom(preview: JoinPreview, draft: JoinDraft): JoinCho
 /** The steps a preview needs: forms only when the venue holds a matching one. */
 export function joinStepsFor(preview: JoinPreview): JoinStep[] {
   return preview.forms.length > 0 ? ['means', 'services', 'forms', 'check'] : ['means', 'services', 'check'];
+}
+
+/** Tick or untick every one of the venue's other services at once ("Suggest them all to {host}"). */
+export function withAllOwn(preview: JoinPreview, draft: JoinDraft, ask: boolean): JoinDraft {
+  return { ...draft, own: Object.fromEntries(preview.own_services.map((s) => [s.id, ask ? 'ask' : 'park'])) };
+}
+
+/** True when every one of the venue's other services is ticked to be suggested. */
+export function allOwnAsked(preview: JoinPreview, draft: JoinDraft): boolean {
+  return preview.own_services.length > 0 && preview.own_services.every((s) => draft.own[s.id] === 'ask');
 }
 
 /** The counts the check step summarises. */

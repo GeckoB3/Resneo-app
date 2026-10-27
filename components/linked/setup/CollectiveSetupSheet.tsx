@@ -13,8 +13,11 @@ import { ApiError } from '@/lib/api/client';
 import { getWebUrl } from '@/lib/env';
 import { formatPence } from '@/lib/format';
 import { formatVenueList, setupCopy } from '@/lib/linked/setup-copy';
+import { areaCopy } from '@/lib/collective-area/copy';
 import type { BulkOp, CollectiveCalendarGroup } from '@/lib/collective-area/model';
+import { venueServiceKey, type CurateItem, type VenueServicesGroup } from '@/lib/collective-area/venue-services';
 import { useCollectiveBulkSave } from '@/lib/queries/useCollectiveArea';
+import { useCurateServices, useVenueServices } from '@/lib/queries/useCollectiveCurate';
 import { useCollectives, useSameNames } from '@/lib/queries/useCollectives';
 import { useCreateService, useManagedServices } from '@/lib/queries/useServicesManage';
 import { useToast } from '@/providers/ToastProvider';
@@ -29,6 +32,11 @@ import type { ManagedService } from '@/types/services-manage';
  * make it live: which of its services go on the page, and which calendars, at each venue, offer
  * them. Two saves, because a member's calendar cannot offer a service until its copy is applied
  * (L9). A host with no services adds one here (L10).
+ *
+ * Since 2026-10-27 the services step lists every venue's own services, not only the host's: a
+ * member's goes on the page as it is, keeping its calendars, with nobody asked. They are ticked
+ * when not on the page and bookable online, and saved through the venue-services route after the
+ * host's own. A server without that route (it answers 404) shows the host's services alone.
  */
 
 type Step = 'intro' | 'services' | 'calendars' | 'done';
@@ -70,10 +78,15 @@ export function CollectiveSetupSheet({
   const sameNamesQuery = useSameNames(collectiveId, { enabled: visible });
   const save = useCollectiveBulkSave(collectiveId);
   const create = useCreateService();
+  const venueServicesQuery = useVenueServices(collectiveId, visible);
+  const curate = useCurateServices(collectiveId);
 
   const [step, setStep] = useState<Step>('intro');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [seeded, setSeeded] = useState(false);
+  /** Members' own services ticked for the page, by `venue:service`. */
+  const [memberSelected, setMemberSelected] = useState<ReadonlySet<string>>(new Set());
+  const [membersSeeded, setMembersSeeded] = useState(false);
   const [cells, setCells] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<null | 'services' | 'calendars' | 'adding'>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -90,6 +103,8 @@ export function CollectiveSetupSheet({
     setStep('intro');
     setSeeded(false);
     setSelected(new Set());
+    setMembersSeeded(false);
+    setMemberSelected(new Set());
     setCells({});
     setBusy(null);
     setNotice(null);
@@ -106,7 +121,28 @@ export function CollectiveSetupSheet({
     [collectivesQuery.data, collectiveId],
   );
   const sameNames = sameNamesQuery.data ?? {};
-  const services = useMemo(() => hostServices(allServices), [allServices]);
+  /** Every venue's own services, or null on a server without them (the host's alone, as before). */
+  const venueGroups = useMemo<VenueServicesGroup[] | null>(
+    () => (venueServicesQuery.data?.role === 'host' ? venueServicesQuery.data.venues : null),
+    [venueServicesQuery.data],
+  );
+  const services = useMemo(() => {
+    // A page service made from a member's service is the member's: it is listed under that venue.
+    const hostGroup = venueGroups?.find((g) => g.is_host) ?? null;
+    const own = hostGroup ? new Set(hostGroup.services.map((s) => s.id)) : null;
+    return hostServices(allServices).filter((s) => !own || own.has(s.id));
+  }, [allServices, venueGroups]);
+  const memberGroups = useMemo(() => (venueGroups ?? []).filter((g) => !g.is_host), [venueGroups]);
+  /** The members' services that will go on the page with this save. */
+  const memberPicked = useMemo<CurateItem[]>(
+    () =>
+      memberGroups.flatMap((g) =>
+        g.services
+          .filter((s) => !s.on_page && memberSelected.has(venueServiceKey(g.venue_id, s.id)))
+          .map((s) => ({ venue_id: g.venue_id, service_id: s.id })),
+      ),
+    [memberGroups, memberSelected],
+  );
   const collectiveName = entry?.name ?? services.find((s) => s.collective)?.collective?.collective_name ?? 'your collective';
   const slug = entry?.slug ?? '';
   const memberNames = useMemo(
@@ -125,6 +161,18 @@ export function CollectiveSetupSheet({
     setSelected(initial);
     setSeeded(true);
   }, [visible, seeded, servicesQuery.data, services]);
+
+  // Members' services too: each venue's goes on the page unless the host unticks it (web 2026-10-27).
+  useEffect(() => {
+    if (!visible || membersSeeded || venueServicesQuery.data === undefined) return;
+    const members = new Set<string>();
+    for (const g of memberGroups) {
+      for (const s of g.services) if (!s.on_page && s.bookable_online) members.add(venueServiceKey(g.venue_id, s.id));
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMemberSelected(members);
+    setMembersSeeded(true);
+  }, [visible, membersSeeded, venueServicesQuery.data, memberGroups]);
 
   const onPage = (s: ManagedService) => s.collective?.role === 'master';
   const selectedServices = services.filter((s) => selected.has(s.id));
@@ -150,7 +198,12 @@ export function CollectiveSetupSheet({
   }, [services, groups, links]);
 
   const refresh = async () => {
-    const [fresh] = await Promise.all([servicesQuery.refetch(), collectivesQuery.refetch(), sameNamesQuery.refetch()]);
+    const [fresh] = await Promise.all([
+      servicesQuery.refetch(),
+      collectivesQuery.refetch(),
+      sameNamesQuery.refetch(),
+      venueServicesQuery.refetch(),
+    ]);
     onChanged?.();
     return fresh.data ?? null;
   };
@@ -159,12 +212,20 @@ export function CollectiveSetupSheet({
     const toOffer = selectedServices.filter((s) => !onPage(s));
     setBusy('services');
     setError(null);
-    setNotice(toOffer.length > 0 ? setupCopy('finish.services.saving') : null);
+    setNotice(toOffer.length + memberPicked.length > 0 ? setupCopy('finish.services.saving') : null);
     try {
       let failed = 0;
       if (toOffer.length > 0) {
         const results = await save.mutateAsync(toOffer.map((s) => ({ op: 'offer', service_id: s.id }) as BulkOp));
         failed = results.filter((r) => !r.ok).length;
+      }
+      // Then the members' own: each goes on as it is, joining a page service of the same name. The
+      // host's go first, so a member's service of the same name joins the host's rather than
+      // becoming a second one. The hook sends them 200 at a time.
+      if (memberPicked.length > 0) {
+        const outcome = await curate.mutateAsync({ action: 'add', mode: 'match', items: memberPicked });
+        if (outcome.refused) throw new ApiError(outcome.refusal ?? 'The save did not go through.', 400);
+        failed += outcome.results.filter((r) => !r.ok).length;
       }
       await refresh();
       if (failed > 0) setError(setupCopy('finish.services.failed', { count: failed }));
@@ -273,7 +334,12 @@ export function CollectiveSetupSheet({
         {step === 'intro' ? (
           <Button label={setupCopy('finish.cta.next')} disabled={loading || Boolean(loadError)} onPress={() => setStep('services')} />
         ) : step === 'services' ? (
-          <Button label={setupCopy('finish.cta.save')} disabled={busy !== null || selectedServices.length === 0} loading={busy === 'services'} onPress={() => void saveServices()} />
+          <Button
+            label={setupCopy('finish.cta.save')}
+            disabled={busy !== null || selectedServices.length + memberPicked.length === 0}
+            loading={busy === 'services'}
+            onPress={() => void saveServices()}
+          />
         ) : (
           <Button label={setupCopy('finish.cta.save')} disabled={busy !== null} loading={busy === 'calendars'} onPress={() => void saveCalendars()} />
         )}
@@ -323,6 +389,11 @@ export function CollectiveSetupSheet({
           <Text variant="caption" tone="secondary">
             {setupCopy('finish.services.help', { collective: collectiveName })}
           </Text>
+          {memberGroups.length > 0 ? (
+            <Text variant="overline" tone="secondary" accessibilityRole="header">
+              {setupCopy('finish.services.yours')}
+            </Text>
+          ) : null}
           {services.length === 0 && !adding ? (
             <View style={[styles.infoCard, { borderColor: colors.border, borderWidth: 1 }]}>
               <Text variant="bodyMedium">{setupCopy('finish.services.none.title')}</Text>
@@ -388,8 +459,23 @@ export function CollectiveSetupSheet({
               </Text>
             </Pressable>
           ) : null}
+          {memberGroups.map((group) => (
+            <MemberServicesChooser
+              key={group.venue_id}
+              group={group}
+              selected={memberSelected}
+              onChange={setMemberSelected}
+              hostNames={
+                new Map(services.filter((h) => selected.has(h.id)).map((h) => [h.name.trim().toLowerCase(), h.name] as const))
+              }
+              disabled={busy !== null}
+            />
+          ))}
           <Text variant="caption" tone="muted">
-            {setupCopy(selectedServices.length === 1 ? 'finish.services.selectedOne' : 'finish.services.selected', { count: selectedServices.length })}
+            {setupCopy(
+              selectedServices.length + memberPicked.length === 1 ? 'finish.services.selectedOne' : 'finish.services.selected',
+              { count: selectedServices.length + memberPicked.length },
+            )}
           </Text>
         </View>
       ) : null}
@@ -524,6 +610,93 @@ export function CollectiveSetupSheet({
         </View>
       ) : null}
     </StepShell>
+  );
+}
+
+/**
+ * One member's own services in the services step (web `MemberServicesChooser`): tick any to put on
+ * the page as they are. One already on the page shows ticked and cannot be changed here.
+ */
+function MemberServicesChooser({
+  group,
+  selected,
+  onChange,
+  hostNames,
+  disabled,
+}: {
+  group: VenueServicesGroup;
+  selected: ReadonlySet<string>;
+  onChange: (next: Set<string>) => void;
+  /** The host's ticked services, by lower-cased name: a member's of the same name joins it. */
+  hostNames: Map<string, string>;
+  disabled: boolean;
+}) {
+  const pickable = group.services.filter((s) => !s.on_page);
+  const keys = pickable.map((s) => venueServiceKey(group.venue_id, s.id));
+  const allPicked = keys.length > 0 && keys.every((k) => selected.has(k));
+  const toggle = (toggled: string[], on: boolean) => {
+    const next = new Set(selected);
+    for (const k of toggled) {
+      if (on) next.add(k);
+      else next.delete(k);
+    }
+    onChange(next);
+  };
+  return (
+    <View style={styles.section}>
+      <Text variant="overline" tone="secondary" accessibilityRole="header">
+        {setupCopy('finish.services.theirs', { venue: group.venue_name })}
+      </Text>
+      {pickable.length > 1 ? (
+        <ChoiceRow
+          kind="checkbox"
+          selected={allPicked}
+          title={setupCopy('finish.services.selectAll')}
+          disabled={disabled}
+          onPress={() => toggle(keys, !allPicked)}
+        />
+      ) : null}
+      {group.services.length === 0 ? (
+        <Text variant="caption" tone="muted">
+          {setupCopy('finish.services.theirsNone', { venue: group.venue_name })}
+        </Text>
+      ) : (
+        group.services.map((s) => {
+          const key = venueServiceKey(group.venue_id, s.id);
+          const joinsHost = !s.on_page ? hostNames.get(s.name.trim().toLowerCase()) : undefined;
+          const price = s.price_pence != null ? (formatPence(s.price_pence) ?? `£${(s.price_pence / 100).toFixed(2)}`) : null;
+          // A ticked host service of the same name wins: theirs joins it. Otherwise the page service
+          // it would join, if one is on the page already.
+          const joins = joinsHost
+            ? setupCopy('finish.services.joins', { service: joinsHost })
+            : !s.on_page && s.joins
+              ? areaCopy('vs.joins', { name: s.joins.name })
+              : null;
+          return (
+            <ChoiceRow
+              key={key}
+              kind="checkbox"
+              selected={s.on_page || selected.has(key)}
+              disabled={s.on_page || disabled}
+              title={s.name}
+              summary={[s.duration_minutes ? `${s.duration_minutes} min` : null, price].filter(Boolean).join(' · ') || null}
+              onPress={() => toggle([key], !selected.has(key))}>
+              {s.on_page || !s.bookable_online ? (
+                <View style={styles.badges}>
+                  {s.on_page ? <Badge label={setupCopy('finish.services.onPage')} tone="brand" /> : null}
+                  {!s.bookable_online ? <Badge label={setupCopy('finish.services.staffOnly')} /> : null}
+                </View>
+              ) : null}
+              {joins ? (
+                <Text variant="caption" tone="brand">
+                  {joins}
+                </Text>
+              ) : null}
+            </ChoiceRow>
+          );
+        })
+      )}
+    </View>
   );
 }
 

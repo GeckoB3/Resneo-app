@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { Stack, router, useLocalSearchParams } from 'expo-router';
+import { Stack, router, useLocalSearchParams, type Href } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import * as WebBrowser from 'expo-web-browser';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -55,12 +55,14 @@ import { AddFromVenueSheet } from '@/components/services/collective/AddFromVenue
 import { MemberServiceSheet } from '@/components/services/collective/MemberServiceSheet';
 import { ReleaseReviewCard } from '@/components/services/collective/ReleaseReviewCard';
 import { SuggestedServicesCard } from '@/components/services/collective/SuggestedServicesCard';
+import { SuggestionsReviewCard } from '@/components/collective-area/SuggestionsReviewCard';
 import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
 import {
   refusalText,
   useCollectiveSuggestions,
   useSuggestService,
 } from '@/lib/queries/useCollectiveServiceTools';
+import { useVenueServices } from '@/lib/queries/useCollectiveCurate';
 import { TodoStrip } from '@/components/collective-area/AreaPieces';
 import { AdoptionRequestsCard } from '@/components/linked/setup/AdoptionSheets';
 import {
@@ -778,7 +780,9 @@ export default function ServicesScreen() {
   // Deep link: `?tab=services&service=<id>` opens straight to a pre-expanded
   // service (web parity with the add-ons "Used by" link). Read once on mount.
   // `?setup=ai` opens "Set up with AI" on arrival (web parity: other screens can link to it).
-  // `?add_from=<venue>&service=<id>` (web N25): a member's suggestion opens "Add from another venue" with it chosen.
+  // `?add_from=<venue>&service=<id>` (web N25, a bell stored before 2026-10-27): the host curates
+  // every venue's services on Manage Collective now, so it goes there, on that venue's suggestions.
+  // A server without that view still opens "Add from another venue" with it chosen, as before.
   const params = useLocalSearchParams<{ tab?: string; service?: string; setup?: string; add_from?: string }>();
   const initialTab: ActiveTab = params.tab === 'addons' ? 'addons' : 'services';
   const [activeTab, setActiveTab] = useState<ActiveTab>(initialTab);
@@ -1206,10 +1210,30 @@ export default function ServicesScreen() {
         : null,
     [params.add_from, params.service],
   );
+  /**
+   * Whether the server lists every venue's services (2026-10-27): then the host curates the page on
+   * Manage Collective and answers suggestions many at once. `null` from the query means the route
+   * is missing (an older server), and the screen keeps the one-at-a-time card and sheet it had.
+   */
+  const curateQuery = useVenueServices(serviceCollective?.id ?? null, isAdmin && !!serviceCollective?.isHost);
+  const curateSupported = curateQuery.data != null;
+  const curateUnsupported = curateQuery.data === null;
   const addFromVisible =
-    (addFromOpen || addFromPick !== null || (addFromPreset !== null && !addFromPresetUsed)) &&
+    (addFromOpen ||
+      addFromPick !== null ||
+      (addFromPreset !== null && !addFromPresetUsed && curateUnsupported)) &&
     !!serviceCollective?.isHost &&
     isAdmin;
+  // An old bell's `add_from` link, on a server that has every venue's services: on to Manage
+  // Collective on that venue's suggestions, as the web's Services page does. Once only.
+  const addFromRedirected = useRef(false);
+  useEffect(() => {
+    if (addFromRedirected.current || !addFromPreset || !isAdmin || !serviceCollective?.isHost || !curateSupported) return;
+    addFromRedirected.current = true;
+    router.replace(
+      `/collective-area?view=venues&venue=${encodeURIComponent(addFromPreset.venueId)}&filter=suggested` as Href,
+    );
+  }, [addFromPreset, isAdmin, serviceCollective?.isHost, curateSupported]);
   /** A member admin's own suggestions the host has not answered: those parked services say so. */
   const isMemberAdmin = isAdmin && !!serviceCollective && !serviceCollective.isHost;
   const ownSuggestionsQuery = useCollectiveSuggestions(serviceCollective?.id ?? null, isMemberAdmin);
@@ -2162,6 +2186,12 @@ export default function ServicesScreen() {
                   variant="secondary"
                   fullWidth
                   onPress={() => {
+                    // Every venue's services, to put on the page in a few taps (web 2026-10-27).
+                    // An older server has no such view: the one-service sheet, as before.
+                    if (!curateUnsupported) {
+                      router.push('/collective-area?view=venues' as Href);
+                      return;
+                    }
                     setAddFromDone(null);
                     setAddFromPick(null);
                     setAddFromOpen(true);
@@ -2174,7 +2204,16 @@ export default function ServicesScreen() {
               {isAdmin && serviceCollective && !serviceCollective.isHost ? (
                 <AdoptionRequestsCard collectiveId={serviceCollective.id} />
               ) : null}
-              {isAdmin && serviceCollective?.isHost ? (
+              {isAdmin && serviceCollective?.isHost && curateSupported ? (
+                <SuggestionsReviewCard
+                  collectiveId={serviceCollective.id}
+                  collectiveName={serviceCollective.name}
+                  currencySymbol={currencySymbolFor(venue?.currency)}
+                  onReview={() => router.push('/collective-area?view=venues&filter=suggested' as Href)}
+                />
+              ) : null}
+              {/* A server from before 2026-10-27: one suggestion at a time, through the sheet. */}
+              {isAdmin && serviceCollective?.isHost && curateUnsupported ? (
                 <SuggestedServicesCard
                   collectiveId={serviceCollective.id}
                   collectiveName={serviceCollective.name}

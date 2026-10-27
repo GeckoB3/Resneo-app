@@ -15,6 +15,10 @@ import { spacing } from '@/theme/index';
  * `svc.addFrom.*`, plan contracts 1 and 10). The host picks a member and one of that member's own
  * services; the server copies it exactly, puts the copy on the page and asks the member whether to
  * use its own. Nothing here edits the service: the request carries the two ids and nothing else.
+ *
+ * Since 2026-10-27 the Services screen opens this only on a server without every venue's services
+ * (it answers 404 there); a current server sends the host to Manage Collective's "Every venue's
+ * services" instead, as the web does.
  */
 export interface AddFromVenueSheetProps {
   onClose: () => void;

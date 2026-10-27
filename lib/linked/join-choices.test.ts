@@ -1,4 +1,11 @@
-import { defaultJoinDraft, joinChoicesFrom, joinStepsFor, joinSummaryCounts } from '@/lib/linked/join-choices';
+import {
+  allOwnAsked,
+  defaultJoinDraft,
+  joinChoicesFrom,
+  joinStepsFor,
+  joinSummaryCounts,
+  withAllOwn,
+} from '@/lib/linked/join-choices';
 import type { JoinPreview } from '@/types/collectives';
 
 const preview: JoinPreview = {
@@ -30,17 +37,30 @@ const preview: JoinPreview = {
 };
 
 describe('join choices (web JoinCollectiveDialog helpers)', () => {
-  it('defaults to using the venue’s own same-named service, matching options by name, parking the rest, keeping its forms', () => {
+  it('defaults to using the venue’s own same-named service, matching options by name, suggesting the rest, keeping its forms', () => {
     const draft = defaultJoinDraft(preview);
     expect(draft.sameName).toEqual({ 'item-1': 'use_mine' });
     expect(draft.optionMap).toEqual({ mo1: 'ho1', mo2: null });
-    expect(draft.own).toEqual({ 'own-1': 'park', 'own-2': 'park' });
+    // Every other service is ticked to be suggested to the host (web 2026-10-27).
+    expect(draft.own).toEqual({ 'own-1': 'ask', 'own-2': 'ask' });
     expect(draft.forms).toEqual({ 'ft-1': 'use_existing' });
+  });
+
+  it('ticks or unticks every other service at once ("Suggest them all")', () => {
+    const draft = defaultJoinDraft(preview);
+    expect(allOwnAsked(preview, draft)).toBe(true);
+    const none = withAllOwn(preview, draft, false);
+    expect(none.own).toEqual({ 'own-1': 'park', 'own-2': 'park' });
+    expect(allOwnAsked(preview, none)).toBe(false);
+    expect(allOwnAsked(preview, { ...none, own: { ...none.own, 'own-1': 'ask' } })).toBe(false);
+    expect(withAllOwn(preview, none, true).own).toEqual({ 'own-1': 'ask', 'own-2': 'ask' });
+    // Nothing of its own: nothing to tick.
+    expect(allOwnAsked({ ...preview, own_services: [] }, draft)).toBe(false);
   });
 
   it('turns the draft into the route body', () => {
     const draft = defaultJoinDraft(preview);
-    draft.own['own-2'] = 'ask';
+    draft.own['own-1'] = 'park';
     expect(joinChoicesFrom(preview, draft)).toEqual({
       same_name_choices: [
         {
@@ -73,7 +93,7 @@ describe('join choices (web JoinCollectiveDialog helpers)', () => {
 
   it('counts what the check step summarises', () => {
     const draft = defaultJoinDraft(preview);
-    draft.own['own-2'] = 'ask';
+    draft.own['own-1'] = 'park';
     expect(joinSummaryCounts(draft)).toEqual({ useMine: 1, park: 1, ask: 1 });
   });
 });

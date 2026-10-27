@@ -237,8 +237,19 @@ export default function NotificationsScreen() {
       // Link activity → the native Linked Venues hub (admin-only). Non-admins
       // stay on the feed, which is the mobile home for this activity.
       router.push('/linked-venues' as Href);
+    } else if (route?.type === 'collective-area' && isAdmin) {
+      // Curating the page, or a member's suggestions (2026-10-27) → Manage Collective, on every
+      // venue's services when the link says so (the screen reads ?view=&venue=&filter=).
+      const query = [
+        route.view ? `view=${route.view}` : null,
+        route.venue ? `venue=${encodeURIComponent(route.venue)}` : null,
+        route.filter ? `filter=${route.filter}` : null,
+      ].filter(Boolean);
+      router.push(`/collective-area${query.length > 0 ? `?${query.join('&')}` : ''}` as Href);
     } else if (route?.type === 'services' && isAdmin) {
-      // A member's suggestion (N25) → Services, with "Add from another venue" open on it.
+      // A member's suggestion in a bell stored before 2026-10-27 (N25) → Services, which sends a
+      // host on to Manage Collective on that venue's suggestions, or, on a server without every
+      // venue's services, opens "Add from another venue" on it as before.
       const query = route.addFrom
         ? `?add_from=${encodeURIComponent(route.addFrom)}${route.service ? `&service=${encodeURIComponent(route.service)}` : ''}`
         : '';

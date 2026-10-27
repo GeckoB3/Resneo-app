@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { ChoiceRow } from '@/components/linked/setup/ChoiceRow';
 import { Chip } from '@/components/ui/Chip';
 import { Text } from '@/components/ui/Text';
-import { joinSummaryCounts, type JoinDraft } from '@/lib/linked/join-choices';
+import { allOwnAsked, joinSummaryCounts, withAllOwn, type JoinDraft } from '@/lib/linked/join-choices';
 import { setupCopy } from '@/lib/linked/setup-copy';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -126,23 +126,31 @@ export function JoinServicesStep({
             {setupCopy('join.services.none')}
           </Text>
         ) : (
-          preview.own_services.map((service) => (
-            <View key={service.id} style={styles.group}>
-              <Text variant="bodySmall">{service.name}</Text>
-              <View style={styles.chips}>
-                <Chip
-                  label={setupCopy('join.services.park')}
-                  selected={(draft.own[service.id] ?? 'park') === 'park'}
-                  onPress={() => onChange({ ...draft, own: { ...draft.own, [service.id]: 'park' } })}
+          // A tick box each, ticked by default: ticked ones are suggested to the host, who can add
+          // them all at once; unticked ones are parked (web 2026-10-27). One "all" box above them.
+          <View style={styles.group}>
+            {preview.own_services.length > 1 ? (
+              <ChoiceRow
+                kind="checkbox"
+                selected={allOwnAsked(preview, draft)}
+                title={setupCopy('join.services.askAll', { host })}
+                onPress={() => onChange(withAllOwn(preview, draft, !allOwnAsked(preview, draft)))}
+              />
+            ) : null}
+            {preview.own_services.map((service) => {
+              const ask = draft.own[service.id] === 'ask';
+              return (
+                <ChoiceRow
+                  key={service.id}
+                  kind="checkbox"
+                  selected={ask}
+                  title={service.name}
+                  accessibilityLabel={setupCopy('join.services.askOne', { host, service: service.name })}
+                  onPress={() => onChange({ ...draft, own: { ...draft.own, [service.id]: ask ? 'park' : 'ask' } })}
                 />
-                <Chip
-                  label={setupCopy('join.services.ask', { host, collective })}
-                  selected={draft.own[service.id] === 'ask'}
-                  onPress={() => onChange({ ...draft, own: { ...draft.own, [service.id]: 'ask' } })}
-                />
-              </View>
-            </View>
-          ))
+              );
+            })}
+          </View>
         )}
       </View>
     </View>

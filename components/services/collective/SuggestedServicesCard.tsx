@@ -24,6 +24,10 @@ import { useTheme } from '@/theme/useTheme';
  * Reported 2026-10-12: a member suggested a service and nothing appeared in the host's account, as a
  * suggestion reached the host only as one notice. Hidden when nothing is waiting, and quiet when the
  * list cannot be read: the notice still opens the sheet.
+ *
+ * Since 2026-10-27 only for a server without every venue's services (it answers 404 there): a
+ * current server gets `SuggestionsReviewCard`, which adds them all at once with nobody asked. Delete
+ * this, and `AddFromVenueSheet`, once every server has the venue-services route.
  */
 export function SuggestedServicesCard({
   collectiveId,

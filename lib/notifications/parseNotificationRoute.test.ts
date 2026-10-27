@@ -6,7 +6,7 @@ describe('parseNotificationRoute', () => {
     expect(parseNotificationRoute('/dashboard/settings?tab=linked-accounts')).toEqual({ type: 'linked-venues' });
   });
 
-  it("opens Services with a member's suggestion chosen (N25)", () => {
+  it("still opens Services for a member's suggestion stored before 2026-10-27 (N25); Services sends a host on", () => {
     expect(parseNotificationRoute('/dashboard/appointment-services?add_from=v-zen&service=svc%201')).toEqual({
       type: 'services',
       addFrom: 'v-zen',
@@ -14,6 +14,39 @@ describe('parseNotificationRoute', () => {
     });
     // A suggestion stored before it carried its venue and service: Services lists every one waiting.
     expect(parseNotificationRoute('/dashboard/appointment-services')).toEqual({ type: 'services', addFrom: null, service: null });
+  });
+
+  it("opens Manage Collective on every venue's services for a bell about curating the page (2026-10-27)", () => {
+    // A member's suggestions: that venue, on the suggestions waiting.
+    expect(parseNotificationRoute('/dashboard/collective?view=venues&venue=v-zen&filter=suggested')).toEqual({
+      type: 'collective-area',
+      view: 'venues',
+      venue: 'v-zen',
+      filter: 'suggested',
+    });
+    // A suggestion left off, or the page curated: every venue's services, no venue or filter.
+    expect(parseNotificationRoute('/dashboard/collective?view=venues')).toEqual({
+      type: 'collective-area',
+      view: 'venues',
+      venue: null,
+      filter: null,
+    });
+    // Manage Collective itself, on a full address too; an unknown view or filter is ignored.
+    expect(parseNotificationRoute('https://www.resneo.com/dashboard/collective')).toEqual({
+      type: 'collective-area',
+      view: null,
+      venue: null,
+      filter: null,
+    });
+    expect(parseNotificationRoute('/dashboard/collective?view=grid&filter=all#top')).toEqual({
+      type: 'collective-area',
+      view: null,
+      venue: null,
+      filter: null,
+    });
+    // A longer path that only starts with the word is not Manage Collective.
+    expect(parseNotificationRoute('/dashboard/collectives')).toBeNull();
+    expect(parseNotificationRoute('/dashboard/collective-old?view=venues')).toBeNull();
   });
 
   it('opens Commission splits for its notices, whatever else the link carries (2026-10-14)', () => {

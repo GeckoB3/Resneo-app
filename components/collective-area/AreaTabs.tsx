@@ -86,7 +86,7 @@ export function MemberServicesList({
       </Text>
       <Button label="Open Services" variant="secondary" onPress={() => router.push('/manage/services' as Href)} />
       {section(
-        areaCopy('svc.member.section.fromHostTitle', { host: hostName }),
+        areaCopy('svc.member.section.fromHostTitle', { host: hostName, collective: collectiveName }),
         areaCopy('svc.member.section.fromHostCaption', { host: hostName, collective: collectiveName }),
         onPage,
         (s) => {

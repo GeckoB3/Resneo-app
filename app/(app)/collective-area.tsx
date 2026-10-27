@@ -4,13 +4,21 @@
  *
  *   Services  every venue's health, what needs you, and the services across the venues (a host
  *             chooses which calendars offer what, in bulk); a member sees what is on the page for
- *             it and what is parked
+ *             it and what is parked, and suggests its own services to the host many at once
+ *             (2026-10-27). A host also answers the members' suggestions, and switches between
+ *             what is on the page and every venue's own services, to put any of them on the page
+ *             or take them off with nobody asked (2026-10-27)
  *   Venues    the host's members, invitations, moving the hosting and ending the collective
  *   History   every change, filtered and downloadable
  *
  * Admins only, as on the web.
+ *
+ * Route params (a bell about curating the page, web `/dashboard/collective?view=venues&venue=&filter=`):
+ *   view=venues        open the host's Services tab on every venue's services
+ *   venue=<id>         on that venue
+ *   filter=suggested   on the suggestions waiting
  */
-import { Stack, useRouter, type Href } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
@@ -22,7 +30,14 @@ import {
 } from '@/components/collective-area/AreaPieces';
 import { HistoryPanel, MemberServicesList, VenuesPanel, type VenueRow } from '@/components/collective-area/AreaTabs';
 import { ListingsPanel } from '@/components/collective-area/ListingsPanel';
+import { MemberSuggestPanel } from '@/components/collective-area/MemberSuggestPanel';
 import { ServicesGridBar, ServicesGridList, useServicesGrid } from '@/components/collective-area/ServicesGrid';
+import { SuggestionsReviewCard } from '@/components/collective-area/SuggestionsReviewCard';
+import {
+  useVenueServicesPanel,
+  VenueServicesBar,
+  VenueServicesList,
+} from '@/components/collective-area/VenueServicesPanel';
 import { AdoptionRequestsCard } from '@/components/linked/setup/AdoptionSheets';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -50,6 +65,13 @@ import { useTheme } from '@/theme/useTheme';
 import type { CollectiveView } from '@/types/collectives';
 
 type AreaTab = 'services' | 'listings' | 'venues' | 'history';
+/** The host's two views of its services: what is on the page, and every venue's own (2026-10-27). */
+type ServicesView = 'page' | 'venues';
+
+/** One route param as a string, or null (expo-router hands a repeated param over as an array). */
+function oneParam(value: string | string[] | undefined): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
 
 const CURRENCY_SYMBOL: Record<string, string> = { GBP: '£', EUR: '€', USD: '$' };
 
@@ -149,9 +171,22 @@ function AreaBody({
   const toast = useToast();
   const { colors } = useTheme();
   const { venue } = useVenueContext();
+  const params = useLocalSearchParams<{ view?: string; venue?: string; filter?: string }>();
   const [tab, setTab] = useState<AreaTab>('services');
   const [historyVenueId, setHistoryVenueId] = useState<string | null>(null);
+  const [servicesView, setServicesView] = useState<ServicesView>(
+    oneParam(params.view) === 'venues' ? 'venues' : 'page',
+  );
   const retry = useCollectiveRetry(collective.id);
+  // Every venue's own services. Read for the host only; on a server from before 2026-10-27 the
+  // route is missing (`panel.unsupported`), and the tab stays as it was: the grid alone.
+  const panel = useVenueServicesPanel({
+    collectiveId: collective.id,
+    collectiveName: collective.name,
+    enabled: collective.isHost,
+    initialVenueId: oneParam(params.venue),
+    initialFilter: oneParam(params.filter) === 'suggested' ? 'suggested' : null,
+  });
   const grid = useServicesGrid({
     collectiveId: collective.id,
     collectiveName: collective.name,
@@ -194,6 +229,7 @@ function AreaBody({
   ];
 
   const pendingHost = entry?.pendingHost ?? null;
+  const showVenueServices = collective.isHost && servicesView === 'venues' && !panel.unsupported;
 
   return (
     <Screen scroll={false} padded={false}>
@@ -252,14 +288,46 @@ function AreaBody({
             <>
               <VenueHealthCards groups={groups} onRetry={onRetry} retrying={retry.isPending} />
               <TodoStrip todos={todos} onRetry={onRetry} onOpenService={(id) => grid.setOpenServiceId(id)} />
-              {collective.isHost ? (
-                <ServicesGridList grid={grid} currencySymbol={currencySymbol} />
-              ) : (
-                <MemberServicesList
-                  services={services}
-                  hostName={collective.hostVenueName}
+              {collective.isHost && panel.supported ? (
+                <SuggestionsReviewCard
+                  collectiveId={collective.id}
                   collectiveName={collective.name}
+                  currencySymbol={currencySymbol}
+                  onReview={() => {
+                    panel.reviewSuggestions();
+                    setServicesView('venues');
+                  }}
                 />
+              ) : null}
+              {/* Hidden only once the server is known not to have every venue's services. */}
+              {collective.isHost && !panel.unsupported ? (
+                <Segmented<ServicesView>
+                  options={[
+                    { value: 'page', label: areaCopy('vs.view.page') },
+                    { value: 'venues', label: areaCopy('vs.view.venues') },
+                  ]}
+                  value={servicesView}
+                  onChange={setServicesView}
+                />
+              ) : null}
+              {!collective.isHost ? (
+                <>
+                  <MemberSuggestPanel
+                    collectiveId={collective.id}
+                    collectiveName={collective.name}
+                    hostName={collective.hostVenueName}
+                    currencySymbol={currencySymbol}
+                  />
+                  <MemberServicesList
+                    services={services}
+                    hostName={collective.hostVenueName}
+                    collectiveName={collective.name}
+                  />
+                </>
+              ) : showVenueServices ? (
+                <VenueServicesList panel={panel} currencySymbol={currencySymbol} />
+              ) : (
+                <ServicesGridList grid={grid} currencySymbol={currencySymbol} />
               )}
             </>
           ) : null}
@@ -294,7 +362,9 @@ function AreaBody({
             />
           ) : null}
         </ScrollView>
-        {tab === 'services' && collective.isHost ? <ServicesGridBar grid={grid} /> : null}
+        {tab === 'services' && collective.isHost ? (
+          showVenueServices ? <VenueServicesBar panel={panel} /> : <ServicesGridBar grid={grid} />
+        ) : null}
       </View>
     </Screen>
   );

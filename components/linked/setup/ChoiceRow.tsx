@@ -19,6 +19,7 @@ export function ChoiceRow({
   note,
   disabled = false,
   onPress,
+  accessibilityLabel,
   children,
 }: {
   kind?: 'radio' | 'checkbox';
@@ -30,6 +31,8 @@ export function ChoiceRow({
   note?: string | null;
   disabled?: boolean;
   onPress: () => void;
+  /** What a screen reader says for the row, when the title alone is not enough. Defaults to the title. */
+  accessibilityLabel?: string;
   children?: React.ReactNode;
 }) {
   const { colors } = useTheme();
@@ -37,7 +40,7 @@ export function ChoiceRow({
     <Pressable
       accessibilityRole={kind}
       accessibilityState={{ selected: kind === 'radio' ? selected : undefined, checked: kind === 'checkbox' ? selected : undefined, disabled }}
-      accessibilityLabel={title}
+      accessibilityLabel={accessibilityLabel ?? title}
       disabled={disabled}
       onPress={() => {
         hapticTap();

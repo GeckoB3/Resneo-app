@@ -117,15 +117,21 @@ export interface AreaCollective {
   isHost: boolean;
 }
 
-/** The services say which collective this is; a master service means this venue hosts it. */
+/**
+ * The services say which collective this is, and the block's own `venue_role` which side this
+ * venue is on (web 2026-10-27: a host with nothing on the page yet has no master service to guess
+ * from). A server that does not send `venue_role` falls back to the guess: a master service means
+ * this venue hosts it.
+ */
 export function areaCollective(services: readonly AreaService[]): AreaCollective | null {
   const block = services.find((s) => s.collective)?.collective ?? null;
   if (!block) return null;
+  const venueRole = services.find((s) => s.collective?.venue_role)?.collective?.venue_role ?? null;
   return {
     id: block.collective_id,
     name: block.collective_name,
     hostVenueName: block.host_venue_name,
-    isHost: services.some((s) => s.collective?.role === 'master'),
+    isHost: venueRole ? venueRole === 'host' : services.some((s) => s.collective?.role === 'master'),
   };
 }
 

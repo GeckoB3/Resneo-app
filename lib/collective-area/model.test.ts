@@ -70,6 +70,17 @@ describe('the area', () => {
     expect(areaCollective([])).toBeNull();
   });
 
+  it("takes the venue's side from venue_role, so a host with nothing on the page yet is still the host", () => {
+    // Every service parked: no master to guess from (web 2026-10-27).
+    const parkedOnly: AreaService[] = [{ id: 's9', name: 'Trim', collective: block({ role: 'parked', item_id: null, venue_role: 'host' }) }];
+    expect(areaCollective(parkedOnly)?.isHost).toBe(true);
+    // A member never hosts, whatever the roles look like.
+    const member: AreaService[] = [{ id: 's1', name: 'Balayage', collective: block({ role: 'master', venue_role: 'member' }) }];
+    expect(areaCollective(member)?.isHost).toBe(false);
+    // An older server without venue_role: the guess from a master service still holds.
+    expect(areaCollective([{ id: 's2', name: 'Cut', collective: block({ role: 'parked', item_id: null }) }])?.isHost).toBe(false);
+  });
+
   it('reads a cell as all, some or no calendars', () => {
     expect(cellState(groups[0]!, 'item-1')).toBe('some');
     expect(cellState(groups[1]!, 'item-1')).toBe('none');

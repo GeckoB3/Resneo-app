@@ -2,7 +2,8 @@
  * "Add from another venue" (web `AddFromVenueDialog`): the host picks a member and one of its own
  * services, and the request carries the two ids and nothing else, because the server copies the
  * service exactly. A suggestion arrives with the venue and service chosen; a refusal shows the
- * route's own sentence.
+ * route's own sentence. Since 2026-10-27 the sheet is only the fallback for a server without every
+ * venue's services, and says the web's new words.
  *
  * jest hoists mock factories above imports, so every closed-over variable is prefixed `mock*`.
  */
@@ -94,25 +95,25 @@ describe('AddFromVenueSheet', () => {
     expect(screen.getByText('15 min, Free')).toBeTruthy();
 
     // Nothing chosen yet: the button waits.
-    expect(screen.getByRole('button', { name: 'Copy and add to the page' }).props.accessibilityState?.disabled).toBe(true);
+    expect(screen.getByRole('button', { name: 'Add to the page' }).props.accessibilityState?.disabled).toBe(true);
 
     await act(async () => {
       fireEvent.press(screen.getByLabelText('Balayage'));
     });
     expect(
       screen.getByText(
-        'Zen Studio is asked whether to use its own Balayage for this. If it does, its calendars and bookings for it stay as they are.',
+        "Zen Studio's Balayage follows the page from now on. Its calendars and bookings for it stay as they are.",
       ),
     ).toBeTruthy();
     await act(async () => {
-      fireEvent.press(screen.getByRole('button', { name: 'Copy and add to the page' }));
+      fireEvent.press(screen.getByRole('button', { name: 'Add to the page' }));
     });
 
     const post = mockCalls.find((c) => c.method === 'POST');
     expect(post?.path).toBe('/api/venue/collectives/col-1/offerings');
     expect(post?.body).toEqual({ source_venue_id: 'v-zen', source_service_id: 'svc-1' });
     expect(onAdded).toHaveBeenCalledWith(
-      'Balayage is on the Northside page. We have asked Zen Studio whether to use its own Balayage for it.',
+      "Balayage is on the Northside page, offered by Zen Studio's calendars.",
     );
   });
 
@@ -159,7 +160,7 @@ describe('AddFromVenueSheet', () => {
       fireEvent.press(screen.getByLabelText('Balayage'));
     });
     await act(async () => {
-      fireEvent.press(screen.getByRole('button', { name: 'Copy and add to the page' }));
+      fireEvent.press(screen.getByRole('button', { name: 'Add to the page' }));
     });
     expect(await screen.findByText('That service is already on the page.')).toBeTruthy();
     expect(onAdded).not.toHaveBeenCalled();

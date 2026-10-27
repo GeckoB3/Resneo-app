@@ -9,6 +9,8 @@
  *                                 waiting; a member: its own)
  *                            POST /api/venue/collectives/[id]/suggestions  { service_id }  (a member)
  *                            POST /api/venue/collectives/[id]/suggestions/decline  { service_id }  (the host)
+ *                            (many at once, and the host curating every venue's services:
+ *                            `useCollectiveCurate.ts`, 2026-10-27)
  *   Review your services     GET  /api/venue/collectives/review
  *                            POST /api/venue/collectives/review  { collective_id }
  *   A host service, as the   PATCH /api/venue/appointment-services  (calendars, the meeting link
@@ -72,6 +74,9 @@ export const collectiveServiceToolKeys = {
     [...queryKeys.collectives.all(), 'releaseReview', keyScope(accessToken)] as const,
   suggestions: (accessToken: string | null, collectiveId: string | null) =>
     [...queryKeys.collectives.all(), 'suggestions', keyScope(accessToken), collectiveId] as const,
+  /** Every venue's own services (2026-10-27; `useVenueServices` in `useCollectiveCurate.ts`). */
+  venueServices: (accessToken: string | null, collectiveId: string | null) =>
+    [...queryKeys.collectives.all(), 'venueServices', keyScope(accessToken), collectiveId] as const,
 };
 
 /**
@@ -159,7 +164,10 @@ export function useCollectiveSuggestions(collectiveId: string | null, enabled: b
   });
 }
 
-/** POST a member's parked service as a suggestion; the host is told straight away (N25). */
+/**
+ * POST a member's parked service as a suggestion; the host is told straight away (N25). One service
+ * from a row on the Services screen; many at once go through `useSuggestServices`.
+ */
 export function useSuggestService() {
   const accessToken = useAccessToken();
   const queryClient = useQueryClient();
@@ -172,8 +180,13 @@ export function useSuggestService() {
         body: JSON.stringify({ service_id: input.serviceId }),
       });
     },
-    onSuccess: (_data, input) =>
-      void queryClient.invalidateQueries({ queryKey: collectiveServiceToolKeys.suggestions(accessToken, input.collectiveId) }),
+    onSuccess: (_data, input) => {
+      void queryClient.invalidateQueries({ queryKey: collectiveServiceToolKeys.suggestions(accessToken, input.collectiveId) });
+      // Manage Collective's "Your services" says which ones are waiting for the host.
+      void queryClient.invalidateQueries({
+        queryKey: collectiveServiceToolKeys.venueServices(accessToken, input.collectiveId),
+      });
+    },
   });
 }
 

@@ -15,6 +15,26 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ---
 
+## Unreleased OTA: curate a collective's services from every venue
+
+Publish only once the web change (staging `d09f0ed9`, "Collectives: curate the page from every
+venue's services, with nobody asked") is live on www.resneo.com and the production database has
+migrations `20270414120000`, `20270414130000` and `20270414140000`. Against an older server the new
+parts hide and the old one-at-a-time card stays (the app reads a 404 from venue-services as "not yet").
+
+### Curating collective services (owner, 2026-10-27)
+- **Manage Collective, host**: "Suggested by your venues" (add all, a selection, or Not now in one
+  go), and an "Every venue's services" view beside the grid: each venue's own services, on the page
+  or not, ticked and put on or taken off in bulk, with nobody asked. Same-named services join the page
+  service unless the host keeps them separate.
+- **Manage Collective, member**: "Your services", tick any not on the page and suggest them in one go.
+- **Services screen**: the batch suggestions card; "Add from another venue" opens Manage Collective.
+- **Setup and join**: the host's finish-setup lists every venue's services, ticked; a joining venue's
+  own services are tick boxes, suggested by default.
+- **Notifications**: `/dashboard/collective` links open Manage Collective; the member list heading
+  now reads "On the {collective} page".
+- Device-tested on Android (Expo Go against the local web server), 2026-10-27; iOS not tested.
+
 ## Unreleased OTA: collective booking settings, declined requests, Checkout support banner
 
 From `3f7946a` (three commits above `1ab01af`). Checks in the 2026-10-26 run in
