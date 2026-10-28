@@ -109,3 +109,77 @@ describe('ConfirmStep confirmation heading (web QA B-9)', () => {
     expect(screen.queryByText('Waiting for the deposit')).toBeNull();
   });
 });
+
+/**
+ * A collective calendar guests cannot book (web `staffCalendarNotice`, 2026-10-28): staff read the
+ * catalogue's note, and where the venue cannot take cards no deposit or card hold is offered or sent.
+ */
+describe('ConfirmStep on a collective calendar staff are told about', () => {
+  const note = 'Card payments are not set up at Light 3, so take payment in person.';
+  beforeEach(() => mockCreate.mockReset());
+
+  it('shows the note, offers no deposit, turns a ticked one off and asks for none', async () => {
+    const onChangeRequireDeposit = jest.fn();
+    await render(
+      <ConfirmStep
+        service={service}
+        date="2026-10-01"
+        slot={slot}
+        guest={{ first_name: 'Jo', last_name: 'Bloggs', email: 'jo@example.com', phone: '07700 900123' }}
+        source="phone"
+        requireDeposit
+        onChangeRequireDeposit={onChangeRequireDeposit}
+        staffNotes={[note]}
+        noCardPayments
+        onSuccess={jest.fn()}
+      />,
+    );
+    expect(screen.getByText(note)).toBeTruthy();
+    expect(screen.queryByLabelText(/^Require deposit/)).toBeNull();
+    expect(screen.queryByText('Deposit')).toBeNull();
+    expect(onChangeRequireDeposit).toHaveBeenCalledWith(false);
+    await act(async () => {
+      fireEvent.press(screen.getByText('Create booking'));
+    });
+    expect(mockCreate.mock.calls[0]?.[0]).not.toHaveProperty('require_deposit');
+  });
+
+  it('offers no card hold and tells the create there is none', async () => {
+    await render(
+      <ConfirmStep
+        service={{ ...service, paymentRequirement: 'card_hold', depositPence: 1500 }}
+        date="2026-10-01"
+        slot={slot}
+        guest={{ first_name: 'Jo', last_name: 'Bloggs', email: 'jo@example.com', phone: '07700 900123' }}
+        source="phone"
+        staffNotes={[note]}
+        noCardPayments
+        onSuccess={jest.fn()}
+      />,
+    );
+    expect(screen.queryByLabelText(/^Card hold/)).toBeNull();
+    expect(screen.queryByText('No-show fee')).toBeNull();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Create booking'));
+    });
+    expect(mockCreate.mock.calls[0]?.[0]).toMatchObject({ require_card_hold: false });
+  });
+
+  it('keeps the deposit where the note is about something else', async () => {
+    await render(
+      <ConfirmStep
+        service={service}
+        date="2026-10-01"
+        slot={slot}
+        guest={{ first_name: 'Jo', last_name: 'Bloggs', email: 'jo@example.com', phone: '07700 900123' }}
+        source="phone"
+        requireDeposit
+        onChangeRequireDeposit={jest.fn()}
+        staffNotes={['Forms are switched off at Light 3.']}
+        onSuccess={jest.fn()}
+      />,
+    );
+    expect(screen.getByText('Forms are switched off at Light 3.')).toBeTruthy();
+    expect(screen.getByLabelText('Require deposit £10.00')).toBeTruthy();
+  });
+});

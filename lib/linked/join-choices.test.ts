@@ -2,6 +2,7 @@ import {
   allOwnAsked,
   defaultJoinDraft,
   joinChoicesFrom,
+  joinNextSteps,
   joinStepsFor,
   joinSummaryCounts,
   withAllOwn,
@@ -84,6 +85,28 @@ describe('join choices (web JoinCollectiveDialog helpers)', () => {
     const body = joinChoicesFrom(preview, draft);
     expect(body.same_name_choices).toEqual([{ item_id: 'item-1', choice: 'add_new' }]);
     expect(body.form_choices).toEqual([{ host_type_id: 'ft-1', choice: 'use_theirs' }]);
+  });
+
+  it('turns forms on only when the venue ticks it, and only when forms are off and needed', () => {
+    const offPreview: JoinPreview = { ...preview, warnings: { ...preview.warnings, form_services: 2, forms_off: true } };
+    const draft = defaultJoinDraft(offPreview);
+    expect(draft.turnOnForms).toBe(false);
+    expect(joinChoicesFrom(offPreview, draft).turn_on_forms).toBeUndefined();
+    expect(joinChoicesFrom(offPreview, { ...draft, turnOnForms: true }).turn_on_forms).toBe(true);
+    // Forms already on, or nothing on the page needs one: nothing to turn on.
+    expect(joinChoicesFrom(preview, { ...draft, turnOnForms: true }).turn_on_forms).toBeUndefined();
+  });
+
+  it('says what is still in the way once joined: Stripe for paid services, forms unless ticked on', () => {
+    expect(joinNextSteps(preview, defaultJoinDraft(preview))).toEqual({ stripe: false, forms: false });
+    const needs: JoinPreview = {
+      ...preview,
+      warnings: { no_stripe_paid_services: 3, form_services: 2, forms_off: true },
+    };
+    const draft = defaultJoinDraft(needs);
+    expect(joinNextSteps(needs, draft)).toEqual({ stripe: true, forms: true });
+    // Ticked to turn forms on as it joined: only Stripe is left.
+    expect(joinNextSteps(needs, { ...draft, turnOnForms: true })).toEqual({ stripe: true, forms: false });
   });
 
   it('adds the forms step only when the venue holds a matching form', () => {

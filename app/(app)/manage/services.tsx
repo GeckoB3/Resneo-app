@@ -52,6 +52,8 @@ import {
 import { ServiceLocationSection, isValidMeetingUrl, normalizeMeetingUrl } from '@/components/services/ServiceLocationSection';
 import { ServiceRemovalBookingsPanel } from '@/components/services/ServiceRemovalBookingsPanel';
 import { AddFromVenueSheet } from '@/components/services/collective/AddFromVenueSheet';
+import { CalendarValuesStep } from '@/components/services/collective/CalendarValuesStep';
+import { CollectiveCalendarsSection } from '@/components/services/collective/CollectiveCalendarsSection';
 import { MemberServiceSheet } from '@/components/services/collective/MemberServiceSheet';
 import { ReleaseReviewCard } from '@/components/services/collective/ReleaseReviewCard';
 import { SuggestedServicesCard } from '@/components/services/collective/SuggestedServicesCard';
@@ -144,6 +146,22 @@ import {
   deletedHalfwayMessage,
   deleteServiceOnCollectivePage,
 } from '@/lib/services/collective-service-delete';
+import {
+  anyCalendarValueFlag,
+  calendarValueDefaults,
+  calendarValueFlags,
+  calendarValuesTarget,
+  ownCalendarValuesTarget,
+  type CalendarValueFlag,
+  type CalendarValuesMode,
+  type CalendarValuesTarget,
+} from '@/lib/services/calendar-values';
+import {
+  EMPTY_CALENDARS_DIFF,
+  isCalendarsDiffEmpty,
+  keepCalendarsOffering,
+  type CollectiveCalendarsDiff,
+} from '@/lib/services/collective-calendars';
 import { staffMayCustomizeAny } from '@/lib/services/service-override';
 import { affectedCalendarIds, type ServiceRemovalMove } from '@/lib/services/service-removal';
 import { useServiceRemovalFlow } from '@/lib/services/useServiceRemovalFlow';
@@ -839,6 +857,18 @@ export default function ServicesScreen() {
    */
   const removal = useServiceRemovalFlow();
   const [removalSource, setRemovalSource] = useState<'form' | 'toggle' | null>(null);
+  /**
+   * The host's calendar choices at every venue for the page service open in the form (web
+   * `collectiveCalendarsDiff`, 2026-10-28): intent, not the whole set, sent with the form's save
+   * as `collective_calendars`.
+   */
+  const [collectiveCalendarsDiff, setCollectiveCalendarsDiff] =
+    useState<CollectiveCalendarsDiff>(EMPTY_CALENDARS_DIFF);
+  /**
+   * One calendar's own price and times, edited as a STEP of the form's sheet
+   * ([[ios-no-stacked-modals]]): the host's on any venue's calendar, or an admin's on its own.
+   */
+  const [valuesStep, setValuesStep] = useState<{ mode: CalendarValuesMode; target: CalendarValuesTarget } | null>(null);
   // Inline "Add calendar" from the form (admin only): name draft + open flag.
   const [addCalendarOpen, setAddCalendarOpen] = useState(false);
   const [newCalendarName, setNewCalendarName] = useState('');
@@ -1175,6 +1205,20 @@ export default function ServicesScreen() {
     () => query.data?.collective_calendars ?? [],
     [query.data?.collective_calendars],
   );
+  /** The service open in the form, as last loaded. */
+  const editingService = useMemo(
+    () => (editTarget ? (query.data?.services ?? []).find((s) => s.id === editTarget.id) ?? null : null),
+    [editTarget, query.data?.services],
+  );
+  /**
+   * The open service, when this venue hosts it on the collective page (web `editingCollectiveBlock`):
+   * its calendars are then chosen at every venue, and the form's own "Offered by" steps aside. A
+   * server that sends no `collective_calendars` keeps the form as it was.
+   */
+  const editingCollectiveBlock = useMemo(() => {
+    const block = editingService?.collective ?? null;
+    return isAdmin && block?.role === 'master' && block.item_id && collectiveCalendars.length > 0 ? block : null;
+  }, [isAdmin, editingService, collectiveCalendars.length]);
   const collectiveMemberVenues = useMemo(
     () =>
       collectiveCalendars
@@ -1336,6 +1380,8 @@ export default function ServicesScreen() {
         .sort((a, b) => (a.link_sort_order ?? 0) - (b.link_sort_order ?? 0))
         .map((entry) => ({ id: entry.group.id, name: entry.group.name })),
     );
+    setCollectiveCalendarsDiff(EMPTY_CALENDARS_DIFF);
+    setValuesStep(null);
     setError(null);
     setEditTarget({ id: service.id, practitionerIds: linked });
   }, [linkedCalendarIds]);
@@ -1381,6 +1427,8 @@ export default function ServicesScreen() {
     setVariantDrafts([]);
     setExpandedVariantKey(null);
     setAddonLinks([]);
+    setCollectiveCalendarsDiff(EMPTY_CALENDARS_DIFF);
+    setValuesStep(null);
     setError(null);
     setCreating(true);
   };
@@ -1440,6 +1488,7 @@ export default function ServicesScreen() {
     if (moreSettingsKey.current) returnToSetup(null);
     setEditTarget(null);
     setCreating(false);
+    setValuesStep(null);
     // Swiping the sheet away while it is asking about the bookings left behind
     // abandons that save; without this the next edit would open straight onto a
     // stale list.
@@ -1521,9 +1570,13 @@ export default function ServicesScreen() {
     if (paymentReq === 'full_payment' && !usesVariants && !(pricePence != null && pricePence > 0)) {
       setError('Enter a price greater than zero to take full payment online.'); return;
     }
-    if (practitionerIds.length === 0) {
+    // A page service may be offered only at other venues: the web saves it with none ticked here.
+    if (practitionerIds.length === 0 && !editingCollectiveBlock) {
       setError('Select at least one calendar to offer this service.'); return;
     }
+    // Captured now: the bookings question re-sends this same save, whatever the form shows by then.
+    const calendarsDiff =
+      editingCollectiveBlock && !isCalendarsDiffEmpty(collectiveCalendarsDiff) ? collectiveCalendarsDiff : null;
 
     // Admin-only sections: location, processing time, custom availability, booking interval.
     let scheduleToSend: ServiceCustomScheduleV2 | null = null;
@@ -1691,6 +1744,8 @@ export default function ServicesScreen() {
             ...shared,
             ...adminExtras,
             ...(linksChanged ? { practitioner_ids: practitionerIds } : {}),
+            // The host's ticks at every venue; the engine writes them, before the service itself.
+            ...(calendarsDiff ? { collective_calendars: calendarsDiff } : {}),
             acknowledge,
           }),
         );
@@ -1816,12 +1871,15 @@ export default function ServicesScreen() {
     const confirmation = removal.confirmation;
     if (removalSource === 'form' && confirmation) {
       const restore = affectedCalendarIds(confirmation);
-      setPractitionerIds((current) => [...new Set([...current, ...restore])]);
+      // A page service's calendars, at any venue, are ticked through the diff: those calendars'
+      // unticks are dropped, and the venue's own list is left as it is.
+      if (editingCollectiveBlock) setCollectiveCalendarsDiff((current) => keepCalendarsOffering(current, restore));
+      else setPractitionerIds((current) => [...new Set([...current, ...restore])]);
     }
     removal.cancel();
     setRemovalSource(null);
     setTogglingKey(null);
-  }, [removal, removalSource]);
+  }, [removal, removalSource, editingCollectiveBlock]);
 
   const handleOpenOverride = useCallback(
     (service: ManagedService) => {
@@ -1953,6 +2011,27 @@ export default function ServicesScreen() {
 
   const sheetOpen = editTarget !== null || creating;
   const saving = update.isPending || create.isPending;
+
+  /**
+   * An admin's own calendars that offer the open service, each with "Edit values" while the service
+   * lets calendars set any (web Calendar Availability's Edit values, 2026-10-28). The host's page
+   * service has them on every venue's calendars instead, in the collective section.
+   */
+  const ownValuesCalendars =
+    isAdmin && editingService && !editingCollectiveBlock && anyCalendarValueFlag(calendarValueFlags(editingService))
+      ? practitioners.filter((p) => calendarOffersService(p.id, editingService.id))
+      : [];
+
+  /**
+   * A values step saved. The settings the host's save turned on for the service are turned on in
+   * the form too: its Save sends every setting, and would otherwise turn them straight back off.
+   */
+  const handleValuesSaved = (turnedOn: CalendarValueFlag[]) => {
+    if (turnedOn.length > 0) {
+      setStaffMay((prev) => ({ ...prev, ...Object.fromEntries(turnedOn.map((flag) => [flag, true])) }));
+    }
+    setValuesStep(null);
+  };
   // Admin "multiple options" mode — hides the base duration/price fields and the
   // parent processing-time editor, which the options below supersede (web parity).
   const usesVariants = isAdmin && variantDrafts.length > 0;
@@ -2488,6 +2567,8 @@ export default function ServicesScreen() {
           expectedCalendarIds={linkedCalendarIds(viewingService.id)}
           currencySymbol={currencySymbolFor(venue?.currency)}
           complianceEnabled={complianceEnabled}
+          canEditValues={isAdmin}
+          links={practitionerServices.filter((l) => l.service_id === viewingService.id)}
           onClose={() => setViewingService(null)}
           onSaved={() => setViewingService(null)}
         />
@@ -2512,7 +2593,25 @@ export default function ServicesScreen() {
             />
           </View>
         ) : (
-        <View style={styles.sheetBodyWrap}>
+        <>
+        {/* One calendar's own values: a STEP of this sheet too. The form stays mounted behind it,
+            hidden, so Back returns to it scrolled where it was and with nothing lost. */}
+        {valuesStep && editingService ? (
+          <CalendarValuesStep
+            key={`${valuesStep.mode}:${valuesStep.target.calendarId}`}
+            mode={valuesStep.mode}
+            collectiveId={editingCollectiveBlock?.collective_id ?? null}
+            serviceName={editingService.name}
+            target={valuesStep.target}
+            flags={calendarValueFlags(editingService)}
+            defaults={calendarValueDefaults(editingService)}
+            currencySymbol={currencySymbolFor(venue?.currency)}
+            hasOptions={(editingService.variants ?? []).some((v) => (v as { is_active?: boolean }).is_active !== false)}
+            onSaved={handleValuesSaved}
+            onBack={() => setValuesStep(null)}
+          />
+        ) : null}
+        <View style={[styles.sheetBodyWrap, valuesStep && editingService ? styles.hidden : null]}>
           <Text variant="overline" tone="muted">
             {editTarget ? 'Edit service' : 'New service'}
           </Text>
@@ -2819,7 +2918,27 @@ export default function ServicesScreen() {
             {/* Offered by — admins pick from the full roster; a non-admin may
                 only toggle calendars they manage. Links the service already has
                 on other calendars stay in `practitionerIds` (seeded on open) and
-                are preserved on save, so a non-admin edit never strips them. */}
+                are preserved on save, so a non-admin edit never strips them.
+                The host's page service steps this aside for the calendars at every
+                venue (web CollectiveCalendarsSection). */}
+            {editingCollectiveBlock && editingCollectiveBlock.item_id ? (
+              <CollectiveCalendarsSection
+                groups={collectiveCalendars}
+                itemId={editingCollectiveBlock.item_id}
+                collectiveName={editingCollectiveBlock.collective_name}
+                currencySymbol={currencySymbolFor(venue?.currency)}
+                value={collectiveCalendarsDiff}
+                onChange={setCollectiveCalendarsDiff}
+                // Always offered to the host: a value for a setting not yet on turns it on.
+                onEditValues={(venueId, calendarId) => {
+                  const target = calendarValuesTarget(collectiveCalendars, editingCollectiveBlock.item_id, venueId, calendarId);
+                  if (target) setValuesStep({ mode: 'host', target });
+                }}
+                hiddenReasons={editingCollectiveBlock.hidden_reasons}
+                disabled={saving}
+              />
+            ) : (
+            <>
             <Text variant="overline" tone="muted">Offered by</Text>
             {!isAdmin ? (
               <Text variant="caption" tone="muted">
@@ -2873,6 +2992,33 @@ export default function ServicesScreen() {
                 }}
               />
             ) : null}
+            {/* Each calendar's own price and times, where the service lets calendars set them
+                (admin; the saved calendars only, as the values belong to their links). */}
+            {ownValuesCalendars.length > 0 && editingService ? (
+              <View style={styles.calendarWrap}>
+                {ownValuesCalendars.map((calendar) => (
+                  <Button
+                    key={calendar.id}
+                    label={areaCopy('svc.member.view.editValuesFor', { calendar: calendar.name })}
+                    variant="ghost"
+                    size="sm"
+                    disabled={saving}
+                    onPress={() =>
+                      setValuesStep({
+                        mode: 'own',
+                        target: ownCalendarValuesTarget(
+                          calendar,
+                          editingService.id,
+                          linkForServiceCalendar(editingService.id, calendar.id),
+                        ),
+                      })
+                    }
+                  />
+                ))}
+              </View>
+            ) : null}
+            </>
+            )}
 
             <View style={styles.switchRow}>
               <Text variant="bodyMedium">Active (visible to clients)</Text>
@@ -3015,6 +3161,7 @@ export default function ServicesScreen() {
             />
           </View>
         </View>
+        </>
         )}
       </Sheet>
 
@@ -3321,6 +3468,10 @@ const styles = StyleSheet.create({
   },
   sheetScroll: {
     flex: 1,
+  },
+  // The form behind a step of its sheet: kept mounted so it comes back as it was.
+  hidden: {
+    display: 'none',
   },
   sheetBody: {
     gap: spacing.md,

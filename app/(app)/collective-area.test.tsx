@@ -5,9 +5,19 @@
  */
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
-import type { AreaService } from '@/lib/collective-area/model';
+import type { AreaService, CollectiveCalendarGroup } from '@/lib/collective-area/model';
 import type { VenueServicesResponse } from '@/lib/collective-area/venue-services';
 import type { WaitingSuggestion } from '@/lib/queries/useCollectiveServiceTools';
+
+// A service's sheet opens on the grid; the real one needs the native gesture handler.
+jest.mock('@/components/ui/Sheet', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  return {
+    Sheet: ({ visible, children }: { visible: boolean; children: React.ReactNode }) =>
+      visible ? React.createElement(View, null, children) : null,
+  };
+});
 
 let mockParams: Record<string, string> = {};
 jest.mock('expo-router', () => ({
@@ -18,6 +28,7 @@ jest.mock('expo-router', () => ({
 
 let mockRole = 'admin';
 let mockServices: AreaService[] = [];
+let mockGroups: CollectiveCalendarGroup[] = [];
 jest.mock('@/lib/queries/useStaffMe', () => ({
   useStaffMe: () => ({ isLoading: false, data: { staff: { role: mockRole } } }),
 }));
@@ -26,7 +37,7 @@ jest.mock('@/lib/queries/useServicesManage', () => ({
     isLoading: false,
     isError: false,
     isRefetching: false,
-    data: { services: mockServices, collective_calendars: [] },
+    data: { services: mockServices, collective_calendars: mockGroups },
     refetch: jest.fn(),
   }),
 }));
@@ -56,9 +67,14 @@ jest.mock('@/lib/queries/useCollectiveCurate', () => ({
   useSuggestServices: () => ({ mutate: jest.fn(), isPending: false }),
 }));
 let mockSuggestions: WaitingSuggestion[] = [];
+const mockSaveValues = jest.fn();
 jest.mock('@/lib/queries/useCollectiveServiceTools', () => ({
   ...jest.requireActual('@/lib/queries/useCollectiveServiceTools'),
   useCollectiveSuggestions: () => ({ data: { role: 'host', suggestions: mockSuggestions } }),
+  useSaveCollectiveCalendarValues: () => ({ mutate: mockSaveValues, isPending: false }),
+}));
+jest.mock('@/lib/queries/useUpdateServiceOverride', () => ({
+  useUpdateServiceOverride: () => ({ mutate: jest.fn(), isPending: false }),
 }));
 jest.mock('@/providers/VenueProvider', () => ({ useVenueContext: () => ({ venue: { currency: 'GBP' } }) }));
 jest.mock('@/providers/ToastProvider', () => ({ useToast: () => ({ error: jest.fn(), success: jest.fn() }) }));
@@ -112,6 +128,8 @@ describe('CollectiveAreaScreen', () => {
     mockParams = {};
     mockVenueServices = null;
     mockSuggestions = [];
+    mockGroups = [];
+    mockSaveValues.mockReset();
   });
 
   it('is for admins only, as on the web', async () => {
@@ -208,5 +226,57 @@ describe('CollectiveAreaScreen', () => {
     expect(screen.getByText('Suggest to Host Venue (0)')).toBeTruthy();
     expect(screen.queryByText("Every venue's services")).toBeNull();
     expect(screen.getByText(/^Parked while you are part of Northside/)).toBeTruthy();
+  });
+  it("lets the host set a member calendar's own values from a service's sheet (2026-10-28)", async () => {
+    mockServices = [
+      {
+        id: 's1',
+        name: 'Balayage',
+        collective: block('master'),
+        duration_minutes: 120,
+        buffer_minutes: 0,
+        price_pence: 9500,
+        payment_requirement: 'none',
+        staff_may_customize_price: true,
+      },
+    ];
+    const values = { custom_price_pence: null, custom_duration_minutes: null, custom_buffer_minutes: null, custom_deposit_pence: null };
+    mockGroups = [
+      {
+        venue_id: 'v-zen',
+        venue_name: 'Zen Studio',
+        is_host: false,
+        sync: { venues: 1, applied: 1, pending: [], failed: [] },
+        calendars: [
+          {
+            id: 'cal-m',
+            name: 'Mo',
+            is_active: true,
+            assigned: [{ item_id: 'item-1', service_id: 'replica-1', values, last_changed: null }],
+          },
+          { id: 'cal-n', name: 'Nia', is_active: true, assigned: [] },
+        ],
+      },
+    ];
+    await render(<CollectiveAreaScreen />);
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Balayage'));
+    });
+    // Only the calendar that offers it now.
+    expect(screen.getAllByLabelText(/^Edit values for/)).toHaveLength(1);
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Edit values for Mo'));
+    });
+    expect(screen.getByText('Balayage on Mo')).toBeTruthy();
+    await act(async () => {
+      fireEvent.changeText(screen.getByLabelText('Price'), '80');
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+    });
+    expect(mockSaveValues.mock.calls[0]?.[0]).toEqual({
+      collectiveId: 'col-1',
+      body: { calendar_id: 'cal-m', service_id: 'replica-1', values: { custom_price_pence: 8000 } },
+    });
   });
 });

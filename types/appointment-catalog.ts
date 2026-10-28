@@ -94,7 +94,18 @@ export interface AppointmentCatalogService {
    * pattern, which a booking snapshots at creation.
    */
   processing_time_blocks?: ProcessingTimeBlock[];
+  /**
+   * Collective staff catalogue only (web 2026-10-28): why guests cannot book this calendar for the
+   * service, said to staff ("Card payments are not set up at Light 3, so take payment in person"),
+   * and the reason behind it. With `'payments'` that venue cannot take a deposit or card hold.
+   * @see lib/booking/staff-calendar-notice.ts
+   */
+  staff_note?: string;
+  staff_exclusion?: StaffCalendarExclusion;
 }
+
+/** Why a collective calendar is hidden from guests (web `ProviderExclusion`). */
+export type StaffCalendarExclusion = 'payments' | 'forms' | 'behind' | 'suspended' | 'staff_only';
 
 export interface AppointmentCatalogPractitioner {
   id: string;

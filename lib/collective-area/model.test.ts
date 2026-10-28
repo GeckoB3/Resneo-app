@@ -133,9 +133,28 @@ describe('the area', () => {
     expect(todo?.action).toEqual({ kind: 'payments', label: 'Connect Stripe' });
   });
 
+  it('leaves out a hidden reason for a service none of its calendars offer (web 2026-10-28)', () => {
+    const member: AreaService[] = [
+      {
+        id: 's20',
+        name: 'Keratin',
+        collective: block({
+          role: 'replica',
+          offered_elsewhere: true,
+          hidden_reasons: [{ venue_id: 'v-zen', venue_name: 'Zen Studio', reason: 'payments' }],
+        }),
+      },
+    ];
+    expect(
+      buildCollectiveTodos({ isHost: false, services: member, calendarGroups: [], ownCalendarCount: () => 0, ownVenueId: 'v-zen' }),
+    ).toEqual([]);
+  });
+
   it('tells a member about its copies none of its calendars offer, and only its own reasons (Services screen)', () => {
     const member: AreaService[] = [
       { id: 's9', name: 'Balayage', collective: block({ role: 'replica' }) },
+      // Another venue offers it, so nothing is in the way of guests booking it.
+      { id: 's12', name: 'Fringe trim', collective: block({ role: 'replica', offered_elsewhere: true }) },
       {
         id: 's10',
         name: 'Cut',

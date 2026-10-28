@@ -2,22 +2,35 @@ import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { ChoiceRow } from '@/components/linked/setup/ChoiceRow';
-import { JoinFormsStep, JoinMeansStep, JoinServicesStep, JoinSummaryList } from '@/components/linked/setup/JoinSteps';
+import { JoinNextSteps } from '@/components/linked/setup/JoinNextSteps';
+import { JoinFormsStep, JoinFormsSwitch, JoinMeansStep, JoinServicesStep, JoinSummaryList } from '@/components/linked/setup/JoinSteps';
 import { StepShell } from '@/components/linked/setup/StepShell';
 import { Button } from '@/components/ui/Button';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
-import { defaultJoinDraft, joinChoicesFrom, joinStepsFor, type JoinDraft, type JoinStep } from '@/lib/linked/join-choices';
+import {
+  defaultJoinDraft,
+  EMPTY_JOIN_DRAFT,
+  joinChoicesFrom,
+  joinNextSteps,
+  joinStepsFor,
+  type JoinDraft,
+  type JoinStep,
+} from '@/lib/linked/join-choices';
 import { setupCopy } from '@/lib/linked/setup-copy';
 import { useCollectiveMemberAction, useJoinPreview } from '@/lib/queries/useCollectives';
 import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
+import type { JoinPreview } from '@/types/collectives';
 
 /**
  * Joining a shared-services collective from an invitation on its own (web
  * `JoinCollectiveDialog.tsx`; contract 6). What joining means, the venue's services, forms it
  * already uses, then check and join. Until 2026-09-19 the app sent people to the web for this.
+ *
+ * Joined with something still in the way of guests (no Stripe for paid services, forms off and
+ * needed), the sheet stays open on "You have joined" with those steps, as the web does (2026-10-28).
  */
 export function JoinCollectiveSheet({
   visible,
@@ -40,9 +53,14 @@ export function JoinCollectiveSheet({
   const preview = previewQuery.data ?? null;
   const join = useCollectiveMemberAction();
   const [step, setStep] = useState<JoinStep>('means');
-  const [draft, setDraft] = useState<JoinDraft>({ sameName: {}, optionMap: {}, own: {}, forms: {} });
+  const [draft, setDraft] = useState<JoinDraft>(EMPTY_JOIN_DRAFT);
   const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Joined, with something still to do before guests can book every service here. The preview and
+   * choices are kept as they were sent: the preview is read again once the venue is in.
+   */
+  const [joined, setJoined] = useState<{ preview: JoinPreview; draft: JoinDraft } | null>(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -50,6 +68,7 @@ export function JoinCollectiveSheet({
     setStep('means');
     setAgreed(false);
     setError(null);
+    setJoined(null);
   }, [visible]);
 
   useEffect(() => {
@@ -75,7 +94,11 @@ export function JoinCollectiveSheet({
         onSuccess: () => {
           toast.success(`Joined ${name}.`);
           onJoined?.();
-          onClose();
+          // Something still stands between guests and this venue: say what, with the buttons,
+          // before closing. Otherwise the sheet closes as it always has.
+          const next = joinNextSteps(preview, draft);
+          if (next.stripe || next.forms) setJoined({ preview, draft });
+          else onClose();
         },
         onError: (err) => setError(err instanceof ApiError ? err.message : 'Could not join. Please check your connection.'),
       },
@@ -88,7 +111,9 @@ export function JoinCollectiveSheet({
       : 'Could not load the invitation. Please check your connection.'
     : null;
 
-  const footer = (
+  const footer = joined ? (
+    <Button label={setupCopy('join.next.done')} onPress={onClose} />
+  ) : (
     <>
       {index > 0 ? <Button label={setupCopy('join.back')} variant="secondary" disabled={busy} onPress={() => setStep(steps[index - 1]!)} /> : null}
       <Button label="Cancel" variant="ghost" disabled={busy} onPress={onClose} />
@@ -106,36 +131,52 @@ export function JoinCollectiveSheet({
       onClose={() => {
         if (!busy) onClose();
       }}
-      title={setupCopy('join.title', { collective: name })}
-      step={index + 1}
-      total={steps.length}
-      error={error ?? loadError}
+      title={
+        joined
+          ? setupCopy('join.next.title', { collective: joined.preview.collective_name })
+          : setupCopy('join.title', { collective: name })
+      }
+      step={joined ? undefined : index + 1}
+      total={joined ? undefined : steps.length}
+      error={joined ? null : (error ?? loadError)}
       footer={footer}>
-      {!preview && !loadError ? (
-        <Text variant="bodySmall" tone="muted">
-          {setupCopy('join.loading')}
-        </Text>
-      ) : null}
-      {blocked ? (
-        <Text variant="bodySmall" color={colors.warning}>
-          {blocked}
-        </Text>
-      ) : null}
-      {preview && step === 'means' ? <JoinMeansStep preview={preview} host={host} collective={name} /> : null}
-      {preview && step === 'services' ? <JoinServicesStep preview={preview} draft={draft} onChange={setDraft} host={host} collective={name} /> : null}
-      {preview && step === 'forms' ? <JoinFormsStep preview={preview} draft={draft} onChange={setDraft} host={host} /> : null}
-      {preview && step === 'check' ? (
+      {joined ? (
         <View style={styles.section}>
-          <Text variant="bodyMedium">{setupCopy('join.step.check')}</Text>
-          <JoinSummaryList preview={preview} draft={draft} host={host} collective={name} />
-          <ChoiceRow
-            kind="checkbox"
-            selected={agreed}
-            title={setupCopy('join.consent', { venue: venueName, collective: name, host })}
-            onPress={() => setAgreed((v) => !v)}
-          />
+          <Text variant="bodySmall">
+            {setupCopy('join.next.intro', { collective: joined.preview.collective_name, host: joined.preview.host_name })}
+          </Text>
+          <JoinNextSteps preview={joined.preview} draft={joined.draft} />
         </View>
-      ) : null}
+      ) : (
+        <>
+          {!preview && !loadError ? (
+            <Text variant="bodySmall" tone="muted">
+              {setupCopy('join.loading')}
+            </Text>
+          ) : null}
+          {blocked ? (
+            <Text variant="bodySmall" color={colors.warning}>
+              {blocked}
+            </Text>
+          ) : null}
+          {preview && step === 'means' ? <JoinMeansStep preview={preview} host={host} collective={name} /> : null}
+          {preview && step === 'services' ? <JoinServicesStep preview={preview} draft={draft} onChange={setDraft} host={host} collective={name} /> : null}
+          {preview && step === 'forms' ? <JoinFormsStep preview={preview} draft={draft} onChange={setDraft} host={host} /> : null}
+          {preview && step === 'check' ? (
+            <View style={styles.section}>
+              <Text variant="bodyMedium">{setupCopy('join.step.check')}</Text>
+              <JoinSummaryList preview={preview} draft={draft} host={host} collective={name} />
+              <JoinFormsSwitch preview={preview} draft={draft} onChange={setDraft} />
+              <ChoiceRow
+                kind="checkbox"
+                selected={agreed}
+                title={setupCopy('join.consent', { venue: venueName, collective: name, host })}
+                onPress={() => setAgreed((v) => !v)}
+              />
+            </View>
+          ) : null}
+        </>
+      )}
     </StepShell>
   );
 }

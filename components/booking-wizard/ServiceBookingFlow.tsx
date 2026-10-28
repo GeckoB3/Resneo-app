@@ -40,6 +40,7 @@ import {
   segmentProcessing,
 } from '@/lib/booking/multi-service-chain';
 import { chainSpanMinutes, type ServiceChainSegmentParam } from '@/lib/booking/service-chain';
+import { NO_STAFF_CALENDAR_NOTICE, staffCalendarNotice } from '@/lib/booking/staff-calendar-notice';
 import {
   APPOINTMENT_WIZARD_PHASES,
   appointmentWizardPhase,
@@ -296,6 +297,24 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
       wanted.every((id) => p.services.some((s) => s.id === id)),
     );
   }, [selectedService, chainExtras, bookableCatalog]);
+
+  /**
+   * A collective booking on a calendar guests cannot book (web `staffCalendarNotice`, 2026-10-28):
+   * the notes staff are told for the chosen calendar and service(s), and whether its venue can take
+   * card payments at all. The confirm step shows the notes and, without cards, offers no deposit
+   * or card hold.
+   */
+  const calendarNotice = useMemo(() => {
+    if (!selectedService || !selectedSlot) return NO_STAFF_CALENDAR_NOTICE;
+    const segments = multiServiceSegments && multiServiceSegments.length > 1 ? multiServiceSegments : null;
+    const calendarId =
+      segments?.[0]?.practitionerId ??
+      (selectedService.practitionerId === ANY_AVAILABLE_PRACTITIONER_ID
+        ? selectedSlot.practitioner_id
+        : selectedService.practitionerId);
+    const serviceIds = segments ? segments.map((s) => s.serviceId) : [selectedService.serviceId];
+    return staffCalendarNotice(catalogQuery.data, calendarId, serviceIds);
+  }, [selectedService, selectedSlot, multiServiceSegments, catalogQuery.data]);
 
   // Booking-window settings for the selected service (min notice / same-day).
   // The staff availability endpoint returns past + inside-notice slots, so the
@@ -1495,6 +1514,8 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           variant={selectedVariant}
           requireDeposit={requireDeposit}
           onChangeRequireDeposit={setRequireDeposit}
+          staffNotes={calendarNotice.notes}
+          noCardPayments={calendarNotice.noCards}
           returningGuest={returningGuest}
           phoneDefaultCountry={phoneDefaultCountry}
           venueId={venueId}

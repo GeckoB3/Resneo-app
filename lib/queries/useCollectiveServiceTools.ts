@@ -15,6 +15,8 @@
  *                            POST /api/venue/collectives/review  { collective_id }
  *   A host service, as the   PATCH /api/venue/appointment-services  (calendars, the meeting link
  *   member reads it          and "Before the appointment" only)
+ *   A calendar's own values  PUT  /api/venue/collectives/[id]/calendar-values
+ *   (the host, any venue)         { calendar_id, service_id, values }  (web 2026-10-28)
  *
  * "Add from another venue" never sends a service's fields: the server copies the member's service
  * exactly as it is, so the body is two ids and nothing else.
@@ -25,6 +27,7 @@ import { ApiError, apiFetch, isApiErrorBody } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
 import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
+import type { CalendarValues } from '@/lib/services/calendar-values';
 
 /** One of a member's own services the host can copy onto the page (web `OwnService`). */
 export interface OwnService {
@@ -271,6 +274,43 @@ export function useSaveMemberServiceSettings() {
           : '/api/venue/appointment-services',
         { accessToken, method: 'PATCH', body: JSON.stringify(body) },
       );
+    },
+    onSuccess: invalidate,
+  });
+}
+
+/** One calendar's own values, set by the host on any venue's calendar (web contract 12). */
+export interface CollectiveCalendarValuesBody {
+  calendar_id: string;
+  /** The service at the calendar's venue: the host's own, or that venue's copy. */
+  service_id: string;
+  /** Only the fields that changed; null puts one back to the standard. */
+  values: Partial<CalendarValues>;
+}
+
+export interface CollectiveCalendarValuesResult {
+  /** The "staff may customise" settings the save turned on for the service, at every venue. */
+  flags_turned_on?: string[];
+}
+
+/** PUT a calendar's own price, length, buffer or deposit through the collective. */
+export function useSaveCollectiveCalendarValues() {
+  const accessToken = useAccessToken();
+  const invalidate = useInvalidateServicesAndCollectives();
+  return useMutation({
+    mutationFn: async ({
+      collectiveId,
+      body,
+    }: {
+      collectiveId: string;
+      body: CollectiveCalendarValuesBody;
+    }): Promise<CollectiveCalendarValuesResult> => {
+      if (!accessToken) throw new Error('Missing access token');
+      return apiFetch<CollectiveCalendarValuesResult>(`/api/venue/collectives/${collectiveId}/calendar-values`, {
+        accessToken,
+        method: 'PUT',
+        body: JSON.stringify(body),
+      });
     },
     onSuccess: invalidate,
   });

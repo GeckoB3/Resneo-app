@@ -670,7 +670,7 @@ function MemberServicesChooser({
           const joins = joinsHost
             ? setupCopy('finish.services.joins', { service: joinsHost })
             : !s.on_page && s.joins
-              ? areaCopy('vs.joins', { name: s.joins.name })
+              ? areaCopy(s.joins.off_page ? 'vs.joinsYours' : 'vs.joins', { name: s.joins.name })
               : null;
           return (
             <ChoiceRow

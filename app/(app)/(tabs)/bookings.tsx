@@ -81,6 +81,8 @@ import { LinkedBookingListRow } from '@/components/linked/LinkedBookingListRow';
 import { linkedBookingUsesExpandedDetail } from '@/lib/linked/linked-calendar-view';
 import type { LinkedBookingContext } from '@/lib/linked/linked-detail-policy';
 import { pingLinkedBookingView, useLinkedCalendar } from '@/lib/queries/useLinkedCalendar';
+import { useStaffCollective } from '@/lib/queries/useStaffCollective';
+import { collectiveBookingParams, collectiveBookingTargetFor } from '@/lib/linked/collective-booking-target';
 import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
 import type { LinkedBooking, LinkedVenueCalendar } from '@/types/linked-venues';
 
@@ -510,6 +512,14 @@ export default function BookingsScreen() {
     [ownerVenueId, linkedVenues],
   );
   const canCreateBooking = !activeLinkedVenue || activeLinkedVenue.action === 'create_edit_cancel';
+  // In a live collective, New and Walk-in open the form over the whole collective, as the Calendar
+  // tab's toolbar does (found 2026-10-28: this tab booked only the venue's own calendars).
+  const staffCollectiveQuery = useStaffCollective({ enabled: linkedVenues.length > 0 });
+  const staffCollective = linkedVenues.length > 0 ? (staffCollectiveQuery.data?.collective ?? null) : null;
+  const collectiveTarget = useMemo(
+    () => collectiveBookingTargetFor(staffCollective, activeLinkedVenue?.venueId ?? venueId),
+    [staffCollective, activeLinkedVenue?.venueId, venueId],
+  );
   const openAddMenu = useCallback(() => setAddMenuOpen(true), []);
   const closeAddMenu = useCallback(() => setAddMenuOpen(false), []);
   // Open the full booking form. `intent: 'walk-in'` starts the appointment flow
@@ -519,14 +529,16 @@ export default function BookingsScreen() {
     (intent?: 'walk-in') => {
       closeAddMenu();
       const params: Record<string, string> = {};
-      if (activeLinkedVenue) {
+      if (collectiveTarget) {
+        Object.assign(params, collectiveBookingParams(collectiveTarget));
+      } else if (activeLinkedVenue) {
         params.ownerVenueId = activeLinkedVenue.venueId;
         params.ownerVenueName = activeLinkedVenue.venueName;
       }
       if (intent) params.intent = intent;
       router.push({ pathname: '/booking/new', params });
     },
-    [router, activeLinkedVenue, closeAddMenu],
+    [router, activeLinkedVenue, collectiveTarget, closeAddMenu],
   );
 
   const selectAllVenues = useCallback(() => {

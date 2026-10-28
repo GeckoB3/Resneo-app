@@ -104,6 +104,20 @@ export interface AreaService {
   id: string;
   name: string;
   collective?: ServiceCollectiveBlock | null;
+  /**
+   * The service's standard values and which of them a calendar may set, for a calendar's own values
+   * from the grid (web 2026-10-28). The Services GET row carries them; absent elsewhere.
+   */
+  duration_minutes?: number | null;
+  buffer_minutes?: number | null;
+  price_pence?: number | null;
+  deposit_pence?: number | null;
+  payment_requirement?: string | null;
+  staff_may_customize_duration?: boolean | null;
+  staff_may_customize_buffer?: boolean | null;
+  staff_may_customize_price?: boolean | null;
+  staff_may_customize_deposit?: boolean | null;
+  variants?: { id: string; is_active?: boolean | null }[] | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -466,12 +480,22 @@ export function buildCollectiveTodos(input: {
         });
       }
     }
-    todos.push(...hiddenReasonTodos(onPage, false, false, null));
+    // Only services that venue's calendars offer count: one it does not offer is hidden from nobody
+    // there (web `hostTodos`, 2026-10-28).
+    const offeredAt = (service: AreaService, venueId: string): boolean => {
+      const group = groups.find((g) => g.venue_id === venueId);
+      if (!group) return true;
+      const itemId = service.collective?.item_id;
+      return group.calendars.some((c) => c.assigned.some((a) => a.item_id === itemId));
+    };
+    todos.push(...hiddenReasonTodos(onPage, false, false, null, offeredAt));
   } else {
-    // A copy no calendar of this venue offers cannot be booked here (web `memberTodos`).
+    // A copy no calendar of this venue offers cannot be booked here (web `memberTodos`), unless
+    // another venue's calendar offers it, when guests can book it there.
     const count = input.ownCalendarCount;
     if (count) {
       for (const service of onPage) {
+        if (service.collective?.offered_elsewhere) continue;
         if (count(service.id) === 0) {
           todos.push({
             id: `no-calendars-${service.id}`,
@@ -481,7 +505,9 @@ export function buildCollectiveTodos(input: {
         }
       }
     }
-    todos.push(...hiddenReasonTodos(onPage, true, true, input.ownVenueId ?? null));
+    todos.push(
+      ...hiddenReasonTodos(onPage, true, true, input.ownVenueId ?? null, count ? (service) => count(service.id) > 0 : undefined),
+    );
   }
   return todos.slice(0, input.limit ?? 5);
 }
@@ -491,12 +517,15 @@ function hiddenReasonTodos(
   withActions: boolean,
   self: boolean,
   onlyVenueId: string | null,
+  /** Whether that venue's calendars offer the service; a service it does not offer is left out. */
+  offeredAt?: (service: AreaService, venueId: string) => boolean,
 ): CollectiveTodo[] {
   const payments = new Map<string, { name: string; count: number }>();
   const forms = new Map<string, { name: string; count: number }>();
   for (const service of services) {
     for (const reason of service.collective?.hidden_reasons ?? []) {
       if (onlyVenueId && reason.venue_id !== onlyVenueId) continue;
+      if (offeredAt && !offeredAt(service, reason.venue_id)) continue;
       const bucket = reason.reason === 'payments' ? payments : reason.reason === 'forms' ? forms : null;
       if (!bucket) continue;
       const seen = bucket.get(reason.venue_id);

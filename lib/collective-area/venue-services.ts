@@ -32,8 +32,8 @@ export interface VenueServiceRow {
   item_id: string | null;
   /** The page service's name, when the service follows one ("Gents Cut" for "gents cut"). */
   page_name: string | null;
-  /** Off the page: the page service of the same name it would join. */
-  joins: { item_id: string; name: string } | null;
+  /** The service of the same name it would join: a page service, or (off_page) the host's own (web 2026-10-28). */
+  joins: { item_id: string | null; name: string; off_page?: boolean } | null;
   /** How many of its own venue's calendars offer it. */
   calendars: number;
   /** A member's suggestion still waiting for the host. */
@@ -190,7 +190,8 @@ export function onPageAsLine(service: VenueServiceRow): string | null {
 
 /** "Joins Gents Cut on the page", for a service off the page that matches a page service by name. */
 export function joinsLine(service: VenueServiceRow): string | null {
-  return !service.on_page && service.joins ? areaCopy('vs.joins', { name: service.joins.name }) : null;
+  if (service.on_page || !service.joins) return null;
+  return areaCopy(service.joins.off_page ? 'vs.joinsYours' : 'vs.joins', { name: service.joins.name });
 }
 
 // ---------------------------------------------------------------------------

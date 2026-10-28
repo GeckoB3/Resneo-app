@@ -3,6 +3,7 @@ import { StyleSheet, Switch, View } from 'react-native';
 
 import { SyncBadge } from '@/components/collective-area/AreaPieces';
 import { StepShell } from '@/components/linked/setup/StepShell';
+import { CalendarValuesFields, useCalendarValuesEditor } from '@/components/services/collective/CalendarValuesStep';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -11,9 +12,11 @@ import { ApiError, isApiErrorBody, isRequiresConfirmationBody } from '@/lib/api/
 import { areaCopy } from '@/lib/collective-area/copy';
 import { isVenueWideRequirement, useComplianceRequirements } from '@/lib/queries/useComplianceRequirements';
 import { useSaveMemberServiceSettings, type MemberServiceSettingsBody } from '@/lib/queries/useCollectiveServiceTools';
+import { calendarValueDefaults, calendarValueFlags, ownCalendarValuesTarget } from '@/lib/services/calendar-values';
+import { staffMayCustomizeFlags } from '@/lib/services/service-override';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
-import type { ManagedService, ServiceCollectiveBlock } from '@/types/services-manage';
+import type { ManagedService, PractitionerServiceLink, ServiceCollectiveBlock } from '@/types/services-manage';
 
 /**
  * A service from the host, as its member reads it (web `MemberServiceView`; UX spec §2 item 3, W6).
@@ -44,6 +47,12 @@ export interface MemberServiceSheetProps {
   currencySymbol: string;
   /** The venue's forms feature: the "Forms" fact reads the service's own requirements. */
   complianceEnabled: boolean;
+  /**
+   * An admin may set each calendar's own price and times where the host lets calendars have them
+   * (web `MemberServiceView` Edit values, 2026-10-28). Its own calendars' rows for this service.
+   */
+  canEditValues?: boolean;
+  links?: PractitionerServiceLink[];
   onClose: () => void;
   onSaved: () => void;
 }
@@ -69,11 +78,17 @@ export function MemberServiceSheet({
   expectedCalendarIds,
   currencySymbol,
   complianceEnabled,
+  canEditValues = false,
+  links = [],
   onClose,
   onSaved,
 }: MemberServiceSheetProps) {
   const { colors } = useTheme();
   const save = useSaveMemberServiceSettings();
+  /** One calendar's own values, edited as a step of this sheet, never a second sheet over it. */
+  const [valuesCalendarId, setValuesCalendarId] = useState<string | null>(null);
+  const flags = staffMayCustomizeFlags(service);
+  const valuesAllowed = canEditValues && (flags.price || flags.duration || flags.buffer || flags.deposit);
   const saving = save.isPending;
   const savedInstructions = (service as WithInstructions).pre_appointment_instructions ?? '';
 
@@ -156,6 +171,21 @@ export function MemberServiceSheet({
     .join(', ');
   const addOns = (service.addon_groups ?? []).map((g) => g.group.name).join(', ');
 
+  const valuesCalendar = valuesCalendarId ? calendars.find((c) => c.id === valuesCalendarId) ?? null : null;
+  if (valuesCalendar) {
+    return (
+      <CalendarValuesStep
+        service={service}
+        calendarId={valuesCalendar.id}
+        calendarName={valuesCalendar.name}
+        link={links.find((l) => l.practitioner_id === valuesCalendar.id && l.service_id === service.id) ?? null}
+        currencySymbol={currencySymbol}
+        onBack={() => setValuesCalendarId(null)}
+        onClose={onClose}
+      />
+    );
+  }
+
   return (
     <StepShell
       visible
@@ -235,6 +265,16 @@ export function MemberServiceSheet({
                 <Text variant="bodySmall" numberOfLines={1} style={styles.flex1}>
                   {calendar.name}
                 </Text>
+                {calendar.offers && valuesAllowed && !retired ? (
+                  <Button
+                    label={areaCopy('svc.cal.editValues')}
+                    variant="ghost"
+                    size="sm"
+                    disabled={saving}
+                    accessibilityLabel={areaCopy('svc.member.view.editValuesFor', { calendar: calendar.name })}
+                    onPress={() => setValuesCalendarId(calendar.id)}
+                  />
+                ) : null}
                 <Switch
                   value={chosen.includes(calendar.id)}
                   disabled={retired || saving}
@@ -302,6 +342,69 @@ export function MemberServiceSheet({
         <Row label="Add-ons" value={addOns || 'No add-ons'} />
         <Row label="Staff bookings only" value={retired ? 'Not bookable' : undefined} />
       </View>
+    </StepShell>
+  );
+}
+
+/**
+ * One calendar's own price, length, buffer and deposit for a page service (web
+ * `CollectiveCalendarValuesDialog`, mode own): only the fields the host lets calendars set, saved
+ * through the venue's own per-calendar route. The shared step's fields, in this sheet's frame.
+ */
+function CalendarValuesStep({
+  service,
+  calendarId,
+  calendarName,
+  link,
+  currencySymbol,
+  onBack,
+  onClose,
+}: {
+  service: ManagedService;
+  calendarId: string;
+  calendarName: string;
+  link: PractitionerServiceLink | null;
+  currencySymbol: string;
+  onBack: () => void;
+  onClose: () => void;
+}) {
+  const target = useMemo(
+    () => ownCalendarValuesTarget({ id: calendarId, name: calendarName }, service.id, link),
+    [calendarId, calendarName, service.id, link],
+  );
+  const editor = useCalendarValuesEditor({
+    mode: 'own',
+    collectiveId: null,
+    serviceName: service.name,
+    target,
+    flags: calendarValueFlags(service),
+    defaults: calendarValueDefaults(service),
+    currencySymbol,
+    hasOptions: (service.variants ?? []).some((v) => (v as { is_active?: boolean }).is_active !== false),
+    onSaved: onBack,
+    onUnchanged: onBack,
+  });
+
+  return (
+    <StepShell
+      visible
+      onClose={() => {
+        if (!editor.saving) onClose();
+      }}
+      title={areaCopy('values.title', { service: service.name, calendar: calendarName })}
+      error={editor.error}
+      footer={
+        <>
+          <Button label="Back" variant="ghost" disabled={editor.saving} onPress={onBack} />
+          <Button
+            label={areaCopy('values.save')}
+            loading={editor.saving}
+            disabled={editor.saving || editor.shown.length === 0}
+            onPress={editor.submit}
+          />
+        </>
+      }>
+      <CalendarValuesFields editor={editor} />
     </StepShell>
   );
 }

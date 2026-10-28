@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { findJustCreatedBooking } from '@/lib/booking/find-just-created-booking';
 import { formatPhoneForDisplay } from '@/lib/phone/e164';
@@ -72,6 +72,13 @@ type ConfirmStepProps = {
   /** Staff "Require deposit" toggle state (only shown when the service has a deposit). */
   requireDeposit?: boolean;
   onChangeRequireDeposit?: (value: boolean) => void;
+  /**
+   * A collective calendar guests cannot book (web `staffCalendarNotice`, 2026-10-28): what staff
+   * are told about it ("Card payments are not set up at Light 3, so take payment in person").
+   */
+  staffNotes?: string[];
+  /** That calendar's venue cannot take card payments: no deposit or card hold is offered or sent. */
+  noCardPayments?: boolean;
   /** True when an existing/known contact was picked — sends `returning_guest`. */
   returningGuest?: boolean;
   /** Default dialling country for phone normalisation (matches the web). */
@@ -288,8 +295,10 @@ export function ConfirmStep({
   ownerVenueId,
   onSuccess,
   onBookAnother,
-  requireDeposit = false,
+  requireDeposit: requireDepositProp = false,
   onChangeRequireDeposit,
+  staffNotes = [],
+  noCardPayments = false,
   returningGuest = false,
   phoneDefaultCountry = 'GB',
   venueId,
@@ -369,7 +378,10 @@ export function ConfirmStep({
             ? ('full_payment' as const)
             : ('deposit' as const),
       };
-  const hasDeposit = visitCharge.amountPence > 0;
+  // A collective calendar whose venue cannot take cards: nothing is asked for online, since the
+  // booking route refuses a charge there. Staff take payment in person, as its note says.
+  const hasDeposit = visitCharge.amountPence > 0 && !noCardPayments;
+  const requireDeposit = requireDepositProp && !noCardPayments;
   const chargeNoun = visitCharge.chargeLabel === 'full_payment' ? 'payment' : 'deposit';
   const depositLabel = hasDeposit ? formatMoney(visitCharge.amountPence) : null;
 
@@ -385,7 +397,7 @@ export function ConfirmStep({
   const chainCardHoldPence = isMultiService
     ? resolveVisitCardHoldTotal(multiServiceSegments!)
     : 0;
-  const staffCardHold = isMultiService
+  const entityCardHold = isMultiService
     ? chainCardHoldPence > 0
       ? { feePence: chainCardHoldPence }
       : null
@@ -393,7 +405,16 @@ export function ConfirmStep({
         paymentRequirement: service.paymentRequirement,
         feePerUnitPence: baseDeposit,
       });
+  // No card hold where the venue cannot take cards; the create still says "no hold" outright.
+  const staffCardHold = noCardPayments ? null : entityCardHold;
   const [requireCardHold, setRequireCardHold] = useState(false);
+  const cardHoldDecision = entityCardHold ? Boolean(staffCardHold) && requireCardHold : null;
+
+  // A deposit ticked for a calendar that can take one is turned off here (web resets it), so going
+  // back to that calendar does not quietly ask for it again.
+  useEffect(() => {
+    if (noCardPayments && requireDepositProp) onChangeRequireDeposit?.(false);
+  }, [noCardPayments, requireDepositProp, onChangeRequireDeposit]);
 
   // The web folds the appointment's free-text comment into `dietary_notes`
   // (DetailsStep maps "Comments or requests" → dietary_notes). Mirror that: the
@@ -435,7 +456,7 @@ export function ConfirmStep({
     // (walk-ins included). Independent spreads rather than an either/or: a
     // single service only ever resolves to one of the two, but writing it as a
     // choice hid the second one from every caller that can carry both.
-    ...(staffCardHold ? { require_card_hold: requireCardHold } : {}),
+    ...(cardHoldDecision !== null ? { require_card_hold: cardHoldDecision } : {}),
     ...(hasDeposit && requireDeposit && source !== 'walk-in' ? { require_deposit: true } : {}),
     // Existing-contact / rebook → flag as a returning guest (web parity; metrics only).
     ...(returningGuest ? { returning_guest: true } : {}),
@@ -466,7 +487,7 @@ export function ConfirmStep({
       // no-op on every chain. The hold is sent explicitly for a card-hold
       // entity: since web #187 an omitted `require_card_hold` means NO hold,
       // and the toggle defaults off to match.
-      charges: { requireDeposit, ...(staffCardHold ? { requireCardHold } : {}) },
+      charges: { requireDeposit, ...(cardHoldDecision !== null ? { requireCardHold: cardHoldDecision } : {}) },
       overrideAvailability,
       address: collectClientAddress
         ? {
@@ -769,6 +790,17 @@ export function ConfirmStep({
         ) : null}
       </Card>
 
+      {/* A collective calendar guests cannot book: what staff need to know about it. */}
+      {staffNotes.length > 0 ? (
+        <View style={[styles.staffNotes, { backgroundColor: colors.warningSurface, borderColor: colors.warning }]}>
+          {staffNotes.map((note) => (
+            <Text key={note} variant="bodySmall" color={colors.warning}>
+              {note}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+
       {staffCardHold ? (
         <StaffCardHoldToggle
           checked={requireCardHold}
@@ -890,5 +922,11 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: spacing.md,
     gap: spacing.md,
+  },
+  staffNotes: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 8,
+    padding: spacing.md,
+    gap: spacing.xs,
   },
 });

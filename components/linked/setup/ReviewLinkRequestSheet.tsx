@@ -4,14 +4,15 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { GrantBullets } from '@/components/linked/GrantBullets';
 import { GrantPairEditor } from '@/components/linked/GrantPairEditor';
 import { ChoiceRow } from '@/components/linked/setup/ChoiceRow';
-import { JoinFormsStep, JoinMeansStep, JoinServicesStep, JoinSummaryList } from '@/components/linked/setup/JoinSteps';
+import { JoinNextSteps } from '@/components/linked/setup/JoinNextSteps';
+import { JoinFormsStep, JoinFormsSwitch, JoinMeansStep, JoinServicesStep, JoinSummaryList } from '@/components/linked/setup/JoinSteps';
 import { StepShell } from '@/components/linked/setup/StepShell';
 import { Button } from '@/components/ui/Button';
 import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { describeGrant, isLinkConfigurationValid, normaliseGrant } from '@/lib/linked/grants';
-import { defaultJoinDraft, joinChoicesFrom, joinStepsFor, type JoinDraft, type JoinStep } from '@/lib/linked/join-choices';
+import { defaultJoinDraft, EMPTY_JOIN_DRAFT, joinChoicesFrom, joinStepsFor, type JoinDraft, type JoinStep } from '@/lib/linked/join-choices';
 import { isFullAccessBothWays } from '@/lib/linked/link-levels';
 import { setupCopy } from '@/lib/linked/setup-copy';
 import { useJoinPreview } from '@/lib/queries/useCollectives';
@@ -19,6 +20,7 @@ import { useRespondLink } from '@/lib/queries/useLinkedVenues';
 import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
+import type { JoinPreview } from '@/types/collectives';
 import type { AccountLinkView, LinkGrant, ProposedCollectiveSummary } from '@/types/linked-venues';
 
 /**
@@ -65,11 +67,16 @@ export function ReviewLinkRequestSheet({
   const [editing, setEditing] = useState(false);
   const [mine, setMine] = useState<LinkGrant>({ calendar: 'none', pii: false, act: 'none' });
   const [theirs, setTheirs] = useState<LinkGrant>({ calendar: 'none', pii: false, act: 'none' });
-  const [draft, setDraft] = useState<JoinDraft>({ sameName: {}, optionMap: {}, own: {}, forms: {} });
+  const [draft, setDraft] = useState<JoinDraft>(EMPTY_JOIN_DRAFT);
   const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmDecline, setConfirmDecline] = useState(false);
   const [done, setDone] = useState<ReviewOutcome | null>(null);
+  /**
+   * The preview and choices the join was sent with, for the receipt's next steps (web 2026-10-28):
+   * the preview is read again once the venue is in, so the receipt keeps what it joined with.
+   */
+  const [joinedWith, setJoinedWith] = useState<{ preview: JoinPreview; draft: JoinDraft } | null>(null);
   const [pending, setPending] = useState<'accept' | 'decline' | null>(null);
 
   const proposesJoin = Boolean(collective && collective.serviceModel === 'replicas');
@@ -94,6 +101,7 @@ export function ReviewLinkRequestSheet({
     setAgreed(false);
     setError(null);
     setDone(null);
+    setJoinedWith(null);
     setPending(null);
   }, [visible, link]);
 
@@ -143,6 +151,7 @@ export function ReviewLinkRequestSheet({
               : setupCopy('respond.done.linked', { venue: other }),
           );
           setDone(outcome);
+          if (outcome.joined && preview) setJoinedWith({ preview, draft });
           setStep('done');
           onDone?.(outcome);
         },
@@ -305,6 +314,7 @@ export function ReviewLinkRequestSheet({
             {joinable && preview ? (
               <>
                 <JoinSummaryList preview={preview} draft={draft} host={host} collective={collectiveName} />
+                <JoinFormsSwitch preview={preview} draft={draft} onChange={setDraft} />
                 <ChoiceRow
                   kind="checkbox"
                   selected={agreed}
@@ -351,6 +361,8 @@ export function ReviewLinkRequestSheet({
                 </Text>
               </View>
             ))}
+            {/* Joined: Stripe or forms, when guests cannot book every page service here without them. */}
+            {done.joined && joinedWith ? <JoinNextSteps preview={joinedWith.preview} draft={joinedWith.draft} /> : null}
           </View>
         ) : null}
       </StepShell>

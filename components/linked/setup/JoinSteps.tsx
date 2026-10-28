@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { ChoiceRow } from '@/components/linked/setup/ChoiceRow';
 import { Chip } from '@/components/ui/Chip';
 import { Text } from '@/components/ui/Text';
-import { allOwnAsked, joinSummaryCounts, withAllOwn, type JoinDraft } from '@/lib/linked/join-choices';
+import { allOwnAsked, joinOffersFormsSwitch, joinSummaryCounts, withAllOwn, type JoinDraft } from '@/lib/linked/join-choices';
 import { setupCopy } from '@/lib/linked/setup-copy';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -221,6 +221,29 @@ export function JoinSummaryList({
         </Text>
       ))}
     </View>
+  );
+}
+
+/** The tick on the last step that turns the venue's forms on as it joins (web `JoinFormsSwitch`). */
+export function JoinFormsSwitch({
+  preview,
+  draft,
+  onChange,
+}: {
+  preview: JoinPreview;
+  draft: JoinDraft;
+  onChange: (next: JoinDraft) => void;
+}) {
+  if (!joinOffersFormsSwitch(preview)) return null;
+  const count = preview.warnings.form_services;
+  return (
+    <ChoiceRow
+      kind="checkbox"
+      selected={draft.turnOnForms}
+      title={setupCopy('join.formsSwitch.label')}
+      summary={setupCopy(count === 1 ? 'join.formsSwitch.helpOne' : 'join.formsSwitch.help', { count })}
+      onPress={() => onChange({ ...draft, turnOnForms: !draft.turnOnForms })}
+    />
   );
 }
 

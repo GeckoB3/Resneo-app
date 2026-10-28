@@ -207,7 +207,7 @@ describe("Every venue's services", () => {
     expect(screen.getByText('Put 2 services on the Northside page?')).toBeTruthy();
     expect(
       screen.getByText(
-        'These match a service already on the page, so they join it and guests see one: Balayage (Zen Studio). They follow the page service from then on.',
+        "These have the same name as one of your services, so they join it and guests see one: Balayage (Zen Studio). They follow your service's price and times from then on, and yours goes on the page if it is not there yet.",
       ),
     ).toBeTruthy();
     await tick('Add them as separate services instead');

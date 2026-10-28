@@ -378,6 +378,8 @@ export interface JoinChoices {
   }[];
   own_service_choices: { service_id: string; choice: 'ask' | 'park' }[];
   form_choices: { host_type_id: string; choice: 'use_existing' | 'use_theirs'; my_type_id?: string }[];
+  /** Turn the venue's forms on once it has joined (web 2026-10-28; older servers ignore it). */
+  turn_on_forms?: boolean;
 }
 
 /** GET /api/venue/collectives/[id]/same-names (host): members holding a same-named service, by host service id. */

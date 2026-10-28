@@ -227,6 +227,63 @@ describe('MemberServiceSheet', () => {
     });
   });
 
+  it("lets an admin set a calendar's own price where the host allows it, as a step of the sheet", async () => {
+    await renderSheet(
+      <MemberServiceSheet
+        service={service({ staff_may_customize_price: true } as Partial<ManagedService>)}
+        block={block()}
+        calendars={calendars}
+        expectedCalendarIds={['cal-a']}
+        currencySymbol="£"
+        complianceEnabled={false}
+        canEditValues
+        links={[{ practitioner_id: 'cal-a', service_id: 's1', custom_price_pence: 8000 }]}
+        onClose={jest.fn()}
+        onSaved={jest.fn()}
+      />,
+    );
+    // Only the calendar that offers it, and only for an admin.
+    expect(screen.getAllByLabelText(/^Edit values for/)).toHaveLength(1);
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Edit values for Amy'));
+    });
+    expect(screen.getByText('Balayage on Amy')).toBeTruthy();
+    // Only the field the host lets calendars set, seeded with the calendar's own value.
+    expect(screen.queryByLabelText('Length (minutes)')).toBeNull();
+    const price = screen.getByLabelText('Price');
+    expect(price.props.value).toBe('80.00');
+    await act(async () => {
+      fireEvent.changeText(price, '');
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+    });
+    expect(mockCalls).toContainEqual({
+      path: '/api/venue/practitioner-service-overrides',
+      method: 'PATCH',
+      body: { service_id: 's1', calendar_id: 'cal-a', custom_price_pence: null },
+    });
+    // Back on the service once saved.
+    expect(screen.getByText('Your settings')).toBeTruthy();
+  });
+
+  it('offers no Edit values when the host lets calendars set nothing, or to staff', async () => {
+    await renderSheet(
+      <MemberServiceSheet
+        service={service()}
+        block={block()}
+        calendars={calendars}
+        expectedCalendarIds={['cal-a']}
+        currencySymbol="£"
+        complianceEnabled={false}
+        canEditValues
+        onClose={jest.fn()}
+        onSaved={jest.fn()}
+      />,
+    );
+    expect(screen.queryByLabelText(/^Edit values for/)).toBeNull();
+  });
+
   it('says a retired copy takes no new bookings, and its calendars cannot be ticked', async () => {
     await renderSheet(
       <MemberServiceSheet

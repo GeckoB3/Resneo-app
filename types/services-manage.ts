@@ -145,6 +145,8 @@ export interface ServiceCollectiveBlock {
   status_reason: string | null;
   last_applied_at: string | null;
   hidden_reasons: { venue_id: string; venue_name: string; reason: CollectiveHiddenReasonKind }[];
+  /** Member copies: another venue's calendar offers it, so guests can book it (web 2026-10-28). */
+  offered_elsewhere?: boolean;
 }
 
 /**
@@ -214,6 +216,12 @@ export interface UpdateServiceInput {
   allow_same_day_booking?: boolean;
   /** Calendars offering this service — replace semantics on the API. */
   practitioner_ids?: string[];
+  /**
+   * The host's calendar choices at every venue for a service on its collective page, as a diff
+   * (web contract 4, 2026-10-28). Sent only when something was ticked or unticked.
+   * @see lib/services/collective-calendars.ts
+   */
+  collective_calendars?: import('@/lib/services/collective-calendars').CollectiveCalendarsDiff;
   /** Admin-only: delegate per-field overrides to non-admin staff. */
   staff_may_customize_name?: boolean;
   staff_may_customize_description?: boolean;

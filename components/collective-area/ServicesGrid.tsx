@@ -4,7 +4,8 @@
  *
  * A phone cannot show services down and venues across, so each service is a card with one line
  * per venue (how many of its calendars offer it, hidden, staged changes). Tapping a card opens the
- * service at every venue, with a switch per calendar. "Select" turns the cards into a checklist for
+ * service at every venue, with a switch per calendar, and "Edit values" for a calendar's own price
+ * and times on one that offers it (saved there and then). "Select" turns the cards into a checklist for
  * the bulk lane, which applies one action across the chosen services and venues. Everything stages
  * rather than saves, so the ask can say what will change, and a change the engine refuses stays
  * staged so Save sends only those again.
@@ -16,6 +17,7 @@ import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 
 import { SyncBadge } from '@/components/collective-area/AreaPieces';
+import { CalendarValuesStep } from '@/components/services/collective/CalendarValuesStep';
 import { Badge, type BadgeTone } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -51,6 +53,12 @@ import {
   type StagedOp,
 } from '@/lib/collective-area/model';
 import { useCollectiveBulkPreview, useCollectiveBulkSave } from '@/lib/queries/useCollectiveArea';
+import {
+  calendarValueDefaults,
+  calendarValueFlags,
+  calendarValuesTarget,
+  type CalendarValuesTarget,
+} from '@/lib/services/calendar-values';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
@@ -381,14 +389,42 @@ export function ServicesGridBar({ grid }: { grid: ServicesGridState }) {
 
 function ServiceSheet({ grid, currencySymbol }: { grid: ServicesGridState; currencySymbol: string }) {
   const { colors } = useTheme();
+  /**
+   * One calendar's own price and times (web grid cell's Edit values, 2026-10-28): a step of this
+   * sheet, never a second sheet over it ([[ios-no-stacked-modals]]). Saved at once, not staged.
+   */
+  const [valuesTarget, setValuesTarget] = useState<CalendarValuesTarget | null>(null);
   const service = grid.services.find((s) => s.id === grid.openServiceId) ?? null;
-  const close = () => grid.setOpenServiceId(null);
+  const close = () => {
+    setValuesTarget(null);
+    grid.setOpenServiceId(null);
+  };
   if (!service) return <Sheet visible={false} onClose={close}>{null}</Sheet>;
   const onPage = isOnPage(service);
   const itemId = service.collective?.item_id ?? null;
   const offerChange = grid.staged.find((s) => s.service_id === service.id && (s.op === 'offer' || s.op === 'withdraw'));
   const willBeOnPage = offerChange ? offerChange.op === 'offer' : onPage;
   const hiddenVenue = service.collective?.status === 'hidden' ? hiddenPillVenue(service.collective.hidden_reasons) : null;
+
+  if (valuesTarget) {
+    return (
+      <Sheet visible onClose={close} maxHeight="92%" fill>
+        <CalendarValuesStep
+          key={valuesTarget.calendarId}
+          mode="host"
+          collectiveId={grid.collectiveId}
+          serviceName={service.name}
+          target={valuesTarget}
+          flags={calendarValueFlags(service)}
+          defaults={calendarValueDefaults(service)}
+          currencySymbol={currencySymbol}
+          hasOptions={(service.variants ?? []).some((v) => v.is_active !== false)}
+          onSaved={() => setValuesTarget(null)}
+          onBack={() => setValuesTarget(null)}
+        />
+      </Sheet>
+    );
+  }
 
   return (
     <Sheet visible onClose={close} maxHeight="92%" fill>
@@ -466,6 +502,16 @@ function ServiceSheet({ grid, currencySymbol }: { grid: ServicesGridState; curre
                             </Text>
                           ) : null}
                         </View>
+                        {/* The host's grid: a value for a setting not yet on turns it on. */}
+                        {assignedNow && service.collective?.role === 'master' ? (
+                          <Button
+                            label={areaCopy('svc.cal.editValues')}
+                            variant="ghost"
+                            size="sm"
+                            accessibilityLabel={areaCopy('svc.member.view.editValuesFor', { calendar: calendar.name })}
+                            onPress={() => setValuesTarget(calendarValuesTarget(grid.groups, itemId, group.venue_id, calendar.id))}
+                          />
+                        ) : null}
                         <Switch
                           value={on}
                           accessibilityLabel={`${calendar.name} at ${group.venue_name}`}

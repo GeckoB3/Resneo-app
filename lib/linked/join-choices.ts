@@ -13,6 +13,27 @@ export interface JoinDraft {
   optionMap: Record<string, string | null>;
   own: Record<string, 'ask' | 'park'>;
   forms: Record<string, 'use_existing' | 'use_theirs'>;
+  /** Turn the venue's forms on as it joins (web 2026-10-28): only ever the venue's own tick. */
+  turnOnForms: boolean;
+}
+
+/** Forms are off here and services on the page need one: the venue may turn them on as it joins. */
+export function joinOffersFormsSwitch(preview: JoinPreview): boolean {
+  return preview.warnings.forms_off && preview.warnings.form_services > 0;
+}
+
+export const EMPTY_JOIN_DRAFT: JoinDraft = { sameName: {}, optionMap: {}, own: {}, forms: {}, turnOnForms: false };
+
+/**
+ * What still stands between guests and this venue once it has joined (web `joinNextSteps`,
+ * 2026-10-28): Stripe, when page services take a payment online and it has none; its forms, when
+ * they are off, the page needs them, and it did not tick to turn them on as it joined.
+ */
+export function joinNextSteps(preview: JoinPreview, draft: JoinDraft): { stripe: boolean; forms: boolean } {
+  return {
+    stripe: preview.warnings.no_stripe_paid_services > 0,
+    forms: joinOffersFormsSwitch(preview) && !draft.turnOnForms,
+  };
 }
 
 const norm = (name: string) => name.trim().toLowerCase();
@@ -34,6 +55,8 @@ export function defaultJoinDraft(preview: JoinPreview): JoinDraft {
     optionMap,
     own: Object.fromEntries(preview.own_services.map((s) => [s.id, 'ask' as const])),
     forms: Object.fromEntries(preview.forms.map((f) => [f.host_type_id, 'use_existing' as const])),
+    // Never ticked for the venue: switching forms on is its own decision (web plan RT2-6).
+    turnOnForms: false,
   };
 }
 
@@ -55,6 +78,7 @@ export function joinChoicesFrom(preview: JoinPreview, draft: JoinDraft): JoinCho
         ? { host_type_id: f.host_type_id, choice: 'use_existing' as const, my_type_id: f.my_type_id }
         : { host_type_id: f.host_type_id, choice: 'use_theirs' as const },
     ),
+    ...(draft.turnOnForms && joinOffersFormsSwitch(preview) ? { turn_on_forms: true } : {}),
   };
 }
 

@@ -15,6 +15,50 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ---
 
+## Unreleased OTA: collectives working across venues (2026-10-28)
+
+Ships with the curation OTA below, from the same web round (web uncommitted when written; see
+`Docs/collective-curation-plan.md` §6 and §7 in the web repo). Needs the web change live and the
+production database to have migration `20270414150000` as well as the three below (on staging since
+2026-10-28); older servers ignore `turn_on_forms` and send no `offered_elsewhere`, so the app
+behaves as before against them.
+
+- **Services screen, member**: "What needs you" no longer says a page service "cannot be booked"
+  when another venue's calendar offers it (`offered_elsewhere` on the collective block).
+- **Member's view of a page service**: **Edit values** beside each of its calendars that offers it,
+  for admins, where the host lets calendars set a price, length, buffer or deposit. A step of the
+  same sheet (no second sheet on iOS); saved through `practitioner-service-overrides` with the
+  calendar; a service with options says each option's own price wins.
+- **Join**: an unticked **Turn on forms for my venue when I join** on the last step when forms are off
+  and services on the page need one (`turn_on_forms`).
+- **Every venue's services**: "Joins your {name}, which goes on the page too" when the host's own
+  same-named service is off the page (web migration `20270414150000`).
+- Device-tested on the Android tablet against the local web server, 2026-10-28; iOS not tested.
+
+Second round, same day (device-tested on the Android tablet as the member Sept 20: the shared
+values step, the staff note on the review step, the Appointments tab's collective booking; the host's
+screens and the join steps need a host account and an invitation, so they are covered by tests only):
+
+- **Host's service form** (a service on the collective page): **Calendars that offer this service**,
+  at every venue, takes the place of "Offered by". Ticks are a diff sent with the save as
+  `collective_calendars`. **Edit values** beside each calendar that offers it, at any venue, is a
+  step of the form's sheet, saved through `PUT /api/venue/collectives/[id]/calendar-values`. A value
+  for a setting not yet on turns it on for the service (the step says so first), and the form keeps
+  that setting on so its own Save does not turn it back off.
+- **Services screen, an admin's own service**: **Edit values for {calendar}** under "Offered by" for
+  each calendar that offers it, where the service lets calendars set a value
+  (`practitioner-service-overrides` with `calendar_id`).
+- **Manage Collective**: a service's sheet has **Edit values** beside each calendar that offers it.
+- **Staff booking, confirm step**: a collective calendar's `staff_note`s. With `staff_exclusion`
+  `'payments'` no deposit or card hold is offered, a ticked deposit is turned off, and the create
+  says no hold outright.
+- **Join, and accepting a link with a collective**: with paid services and no Stripe, or forms off and
+  needed, the sheet ends on "You have joined {collective}" with **Connect Stripe** (the app's Stripe
+  onboarding) and **Turn on** (forms), then **Done**.
+- **Appointments tab, New booking and Walk-in**: in a live collective they open the form over the
+  whole collective, as the Calendar tab's toolbar does (they booked only the venue's own calendars).
+- **What needs you**: a hidden reason counts only where that venue's calendars offer the service.
+
 ## Unreleased OTA: curate a collective's services from every venue
 
 Publish only once the web change (staging `d09f0ed9`, "Collectives: curate the page from every
