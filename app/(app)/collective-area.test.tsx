@@ -8,6 +8,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import type { AreaService, CollectiveCalendarGroup } from '@/lib/collective-area/model';
 import type { VenueServicesResponse } from '@/lib/collective-area/venue-services';
 import type { WaitingSuggestion } from '@/lib/queries/useCollectiveServiceTools';
+import type { CollectiveCandidate, InviteeLinkTodo } from '@/types/collectives';
 
 // A service's sheet opens on the grid; the real one needs the native gesture handler.
 jest.mock('@/components/ui/Sheet', () => {
@@ -20,9 +21,10 @@ jest.mock('@/components/ui/Sheet', () => {
 });
 
 let mockParams: Record<string, string> = {};
+const mockPush = jest.fn();
 jest.mock('expo-router', () => ({
   Stack: { Screen: () => null },
-  useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
+  useRouter: () => ({ push: mockPush, replace: jest.fn() }),
   useLocalSearchParams: () => mockParams,
 }));
 
@@ -41,21 +43,43 @@ jest.mock('@/lib/queries/useServicesManage', () => ({
     refetch: jest.fn(),
   }),
 }));
+let mockCollectives: unknown[] = [];
 jest.mock('@/lib/queries/useCollectives', () => ({
-  useCollectives: () => ({ data: { collectives: [] }, isRefetching: false, refetch: jest.fn() }),
+  useCollectives: () => ({ data: { collectives: mockCollectives }, isRefetching: false, refetch: jest.fn() }),
   useDissolveCollective: () => ({ mutate: jest.fn(), isPending: false }),
   // A member's AdoptionRequestsCard asks for pending same-name questions (web R38).
   useAdoptions: () => ({ data: { adoptions: [] }, isLoading: false }),
   useAdoptionReview: () => ({ data: undefined, isLoading: false }),
   useAnswerAdoption: () => ({ mutateAsync: jest.fn(), isPending: false }),
 }));
+const mockRetry = jest.fn();
+// Every change goes through: one answer per op, as the bulk route gives.
+const mockBulkSave = jest.fn(async (ops: unknown[]) => ops.map((_op, index) => ({ index, ok: true })));
+const mockPatch = jest.fn();
+// "Switch it on" (2026-10-28): resolves once the services are read again.
+const mockSwitchOn = jest.fn(async (_serviceId: string) => undefined);
 jest.mock('@/lib/queries/useCollectiveArea', () => ({
-  useCollectiveRetry: () => ({ mutate: jest.fn(), isPending: false }),
-  useCollectiveBulkSave: () => ({ mutate: jest.fn(), isPending: false }),
+  useCollectiveRetry: () => ({ mutate: mockRetry, isPending: false }),
+  useCollectiveBulkSave: () => ({ mutate: jest.fn(), mutateAsync: mockBulkSave, isPending: false }),
   useCollectiveBulkPreview: () => ({ mutate: jest.fn(), isPending: false }),
-  useCollectiveMembersPatch: () => ({ mutate: jest.fn(), isPending: false }),
+  useCollectiveMembersPatch: () => ({ mutate: mockPatch, isPending: false }),
+  useSwitchServiceOn: () => ({ mutateAsync: mockSwitchOn, isPending: false }),
   useCollectiveHistory: () => ({ data: undefined, isLoading: false }),
   shareHistoryCsv: jest.fn(),
+}));
+// Venues joining, inviting any venue (2026-10-28).
+let mockLinkTodos: InviteeLinkTodo[] = [];
+const mockFetchInviteCheck = jest.fn();
+let mockCandidates: CollectiveCandidate[] = [];
+jest.mock('@/lib/queries/useCollectiveLinks', () => ({
+  useLinkTodos: () => ({ data: mockLinkTodos, refetch: jest.fn() }),
+  useInviteCheck: () => ({ data: undefined }),
+  useCollectiveCandidates: () => ({ data: mockCandidates, isLoading: false, isError: false, refetch: jest.fn() }),
+  fetchInviteCheck: (...args: unknown[]) => mockFetchInviteCheck(...args),
+}));
+jest.mock('@/lib/queries/useLinkedVenues', () => ({
+  useVenueSearch: () => ({ data: undefined, isSuccess: false, isFetching: false, isError: false }),
+  useVenueLookup: () => ({ data: undefined, isFetching: false }),
 }));
 jest.mock('@/lib/queries/useAccessToken', () => ({ useAccessToken: () => 'token' }));
 // Every venue's own services (2026-10-27): undefined while loading, null on an older server.
@@ -78,6 +102,8 @@ jest.mock('@/lib/queries/useUpdateServiceOverride', () => ({
 }));
 jest.mock('@/providers/VenueProvider', () => ({ useVenueContext: () => ({ venue: { currency: 'GBP' } }) }));
 jest.mock('@/providers/ToastProvider', () => ({ useToast: () => ({ error: jest.fn(), success: jest.fn() }) }));
+
+import { ApiError } from '@/lib/api/client';
 
 import CollectiveAreaScreen from './collective-area';
 
@@ -129,7 +155,16 @@ describe('CollectiveAreaScreen', () => {
     mockVenueServices = null;
     mockSuggestions = [];
     mockGroups = [];
+    mockCollectives = [];
+    mockLinkTodos = [];
+    mockCandidates = [];
     mockSaveValues.mockReset();
+    mockBulkSave.mockClear();
+    mockRetry.mockReset();
+    mockPatch.mockReset();
+    mockSwitchOn.mockReset();
+    mockPush.mockClear();
+    mockFetchInviteCheck.mockReset();
   });
 
   it('is for admins only, as on the web', async () => {
@@ -278,5 +313,269 @@ describe('CollectiveAreaScreen', () => {
       collectiveId: 'col-1',
       body: { calendar_id: 'cal-m', service_id: 'replica-1', values: { custom_price_pence: 8000 } },
     });
+  });
+});
+
+describe('CollectiveAreaScreen, 2026-10-28', () => {
+  const values = { custom_price_pence: null, custom_duration_minutes: null, custom_buffer_minutes: null, custom_deposit_pence: null };
+  const sync = { venues: 1, applied: 1, pending: [], failed: [] };
+  // Ada offers Balayage already, Ben does not.
+  const hostGroup: CollectiveCalendarGroup = {
+    venue_id: 'v-host',
+    venue_name: 'Host Venue',
+    is_host: true,
+    sync,
+    calendars: [
+      { id: 'c1', name: 'Ada', is_active: true, assigned: [{ item_id: 'item-1', service_id: 's1', values, last_changed: null }] },
+      { id: 'c2', name: 'Ben', is_active: true, assigned: [] },
+    ],
+  };
+
+  beforeEach(() => {
+    mockRole = 'admin';
+    mockParams = {};
+    mockVenueServices = null;
+    mockSuggestions = [];
+    mockCollectives = [];
+    mockLinkTodos = [];
+    mockCandidates = [];
+    mockGroups = [hostGroup];
+    mockServices = [{ id: 's1', name: 'Balayage', collective: block('master') }];
+    mockBulkSave.mockClear();
+    mockRetry.mockReset();
+    mockPatch.mockReset();
+    mockSwitchOn.mockReset();
+    mockPush.mockClear();
+    mockFetchInviteCheck.mockReset();
+  });
+
+  it('chooses calendars for the services picked, and saves only what changes', async () => {
+    mockServices = [
+      { id: 's1', name: 'Balayage', collective: block('master') },
+      { id: 's2', name: 'Old cut', collective: block('parked') },
+    ];
+    await render(<CollectiveAreaScreen />);
+    // Nothing picked: no bulk buttons.
+    expect(screen.queryByRole('button', { name: 'Choose calendars' })).toBeNull();
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: 'Select' }));
+    });
+    expect(screen.queryByRole('button', { name: 'Choose calendars' })).toBeNull();
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Balayage'));
+    });
+    // On the page already, so it can only come off.
+    expect(screen.getByRole('button', { name: 'Take off the page' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Put on the page' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Clear selection' })).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: 'Choose calendars' }));
+    });
+    expect(screen.getByText('For Balayage.')).toBeTruthy();
+    expect(screen.getByLabelText('Ada at Host Venue').props.accessibilityState).toMatchObject({ checked: true });
+    expect(screen.getByLabelText('Ben at Host Venue').props.accessibilityState).toMatchObject({ checked: false });
+    // Ticking Ada again changes nothing, so nothing is offered to save.
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Ben at Host Venue'));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: 'Save 1 change' }));
+    });
+    expect(mockBulkSave).toHaveBeenCalledWith([{ op: 'assign', service_id: 's1', venue_id: 'v-host', calendar_id: 'c2' }]);
+    expect(screen.getByText('Saved.')).toBeTruthy();
+    expect(screen.queryByText('For Balayage.')).toBeNull();
+  });
+
+  it("saves a service's calendar ticks from its own sheet, and Cancel drops them", async () => {
+    await render(<CollectiveAreaScreen />);
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Balayage'));
+    });
+    expect(screen.getByRole('button', { name: 'Done' })).toBeTruthy();
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Ben at Host Venue'), 'valueChange', true);
+    });
+    expect(screen.queryByRole('button', { name: 'Done' })).toBeNull();
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: 'Cancel' }));
+    });
+    expect(mockBulkSave).not.toHaveBeenCalled();
+    expect(screen.queryByText('1 not saved')).toBeNull();
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Balayage'));
+    });
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Ben at Host Venue'), 'valueChange', true);
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+    });
+    expect(mockBulkSave).toHaveBeenCalledWith([{ op: 'assign', service_id: 's1', venue_id: 'v-host', calendar_id: 'c2' }]);
+  });
+
+  it('says a service switched off at the host cannot be booked, and switches it on right there', async () => {
+    mockServices = [
+      { id: 's1', name: 'Balayage', collective: block('master'), is_active: false },
+      { id: 's2', name: 'Old cut', collective: block('parked'), is_active: false },
+    ];
+    await render(<CollectiveAreaScreen />);
+    expect(
+      screen.getByText('Switched off on your Services page, so nobody can book it at any venue, even though it is on the page.'),
+    ).toBeTruthy();
+    expect(screen.getByText('Hidden from guests')).toBeTruthy();
+    // A parked one switched off says both, and has no switch of its own.
+    expect(screen.getByText('Parked, switched off')).toBeTruthy();
+    expect(screen.queryByLabelText('Switch it on: Old cut')).toBeNull();
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Switch it on: Balayage'));
+    });
+    expect(mockSwitchOn).toHaveBeenCalledWith('s1');
+    await act(async () => {
+      fireEvent.press(screen.getByText('Needs attention'));
+    });
+    expect(screen.getByText('Balayage')).toBeTruthy();
+  });
+
+  it('shows on the row why a service did not switch on', async () => {
+    mockServices = [{ id: 's1', name: 'Balayage', collective: block('master'), is_active: false }];
+    mockSwitchOn.mockRejectedValueOnce(new ApiError('Add a calendar to this service before switching it on.', 400));
+    await render(<CollectiveAreaScreen />);
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Switch it on: Balayage'));
+    });
+    expect(screen.getByText('Add a calendar to this service before switching it on.')).toBeTruthy();
+  });
+
+  it('runs the updates of a venue that is behind with Update now', async () => {
+    mockGroups = [
+      hostGroup,
+      {
+        venue_id: 'v-zen',
+        venue_name: 'Zen Studio',
+        is_host: false,
+        sync: { venues: 1, applied: 0, pending: [{ venue_id: 'v-zen', venue_name: 'Zen Studio' }], failed: [] },
+        calendars: [{ id: 'c3', name: 'Cy', is_active: true, assigned: [{ item_id: 'item-1', service_id: 'r1', values, last_changed: null }] }],
+      },
+    ];
+    await render(<CollectiveAreaScreen />);
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Update now: Zen Studio'));
+    });
+    expect(mockRetry.mock.calls[0]?.[0]).toBe('v-zen');
+  });
+
+  it("folds a member's parked and retired lists until opened", async () => {
+    mockGroups = [];
+    mockServices = [
+      { id: 's1', name: 'Balayage', collective: block('replica') },
+      { id: 's2', name: 'Old cut', collective: block('parked') },
+      { id: 's3', name: 'Brows', collective: block('replica'), is_active: false },
+    ];
+    await render(<CollectiveAreaScreen />);
+    expect(screen.getByText('Balayage')).toBeTruthy();
+    // Switched off by the host: said instead of the sync badge (web 2026-10-28).
+    expect(screen.getByText('Switched off by Host Venue, so nobody can book it')).toBeTruthy();
+    expect(screen.queryByText('Old cut')).toBeNull();
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Parked while you are part of Northside (1)'));
+    });
+    expect(screen.getByText('Old cut')).toBeTruthy();
+    expect(screen.getByText(/tick them under Your services and send them to Host Venue\.$/)).toBeTruthy();
+    // A member can leave from here, now the More tab shows one collective row.
+    expect(screen.getByRole('button', { name: 'Leave Northside' })).toBeTruthy();
+  });
+
+  it('shows under Venues joining only a link this venue set to less than full access, with the way to change it', async () => {
+    const todo = (venue: string, state: InviteeLinkTodo['state']): InviteeLinkTodo => ({
+      collective_id: 'col-1',
+      collective_name: 'Northside',
+      venue_id: `v-${venue}`,
+      venue_name: venue,
+      venue_slug: venue.toLowerCase(),
+      state,
+      link_id: state === 'none' ? null : `link-${venue}`,
+    });
+    mockLinkTodos = [todo('Light', 'none'), todo('Oak', 'my_request'), todo('Ash', 'their_request'), todo('Elm', 'not_full')];
+    await render(<CollectiveAreaScreen />);
+    expect(screen.getByText('Venues joining')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Elm is invited to join Northside, but your link with them gives less than full access both ways, so they cannot join until you change it.',
+      ),
+    ).toBeTruthy();
+    // Every other link is made as they join, so there is nothing to press for them.
+    expect(screen.queryByText(/^(Light|Oak|Ash) is invited/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Link with / })).toBeNull();
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Change it in Linked Accounts: Elm'));
+    });
+    expect(mockPush).toHaveBeenCalledWith('/linked-venues');
+  });
+
+  it('shows nothing under Venues joining when every link is made as they join', async () => {
+    mockLinkTodos = [
+      { collective_id: 'col-1', collective_name: 'Northside', venue_id: 'v-oak', venue_name: 'Oak', venue_slug: 'oak', state: 'my_request', link_id: 'l' },
+      { collective_id: 'col-1', collective_name: 'Northside', venue_id: 'v-ash', venue_name: 'Ash', venue_slug: 'ash', state: 'none', link_id: null },
+    ];
+    await render(<CollectiveAreaScreen />);
+    expect(screen.queryByText('Venues joining')).toBeNull();
+  });
+
+  it('invites any venue from the Venues tab, showing what joining takes first', async () => {
+    mockCollectives = [
+      {
+        id: 'col-1',
+        name: 'Northside',
+        hostVenueId: 'v-host',
+        myVenueId: 'v-host',
+        serviceModel: 'replicas',
+        members: [
+          { venueId: 'v-host', venueName: 'Host Venue', status: 'active' },
+          { venueId: 'v-zen', venueName: 'Zen Studio', status: 'active' },
+        ],
+      },
+    ];
+    mockCandidates = [
+      { venue_id: 'v-light', venue_name: 'Light 3', venue_slug: 'light-3', link_id: 'l1', standing: 'ok', reason: null, detail: null },
+      { venue_id: 'v-far', venue_name: 'Far Away', venue_slug: 'far', link_id: 'l2', standing: 'blocked', reason: 'In Europe/Paris, not Europe/London', detail: null },
+    ];
+    mockFetchInviteCheck.mockResolvedValue({
+      venue: { id: 'v-light', name: 'Light 3', slug: 'light-3' },
+      already: null,
+      standing: { standing: 'ok', reason: null, detail: null },
+      links: [
+        { venue_id: 'v-host', venue_name: 'Host Venue', venue_slug: 'host', is_host: true, state: 'full', link_id: 'l1' },
+        { venue_id: 'v-zen', venue_name: 'Zen Studio', venue_slug: 'zen', is_host: false, state: 'none', link_id: null },
+      ],
+    });
+    await render(<CollectiveAreaScreen />);
+    await act(async () => {
+      fireEvent.press(screen.getByText('Venues'));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: 'Invite a venue' }));
+    });
+    expect(screen.getByText('Invite a venue to Northside')).toBeTruthy();
+    // A venue that cannot join says why, and cannot be chosen.
+    expect(screen.getByText('In Europe/Paris, not Europe/London')).toBeTruthy();
+    expect(screen.queryByLabelText('Choose Far Away')).toBeNull();
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Choose Light 3'));
+    });
+    expect(mockFetchInviteCheck.mock.calls[0]?.[2]).toEqual({ venueId: 'v-light' });
+    expect(screen.getByText('Linked with Light 3 when they join.')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: 'Invite Light 3' }));
+    });
+    expect(mockPatch.mock.calls[0]?.[0]).toEqual({ action: 'invite', venueId: 'v-light' });
+    await act(async () => {
+      mockPatch.mock.calls[0]?.[1]?.onSuccess?.();
+    });
+    expect(
+      screen.getByText(
+        'Invitation sent to Light 3. When they accept it, they are linked with every venue here and join, in one step.',
+      ),
+    ).toBeTruthy();
   });
 });

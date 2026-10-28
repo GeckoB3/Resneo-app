@@ -4,13 +4,23 @@
 import {
   areaCollective,
   buildCollectiveTodos,
+  bulkOps,
   calendarWillOffer,
   cellState,
   confirmSummary,
   gridRows,
+  isSwitchedOff,
+  pageChangeable,
+  pickerDescription,
+  pickerKey,
+  pickerResult,
+  pickerServices,
+  pickerState,
   selectionSummary,
+  stagedCalendarOps,
   stageOps,
   toggleCalendar,
+  unsavedSummary,
   type AreaService,
   type CollectiveCalendarGroup,
 } from '@/lib/collective-area/model';
@@ -178,5 +188,118 @@ describe('the area', () => {
     expect(todos.map((t) => t.id)).toEqual(['no-calendars-s9', 'forms-v-zen']);
     expect(todos[0]?.action).toEqual({ kind: 'service', serviceId: 's9', label: 'Choose calendars' });
     expect(todos[1]?.text).toBe('Your forms are switched off, so 1 service that needs a form is hidden from your guests.');
+  });
+});
+
+describe('the bulk lane (web 2026-10-28)', () => {
+  it('puts on the page only what is off it, and takes off only what is on it', () => {
+    expect(pageChangeable('offer', ['s1', 's2'], services)).toEqual(['s2']);
+    expect(pageChangeable('withdraw', ['s1', 's2'], services)).toEqual(['s1']);
+    expect(bulkOps('offer', ['s1'], ['v-host'], services)).toEqual([]);
+    expect(bulkOps('withdraw', ['s1', 's2'], ['v-host'], services)).toEqual([{ op: 'withdraw', service_id: 's1' }]);
+    expect(bulkOps('retry', ['s1'], ['v-host', 'v-zen'], services)).toEqual([
+      { op: 'retry', service_id: 's1', venue_id: 'v-host' },
+      { op: 'retry', service_id: 's1', venue_id: 'v-zen' },
+    ]);
+  });
+
+  it('counts a service switched off at the host as needing attention', () => {
+    const off: AreaService[] = [{ id: 's1', name: 'Balayage', collective: block(), is_active: false }];
+    // Offered by a calendar and up to date, so only being switched off puts it on the list.
+    expect(isSwitchedOff(off[0]!)).toBe(true);
+    expect(gridRows(off, groups, 'attention', '').map((s) => s.id)).toEqual(['s1']);
+    expect(isSwitchedOff({ id: 's2', name: 'Parked cut', collective: block({ role: 'parked', item_id: null }), is_active: false })).toBe(false);
+  });
+
+  it("gives a service's sheet just its own calendar ticks to save", () => {
+    const staged = stageOps(
+      toggleCalendar([], 's1', 'v-zen', groups[1]!.calendars[0]!, 'item-1', true),
+      [{ op: 'offer', service_id: 's2' }],
+    );
+    expect(stagedCalendarOps(staged, 's1').map((s) => s.key)).toEqual(['calendar:s1:v-zen:c3']);
+    expect(stagedCalendarOps(staged, 's2')).toEqual([]);
+    expect(unsavedSummary(1)).toBe('1 change not saved yet');
+    expect(unsavedSummary(3)).toBe('3 changes not saved yet');
+  });
+});
+
+describe('choosing calendars for the services picked (web CollectiveBulkCalendarsDialog)', () => {
+  // Two services on the page: Ada offers both, Ben offers only Balayage, Cy offers neither.
+  const twoGroups: CollectiveCalendarGroup[] = [
+    {
+      ...groups[0]!,
+      calendars: [
+        {
+          id: 'c1',
+          name: 'Ada',
+          is_active: true,
+          assigned: [
+            { item_id: 'item-1', service_id: 's1', values, last_changed: null },
+            { item_id: 'item-3', service_id: 's3', values, last_changed: null },
+          ],
+        },
+        { id: 'c2', name: 'Ben', is_active: true, assigned: [{ item_id: 'item-1', service_id: 's1', values, last_changed: null }] },
+      ],
+    },
+    groups[1]!,
+  ];
+  const picked: AreaService[] = [
+    { id: 's1', name: 'Balayage', collective: block() },
+    { id: 's3', name: 'Cut', collective: block({ item_id: 'item-3' }) },
+    { id: 's2', name: 'Parked cut', collective: block({ role: 'parked', item_id: null }) },
+  ];
+  const pickerList = pickerServices(['s1', 's3', 's2'], picked);
+  const onPage = pickerList.filter((s) => s.itemId);
+  const [host, zen] = twoGroups as [CollectiveCalendarGroup, CollectiveCalendarGroup];
+
+  it('reads a service off the page as having no calendars, and names the rest', () => {
+    expect(pickerList.map((s) => s.itemId)).toEqual(['item-1', 'item-3', null]);
+    expect(pickerDescription(pickerList)).toBe('For 2 services: Balayage, Cut.');
+    expect(pickerDescription(pickerList.slice(0, 1))).toBe('For Balayage.');
+    expect(pickerDescription([])).toBeNull();
+    const many = ['A', 'B', 'C', 'D', 'E'].map((name, i) => ({ id: `x${i}`, name, itemId: `i${i}` }));
+    expect(pickerDescription(many)).toBe('For 5 services: A, B, C and 2 more.');
+  });
+
+  it('ticks a calendar that offers every service, clears one that offers none, and dashes one that offers some', () => {
+    const none = new Map<string, boolean>();
+    expect(pickerState(host, host.calendars[0]!, onPage, [], none)).toBe('on');
+    expect(pickerState(host, host.calendars[1]!, onPage, [], none)).toBe('mixed');
+    expect(pickerState(zen, zen.calendars[0]!, onPage, [], none)).toBe('off');
+    // A tick not saved yet counts.
+    const staged = toggleCalendar([], 's3', 'v-host', host.calendars[1]!, 'item-3', true);
+    expect(pickerState(host, host.calendars[1]!, onPage, staged, none)).toBe('on');
+    // A decision wins.
+    expect(pickerState(zen, zen.calendars[0]!, onPage, [], new Map([[pickerKey('v-zen', 'c3'), true]]))).toBe('on');
+  });
+
+  it('sends nothing for calendars left alone, and only what differs from what is saved', () => {
+    expect(pickerResult(twoGroups, pickerList, [], new Map())).toEqual({ ops: [], settledKeys: [], changeCount: 0 });
+    // Ticking Ada (already offers both) sends nothing; ticking Ben adds Cut only; ticking Cy adds both.
+    const choice = new Map([
+      [pickerKey('v-host', 'c1'), true],
+      [pickerKey('v-host', 'c2'), true],
+      [pickerKey('v-zen', 'c3'), true],
+    ]);
+    const result = pickerResult(twoGroups, pickerList, [], choice);
+    expect(result.ops).toEqual([
+      { op: 'assign', service_id: 's3', venue_id: 'v-host', calendar_id: 'c2' },
+      { op: 'assign', service_id: 's1', venue_id: 'v-zen', calendar_id: 'c3' },
+      { op: 'assign', service_id: 's3', venue_id: 'v-zen', calendar_id: 'c3' },
+    ]);
+    expect(result.changeCount).toBe(3);
+    // Clearing Ben takes off only what it offers.
+    expect(pickerResult(twoGroups, pickerList, [], new Map([[pickerKey('v-host', 'c2'), false]])).ops).toEqual([
+      { op: 'unassign', service_id: 's1', venue_id: 'v-host', calendar_id: 'c2' },
+    ]);
+  });
+
+  it('replaces the ticks staged for a decided calendar, and a choice back to what is saved sends nothing', () => {
+    const staged = toggleCalendar([], 's1', 'v-zen', zen.calendars[0]!, 'item-1', true);
+    const result = pickerResult(twoGroups, pickerList, staged, new Map([[pickerKey('v-zen', 'c3'), false]]));
+    expect(result.ops).toEqual([]);
+    expect(result.settledKeys).toEqual(['calendar:s1:v-zen:c3']);
+    // What the grid shows changes, so Save is still offered.
+    expect(result.changeCount).toBe(1);
   });
 });

@@ -425,7 +425,10 @@ export default function LinkedVenuesScreen() {
               title={link.otherVenue.name}
               subtitle={
                 proposedCollectives[link.id]
-                  ? `Wants to link with your venue and start ${proposedCollectives[link.id]!.name}, a shared booking page`
+                  ? // A collective already running is joined, not started (banner.requestJoin, 2026-10-28).
+                    proposedCollectives[link.id]!.live
+                    ? `Wants to link with your venue so you can join ${proposedCollectives[link.id]!.name}, its shared booking page`
+                    : `Wants to link with your venue and start ${proposedCollectives[link.id]!.name}, a shared booking page`
                   : 'Wants to link with your venue'
               }
               status={link.status}
@@ -459,7 +462,8 @@ export default function LinkedVenuesScreen() {
               title={link.otherVenue.name}
               subtitle={
                 proposedCollectives[link.id]
-                  ? `${setupCopy('la.sent.collective', { venue: link.otherVenue.name, collective: proposedCollectives[link.id]!.name })} Tap to cancel.`
+                  ? // A collective already running: the venue joins it, with no "Continue setup" to wait for.
+                    `${setupCopy(proposedCollectives[link.id]!.live ? 'la.sent.collectiveJoin' : 'la.sent.collective', { venue: link.otherVenue.name, collective: proposedCollectives[link.id]!.name })} Tap to cancel.`
                   : 'Sent, awaiting their response. Tap to cancel.'
               }
               status={link.status}
@@ -493,6 +497,8 @@ export default function LinkedVenuesScreen() {
         myCalendars={myCalendars}
         collective={reviewLink ? (proposedCollectives[reviewLink.id] ?? null) : null}
         onClose={() => setReviewLink(null)}
+        // Already on Linked venues: closing the sheet shows the link to change.
+        onOpenLinked={() => setReviewLink(null)}
       />
 
       <ConfirmSheet

@@ -8,8 +8,13 @@
  *             (2026-10-27). A host also answers the members' suggestions, and switches between
  *             what is on the page and every venue's own services, to put any of them on the page
  *             or take them off with nobody asked (2026-10-27)
- *   Venues    the host's members, invitations, moving the hosting and ending the collective
+ *   Venues    the host's members, inviting any venue (2026-10-28), moving the hosting and ending
+ *             the collective
  *   History   every change, filtered and downloadable
+ *
+ * Above the tabs, "Venues joining" tells this venue (host or member) when its link with a venue
+ * invited to the collective has less than full access, which holds that venue up, and a member can
+ * leave from the foot of its Services tab (2026-10-28).
  *
  * Admins only, as on the web.
  *
@@ -24,11 +29,13 @@ import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
 import {
   HostingRequestBanner,
+  LeaveCollectiveCard,
   PausedHostingBanner,
   TodoStrip,
   VenueHealthCards,
 } from '@/components/collective-area/AreaPieces';
 import { HistoryPanel, MemberServicesList, VenuesPanel, type VenueRow } from '@/components/collective-area/AreaTabs';
+import { LinkTodosCard } from '@/components/collective-area/LinkTodosCard';
 import { ListingsPanel } from '@/components/collective-area/ListingsPanel';
 import { MemberSuggestPanel } from '@/components/collective-area/MemberSuggestPanel';
 import { ServicesGridBar, ServicesGridList, useServicesGrid } from '@/components/collective-area/ServicesGrid';
@@ -274,6 +281,9 @@ function AreaBody({
           ) : null}
           {/* The host asked whether to use this venue's same-named service (web plan L13). */}
           {!collective.isHost ? <AdoptionRequestsCard collectiveId={collective.id} /> : null}
+          {/* A venue invited to the collective held up by a link this one set to less than full
+              access (web CollectiveLinkTodos, 2026-10-28). Nothing shows otherwise. */}
+          <LinkTodosCard />
 
           <Segmented<AreaTab>
             options={tabs}
@@ -286,7 +296,12 @@ function AreaBody({
 
           {tab === 'services' ? (
             <>
-              <VenueHealthCards groups={groups} onRetry={onRetry} retrying={retry.isPending} />
+              <VenueHealthCards
+                groups={groups}
+                onRetry={onRetry}
+                retryingVenueId={retry.isPending ? (retry.variables ?? null) : null}
+                canRetry={collective.isHost}
+              />
               <TodoStrip todos={todos} onRetry={onRetry} onOpenService={(id) => grid.setOpenServiceId(id)} />
               {collective.isHost && panel.supported ? (
                 <SuggestionsReviewCard
@@ -322,6 +337,15 @@ function AreaBody({
                     services={services}
                     hostName={collective.hostVenueName}
                     collectiveName={collective.name}
+                  />
+                  <LeaveCollectiveCard
+                    collectiveId={collective.id}
+                    collectiveName={collective.name}
+                    hostName={collective.hostVenueName}
+                    onLeft={() => {
+                      toast.success(`Left ${collective.name}.`);
+                      router.replace('/collectives' as Href);
+                    }}
                   />
                 </>
               ) : showVenueServices ? (

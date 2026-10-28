@@ -366,6 +366,70 @@ export interface JoinPreview {
   other_models: string | null;
   /** A pending full-access link from the host stands in for the mesh (web plan L4). */
   pending_link?: boolean;
+  /**
+   * The venue's link with every venue already in the collective (web 2026-10-28): which are in
+   * place, which joining makes, and which hold it up. Absent on older servers.
+   */
+  links?: LinkNeed[];
+}
+
+// ---------------------------------------------------------------------------
+// The links a venue joining needs (web `collective-invite-links.ts`, 2026-10-28)
+// ---------------------------------------------------------------------------
+
+/**
+ * Where one link stands, seen from the venue it is read for:
+ * - `full`: accepted with full access both ways, so nothing is needed;
+ * - `their_request`: the other venue asked (whatever it offered), and this venue has not answered;
+ * - `my_request`: this venue asked, and the other venue has not answered yet;
+ * - `not_full`: a link in force without full access both ways, or suspended: somebody's choice or
+ *   a lapsed subscription, which only Linked venues can change;
+ * - `none`: no link.
+ * Joining makes every link but `not_full` in the same step as the join (web
+ * `collective-join-links.ts`): a request either way is accepted at full access both ways, and a
+ * missing link is made.
+ */
+export type LinkNeedState = 'full' | 'their_request' | 'my_request' | 'not_full' | 'none';
+
+export interface LinkNeed {
+  venue_id: string;
+  venue_name: string;
+  venue_slug: string | null;
+  is_host: boolean;
+  state: LinkNeedState;
+  link_id: string | null;
+}
+
+/** GET /api/venue/collectives/link-todos: a venue invited to this venue's collective, and its link with this one. */
+export interface InviteeLinkTodo {
+  collective_id: string;
+  collective_name: string;
+  venue_id: string;
+  venue_name: string;
+  venue_slug: string | null;
+  /** Seen from the venue the to-do is for. */
+  state: Exclude<LinkNeedState, 'full'>;
+  link_id: string | null;
+}
+
+/** GET /api/venue/collectives/candidates: a venue the host is linked with, and whether it can join. */
+export interface CollectiveCandidate {
+  venue_id: string;
+  venue_name: string;
+  venue_slug: string | null;
+  link_id: string;
+  standing: 'ok' | 'no_payments' | 'blocked' | 'permissions';
+  /** The reason line for `blocked` and `permissions`; the warning for `no_payments`. */
+  reason: string | null;
+  detail: string | null;
+}
+
+/** GET /api/venue/collectives/[id]/invite-check (host): what inviting one venue will take. */
+export interface InviteCheck {
+  venue: { id: string; name: string; slug: string | null };
+  already: 'invited' | 'active' | null;
+  standing: { standing: 'ok' | 'no_payments' | 'blocked'; reason: string | null; detail: string | null };
+  links: LinkNeed[];
 }
 
 /** The venue's answers, as the join and the accept-with-collective bodies carry them. */

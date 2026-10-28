@@ -20,8 +20,10 @@ import { useTheme } from '@/theme/useTheme';
 /**
  * The persistent banner above the tabs for admins (web `LinkedAccountBanner.tsx`; plan §4): a
  * link request to review, naming the collective proposed with it; a request of ours still with
- * the other venue; a permission change to answer; a collective the host still has to set up; and
- * a collective whose host is setting the page up. Each row opens the right screen, and a row can
+ * the other venue; a permission change to answer; a collective the host still has to set up; a
+ * collective whose host is setting the page up; and an invitation from a host this venue is
+ * already linked with, which opens that collective's join sheet (2026-10-28). Each row opens the
+ * right screen, and a row can
  * be dismissed for 24 hours on this device. Renders nothing for non-admin staff.
  *
  * There is intentionally no "acting as linked venue" context bar: the active linked venue is

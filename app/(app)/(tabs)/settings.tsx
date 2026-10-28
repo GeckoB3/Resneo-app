@@ -201,14 +201,16 @@ export default function MoreScreen() {
   // the pure `buildDestinations` builder (unit-tested separately).
   // The Collective area is offered while this venue is in a live shared-services collective.
   const collectivesQuery = useCollectives({ enabled: isAdmin });
-  const liveCollectiveName = useMemo(() => {
+  const liveCollective = useMemo(() => {
     const live = (collectivesQuery.data?.collectives ?? []).find(
       (c) =>
         c.status === "active" &&
         c.serviceModel === "replicas" &&
         (c.isHost || c.myMembershipStatus === "active"),
     );
-    return live?.name ?? null;
+    // `joined`: two venues or more are in, so Manage Collective is the one collective row
+    // (2026-10-28). A host still waiting for its first venue keeps Venue collectives too.
+    return live ? { name: live.name, joined: live.activeMemberCount >= 2 } : null;
   }, [collectivesQuery.data]);
 
   // Orders (POS app step 5): for logins with manage_orders, while the shop is on or new paid
@@ -261,7 +263,7 @@ export default function MoreScreen() {
       complianceEnabled:
         venue?.feature_flags?.resolved?.compliance_records_enabled === true,
       waitlistEnabled: venue?.feature_flags?.resolved?.waitlist_v2 === true,
-      collectiveArea: liveCollectiveName ? { name: liveCollectiveName } : null,
+      collectiveArea: liveCollective,
       posEnabled: isPosEnabled(venue),
       loyaltyEnabled: isLoyaltyEnabled(venue),
       ordersEnabled: ordersTile.enabled,
@@ -281,7 +283,7 @@ export default function MoreScreen() {
   }, [
     isAdmin,
     venue,
-    liveCollectiveName,
+    liveCollective,
     ordersTile.enabled,
     ordersTile.newCount,
     posCan,

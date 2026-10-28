@@ -64,9 +64,16 @@ export default function CollectivesScreen() {
   const [joinTarget, setJoinTarget] = useState<CollectiveView | null>(null);
   /** The host's finish-setup wizard (web plan L8), opened from a row or from the banner's `?setup=`. */
   const [setupTarget, setSetupTarget] = useState<string | null>(null);
-  const params = useLocalSearchParams<{ setup?: string }>();
+  const params = useLocalSearchParams<{ setup?: string; join?: string }>();
   const setupParam = typeof params.setup === 'string' ? params.setup : null;
   const setupHandledRef = useRef(false);
+  /**
+   * The banner's `?join=` (web `?join=` on Linked Accounts, 2026-10-28): an invitation from a host
+   * this venue is already linked with, which no link request carries. It opens that collective's
+   * join sheet once, when the invitation is in the list.
+   */
+  const joinParam = typeof params.join === 'string' ? params.join : null;
+  const joinHandledRef = useRef<string | null>(null);
 
   const collectives = useMemo<CollectiveView[]>(
     () => query.data?.collectives ?? [],
@@ -100,6 +107,15 @@ export default function CollectivesScreen() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSetupTarget(setupParam);
   }, [setupParam, collectives]);
+
+  useEffect(() => {
+    if (!joinParam || joinHandledRef.current === joinParam) return;
+    const target = collectives.find((c) => c.id === joinParam && c.myMembershipStatus === 'invited');
+    if (!target) return;
+    joinHandledRef.current = joinParam;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setJoinTarget(target);
+  }, [joinParam, collectives]);
 
   // The address customers actually use: a member venue's own page when the
   // collective adopted it, else the dedicated combined address (web 2026-09-05).
@@ -298,6 +314,10 @@ export default function CollectivesScreen() {
         venueName={venueName ?? 'your venue'}
         onClose={() => setJoinTarget(null)}
         onJoined={() => void query.refetch()}
+        onOpenLinked={() => {
+          setJoinTarget(null);
+          router.push('/linked-venues' as Href);
+        }}
       />
 
       <CollectiveSetupSheet

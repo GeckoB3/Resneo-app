@@ -106,17 +106,22 @@ export function TodoStrip({
 export function VenueHealthCards({
   groups,
   onRetry,
-  retrying,
+  retryingVenueId,
+  canRetry,
 }: {
   groups: CollectiveCalendarGroup[];
   onRetry: (venueId: string) => void;
-  retrying: boolean;
+  /** The venue whose updates are running now, for its button's spinner. */
+  retryingVenueId: string | null;
+  /** The host runs a venue's updates; a member reads its card only. */
+  canRetry: boolean;
 }) {
   if (groups.length === 0) return null;
   return (
     <View style={styles.cards}>
       {groups.map((group) => {
         const status = groupStatus(group);
+        const retrying = retryingVenueId === group.venue_id;
         return (
           <Card key={group.venue_id} style={styles.venueCard}>
             <View style={styles.rowBetween}>
@@ -133,11 +138,32 @@ export function VenueHealthCards({
                 <Text variant="caption" tone="danger">
                   {group.sync.failed[0]?.message ?? areaCopy('ov.venue.failed')}
                 </Text>
+                {canRetry ? (
+                  <Button
+                    label={areaCopy('svc.save.retry')}
+                    variant="ghost"
+                    size="sm"
+                    loading={retrying}
+                    disabled={retryingVenueId !== null}
+                    onPress={() => onRetry(group.venue_id)}
+                  />
+                ) : null}
+              </>
+            ) : null}
+            {/* An update not reached yet can be run now, so a stuck "Updating" always has a way out
+                (web 2026-10-28: a copy was left behind for four weeks on staging). */}
+            {status === 'updating' && canRetry ? (
+              <>
+                <Text variant="caption" tone="secondary">
+                  {areaCopy('ov.venue.updating')}
+                </Text>
                 <Button
-                  label={areaCopy('svc.save.retry')}
+                  label={areaCopy('ov.venue.updateNow')}
                   variant="ghost"
                   size="sm"
                   loading={retrying}
+                  disabled={retryingVenueId !== null}
+                  accessibilityLabel={`${areaCopy('ov.venue.updateNow')}: ${group.venue_name}`}
                   onPress={() => onRetry(group.venue_id)}
                 />
               </>
@@ -393,6 +419,84 @@ export function EndCollectiveCard({
             }
           />
           <Button label="Go back" variant="secondary" fullWidth disabled={dissolve.isPending} onPress={close} />
+        </View>
+      </Sheet>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Leaving, for a member (web `leave.*`)
+// ---------------------------------------------------------------------------
+
+/**
+ * A member leaves from here (2026-10-28): while the venue is in a live collective the More tab
+ * shows one collective row, Manage Collective, rather than that and Venue collectives side by side,
+ * so leaving has to be reachable from the area itself. The sheet's error shows inside it.
+ */
+export function LeaveCollectiveCard({
+  collectiveId,
+  collectiveName,
+  hostName,
+  onLeft,
+}: {
+  collectiveId: string;
+  collectiveName: string;
+  hostName: string;
+  onLeft: () => void;
+}) {
+  const { colors } = useTheme();
+  const patch = useCollectiveMembersPatch(collectiveId);
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const close = () => {
+    if (patch.isPending) return;
+    setOpen(false);
+    setError(null);
+  };
+
+  return (
+    <Card style={[styles.endCard, { borderColor: colors.border }]}>
+      <Button
+        label={areaCopy('leave.confirm', { collective: collectiveName })}
+        variant="secondary"
+        customColors={{ background: colors.surfaceRaised, text: colors.danger, border: colors.danger }}
+        onPress={() => setOpen(true)}
+      />
+      <Sheet visible={open} onClose={close}>
+        <View style={styles.sheetBody}>
+          <Text variant="subheading">{areaCopy('leave.title', { collective: collectiveName })}</Text>
+          <Text variant="bodySmall" tone="secondary">
+            {areaCopy('leave.message', { host: hostName })}
+          </Text>
+          {error ? (
+            <Text variant="bodySmall" tone="danger" accessibilityRole="alert">
+              {error}
+            </Text>
+          ) : null}
+          <Button
+            label={areaCopy('leave.confirm', { collective: collectiveName })}
+            variant="danger"
+            fullWidth
+            disabled={patch.isPending}
+            loading={patch.isPending}
+            onPress={() => {
+              setError(null);
+              patch.mutate(
+                { action: 'leave' },
+                {
+                  onSuccess: () => {
+                    setOpen(false);
+                    onLeft();
+                  },
+                  onError: (err) =>
+                    setError(err instanceof ApiError ? err.message : 'That did not go through. Please try again.'),
+                },
+              );
+            }}
+          />
+          <Button label="Go back" variant="secondary" fullWidth disabled={patch.isPending} onPress={close} />
         </View>
       </Sheet>
     </Card>

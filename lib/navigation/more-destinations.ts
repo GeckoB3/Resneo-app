@@ -134,7 +134,11 @@ export type DestinationsContext = {
    * The live shared-services collective this venue is in, when there is one: the Collective area
    * is offered under its name (web sidebar, 2026-09-17).
    */
-  collectiveArea?: { name: string } | null;
+  collectiveArea?: {
+    name: string;
+    /** Two venues or more are in: Manage Collective replaces Venue collectives (2026-10-28). */
+    joined?: boolean;
+  } | null;
   /**
    * `feature_flags.resolved.pos_enabled` (POS plan §4.22): the Checkout tile and Checkout's web
    * rows. Absent or false keeps the More tab exactly as it was before app step 1.
@@ -321,10 +325,16 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
   // parity, 2026-09-19).
   if (isAdmin) {
     list.push({ id: 'linked-venues', label: 'Linked venues', hint: 'Share calendars & cross-venue bookings', icon: { ios: 'link', android: 'link', web: 'link' }, tile: TILE.teal, group: 'network', kind: 'route', target: '/linked-venues', keywords: ['settings', 'linked accounts', 'partners'] });
+    // One collective row once two venues are in (2026-10-28): Manage Collective, which also holds a
+    // member's Leave; both side by side read as the same thing twice. Before that (a host waiting
+    // for its first venue, with Continue setup to come), and outside a collective, Venue
+    // collectives, where one is started or an invitation answered.
     if (ctx.collectiveArea) {
-      list.push({ id: 'collective-area', label: 'Manage Collective', hint: `Services, venues and history of ${ctx.collectiveArea.name}`, icon: { ios: 'square.grid.3x3.fill', android: 'grid_view', web: 'grid_view' }, tile: TILE.indigo, group: 'network', kind: 'route', target: '/collective-area', keywords: ['collective', 'shared services', 'combined'] });
+      list.push({ id: 'collective-area', label: 'Manage Collective', hint: `Services, venues and history of ${ctx.collectiveArea.name}`, icon: { ios: 'square.grid.3x3.fill', android: 'grid_view', web: 'grid_view' }, tile: TILE.indigo, group: 'network', kind: 'route', target: '/collective-area', keywords: ['collective', 'shared services', 'combined', 'venue collectives', 'leave'] });
     }
-    list.push({ id: 'collectives', label: 'Venue collectives', hint: 'A combined booking page across linked venues', icon: { ios: 'person.2.wave.2.fill', android: 'groups', web: 'groups' }, tile: TILE.sky, group: 'network', kind: 'route', target: '/collectives', keywords: ['combined', 'linked venues'] });
+    if (!ctx.collectiveArea?.joined) {
+      list.push({ id: 'collectives', label: 'Venue collectives', hint: 'A combined booking page across linked venues', icon: { ios: 'person.2.wave.2.fill', android: 'groups', web: 'groups' }, tile: TILE.sky, group: 'network', kind: 'route', target: '/collectives', keywords: ['combined', 'linked venues'] });
+    }
   }
 
   // ── App & support. ─────────────────────────────────────────────────────────

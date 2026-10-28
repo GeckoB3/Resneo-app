@@ -15,6 +15,76 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ---
 
+## Unreleased OTA: collectives, choosing calendars, inviting any venue and joining in one step (2026-10-28, third round)
+
+Parity with the web round of 2026-10-28 (web staging working tree, uncommitted when written). **Needs
+that web change deployed first**: the app calls `GET /api/venue/collectives/{id}/invite-check`,
+`GET /api/venue/collectives/link-todos` and `GET /api/venue/collectives/candidates`, reads
+`links` on the join preview, `live` on the link feeds and `incomingInvitations` on the banner feed,
+and relies on the members route inviting a venue that is not linked with the host, and on a join
+making every link the joining venue needs in the same request (web `collective-join-links.ts`). The
+app no longer accepts link requests itself before joining, so against an older server a join that
+still needs a link is refused with the old "links" sentence; "Venues joining" stays hidden, the
+invite sheet cannot check a venue, and no invitation row appears on the banner.
+Device-tested earlier in the day as the member against the local web server: More tab (one
+collective row), the folded Parked and No longer offered lists, and **Leave** at the foot. The
+one-step join, the invitation banner row, **Switch it on** and the revised "Venues joining" came
+after that and are covered by tests only, as are the host screens (picker, invite sheet, Update now).
+Rechecked on the phone after them: the member's list reads "Switched off by Aura Hair Studio, so
+nobody can book it" for a page service the host switched off, and no "Venues joining" card shows with
+nothing to change. A blocked join sheet now shows only the reason and the links checklist, as the web.
+
+- **Manage Collective, host's services**: **Choose calendars** opens a picker of every active
+  calendar at the venues picked (every venue when none is): ticked when it offers every service
+  picked, clear when none, a dash when some; **All** / **None** per venue. **Save** sends only what
+  differs from what is saved, straight away, and a change that does not go through stays chosen with
+  the count shown in the picker. It replaces "Choose calendars" / "Remove calendars", which staged
+  every calendar at every venue picked, even ones already offering the service. **Put on the page**
+  and **Take off the page** show only for services they would change; **Clear selection**; the bar
+  offers bulk buttons only once something is picked, and says **Saved.** after a save.
+- **A service's sheet** with calendar ticks not saved has **Save** (that service's ticks only) and
+  **Cancel**; its unsaved badge reads "{count} not saved".
+- **Venue cards**: a venue whose copies are behind has **Update now** (the venue's retry);
+  **Retry now** stays for a failure. Host only.
+- **A page service switched off** at the host: "Switched off on your Services page, so nobody can
+  book it at any venue, even though it is on the page." with **Switch it on** right on the card,
+  which switches it on (`PATCH /api/venue/appointment-services {id, is_active: true}`) and reads the
+  services again; a refusal shows on that card. Its venues read "Hidden from guests", and **Needs
+  attention** lists it. A parked service switched off reads "Parked, switched off". On a member's
+  "On the page" list, a copy switched off says "Switched off by {host}, so nobody can book it"
+  instead of its sync badge.
+- **Venues tab, Invite a venue**: its own sheet (no longer the old Venue collectives screen): search
+  any venue by name or booking address, or choose a linked one (a blocked one says why). Choosing
+  shows what joining takes, venue by venue ("Your link request goes with the invitation.", "Linked
+  with {venue} when they join.", or a link with less than full access that needs changing first),
+  then **Invite {venue}**; once sent, "When they accept it, they are linked with every venue here
+  and join, in one step." Invited rows wait only on a link with less than full access, otherwise
+  on the venue itself. The old screen's Members tab opens the same sheet.
+- **Venues joining** (host and members, top of Manage Collective): only a link this venue has with
+  a venue invited that is in force with less than full access both ways, with **Change it in Linked
+  Accounts**. Members are no longer asked to link: every other link is made as the venue joins. The
+  box is hidden when there is nothing like that.
+- **Joining in one step** (the join sheet and a link request carrying an invitation): one invitation
+  covers linking with every venue in the collective and joining. Join is a single request, and the
+  server makes or accepts every link at full access both ways; the app accepts nothing itself and
+  "Ask {venue} to link" is gone. The check step says "Joining also links your venue with {venues},
+  with full access both ways." (leaving out the request under review). Only a link already in force
+  with less than full access blocks the preview: a checklist (Already linked, Linked when you join,
+  or that link with **Change it in Linked Accounts**). The preview no longer sends
+  `with_pending_link=1`.
+- **Banner, an invitation with no link request** (`incomingInvitations`, from a host this venue is
+  already linked with): "{host} invited you to join {collective}. Accepting links you with every
+  venue in it and joins, in one step." with **Review invitation**, which opens Venue collectives
+  (`?join=`) on that collective's join sheet.
+- **A collective already running** (`live`): the banner reads "{venue} invited you to join
+  {collective}. Accepting links you with every venue in it and joins, in one step.", the review
+  sheet is titled "{venue} invited you to join {collective}", the received and sent rows say "join"
+  rather than "start", with no "Continue setup" to wait for.
+- **More tab**: one collective row, **Manage Collective**, once two venues or more are in (a host
+  still waiting for its first venue keeps **Venue collectives** too, for Continue setup). A member
+  leaves from **Leave {collective}** at the foot of Manage Collective's Services tab.
+- **Member's view**: "Parked while you are part of…" and "No longer offered by…" start folded.
+
 ## Unreleased OTA: collectives working across venues (2026-10-28)
 
 Ships with the curation OTA below, from the same web round (web uncommitted when written; see

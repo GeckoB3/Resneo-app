@@ -6,6 +6,7 @@
  *   save                   POST /api/venue/collectives/[id]/bulk  (up to 200 changes, one answer each)
  *   preview                POST /api/venue/collectives/[id]/bulk/preview
  *   try again              POST /api/venue/collectives/[id]/replicas/retry
+ *   switch a service on    PATCH /api/venue/appointment-services {id, is_active: true}
  *   history                GET  /api/venue/collectives/[id]/history
  *   hosting and members    PATCH /api/venue/collectives/[id]/members
  */
@@ -95,6 +96,32 @@ export function useCollectiveRetry(collectiveId: string | null) {
       });
     },
     onSettled: invalidate,
+  });
+}
+
+/**
+ * "Switch it on" for a page service switched off at the host (web `switchOn` in
+ * CollectiveAreaClient, 2026-10-28): the Services screen's own switch, PATCH
+ * /api/venue/appointment-services `{ id, is_active: true }`. Resolves once the services are read
+ * again, so the row's button stays busy until the grid shows the service on.
+ */
+export function useSwitchServiceOn() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (serviceId: string): Promise<void> => {
+      if (!accessToken) throw new Error('Missing access token');
+      await apiFetch('/api/venue/appointment-services', {
+        accessToken,
+        method: 'PATCH',
+        body: JSON.stringify({ id: serviceId, is_active: true }),
+      });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.collectives.all() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.staffCollective.all() });
+      // The public booking catalogue mirrors the service.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.appointments.all() });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.services.all() });
+    },
   });
 }
 

@@ -1,13 +1,15 @@
 /**
  * The rows the linked-venue banner shows, from the incoming feed (web `LinkedAccountBanner.tsx`,
- * `bannerItemsFromFeed`; plan §4). Five kinds, each with its own destination in the app:
+ * `bannerItemsFromFeed`; plan §4). Six kinds, each with its own destination in the app:
  * a request to review, a request of ours still waiting, a permission change to answer, a
- * collective the host still has to set up, and a collective whose host is setting it up.
+ * collective the host still has to set up, a collective whose host is setting it up, and an
+ * invitation from a host this venue is already linked with (2026-10-28), which no request carries
+ * and which opens that collective's join sheet.
  */
 import { formatVenueList, setupCopy } from '@/lib/linked/setup-copy';
 import type { IncomingLinksResponse } from '@/types/linked-venues';
 
-export type BannerItemKind = 'request' | 'waiting' | 'change' | 'setup' | 'member-waiting';
+export type BannerItemKind = 'request' | 'waiting' | 'change' | 'setup' | 'member-waiting' | 'invitation';
 
 export interface BannerItem {
   /** Stable across polls, so a dismissal holds: `${kind}:${id}`. */
@@ -25,8 +27,12 @@ export function bannerItemsFromFeed(feed: Partial<IncomingLinksResponse> | null 
     ...(feed.incomingRequests ?? []).map((r) => ({
       id: `request:${r.id}`,
       kind: 'request' as const,
+      // A collective already running (`live`): the venue joins it, so nothing reads "start" (2026-10-28).
       text: r.collective
-        ? setupCopy('banner.requestWithCollective', { venue: r.otherVenueName, collective: r.collective.name })
+        ? setupCopy(r.collective.live ? 'banner.requestJoin' : 'banner.requestWithCollective', {
+            venue: r.otherVenueName,
+            collective: r.collective.name,
+          })
         : setupCopy('banner.request', { venue: r.otherVenueName }),
       cta: setupCopy('banner.review.cta'),
       href: `/linked-venues?review=${encodeURIComponent(r.id)}`,
@@ -35,7 +41,10 @@ export function bannerItemsFromFeed(feed: Partial<IncomingLinksResponse> | null 
       id: `waiting:${r.id}`,
       kind: 'waiting' as const,
       text: r.collective
-        ? setupCopy('banner.waitingWithCollective', { venue: r.otherVenueName, collective: r.collective.name })
+        ? setupCopy(r.collective.live ? 'banner.waitingJoin' : 'banner.waitingWithCollective', {
+            venue: r.otherVenueName,
+            collective: r.collective.name,
+          })
         : setupCopy('banner.waiting', { venue: r.otherVenueName }),
       cta: setupCopy('banner.waiting.cta'),
       href: '/linked-venues',
@@ -60,6 +69,14 @@ export function bannerItemsFromFeed(feed: Partial<IncomingLinksResponse> | null 
       text: setupCopy('banner.memberWaiting', { collective: m.name, host: m.hostName }),
       cta: setupCopy('banner.memberWaiting.cta'),
       href: '/collectives',
+    })),
+    // Accepting links the venue with every venue in the collective and joins, in one step.
+    ...(feed.incomingInvitations ?? []).map((inv) => ({
+      id: `invitation:${inv.collectiveId}`,
+      kind: 'invitation' as const,
+      text: setupCopy('banner.invitation', { host: inv.hostName, collective: inv.name }),
+      cta: setupCopy('notify.invite.cta'),
+      href: `/collectives?join=${encodeURIComponent(inv.collectiveId)}`,
     })),
   ];
 }

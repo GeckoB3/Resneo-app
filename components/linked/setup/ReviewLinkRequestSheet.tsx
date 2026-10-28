@@ -5,7 +5,14 @@ import { GrantBullets } from '@/components/linked/GrantBullets';
 import { GrantPairEditor } from '@/components/linked/GrantPairEditor';
 import { ChoiceRow } from '@/components/linked/setup/ChoiceRow';
 import { JoinNextSteps } from '@/components/linked/setup/JoinNextSteps';
-import { JoinFormsStep, JoinFormsSwitch, JoinMeansStep, JoinServicesStep, JoinSummaryList } from '@/components/linked/setup/JoinSteps';
+import {
+  JoinFormsStep,
+  JoinFormsSwitch,
+  JoinLinksChecklist,
+  JoinMeansStep,
+  JoinServicesStep,
+  JoinSummaryList,
+} from '@/components/linked/setup/JoinSteps';
 import { StepShell } from '@/components/linked/setup/StepShell';
 import { Button } from '@/components/ui/Button';
 import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
@@ -13,6 +20,7 @@ import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { describeGrant, isLinkConfigurationValid, normaliseGrant } from '@/lib/linked/grants';
 import { defaultJoinDraft, EMPTY_JOIN_DRAFT, joinChoicesFrom, joinStepsFor, type JoinDraft, type JoinStep } from '@/lib/linked/join-choices';
+import { joinLinkNames } from '@/lib/linked/join-links';
 import { isFullAccessBothWays } from '@/lib/linked/link-levels';
 import { setupCopy } from '@/lib/linked/setup-copy';
 import { useJoinPreview } from '@/lib/queries/useCollectives';
@@ -31,6 +39,11 @@ import type { AccountLinkView, LinkGrant, ProposedCollectiveSummary } from '@/ty
  * editor behind "Adjust". Then, when a collective is proposed and the link will grant full access
  * both ways, the join steps in their own words. The last step has one consent line and three ways
  * out: decline, accept the link only, accept and join. It ends on a receipt rather than closing.
+ *
+ * Accepting and joining a collective that already has other venues links this one with each of
+ * them too, in the same request (web 2026-10-28): the sheet accepts no other request itself, and
+ * the check step names the venues it links with. For a collective already running (`live`) the
+ * title says "invited you to join".
  */
 
 export interface ReviewOutcome {
@@ -50,6 +63,7 @@ export function ReviewLinkRequestSheet({
   collective,
   onClose,
   onDone,
+  onOpenLinked,
 }: {
   link: AccountLinkView | null;
   visible: boolean;
@@ -59,6 +73,8 @@ export function ReviewLinkRequestSheet({
   collective: ProposedCollectiveSummary | null;
   onClose: () => void;
   onDone?: (outcome: ReviewOutcome) => void;
+  /** Linked venues, for another link that needs changing there; the caller closes this sheet first. */
+  onOpenLinked?: () => void;
 }) {
   const { colors } = useTheme();
   const toast = useToast();
@@ -80,10 +96,7 @@ export function ReviewLinkRequestSheet({
   const [pending, setPending] = useState<'accept' | 'decline' | null>(null);
 
   const proposesJoin = Boolean(collective && collective.serviceModel === 'replicas');
-  const previewQuery = useJoinPreview(proposesJoin ? collective?.id : null, {
-    withPendingLink: true,
-    enabled: visible && proposesJoin,
-  });
+  const previewQuery = useJoinPreview(proposesJoin ? collective?.id : null, { enabled: visible && proposesJoin });
   const preview = previewQuery.data ?? null;
   const previewError = previewQuery.isError
     ? previewQuery.error instanceof ApiError
@@ -124,6 +137,12 @@ export function ReviewLinkRequestSheet({
 
   if (!link) return null;
   const busy = pending !== null;
+  /**
+   * The other venues in the collective that joining links this one with, beside the request under
+   * review: the server makes those links in the same step as the join (web 2026-10-28), so the
+   * sheet accepts nothing itself.
+   */
+  const linksOnJoin = joinable && preview ? joinLinkNames(preview.links, link.id) : null;
 
   const doRespond = (join: boolean) => {
     setPending('accept');
@@ -222,7 +241,10 @@ export function ReviewLinkRequestSheet({
               ? setupCopy('respond.done.joined.title', { venue: other, collective: done.collectiveName ?? collectiveName })
               : setupCopy('respond.done.linked.title', { venue: other })
             : proposesJoin && collective
-              ? setupCopy('respond.titleWithCollective', { venue: other, collective: collective.name })
+              ? setupCopy(collective.live ? 'respond.titleJoin' : 'respond.titleWithCollective', {
+                  venue: other,
+                  collective: collective.name,
+                })
               : setupCopy('respond.title', { venue: other })
         }
         step={done ? undefined : index + 1}
@@ -279,9 +301,17 @@ export function ReviewLinkRequestSheet({
                     {previewError}
                   </Text>
                 ) : preview?.blocked ? (
-                  <Text variant="caption" color={colors.warning}>
-                    {preview.blocked}
-                  </Text>
+                  <>
+                    <Text variant="caption" color={colors.warning}>
+                      {preview.blocked}
+                    </Text>
+                    <JoinLinksChecklist
+                      links={preview.links}
+                      collective={collective.name}
+                      exceptLinkId={link.id}
+                      onOpenLinked={onOpenLinked}
+                    />
+                  </>
                 ) : !fullAccessAfter ? (
                   <Text variant="caption" color={colors.warning}>
                     {setupCopy('respond.collective.needsFull', { collective: collective.name })}
@@ -314,6 +344,11 @@ export function ReviewLinkRequestSheet({
             {joinable && preview ? (
               <>
                 <JoinSummaryList preview={preview} draft={draft} host={host} collective={collectiveName} />
+                {linksOnJoin ? (
+                  <Text variant="bodySmall" tone="secondary">
+                    {setupCopy('join.links.linksOnJoin', { venues: linksOnJoin })}
+                  </Text>
+                ) : null}
                 <JoinFormsSwitch preview={preview} draft={draft} onChange={setDraft} />
                 <ChoiceRow
                   kind="checkbox"
@@ -345,11 +380,17 @@ export function ReviewLinkRequestSheet({
               </View>
             ) : null}
             {(done.joined
-              ? [
-                  setupCopy('respond.done.joined.next.host', { venue: other, collective: done.collectiveName ?? collectiveName }),
-                  setupCopy('respond.done.joined.next.own', { collective: done.collectiveName ?? collectiveName }),
-                  setupCopy('respond.done.joined.next.calendars', { venue: other }),
-                ]
+              ? collective?.live
+                ? // A collective already running: its page is live, so there is nothing to wait for (web 2026-10-28).
+                  [
+                    setupCopy('respond.done.joinedLive.next.page', { collective: done.collectiveName ?? collectiveName }),
+                    setupCopy('respond.done.joinedLive.next.calendars', { venue: other }),
+                  ]
+                : [
+                    setupCopy('respond.done.joined.next.host', { venue: other, collective: done.collectiveName ?? collectiveName }),
+                    setupCopy('respond.done.joined.next.own', { collective: done.collectiveName ?? collectiveName }),
+                    setupCopy('respond.done.joined.next.calendars', { venue: other }),
+                  ]
               : [setupCopy('respond.done.linked.next', { venue: other })]
             ).map((line, i) => (
               <View key={line} style={[styles.numbered, { borderColor: colors.border }]}>

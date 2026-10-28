@@ -3,7 +3,14 @@ import { StyleSheet, View } from 'react-native';
 
 import { ChoiceRow } from '@/components/linked/setup/ChoiceRow';
 import { JoinNextSteps } from '@/components/linked/setup/JoinNextSteps';
-import { JoinFormsStep, JoinFormsSwitch, JoinMeansStep, JoinServicesStep, JoinSummaryList } from '@/components/linked/setup/JoinSteps';
+import {
+  JoinFormsStep,
+  JoinFormsSwitch,
+  JoinLinksChecklist,
+  JoinMeansStep,
+  JoinServicesStep,
+  JoinSummaryList,
+} from '@/components/linked/setup/JoinSteps';
 import { StepShell } from '@/components/linked/setup/StepShell';
 import { Button } from '@/components/ui/Button';
 import { Text } from '@/components/ui/Text';
@@ -17,6 +24,7 @@ import {
   type JoinDraft,
   type JoinStep,
 } from '@/lib/linked/join-choices';
+import { joinLinkNames } from '@/lib/linked/join-links';
 import { setupCopy } from '@/lib/linked/setup-copy';
 import { useCollectiveMemberAction, useJoinPreview } from '@/lib/queries/useCollectives';
 import { useToast } from '@/providers/ToastProvider';
@@ -31,6 +39,12 @@ import type { JoinPreview } from '@/types/collectives';
  *
  * Joined with something still in the way of guests (no Stripe for paid services, forms off and
  * needed), the sheet stays open on "You have joined" with those steps, as the web does (2026-10-28).
+ *
+ * Joining links the venue with every venue in the collective, with full access both ways, in the
+ * same request as the join (web 2026-10-28, `collective-join-links.ts`): the sheet accepts no link
+ * itself, and the check step names the venues it links with. Only a link already in force with
+ * less than full access stops it: the preview is blocked, with a checklist saying which link and
+ * "Change it in Linked Accounts".
  */
 export function JoinCollectiveSheet({
   visible,
@@ -39,6 +53,7 @@ export function JoinCollectiveSheet({
   venueName,
   onClose,
   onJoined,
+  onOpenLinked,
 }: {
   visible: boolean;
   collectiveId: string | null;
@@ -46,6 +61,8 @@ export function JoinCollectiveSheet({
   venueName: string;
   onClose: () => void;
   onJoined?: () => void;
+  /** Linked venues, for a link that needs changing there; the caller closes this sheet first. */
+  onOpenLinked?: () => void;
 }) {
   const { colors } = useTheme();
   const toast = useToast();
@@ -84,10 +101,13 @@ export function JoinCollectiveSheet({
   const name = preview?.collective_name ?? collectiveName;
   const busy = join.isPending;
   const blocked = preview?.blocked ?? null;
+  const linksOnJoin = joinLinkNames(preview?.links);
 
   const doJoin = () => {
     if (!collectiveId || !preview) return;
     setError(null);
+    // One request: the server links the venue with every venue in the collective and joins it, or
+    // refuses with nothing done, naming the venue (web 2026-10-28).
     join.mutate(
       { collectiveId, payload: { action: 'accept', consent_version: preview.consent_version, ...joinChoicesFrom(preview, draft) } },
       {
@@ -155,17 +175,26 @@ export function JoinCollectiveSheet({
             </Text>
           ) : null}
           {blocked ? (
-            <Text variant="bodySmall" color={colors.warning}>
-              {blocked}
-            </Text>
+            <>
+              <Text variant="bodySmall" color={colors.warning}>
+                {blocked}
+              </Text>
+              <JoinLinksChecklist links={preview?.links} collective={name} onOpenLinked={onOpenLinked} />
+            </>
           ) : null}
-          {preview && step === 'means' ? <JoinMeansStep preview={preview} host={host} collective={name} /> : null}
+          {/* Blocked: the reason and the checklist are the whole sheet, as on the web. */}
+          {preview && !blocked && step === 'means' ? <JoinMeansStep preview={preview} host={host} collective={name} /> : null}
           {preview && step === 'services' ? <JoinServicesStep preview={preview} draft={draft} onChange={setDraft} host={host} collective={name} /> : null}
           {preview && step === 'forms' ? <JoinFormsStep preview={preview} draft={draft} onChange={setDraft} host={host} /> : null}
           {preview && step === 'check' ? (
             <View style={styles.section}>
               <Text variant="bodyMedium">{setupCopy('join.step.check')}</Text>
               <JoinSummaryList preview={preview} draft={draft} host={host} collective={name} />
+              {linksOnJoin ? (
+                <Text variant="bodySmall" tone="secondary">
+                  {setupCopy('join.links.linksOnJoin', { venues: linksOnJoin })}
+                </Text>
+              ) : null}
               <JoinFormsSwitch preview={preview} draft={draft} onChange={setDraft} />
               <ChoiceRow
                 kind="checkbox"

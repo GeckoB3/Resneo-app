@@ -318,28 +318,23 @@ export { pickVenueImage } from '@/lib/queries/useVenueImageUpload';
 
 /**
  * GET /api/venue/collectives/[id]/join: what an invited venue has to decide before it joins.
- * `withPendingLink` reviews the invitation together with the link request it rides on (web
- * plan L4), when the mesh is not there yet.
+ * Joining makes every link the venue needs in the same step (web 2026-10-28), so a link request
+ * from the host, or none at all, does not block the preview, and the `?with_pending_link=1` the
+ * review sheet used to send is ignored by the server now; only a link already in force with less
+ * than full access does (`blocked`, with `links` saying which).
  */
-export function useJoinPreview(
-  collectiveId: string | null | undefined,
-  options?: { withPendingLink?: boolean; enabled?: boolean },
-) {
+export function useJoinPreview(collectiveId: string | null | undefined, options?: { enabled?: boolean }) {
   const accessToken = useAccessToken();
-  const withPendingLink = options?.withPendingLink === true;
   const enabled =
     isBackendConfigured() && accessToken !== null && Boolean(collectiveId) && (options?.enabled ?? true);
 
   return useQuery({
-    queryKey: queryKeys.collectives.joinPreview(accessToken, collectiveId, withPendingLink),
+    queryKey: queryKeys.collectives.joinPreview(accessToken, collectiveId),
     enabled,
     staleTime: 0,
     queryFn: async (): Promise<JoinPreview> => {
       if (!accessToken || !collectiveId) throw new Error('Missing access token');
-      return apiFetch<JoinPreview>(
-        `/api/venue/collectives/${collectiveId}/join${withPendingLink ? '?with_pending_link=1' : ''}`,
-        { accessToken },
-      );
+      return apiFetch<JoinPreview>(`/api/venue/collectives/${collectiveId}/join`, { accessToken });
     },
   });
 }

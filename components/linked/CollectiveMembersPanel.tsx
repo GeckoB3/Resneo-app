@@ -1,17 +1,17 @@
+import { useRouter, type Href } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { Badge } from '@/components/ui/Badge';
+import { InviteVenueSheet } from '@/components/collective-area/InviteVenueSheet';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
-import { PressableScale } from '@/components/ui/PressableScale';
-import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { areaCopy } from '@/lib/collective-area/copy';
 import { useCollectiveMemberAction, useDissolveCollective } from '@/lib/queries/useCollectives';
 import { useToast } from '@/providers/ToastProvider';
-import { radius, spacing } from '@/theme/index';
+import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { CollectiveView } from '@/types/collectives';
 import type { AccountLinkView } from '@/types/linked-venues';
@@ -26,22 +26,28 @@ type ConfirmState = {
 
 /**
  * Members tab (Flow 12, host only). Lists members (Make host / Remove with
- * confirms), invites eligible non-members, and dissolves the collective.
+ * confirms), invites a venue, and dissolves the collective.
  * Copy ported verbatim from the web MembersSection.
+ *
+ * Inviting opens the Collective area's invite sheet (2026-10-28): any venue on ResNeo, with what
+ * joining takes shown before anything is sent, so the two screens never offer different venues.
  */
 export function CollectiveMembersPanel({
   collective,
-  eligibleLinks,
   onDissolved,
 }: {
   collective: CollectiveView;
-  /** Linked venues eligible to invite (full mutual create/edit/cancel). */
-  eligibleLinks: AccountLinkView[];
+  /**
+   * No longer read: any venue can be invited now, not only one linked with full access both ways
+   * (web 2026-10-28). Kept so the callers need not change.
+   */
+  eligibleLinks?: AccountLinkView[];
   /** Called after the collective is dissolved (so the parent can navigate away). */
   onDissolved: () => void;
 }) {
   const { colors } = useTheme();
   const toast = useToast();
+  const router = useRouter();
   const memberAction = useCollectiveMemberAction();
   const dissolve = useDissolveCollective();
 
@@ -49,9 +55,6 @@ export function CollectiveMembersPanel({
   const [inviteOpen, setInviteOpen] = useState(false);
 
   const busy = memberAction.isPending || dissolve.isPending;
-
-  const memberVenueIds = new Set(collective.members.map((m) => m.venueId));
-  const invitable = eligibleLinks.filter((l) => !memberVenueIds.has(l.otherVenue.id));
 
   const runMember = (
     payload: Parameters<typeof memberAction.mutate>[0]['payload'],
@@ -156,20 +159,19 @@ export function CollectiveMembersPanel({
         })}
       </Card>
 
+      {/* Any venue can be invited, with what joining takes shown first (web 2026-10-28): the same
+          sheet as the Collective area's Venues tab. */}
       <Card style={styles.card}>
-        <Text variant="label">Invite a venue</Text>
-        {invitable.length === 0 ? (
-          <Text variant="caption" tone="muted">
-            No further venues with full create/edit/cancel links both ways are available to invite.
-          </Text>
-        ) : (
-          <Button
-            label="Choose a venue to invite"
-            variant="secondary"
-            disabled={busy}
-            onPress={() => setInviteOpen(true)}
-          />
-        )}
+        <Text variant="label">{areaCopy('ov.venues.invite')}</Text>
+        <Text variant="caption" tone="muted">
+          {areaCopy('ov.venues.invite.body')}
+        </Text>
+        <Button
+          label={areaCopy('ov.venues.invite')}
+          variant="secondary"
+          disabled={busy}
+          onPress={() => setInviteOpen(true)}
+        />
       </Card>
 
       <Button
@@ -189,37 +191,19 @@ export function CollectiveMembersPanel({
         }
       />
 
-      {/* Invite picker */}
-      <Sheet visible={inviteOpen} onClose={() => setInviteOpen(false)}>
-        <View style={styles.inviteSheet}>
-          <Text variant="subheading">Invite a venue</Text>
-          <Text variant="bodySmall" tone="secondary">
-            Only venues granting create/edit/cancel access both ways are eligible.
-          </Text>
-          <View style={styles.inviteList}>
-            {invitable.map((l) => (
-              <PressableScale
-                key={l.id}
-                disabled={busy}
-                accessibilityLabel={`Invite ${l.otherVenue.name}`}
-                onPress={() => {
-                  setInviteOpen(false);
-                  runMember(
-                    { action: 'invite', venueId: l.otherVenue.id },
-                    `Invitation sent to ${l.otherVenue.name}.`,
-                  );
-                }}>
-                <View style={[styles.inviteRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                  <Text variant="bodyMedium" numberOfLines={1} style={styles.flex1}>
-                    {l.otherVenue.name}
-                  </Text>
-                  <Badge label="Eligible" tone="success" />
-                </View>
-              </PressableScale>
-            ))}
-          </View>
-        </View>
-      </Sheet>
+      <InviteVenueSheet
+        visible={inviteOpen}
+        collectiveId={collective.id}
+        collectiveName={collective.name}
+        excludeVenueIds={collective.members
+          .filter((m) => m.status === 'active' || m.status === 'invited')
+          .map((m) => m.venueId)}
+        onClose={() => setInviteOpen(false)}
+        onOpenLinked={() => {
+          setInviteOpen(false);
+          router.push('/linked-venues' as Href);
+        }}
+      />
 
       <ConfirmSheet
         visible={confirm !== null}
@@ -257,22 +241,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xs,
     flexShrink: 0,
-  },
-  inviteSheet: {
-    gap: spacing.md,
-  },
-  inviteList: {
-    gap: spacing.sm,
-  },
-  inviteRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.base,
-    minHeight: 48,
   },
   flex1: {
     flex: 1,

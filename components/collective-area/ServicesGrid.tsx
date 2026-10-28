@@ -3,20 +3,28 @@
  * (`CollectiveServicesGrid.tsx`, 2026-09-17).
  *
  * A phone cannot show services down and venues across, so each service is a card with one line
- * per venue (how many of its calendars offer it, hidden, staged changes). Tapping a card opens the
- * service at every venue, with a switch per calendar, and "Edit values" for a calendar's own price
- * and times on one that offers it (saved there and then). "Select" turns the cards into a checklist for
- * the bulk lane, which applies one action across the chosen services and venues. Everything stages
- * rather than saves, so the ask can say what will change, and a change the engine refuses stays
- * staged so Save sends only those again.
+ * per venue (how many of its calendars offer it, hidden, changes not saved). Tapping a card opens
+ * the service at every venue, with a switch per calendar, and "Edit values" for a calendar's own
+ * price and times on one that offers it (saved there and then). A tick there is saved from there:
+ * the sheet's Save sends that service's calendar ticks and nothing else (2026-10-28). A page
+ * service switched off on the Services screen says so on its card, with "Switch it on" right there
+ * (web 2026-10-28); a parked one switched off reads "Parked, switched off".
+ *
+ * "Select" turns the cards into a checklist for the bulk lane. With something picked the bar
+ * offers "Choose calendars", a picker of every calendar at the venues picked that saves straight
+ * away (web `CollectiveBulkCalendarsDialog`, 2026-10-28: the old button staged "every calendar"
+ * at every venue, even ones already offering the service), and page changes only where they
+ * change something. Page changes stage, so the ask can say what will change, and a change the
+ * engine refuses stays staged so Save sends only those again.
  *
  * `useServicesGrid` holds the state; the list renders inside the screen's scroll and the bar is
  * pinned under it by the screen.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 
 import { SyncBadge } from '@/components/collective-area/AreaPieces';
+import { BulkCalendarsSheet } from '@/components/collective-area/BulkCalendarsSheet';
 import { CalendarValuesStep } from '@/components/services/collective/CalendarValuesStep';
 import { Badge, type BadgeTone } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -26,6 +34,7 @@ import { SearchBar } from '@/components/ui/SearchBar';
 import { Segmented } from '@/components/ui/Segmented';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
+import { ApiError } from '@/lib/api/client';
 import { areaCopy, PREVIEW_REASON_WORDS } from '@/lib/collective-area/copy';
 import {
   bulkOps,
@@ -37,22 +46,29 @@ import {
   hiddenPillVenue,
   isHiddenAt,
   isOnPage,
+  isSwitchedOff,
+  keyOf,
+  pageChangeable,
   selectionSummary,
+  stagedCalendarOps,
   stagedCountFor,
   stageOps,
   toBulkOps,
   toggleCalendar,
+  unsavedSummary,
   valueChips,
   venueWarnings,
   type AreaService,
-  type BulkOpKind,
+  type BulkOpResult,
   type CellState,
   type CollectiveCalendarGroup,
   type GridFilter,
+  type PageOpKind,
+  type PickerResult,
   type PreviewVenue,
   type StagedOp,
 } from '@/lib/collective-area/model';
-import { useCollectiveBulkPreview, useCollectiveBulkSave } from '@/lib/queries/useCollectiveArea';
+import { useCollectiveBulkPreview, useCollectiveBulkSave, useSwitchServiceOn } from '@/lib/queries/useCollectiveArea';
 import {
   calendarValueDefaults,
   calendarValueFlags,
@@ -83,10 +99,31 @@ export function useServicesGrid(input: {
   const [preview, setPreview] = useState<{ state: 'loading' | 'ready' | 'failed'; venues: PreviewVenue[] } | null>(
     null,
   );
+  /** "Choose calendars" for the services and venues picked. */
+  const [choosing, setChoosing] = useState(false);
+  /** "Saved." for a few seconds after a save that all went through, so a save is never silent. */
+  const [savedAt, setSavedAt] = useState<number | null>(null);
   const save = useCollectiveBulkSave(collectiveId);
   const previewMutation = useCollectiveBulkPreview(collectiveId);
+  /** "Switch it on" for a page service switched off at the host, and what went wrong with the last one. */
+  const switchOnMutation = useSwitchServiceOn();
+  const [switching, setSwitching] = useState<string | null>(null);
+  const [switchError, setSwitchError] = useState<{ serviceId: string; message: string } | null>(null);
+
+  useEffect(() => {
+    if (savedAt === null) return;
+    const timer = setTimeout(() => setSavedAt(null), 4000);
+    return () => clearTimeout(timer);
+  }, [savedAt]);
 
   const rows = useMemo(() => gridRows(services, groups, filter, search), [services, groups, filter, search]);
+
+  // What the bulk lane works on: the services and venues picked, or every one shown when none are.
+  const crossing = {
+    serviceIds: selectedServices.size > 0 ? [...selectedServices] : rows.map((r) => r.id),
+    venueIds: selectedVenues.size > 0 ? [...selectedVenues] : groups.map((g) => g.venue_id),
+  };
+  const hasSelection = selectedServices.size > 0 || selectedVenues.size > 0;
 
   const toggleSet = (set: Set<string>, id: string) => {
     const next = new Set(set);
@@ -95,10 +132,8 @@ export function useServicesGrid(input: {
     return next;
   };
 
-  const runBulk = (kind: BulkOpKind) => {
-    const serviceIds = selectedServices.size > 0 ? [...selectedServices] : rows.map((r) => r.id);
-    const venueIds = selectedVenues.size > 0 ? [...selectedVenues] : groups.map((g) => g.venue_id);
-    setStaged((prev) => stageOps(prev, bulkOps(kind, serviceIds, venueIds, groups)));
+  const runBulk = (kind: PageOpKind | 'retry') => {
+    setStaged((prev) => stageOps(prev, bulkOps(kind, crossing.serviceIds, crossing.venueIds, services)));
   };
 
   const openPreview = () => {
@@ -109,26 +144,79 @@ export function useServicesGrid(input: {
     });
   };
 
-  const commit = () => {
-    const sent = staged;
-    setConfirming(false);
+  /**
+   * Sends these changes (200 at a time, in the hook) and takes them out of what is staged; what
+   * fails goes back in, so Save again re-sends only those. True when everything went through.
+   */
+  const commitBatch = async (batch: StagedOp[]): Promise<boolean> => {
+    if (batch.length === 0) return true;
     setFailures([]);
-    save.mutate(toBulkOps(sent), {
-      onSuccess: (results) => {
-        const failedKeys = new Set<string>();
-        const messages: string[] = [];
-        for (const result of results) {
-          if (result.ok) continue;
-          const op = sent[result.index];
-          if (!op) continue;
-          failedKeys.add(op.key);
-          messages.push(result.message ?? 'That change did not go through.');
-        }
-        // What failed stays staged, so Save again re-sends only those.
-        setStaged(sent.filter((op) => failedKeys.has(op.key)));
-        setFailures(messages);
-      },
-    });
+    let results: BulkOpResult[];
+    try {
+      results = await save.mutateAsync(toBulkOps(batch));
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'That save did not go through.';
+      results = batch.map((_op, index) => ({ index, ok: false, message }));
+    }
+    const failedKeys = new Set<string>();
+    const messages: string[] = [];
+    for (const result of results) {
+      if (result.ok) continue;
+      const op = batch[result.index];
+      if (!op) continue;
+      failedKeys.add(op.key);
+      messages.push(result.message ?? 'That change did not go through.');
+    }
+    const sent = new Set(batch.map((s) => s.key));
+    setStaged((prev) => [...prev.filter((s) => !sent.has(s.key)), ...batch.filter((s) => failedKeys.has(s.key))]);
+    setFailures(messages);
+    if (messages.length === 0) setSavedAt(Date.now());
+    return messages.length === 0;
+  };
+
+  const commit = () => {
+    setConfirming(false);
+    void commitBatch(staged);
+  };
+
+  /** The picker's Save: what it decided replaces anything staged for those calendars, and goes now. */
+  const saveChosen = async ({ ops, settledKeys }: PickerResult) => {
+    const batch: StagedOp[] = ops.map((op) => ({ ...op, key: keyOf(op) }));
+    const replaced = new Set([...batch.map((s) => s.key), ...settledKeys]);
+    setStaged((prev) => prev.filter((s) => !replaced.has(s.key)));
+    if (await commitBatch(batch)) setChoosing(false);
+  };
+
+  /** A service sheet's Save: that service's calendar ticks, and nothing else staged. */
+  const saveService = async (serviceId: string) => {
+    if (await commitBatch(stagedCalendarOps(staged, serviceId))) setOpenServiceId(null);
+  };
+
+  /**
+   * The Services screen's own switch, right on the row (web 2026-10-28): the service goes on, the
+   * services are read again, and a refusal shows on that row.
+   */
+  const switchOn = async (serviceId: string) => {
+    setSwitching(serviceId);
+    setSwitchError(null);
+    try {
+      await switchOnMutation.mutateAsync(serviceId);
+    } catch (err) {
+      setSwitchError({
+        serviceId,
+        message: err instanceof ApiError ? err.message : 'That did not go through. Please check your connection.',
+      });
+    } finally {
+      setSwitching(null);
+    }
+  };
+
+  /** A service sheet's Cancel: its calendar ticks go, and the sheet closes. */
+  const discardService = (serviceId: string) => {
+    const keys = new Set(stagedCalendarOps(staged, serviceId).map((s) => s.key));
+    setStaged((prev) => prev.filter((s) => !keys.has(s.key)));
+    setFailures([]);
+    setOpenServiceId(null);
   };
 
   return {
@@ -150,6 +238,14 @@ export function useServicesGrid(input: {
     selectAllShown: () => setSelectedServices(new Set(rows.map((r) => r.id))),
     selectedVenues,
     toggleVenue: (id: string) => setSelectedVenues((prev) => toggleSet(prev, id)),
+    hasSelection,
+    clearSelection: () => {
+      setSelectedServices(new Set());
+      setSelectedVenues(new Set());
+    },
+    crossing,
+    /** Whether "Put on the page" / "Take off the page" would change anything picked. */
+    canPageChange: (kind: PageOpKind) => pageChangeable(kind, crossing.serviceIds, services).length > 0,
     staged,
     setStaged,
     discard: () => {
@@ -159,6 +255,19 @@ export function useServicesGrid(input: {
     failures,
     rows,
     runBulk,
+    choosing,
+    openChooser: () => {
+      setFailures([]);
+      setChoosing(true);
+    },
+    closeChooser: () => setChoosing(false),
+    saveChosen,
+    saveService,
+    discardService,
+    switchOn,
+    switching,
+    switchError,
+    saved: savedAt !== null,
     openServiceId,
     setOpenServiceId,
     confirming,
@@ -168,7 +277,8 @@ export function useServicesGrid(input: {
     openPreview,
     commit,
     saving: save.isPending,
-    showBar: selecting || staged.length > 0,
+    // Bulk buttons only once something is picked; a pending change or a fresh "Saved." still shows.
+    showBar: hasSelection || staged.length > 0 || savedAt !== null,
   };
 }
 
@@ -228,20 +338,7 @@ export function ServicesGridList({ grid, currencySymbol }: { grid: ServicesGridS
         </View>
       ) : null}
 
-      {grid.failures.length > 0 ? (
-        <View style={[styles.failures, { backgroundColor: colors.dangerSurface, borderColor: colors.danger }]}>
-          <Text variant="bodySmall" tone="danger">
-            {grid.failures.length === 1
-              ? areaCopy('ov.bulk.someFailedOne')
-              : areaCopy('ov.bulk.someFailed', { count: grid.failures.length })}
-          </Text>
-          {[...new Set(grid.failures)].slice(0, 3).map((message) => (
-            <Text key={message} variant="caption" tone="danger">
-              {message}
-            </Text>
-          ))}
-        </View>
-      ) : null}
+      {grid.failures.length > 0 ? <FailuresBox failures={grid.failures} /> : null}
 
       {grid.rows.length === 0 ? (
         <Text variant="bodySmall" tone="secondary" style={styles.empty}>
@@ -251,6 +348,8 @@ export function ServicesGridList({ grid, currencySymbol }: { grid: ServicesGridS
 
       {grid.rows.map((service) => {
         const onPage = isOnPage(service);
+        // On the page but switched off at the host: nobody can book it anywhere (web 2026-10-28).
+        const switchedOff = isSwitchedOff(service);
         const selected = grid.selectedServices.has(service.id);
         const offerChange = grid.staged.find(
           (s) => s.service_id === service.id && (s.op === 'offer' || s.op === 'withdraw'),
@@ -289,7 +388,16 @@ export function ServicesGridList({ grid, currencySymbol }: { grid: ServicesGridS
                 <Text variant="bodyMedium" style={styles.flex1}>
                   {service.name}
                 </Text>
-                {!onPage ? <Badge label={areaCopy('common.pill.parked')} /> : null}
+                {!onPage ? (
+                  // A parked service switched off reads "Parked, switched off" (web 2026-10-28).
+                  <Badge
+                    label={
+                      service.is_active === false
+                        ? `${areaCopy('common.pill.parked')}, ${areaCopy('ov.grid.row.off')}`
+                        : areaCopy('common.pill.parked')
+                    }
+                  />
+                ) : null}
                 {!grid.selecting ? (
                   <Text variant="title" tone="muted">
                     ›
@@ -302,10 +410,34 @@ export function ServicesGridList({ grid, currencySymbol }: { grid: ServicesGridS
                   tone="brand"
                 />
               ) : null}
+              {/* Switched off on the Services screen: on the page, but nobody can book it anywhere.
+                  Saying so, with the switch right here, is the whole fix (web 2026-10-28). */}
+              {switchedOff ? (
+                <View style={styles.switchedOff}>
+                  <Text variant="caption" color={colors.warning}>
+                    {areaCopy('ov.grid.row.switchedOff')}
+                  </Text>
+                  <Button
+                    label={areaCopy('ov.grid.row.turnOn')}
+                    variant="secondary"
+                    size="sm"
+                    style={styles.switchOn}
+                    accessibilityLabel={`${areaCopy('ov.grid.row.turnOn')}: ${service.name}`}
+                    loading={grid.switching === service.id}
+                    disabled={grid.switching !== null}
+                    onPress={() => void grid.switchOn(service.id)}
+                  />
+                  {grid.switchError?.serviceId === service.id ? (
+                    <Text variant="caption" tone="danger" accessibilityRole="alert">
+                      {grid.switchError.message}
+                    </Text>
+                  ) : null}
+                </View>
+              ) : null}
               {onPage ? (
                 groups.map((group) => {
                   const state = cellState(group, service.collective?.item_id);
-                  const hidden = state !== 'none' && isHiddenAt(service, group.venue_id);
+                  const hidden = state !== 'none' && (switchedOff || isHiddenAt(service, group.venue_id));
                   const changes = stagedCountFor(grid.staged, service.id, group.venue_id);
                   return (
                     <View key={group.venue_id} style={styles.cellLine}>
@@ -334,6 +466,7 @@ export function ServicesGridList({ grid, currencySymbol }: { grid: ServicesGridS
       })}
 
       <ServiceSheet grid={grid} currencySymbol={currencySymbol} />
+      <BulkCalendarsSheet grid={grid} />
       <ConfirmSaveSheet grid={grid} />
       <PreviewSheet grid={grid} />
     </View>
@@ -353,19 +486,32 @@ export function ServicesGridBar({ grid }: { grid: ServicesGridState }) {
   const count = grid.staged.length;
   return (
     <View style={[styles.bar, { backgroundColor: colors.surfaceRaised, borderTopColor: colors.border }]}>
-      {grid.selecting ? (
+      {grid.saved ? (
+        <Text variant="label" tone="success" accessibilityLiveRegion="polite">
+          {areaCopy('ov.bulk.saved')}
+        </Text>
+      ) : null}
+      {grid.hasSelection ? (
         <>
           <Text variant="label">{selectionSummary(serviceCount, venueCount)}</Text>
+          {/* Only what would change something is offered: a service already on the page cannot be
+              put on it again (web 2026-10-28). */}
           <View style={styles.barGrid}>
-            <Button label={areaCopy('ov.bulk.offer')} variant="secondary" size="sm" style={styles.barCell} onPress={() => grid.runBulk('offer')} />
-            <Button label={areaCopy('ov.bulk.withdraw')} variant="secondary" size="sm" style={styles.barCell} onPress={() => grid.runBulk('withdraw')} />
-            <Button label={areaCopy('ov.bulk.addCalendars')} variant="secondary" size="sm" style={styles.barCell} onPress={() => grid.runBulk('assign')} />
-            <Button label={areaCopy('ov.bulk.removeCalendars')} variant="secondary" size="sm" style={styles.barCell} onPress={() => grid.runBulk('unassign')} />
+            <Button label={areaCopy('ov.bulk.addCalendars')} size="sm" style={styles.barCell} onPress={grid.openChooser} />
+            {grid.canPageChange('offer') ? (
+              <Button label={areaCopy('ov.bulk.offer')} variant="secondary" size="sm" style={styles.barCell} onPress={() => grid.runBulk('offer')} />
+            ) : null}
+            {grid.canPageChange('withdraw') ? (
+              <Button label={areaCopy('ov.bulk.withdraw')} variant="secondary" size="sm" style={styles.barCell} onPress={() => grid.runBulk('withdraw')} />
+            ) : null}
             {anyFailure ? (
               <Button label={areaCopy('ov.bulk.retry')} variant="secondary" size="sm" style={styles.barCell} onPress={() => grid.runBulk('retry')} />
             ) : null}
+            <Button label={areaCopy('ov.bulk.clearSelection')} variant="ghost" size="sm" style={styles.barCell} onPress={grid.clearSelection} />
           </View>
         </>
+      ) : count > 0 ? (
+        <Text variant="label">{unsavedSummary(count)}</Text>
       ) : null}
       {count > 0 ? (
         <View style={styles.barGrid}>
@@ -405,6 +551,8 @@ function ServiceSheet({ grid, currencySymbol }: { grid: ServicesGridState; curre
   const offerChange = grid.staged.find((s) => s.service_id === service.id && (s.op === 'offer' || s.op === 'withdraw'));
   const willBeOnPage = offerChange ? offerChange.op === 'offer' : onPage;
   const hiddenVenue = service.collective?.status === 'hidden' ? hiddenPillVenue(service.collective.hidden_reasons) : null;
+  /** Calendar ticks not saved yet: the sheet saves them itself, so nobody hunts for a second Save. */
+  const unsavedTicks = stagedCalendarOps(grid.staged, service.id).length > 0;
 
   if (valuesTarget) {
     return (
@@ -440,6 +588,8 @@ function ServiceSheet({ grid, currencySymbol }: { grid: ServicesGridState; curre
         ) : null}
       </View>
       <ScrollView style={styles.flex1} contentContainerStyle={styles.sheetContent}>
+        {/* Shown here too: the list behind the sheet cannot be seen while it is open. */}
+        {grid.failures.length > 0 ? <FailuresBox failures={grid.failures} /> : null}
         <Button
           label={willBeOnPage ? areaCopy('ov.bulk.withdraw') : areaCopy('ov.bulk.offer')}
           variant="secondary"
@@ -530,10 +680,47 @@ function ServiceSheet({ grid, currencySymbol }: { grid: ServicesGridState; curre
           </>
         )}
       </ScrollView>
-      <View style={styles.sheetFooter}>
-        <Button label={areaCopy('ov.grid.done')} fullWidth onPress={close} />
+      <View style={[styles.sheetFooter, styles.footerRow]}>
+        {unsavedTicks ? (
+          <>
+            <Button
+              label={areaCopy('ov.bulk.choose.cancel')}
+              variant="ghost"
+              style={styles.flex1}
+              disabled={grid.saving}
+              onPress={() => grid.discardService(service.id)}
+            />
+            <Button
+              label={areaCopy('ov.bulk.choose.save')}
+              style={styles.flex1}
+              loading={grid.saving}
+              disabled={grid.saving}
+              onPress={() => void grid.saveService(service.id)}
+            />
+          </>
+        ) : (
+          <Button label={areaCopy('ov.grid.done')} fullWidth onPress={close} />
+        )}
       </View>
     </Sheet>
+  );
+}
+
+function FailuresBox({ failures }: { failures: string[] }) {
+  const { colors } = useTheme();
+  return (
+    <View style={[styles.failures, { backgroundColor: colors.dangerSurface, borderColor: colors.danger }]}>
+      <Text variant="bodySmall" tone="danger">
+        {failures.length === 1
+          ? areaCopy('ov.bulk.someFailedOne')
+          : areaCopy('ov.bulk.someFailed', { count: failures.length })}
+      </Text>
+      {[...new Set(failures)].slice(0, 3).map((message) => (
+        <Text key={message} variant="caption" tone="danger">
+          {message}
+        </Text>
+      ))}
+    </View>
   );
 }
 
@@ -645,6 +832,9 @@ const styles = StyleSheet.create({
   },
   sheetContent: { padding: spacing.lg, paddingTop: spacing.sm, gap: spacing.md },
   sheetFooter: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
+  footerRow: { flexDirection: 'row', gap: spacing.sm },
+  switchedOff: { gap: spacing.xs },
+  switchOn: { alignSelf: 'flex-start' },
   venueBlock: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: spacing.sm, gap: spacing.xs },
   calendarRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: 44 },
   confirmBody: { gap: spacing.md },

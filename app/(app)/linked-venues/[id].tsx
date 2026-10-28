@@ -353,6 +353,10 @@ export default function LinkedVenueDetailScreen() {
         onDone={(outcome) => {
           if (outcome.declined) router.back();
         }}
+        onOpenLinked={() => {
+          setReviewOpen(false);
+          router.push('/linked-venues');
+        }}
       />
 
       <ConfirmSheet

@@ -252,6 +252,18 @@ describe('buildDestinations — the Collective area (web parity, 2026-09-17)', (
     expect(ids(ctx({ isAdmin: true }))).not.toContain('collective-area');
     expect(ids(ctx({ isAdmin: false, collectiveArea: { name: 'Plus 1 Staging' } }))).not.toContain('collective-area');
   });
+
+  it('shows one collective row once two venues are in: Manage Collective, not Venue collectives too (2026-10-28)', () => {
+    const live = ids(ctx({ isAdmin: true, collectiveArea: { name: 'Plus 1 Staging', joined: true } }));
+    expect(live).toContain('collective-area');
+    expect(live).not.toContain('collectives');
+    // A host still waiting for its first venue keeps Venue collectives, where Continue setup comes.
+    const waiting = ids(ctx({ isAdmin: true, collectiveArea: { name: 'Plus 1 Staging', joined: false } }));
+    expect(waiting).toEqual(expect.arrayContaining(['collective-area', 'collectives']));
+    const none = ids(ctx({ isAdmin: true }));
+    expect(none).toContain('collectives');
+    expect(none).not.toContain('collective-area');
+  });
 });
 
 describe('buildDestinations — Checkout (POS app step 1, plan §4.22)', () => {

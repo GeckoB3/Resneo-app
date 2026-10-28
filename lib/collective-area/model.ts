@@ -118,6 +118,11 @@ export interface AreaService {
   staff_may_customize_price?: boolean | null;
   staff_may_customize_deposit?: boolean | null;
   variants?: { id: string; is_active?: boolean | null }[] | null;
+  /**
+   * Switched off on the Services screen. A service on the page that is switched off cannot be
+   * booked anywhere (web `switchedOff`, 2026-10-28).
+   */
+  is_active?: boolean | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -179,6 +184,11 @@ export function isHiddenAt(service: AreaService, venueId: string): boolean {
   return (service.collective?.hidden_reasons ?? []).some((r) => r.venue_id === venueId);
 }
 
+/** On the page but switched off at the host, so nobody can book it anywhere (web 2026-10-28). */
+export function isSwitchedOff(service: AreaService): boolean {
+  return isOnPage(service) && service.is_active === false;
+}
+
 export type GridFilter = 'all' | 'attention' | 'off_page';
 
 /** Services on the page first, then the parked ones; filtered and searched as the web grid. */
@@ -198,7 +208,7 @@ export function gridRows(
     if (!onPage) return false;
     const block = service.collective!;
     const noCalendars = groups.every((g) => cellState(g, block.item_id) === 'none');
-    return noCalendars || block.status === 'failed' || block.status === 'hidden';
+    return noCalendars || block.status === 'failed' || block.status === 'hidden' || isSwitchedOff(service);
   });
 }
 
@@ -276,31 +286,152 @@ export function stagedCountFor(staged: readonly StagedOp[], serviceId: string, v
   ).length;
 }
 
-/** The bulk lane: one action across the selected services and venues (every one when none are picked). */
+export type PageOpKind = 'offer' | 'withdraw';
+
+/**
+ * The services picked whose page change would change something (web `pageChangeable`,
+ * 2026-10-28): "Put on the page" only for those not on it, "Take off the page" only for those on
+ * it, so a save never carries a change that changes nothing.
+ */
+export function pageChangeable(
+  kind: PageOpKind,
+  serviceIds: readonly string[],
+  services: readonly AreaService[],
+): string[] {
+  return serviceIds.filter((id) => {
+    const service = services.find((s) => s.id === id);
+    if (!service) return false;
+    return kind === 'offer' ? !isOnPage(service) : isOnPage(service);
+  });
+}
+
+/**
+ * The bulk lane: put on or take off the page, or try again, across the services and venues picked
+ * (every one when none are). Calendars are chosen in their own step (`pickerResult`), not here:
+ * staging "every calendar" at every venue picked staged changes that changed nothing (2026-10-28).
+ */
 export function bulkOps(
-  kind: BulkOpKind,
+  kind: PageOpKind | 'retry',
   serviceIds: readonly string[],
   venueIds: readonly string[],
-  groups: readonly CollectiveCalendarGroup[],
+  services: readonly AreaService[],
 ): BulkOp[] {
+  if (kind === 'retry') {
+    return serviceIds.flatMap((serviceId) =>
+      venueIds.map((venueId): BulkOp => ({ op: 'retry', service_id: serviceId, venue_id: venueId })),
+    );
+  }
+  return pageChangeable(kind, serviceIds, services).map((serviceId): BulkOp => ({ op: kind, service_id: serviceId }));
+}
+
+/** The calendar ticks staged for one service, at every venue: what its sheet's Save sends. */
+export function stagedCalendarOps(staged: readonly StagedOp[], serviceId: string): StagedOp[] {
+  return staged.filter((s) => (s.op === 'assign' || s.op === 'unassign') && s.service_id === serviceId);
+}
+
+/** The bar's line when nothing is picked: how many changes are waiting for Save. */
+export function unsavedSummary(count: number): string {
+  return count === 1 ? areaCopy('ov.bulk.unsavedOne') : areaCopy('ov.bulk.unsaved', { count });
+}
+
+// ---------------------------------------------------------------------------
+// Choose calendars for the services picked (web CollectiveBulkCalendarsDialog, 2026-10-28)
+// ---------------------------------------------------------------------------
+
+export interface PickerService {
+  id: string;
+  name: string;
+  /** The offering on the page; null for a service that is not on it, which has no calendars. */
+  itemId: string | null;
+}
+
+/** The picked services as the picker reads them, in the order picked. */
+export function pickerServices(serviceIds: readonly string[], services: readonly AreaService[]): PickerService[] {
+  return serviceIds.flatMap((id) => {
+    const service = services.find((s) => s.id === id);
+    if (!service) return [];
+    return [{ id: service.id, name: service.name, itemId: isOnPage(service) ? (service.collective?.item_id ?? null) : null }];
+  });
+}
+
+/** The calendars the host has decided in the picker: true offers every service, false none. */
+export type PickerChoice = ReadonlyMap<string, boolean>;
+
+export const pickerKey = (venueId: string, calendarId: string): string => `${venueId}:${calendarId}`;
+
+/** Whether a calendar offers the offering now, as saved (no staged change counted). */
+export function savedOn(group: CollectiveCalendarGroup, calendarId: string, itemId: string | null): boolean {
+  if (!itemId) return false;
+  const calendar = group.calendars.find((c) => c.id === calendarId);
+  return Boolean(calendar?.assigned.some((a) => a.item_id === itemId));
+}
+
+export type PickerState = 'on' | 'off' | 'mixed';
+
+/**
+ * One calendar's box: its decision when the host has touched it, else ticked when it offers every
+ * service on the page (counting changes not saved yet), clear when none, a dash when some.
+ */
+export function pickerState(
+  group: CollectiveCalendarGroup,
+  calendar: CollectiveCalendarEntry,
+  onPage: readonly PickerService[],
+  staged: readonly StagedOp[],
+  choice: PickerChoice,
+): PickerState {
+  const chosen = choice.get(pickerKey(group.venue_id, calendar.id));
+  if (chosen !== undefined) return chosen ? 'on' : 'off';
+  const on = onPage.filter((s) => calendarWillOffer(staged, s.id, group.venue_id, calendar, s.itemId)).length;
+  if (on === 0) return 'off';
+  return on === onPage.length ? 'on' : 'mixed';
+}
+
+export interface PickerResult {
+  /** The changes from what is SAVED, which Save sends straight away. */
+  ops: BulkOp[];
+  /** Staged changes this choice replaces: a decided calendar's staged ticks for these services. */
+  settledKeys: string[];
+  /** Changes from what the grid shows now, which is what the Save button counts. */
+  changeCount: number;
+}
+
+/** What the picker's Save sends: only the calendars touched, only where they differ (web `onSave`). */
+export function pickerResult(
+  groups: readonly CollectiveCalendarGroup[],
+  services: readonly PickerService[],
+  staged: readonly StagedOp[],
+  choice: PickerChoice,
+): PickerResult {
+  const onPage = services.filter((s) => s.itemId);
   const ops: BulkOp[] = [];
-  for (const serviceId of serviceIds) {
-    if (kind === 'offer' || kind === 'withdraw') {
-      ops.push({ op: kind, service_id: serviceId });
-      continue;
-    }
-    if (kind === 'retry') {
-      for (const venueId of venueIds) ops.push({ op: 'retry', service_id: serviceId, venue_id: venueId });
-      continue;
-    }
-    for (const venueId of venueIds) {
-      const group = groups.find((g) => g.venue_id === venueId);
-      for (const calendar of group?.calendars.filter((c) => c.is_active) ?? []) {
-        ops.push({ op: kind, service_id: serviceId, venue_id: venueId, calendar_id: calendar.id });
+  const settledKeys: string[] = [];
+  let changeCount = 0;
+  for (const group of groups) {
+    for (const calendar of group.calendars) {
+      const chosen = choice.get(pickerKey(group.venue_id, calendar.id));
+      if (chosen === undefined) continue;
+      for (const service of onPage) {
+        const ref = { service_id: service.id, venue_id: group.venue_id, calendar_id: calendar.id };
+        const key = keyOf({ op: 'assign', ...ref });
+        if (staged.some((s) => s.key === key)) settledKeys.push(key);
+        if (calendarWillOffer(staged, service.id, group.venue_id, calendar, service.itemId) !== chosen) changeCount += 1;
+        if (chosen !== savedOn(group, calendar.id, service.itemId)) ops.push({ op: chosen ? 'assign' : 'unassign', ...ref });
       }
     }
   }
-  return ops;
+  return { ops, settledKeys, changeCount };
+}
+
+/** "For Cut." or "For 4 services: Cut, Colour, Blow-dry and 1 more." (web dialog description). */
+export function pickerDescription(services: readonly PickerService[]): string | null {
+  const names = services.filter((s) => s.itemId).map((s) => s.name);
+  if (names.length === 0) return null;
+  if (names.length === 1) return areaCopy('ov.bulk.choose.forOne', { service: names[0]! });
+  const shown =
+    names.length <= 3
+      ? names.join(', ')
+      : areaCopy('ov.bulk.choose.andMore', { names: names.slice(0, 3).join(', '), count: names.length - 3 });
+  return areaCopy('ov.bulk.choose.forMany', { count: names.length, names: shown });
 }
 
 export function toBulkOps(staged: readonly StagedOp[]): BulkOp[] {

@@ -181,6 +181,8 @@ export interface ProposedCollectiveSummary {
   name: string;
   slug: string;
   serviceModel: string;
+  /** The collective already has two venues in: the venue joins it, rather than starting it (2026-10-28). */
+  live?: boolean;
 }
 
 /** One venue's standing for a collective the caller would host (web `collective-standing.ts`). */
@@ -210,7 +212,8 @@ export interface IncomingFeedRequest {
   id: string;
   otherVenueName: string;
   createdAt: string;
-  collective?: { id: string; name: string } | null;
+  /** `live`: the collective already has two venues in, so the venue joins it (2026-10-28). */
+  collective?: { id: string; name: string; live?: boolean } | null;
 }
 
 /**
@@ -232,6 +235,12 @@ export interface IncomingLinksResponse {
   }[];
   /** For a member: collectives whose host is still setting the page up. */
   memberWaiting?: { collectiveId: string; name: string; hostName: string }[];
+  /**
+   * Invitations to a shared-services collective from a host this venue is already linked with, so
+   * no link request carries them (2026-10-28); one that rides on a request is answered with it.
+   * Absent on older servers.
+   */
+  incomingInvitations?: { collectiveId: string; name: string; hostName: string }[];
 }
 
 export interface VenueSearchResult {

@@ -638,13 +638,20 @@ export const queryKeys = {
       [...queryKeys.collectives.all(), 'catalogue', keyScope(accessToken), collectiveId ?? null] as const,
     slug: (accessToken?: string | null, slug?: string | null) =>
       [...queryKeys.collectives.all(), 'slug', keyScope(accessToken), slug ?? null] as const,
-    joinPreview: (accessToken?: string | null, collectiveId?: string | null, withPendingLink?: boolean) =>
-      [...queryKeys.collectives.all(), 'joinPreview', keyScope(accessToken), collectiveId ?? null, Boolean(withPendingLink)] as const,
+    joinPreview: (accessToken?: string | null, collectiveId?: string | null) =>
+      [...queryKeys.collectives.all(), 'joinPreview', keyScope(accessToken), collectiveId ?? null] as const,
     sameNames: (accessToken?: string | null, collectiveId?: string | null) =>
       [...queryKeys.collectives.all(), 'sameNames', keyScope(accessToken), collectiveId ?? null] as const,
     adoptions: (accessToken?: string | null, collectiveId?: string | null) =>
       [...queryKeys.collectives.all(), 'adoptions', keyScope(accessToken), collectiveId ?? null] as const,
     adoptionReview: (accessToken?: string | null, collectiveId?: string | null, itemId?: string | null) =>
       [...queryKeys.collectives.all(), 'adoptionReview', keyScope(accessToken), collectiveId ?? null, itemId ?? null] as const,
+    // The links a venue joining needs (web 2026-10-28).
+    candidates: (accessToken?: string | null) =>
+      [...queryKeys.collectives.all(), 'candidates', keyScope(accessToken)] as const,
+    inviteCheck: (accessToken?: string | null, collectiveId?: string | null, venueId?: string | null) =>
+      [...queryKeys.collectives.all(), 'inviteCheck', keyScope(accessToken), collectiveId ?? null, venueId ?? null] as const,
+    linkTodos: (accessToken?: string | null) =>
+      [...queryKeys.collectives.all(), 'linkTodos', keyScope(accessToken)] as const,
   },
 } as const;

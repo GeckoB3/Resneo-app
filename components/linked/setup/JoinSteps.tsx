@@ -1,13 +1,15 @@
 import { StyleSheet, View } from 'react-native';
 
 import { ChoiceRow } from '@/components/linked/setup/ChoiceRow';
+import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
 import { Text } from '@/components/ui/Text';
 import { allOwnAsked, joinOffersFormsSwitch, joinSummaryCounts, withAllOwn, type JoinDraft } from '@/lib/linked/join-choices';
+import { checklistLinks, joinLinkStateWords } from '@/lib/linked/join-links';
 import { setupCopy } from '@/lib/linked/setup-copy';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
-import type { JoinPreview } from '@/types/collectives';
+import type { JoinPreview, LinkNeed } from '@/types/collectives';
 
 /**
  * The steps an invited venue walks through before joining a shared-services collective (web
@@ -224,6 +226,62 @@ export function JoinSummaryList({
   );
 }
 
+/**
+ * Where this venue's link with each venue in the collective stands (web `JoinLinksChecklist`,
+ * 2026-10-28). Joining makes every missing link and accepts every waiting request in the same step,
+ * so a row is either already linked or linked as the venue joins: nothing to press. The one
+ * exception is a link already in force with less than full access, which somebody chose: it says
+ * so, with "Change it in Linked Accounts".
+ */
+export function JoinLinksChecklist({
+  links,
+  collective,
+  exceptLinkId,
+  onOpenLinked,
+}: {
+  links: LinkNeed[] | undefined;
+  collective: string;
+  /** The request under review alongside, which that sheet describes itself. */
+  exceptLinkId?: string;
+  /** Linked venues, where a link without full access is changed; absent, the row only says so. */
+  onOpenLinked?: () => void;
+}) {
+  const { colors } = useTheme();
+  const shown = checklistLinks(links, exceptLinkId);
+  if (shown.length === 0) return null;
+
+  return (
+    <View style={[styles.card, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+      <Text variant="label">{setupCopy('join.links.heading')}</Text>
+      <Text variant="caption" tone="secondary">
+        {setupCopy('join.links.help', { collective })}
+      </Text>
+      {shown.map((need) => (
+        <View key={need.venue_id} style={styles.linkRow}>
+          <Text variant="bodySmall" color={need.state === 'not_full' ? colors.warning : colors.success}>
+            {need.state === 'not_full' ? '•' : '✓'}
+          </Text>
+          <View style={[styles.group, styles.flex1]}>
+            <Text variant="label">{need.venue_name}</Text>
+            <Text variant="caption" tone="secondary">
+              {joinLinkStateWords(need.state)}
+            </Text>
+            {need.state === 'not_full' && onOpenLinked ? (
+              <Button
+                label={setupCopy('join.links.openLinked')}
+                variant="ghost"
+                size="sm"
+                style={styles.start}
+                onPress={onOpenLinked}
+              />
+            ) : null}
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 /** The tick on the last step that turns the venue's forms on as it joins (web `JoinFormsSwitch`). */
 export function JoinFormsSwitch({
   preview,
@@ -264,5 +322,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.xs,
+  },
+  linkRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  flex1: {
+    flex: 1,
+    minWidth: 0,
+  },
+  start: {
+    alignSelf: 'flex-start',
   },
 });
