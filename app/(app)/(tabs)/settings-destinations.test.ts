@@ -395,36 +395,27 @@ describe('buildDestinations — Commission splits (2026-10-14)', () => {
 });
 
 describe('buildDestinations — switching Checkout on (POS Part 5, C1)', () => {
-  it('gives an admin of an offered venue the Checkout tile with "New", opening the landing', () => {
-    const tile = buildDestinations(ctx({ isAdmin: true, posEnabled: false, posOfferState: 'available', posOfferNew: true })).find(
-      (d) => d.id === 'checkout',
-    );
-    expect(tile).toMatchObject({ group: 'workspace', featured: true, kind: 'route', target: '/checkout', label: 'Checkout', badge: 'New' });
+  it('gives an admin of an offered venue the Checkout tile, opening the landing, with no "New"', () => {
+    const tile = buildDestinations(ctx({ isAdmin: true, posEnabled: false, posOfferState: 'available' })).find((d) => d.id === 'checkout');
+    expect(tile).toMatchObject({ group: 'workspace', featured: true, kind: 'route', target: '/checkout', label: 'Checkout' });
     expect(tile?.hint).toBe('Take payments on your phone and at your desk');
-  });
-
-  it('keeps the tile without "New" once the admin has hidden the offer', () => {
-    const tile = buildDestinations(ctx({ isAdmin: true, posOfferState: 'available', posOfferNew: false })).find((d) => d.id === 'checkout');
-    expect(tile?.target).toBe('/checkout');
     expect(tile?.badge).toBeUndefined();
   });
 
   it('keeps the tile while ResNeo pauses Checkout, saying so', () => {
-    const tile = buildDestinations(ctx({ isAdmin: true, posOfferState: 'paused', posOfferNew: true })).find((d) => d.id === 'checkout');
+    const tile = buildDestinations(ctx({ isAdmin: true, posOfferState: 'paused' })).find((d) => d.id === 'checkout');
     expect(tile).toMatchObject({ hint: 'Paused by ResNeo' });
     expect(tile?.badge).toBeUndefined();
   });
 
   it('gives team members no tile (SW1), and nothing when not offered or from an older server', () => {
-    expect(ids(ctx({ isAdmin: false, posOfferState: 'available', posOfferNew: true }))).not.toContain('checkout');
+    expect(ids(ctx({ isAdmin: false, posOfferState: 'available' }))).not.toContain('checkout');
     expect(ids(ctx({ isAdmin: true, posOfferState: 'not_available' }))).not.toContain('checkout');
     expect(buildDestinations(ctx({ isAdmin: true, posOfferState: undefined }))).toEqual(buildDestinations(ctx({ isAdmin: true })));
   });
 
   it('does not touch the Checkout tile once Checkout is on', () => {
-    const tile = buildDestinations(ctx({ isAdmin: true, posEnabled: true, posOfferState: 'on', posOfferNew: true })).find(
-      (d) => d.id === 'checkout',
-    );
+    const tile = buildDestinations(ctx({ isAdmin: true, posEnabled: true, posOfferState: 'on' })).find((d) => d.id === 'checkout');
     expect(tile?.badge).toBeUndefined();
     expect(tile?.hint).toBe("Take payments and see today's sales");
   });

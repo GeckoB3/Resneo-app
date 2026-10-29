@@ -2,7 +2,7 @@
  * What the switch screens show (POS Part 5): the landing's states, the extras it offers, the calls
  * "Switch on and set up" makes, the extras group and an extra's own screen while it is off, the off
  * sheet's refusals, warnings and tick, the venue the app shows at once after a change, the way
- * back, the history lines, refusals in words, and the door (the Today card and "New").
+ * back, the history lines, refusals in words, and the door (the Today card).
  */
 import { ApiError } from '@/lib/api/client';
 import { readSwitchRefusal } from '@/lib/pos/switches/api';
@@ -462,7 +462,7 @@ describe('the history (SW9)', () => {
   });
 });
 
-describe('the door: the Today card and "New" (step 1, section 12)', () => {
+describe('the door: the Today card (step 1, section 12)', () => {
   const base = {
     isAdmin: true,
     posEnabled: false,

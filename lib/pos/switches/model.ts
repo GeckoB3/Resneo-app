@@ -540,11 +540,11 @@ export function sinceLine(res: PosFeatureSwitchesResponse | null | undefined, ti
   return swT('sw.panel.since', { name, date });
 }
 
-// ─── The door: the Today card and "New" on the More tile (step 1, section 12) ───
+// ─── The door: the Today card (step 1, section 12) ───
 
 /**
- * Whether this admin is shown the door to Checkout: the Today card and "New" on the More tile. One
- * rule with the web (`feature_offers.pos_door`, `src/lib/pos/switches/door.ts`): offered, the venue
+ * Whether this admin is shown the door to Checkout: the Today card. One rule with the web
+ * (`feature_offers.pos_door`, `src/lib/pos/switches/door.ts`): offered, the venue
  * has never made a sale, and this admin has not hidden the card. A server dismissal
  * (`dismissed_prompts`) and a "Hide this" on this phone, before the venue is read again, also shut
  * it. An older server sends no door: none shows.

@@ -16,7 +16,7 @@ type FeatureTileProps = {
   label: string;
   hint: string;
   onPress: () => void;
-  /** A small pill beside the chevron ("New" on Checkout while it is offered). */
+  /** A small pill beside the chevron. */
   badge?: string;
 };
 

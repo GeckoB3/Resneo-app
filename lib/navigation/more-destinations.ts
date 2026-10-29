@@ -68,7 +68,7 @@ export type Destination = {
   primary?: boolean;
   /** Opens an external surface — shows the "open" glyph. */
   external?: boolean;
-  /** A small pill on the tile ("New" on Checkout while it is offered, POS Part 5 C1). */
+  /** A small pill on the tile. */
   badge?: string;
   /**
    * The web's vocabulary for this destination, kept from the settings search
@@ -177,8 +177,6 @@ export type DestinationsContext = {
    * it to say so. Absent (an older server) changes nothing.
    */
   posOfferState?: PosSwitchOfferState | null;
-  /** "New" on that tile: offered, and this admin has not hidden the offer on Today. */
-  posOfferNew?: boolean;
   /**
    * The way back while Checkout is off at a venue that has had it (design section 7.2): Orders
    * while orders are still to hand over or send, and Sales history while anything is left to finish.
@@ -234,8 +232,8 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
     if (ctx.sellProducts !== false) list.push({ id: 'stock', label: 'Products and stock', hint: 'Stock levels, stocktakes and deliveries', icon: { ios: 'shippingbox.fill', android: 'inventory_2', web: 'inventory_2' }, tile: TILE.amber, group: 'workspace', kind: 'route', target: '/stock', featured: true, keywords: ['products', 'retail', 'stock', 'stocktake', 'barcode', 'inventory'] });
   } else {
     // Checkout is off (POS Part 5). An admin of a venue ResNeo offers it to gets the Checkout tile,
-    // with "New" until they hide the offer, opening the landing (C1); while ResNeo pauses it, the
-    // tile stays and says so. Team members get no tile (SW1).
+    // opening the landing (C1); while ResNeo pauses it, the tile stays and says so. Team members get
+    // no tile (SW1).
     const offer = ctx.posOfferState;
     if (isAdmin && (offer === 'available' || offer === 'paused')) {
       list.push({
@@ -248,7 +246,6 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
         kind: 'route',
         target: '/checkout',
         featured: true,
-        ...(offer === 'available' && ctx.posOfferNew === true ? { badge: SWITCH_COPY['app.sw.tile.badge'] } : {}),
         keywords: ['till', 'pos', 'sale', 'payment', 'pay', 'receipt', 'switch on'],
       });
     }

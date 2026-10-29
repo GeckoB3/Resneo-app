@@ -83,7 +83,7 @@ export function useSetFeatureSwitch(options: { deferApply?: boolean } = {}) {
 
 /**
  * "Hide this" on the Today offer card: `POST /api/venue/prompts/dismiss` with `pos_offer`, kept on
- * the staff row, so the web's card and "New" item hide too. The card hides at once on this phone,
+ * the staff row, so the web's card and menu item hide too. The card hides at once on this phone,
  * and the venue is read again, whose `dismissed_prompts` and shut `pos_door` then keep it hidden.
  */
 export function useHidePosOffer(scope: string | null) {

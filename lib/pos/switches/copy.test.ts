@@ -29,7 +29,6 @@ describe('the switch copy deck', () => {
 
   it("keeps the design's app copy (step 8) and shared sentences word for word", () => {
     expect(SWITCH_COPY['app.sw.tile']).toBe('Checkout');
-    expect(SWITCH_COPY['app.sw.tile.badge']).toBe('New');
     expect(SWITCH_COPY['app.sw.title']).toBe('Take payments on your phone and at your desk');
     expect(SWITCH_COPY['app.sw.body']).toBe(
       'Check clients out in two taps, take cards with Tap to Pay, sell products and send receipts. Included in your plan.',

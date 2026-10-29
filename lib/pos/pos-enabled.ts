@@ -33,7 +33,7 @@ const NOT_AVAILABLE: PosSwitchOffer = { state: 'not_available', reason: null, pu
 
 /**
  * Checkout's offer to this admin (POS Part 5, SW1 and SW2): `GET /api/venue` `feature_offers.pos`.
- * `available` puts the Checkout tile with "New" in More and the offer card on Today; `paused`
+ * `available` puts the Checkout tile in More and the offer card on Today; `paused`
  * keeps the tile to say why. The server sends it to admins only and it is additive, so an older
  * deploy, a team member or anything unreadable is `not_available`: nothing new shows.
  */
@@ -51,7 +51,7 @@ export function posOffer(venue: Pick<VenueBootstrap, 'feature_offers'> | null | 
 
 /**
  * The door to Checkout for this admin (POS Part 5, section 12): `feature_offers.pos_door`, the web's
- * one rule for its "New" item and Home card (offered, the venue never made a sale, and this admin
+ * one rule for its Checkout menu item and Home card (offered, the venue never made a sale, and this admin
  * has not hidden the card). Only an explicit `true` opens it: an older server, which sends no door,
  * and a team member show none.
  */

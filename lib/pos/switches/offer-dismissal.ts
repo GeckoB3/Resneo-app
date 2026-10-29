@@ -6,8 +6,8 @@ import { useEffect, useState } from 'react';
  *
  * The dismissal itself is the server's (`POST /api/venue/prompts/dismiss` with `pos_offer`, kept on
  * the staff row), and `GET /api/venue` carries it back as `dismissed_prompts` and a shut
- * `feature_offers.pos_door`, so the web's card and "New" item hide too. This only hides the card,
- * and "New" on the More tile, at once on this phone; it lives for the app session and is never
+ * `feature_offers.pos_door`, so the web's card and menu item hide too. This only hides the card
+ * at once on this phone; it lives for the app session and is never
  * stored, so the server stays the one record.
  */
 

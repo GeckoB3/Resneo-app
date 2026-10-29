@@ -224,8 +224,8 @@ export interface VenueBootstrap {
   assistant_enabled?: boolean;
   /**
    * What this admin is offered to switch on themselves (POS Part 5, SW2): `pos`
-   * is Checkout's offer and `pos_door` whether to show its door (the Today card
-   * and "New"). Sent to admins only and additive, so an older deploy or a team
+   * is Checkout's offer and `pos_door` whether to show its door (the Today
+   * card). Sent to admins only and additive, so an older deploy or a team
    * member gets nothing: `posOffer` reads `not_available`, `posOfferDoor` false.
    */
   feature_offers?: Partial<VenueFeatureOffers> | null;

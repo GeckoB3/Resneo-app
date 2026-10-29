@@ -6,7 +6,7 @@
  *
  * What the app reads:
  * - `GET /api/venue` `feature_offers.pos` (admins; additive, so an older server sends nothing, which
- *   reads as `not_available`): the More tile with "New", the Today card and the landing's state.
+ *   reads as `not_available`): the More tile, the Today card and the landing's state.
  * - `GET` and `POST /api/venue/feature-switches` over Bearer (admins only): the landing, the
  *   "Checkout is on" group in Checkout settings and both sheets.
  * - `GET /api/venue/feature-switches/vouchers.csv`: the list of vouchers with money left.
@@ -195,7 +195,7 @@ export type PosFeatureSwitchErrorCode =
 
 /**
  * The offer an admin sees on the More tab and Today, sent as `GET /api/venue` `feature_offers.pos`.
- * - `available`: Checkout is off and this admin's venue can switch it on now ("New").
+ * - `available`: Checkout is off and this admin's venue can switch it on now.
  * - `on`: Checkout is on.
  * - `paused`: ResNeo blocked it, or the environment switch is set.
  * - `not_available`: not offered, or not eligible (plan, pounds, billing, onboarding); nothing shows.
@@ -216,7 +216,7 @@ export interface PosSwitchOffer {
 export interface VenueFeatureOffers {
   pos: PosSwitchOffer;
   /**
-   * Show the "New" badge or item and the offer card: offered, the venue never made a sale, and this
+   * Show the offer card (the web also shows its menu item): offered, the venue never made a sale, and this
    * admin has not hidden it (the web's `door.ts`, the rule its menu and Home card use too).
    */
   pos_door: boolean;

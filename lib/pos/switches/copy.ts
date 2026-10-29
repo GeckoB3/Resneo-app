@@ -15,7 +15,6 @@ import type { PosSwitchExtraKey, PosSwitchKey } from '@/types/pos-switches';
  */
 export const SWITCH_COPY = {
   // Step 1: the offer card, on Today in the app (the web's Home card).
-  'sw.offer.eyebrow': 'New',
   'sw.offer.see': 'See how it works',
   'sw.offer.hide': 'Hide this',
   'sw.offer.hideFailed': "We couldn't hide this. Please try again.",
@@ -24,7 +23,6 @@ export const SWITCH_COPY = {
 
   // Step 8: the app (C1 and C2).
   'app.sw.tile': 'Checkout',
-  'app.sw.tile.badge': 'New',
   'app.sw.title': 'Take payments on your phone and at your desk',
   'app.sw.body':
     'Check clients out in two taps, take cards with Tap to Pay, sell products and send receipts. Included in your plan.',

@@ -61,7 +61,7 @@ beforeEach(() => {
 describe('CheckoutOfferCard', () => {
   it('offers Checkout to an admin while the door is open', async () => {
     await render(<CheckoutOfferCard />);
-    expect(screen.getByText('New')).toBeTruthy();
+    expect(screen.queryByText('New')).toBeNull();
     expect(screen.getByText('Take payments on your phone and at your desk')).toBeTruthy();
     expect(screen.getByText(/Included in your plan\.$/)).toBeTruthy();
     expect(mockScopes).toContain('venue-1_staff-1');

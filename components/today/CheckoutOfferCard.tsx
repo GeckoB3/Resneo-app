@@ -2,7 +2,6 @@ import { type Href, useRouter } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
 import { CheckoutGlyph } from '@/components/pos/switches/parts';
-import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
@@ -24,7 +23,7 @@ export const CHECKOUT_LANDING_HREF = '/checkout';
  * shown while the door is open (`feature_offers.pos_door`, the web's one rule: offered, the venue
  * has never made a sale, and this admin has not hidden it), so a venue that used Checkout and
  * switched it off is not pitched again. "See how it works" opens the landing; "Hide this" is kept
- * on the server for this person (the web's card and "New" item go too) and the card goes at once.
+ * on the server for this person (the web's card and menu item go too) and the card goes at once.
  * Hidden from team members, from an older server's admins (no door), and once Checkout is on.
  */
 export function CheckoutOfferCard() {
@@ -54,9 +53,6 @@ export function CheckoutOfferCard() {
       <View style={styles.row}>
         <CheckoutGlyph size={44} />
         <View style={styles.body}>
-          <View style={styles.badge}>
-            <Badge label={swT('sw.offer.eyebrow')} tone="accent" />
-          </View>
           <Text variant="label" accessibilityRole="header">
             {swT('app.sw.title')}
           </Text>
@@ -87,6 +83,5 @@ export function CheckoutOfferCard() {
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   body: { flex: 1, minWidth: 0, gap: spacing.xs },
-  badge: { flexDirection: 'row' },
   buttons: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, paddingTop: spacing.xs },
 });

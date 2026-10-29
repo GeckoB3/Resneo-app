@@ -1,9 +1,8 @@
 /**
  * The More tab's Checkout tile while Checkout is off (POS Part 5, C1): an admin of an offered venue
- * keeps the tile while the offer is available or paused, with "New" only while the door is open
- * (`feature_offers.pos_door`, the web's rule: offered, no sale yet, not hidden), so a venue that
- * switched Checkout off is not pitched again. A dismissal on the server, or "Hide this" on this
- * phone, takes "New" away at once. Team members, and an older server's admins, see no tile.
+ * keeps the tile while the offer is available or paused. It no longer says "New" (retired
+ * 2026-10-29), whatever the door (`feature_offers.pos_door`) or a dismissal says. Team members, and
+ * an older server's admins, see no tile.
  *
  * jest hoists mock factories above imports, so every closed-over variable is prefixed `mock*`.
  */
@@ -38,16 +37,11 @@ jest.mock('@/lib/queries/useStaffMe', () => ({
 jest.mock('@/lib/queries/useBillingStatus', () => ({ useBillingStatus: () => ({ data: undefined }) }));
 jest.mock('@/lib/queries/useVenueSettings', () => ({ useUpdateVenue: () => ({ mutateAsync: jest.fn() }) }));
 jest.mock('@/providers/TapToPayProvider', () => ({ useTapToPay: () => ({ applies: false }) }));
-jest.mock('@/lib/pos/switches/offer-dismissal', () => ({
-  ...jest.requireActual<typeof import('@/lib/pos/switches/offer-dismissal')>('@/lib/pos/switches/offer-dismissal'),
-  useOfferHidden: () => mockHiddenHere,
-}));
 jest.mock('@/providers/VenueProvider', () => ({
   useVenueContext: () => ({ venue: mockVenue, name: 'Bloom', isLoading: false }),
 }));
 
 let mockRole: 'admin' | 'staff' = 'admin';
-let mockHiddenHere = false;
 let mockVenue: Record<string, unknown> = {};
 
 function venue(offers?: Record<string, unknown>, dismissed?: string[]) {
@@ -67,36 +61,27 @@ const AVAILABLE = { state: 'available', reason: null, public_reason: null };
 
 beforeEach(() => {
   mockRole = 'admin';
-  mockHiddenHere = false;
 });
 
 describe('the More tab Checkout tile while Checkout is off', () => {
-  it('says "New" while the door is open', async () => {
+  it('shows the tile without "New" while the door is open', async () => {
     mockVenue = venue({ pos: AVAILABLE, pos_door: true }, []);
     await render(<MoreScreen />);
-    expect(screen.getByLabelText('Checkout, New')).toBeTruthy();
+    expect(screen.getByLabelText('Checkout')).toBeTruthy();
+    expect(screen.queryByLabelText('Checkout, New')).toBeNull();
   });
 
-  it('keeps the tile without "New" at a venue that has used Checkout', async () => {
+  it('keeps the tile at a venue that has used Checkout or hid the offer', async () => {
     mockVenue = venue({ pos: AVAILABLE, pos_door: false }, []);
     await render(<MoreScreen />);
     expect(screen.getByLabelText('Checkout')).toBeTruthy();
-    expect(screen.queryByLabelText('Checkout, New')).toBeNull();
-  });
 
-  it('drops "New" once the admin hid the offer, on the server or on this phone', async () => {
     mockVenue = venue({ pos: AVAILABLE, pos_door: true }, ['pos_offer']);
     await render(<MoreScreen />);
-    expect(screen.queryByLabelText('Checkout, New')).toBeNull();
     expect(screen.getByLabelText('Checkout')).toBeTruthy();
-
-    mockVenue = venue({ pos: AVAILABLE, pos_door: true }, []);
-    mockHiddenHere = true;
-    await render(<MoreScreen />);
-    expect(screen.queryByLabelText('Checkout, New')).toBeNull();
   });
 
-  it('keeps the tile while ResNeo pauses Checkout, without "New"', async () => {
+  it('keeps the tile while ResNeo pauses Checkout, saying so', async () => {
     mockVenue = venue({ pos: { state: 'paused', reason: 'blocked', public_reason: null }, pos_door: false });
     await render(<MoreScreen />);
     expect(screen.getByLabelText('Checkout')).toBeTruthy();

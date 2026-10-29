@@ -36,11 +36,7 @@ import {
   isShopEnabled,
   isVouchersEnabled,
   posOffer,
-  posOfferDoor,
-  posPromptDismissed,
 } from "@/lib/pos/pos-enabled";
-import { offerDoorOpen } from "@/lib/pos/switches/model";
-import { offerScope, useOfferHidden } from "@/lib/pos/switches/offer-dismissal";
 import {
   buildDestinations,
   LIST_GROUPS,
@@ -231,20 +227,9 @@ export default function MoreScreen() {
   // "Sell products" off (POS Part 4, OB3) hides Products and stock; unknown until the bootstrap is in.
   const sellProducts = sellProductsOn(posBoot.data?.settings);
 
-  // Checkout's offer while it is off (POS Part 5): the Checkout tile for an admin, with "New" while
-  // the door is open (the web's rule: offered, no sale yet, not hidden); and the way back to what
-  // is left to finish after switching off.
-  const offer = posOffer(venue);
-  const offerState = offer.state;
-  const hiddenHere = useOfferHidden(isAdmin ? offerScope(venue?.id, staff?.id) : null);
-  const offerNew = offerDoorOpen({
-    isAdmin,
-    posEnabled: isPosEnabled(venue),
-    offer,
-    door: posOfferDoor(venue),
-    dismissed: posPromptDismissed(venue, "pos_offer"),
-    hiddenHere,
-  });
+  // Checkout's offer while it is off (POS Part 5): the Checkout tile for an admin; and the way back
+  // to what is left to finish after switching off.
+  const offerState = posOffer(venue).state;
   const wayBack = usePosWayBack(venue, isAdmin);
   const wayBackOrders = wayBack.orders;
   const wayBackNewOrders = wayBack.ordersNewCount;
@@ -273,7 +258,6 @@ export default function MoreScreen() {
       posCan,
       sellProducts,
       posOfferState: offerState,
-      posOfferNew: offerNew,
       posWayBack: {
         orders: wayBackOrders,
         ordersNewCount: wayBackNewOrders,
@@ -289,7 +273,6 @@ export default function MoreScreen() {
     posCan,
     sellProducts,
     offerState,
-    offerNew,
     wayBackOrders,
     wayBackNewOrders,
     wayBackSales,
