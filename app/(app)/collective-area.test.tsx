@@ -20,6 +20,16 @@ jest.mock('@/components/ui/Sheet', () => {
   };
 });
 
+// Choose calendars opens the Services screen's member sheet, which has its own tests.
+jest.mock('@/components/collective-area/MemberCalendarsSheet', () => {
+  const React = require('react');
+  const { Text } = require('react-native');
+  return {
+    MemberCalendarsSheet: ({ serviceId }: { serviceId: string }) =>
+      React.createElement(Text, null, `Calendars sheet for ${serviceId}`),
+  };
+});
+
 let mockParams: Record<string, string> = {};
 const mockPush = jest.fn();
 jest.mock('expo-router', () => ({
@@ -463,6 +473,27 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
       fireEvent.press(screen.getByLabelText('Update now: Zen Studio'));
     });
     expect(mockRetry.mock.calls[0]?.[0]).toBe('v-zen');
+  });
+
+  it('opens Choose calendars on this screen when a member taps a page service (2026-10-29)', async () => {
+    mockGroups = [];
+    mockServices = [
+      { id: 's1', name: 'Balayage', collective: block('replica') },
+      { id: 's2', name: 'Old cut', collective: block('parked') },
+    ];
+    await render(<CollectiveAreaScreen />);
+    expect(screen.queryByText('Open Services')).toBeNull();
+    expect(screen.queryByText(/Calendars sheet for/)).toBeNull();
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Choose calendars for Balayage'));
+    });
+    expect(screen.getByText('Calendars sheet for s1')).toBeTruthy();
+    expect(mockPush).not.toHaveBeenCalled();
+    // A parked service is not on the page: nothing to choose there.
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Parked while you are part of Northside (1)'));
+    });
+    expect(screen.queryByLabelText('Choose calendars for Old cut')).toBeNull();
   });
 
   it("folds a member's parked and retired lists until opened", async () => {

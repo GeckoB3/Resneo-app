@@ -1,7 +1,8 @@
 /**
  * A member's own services on Manage Collective, suggested to the host many at once (owner,
  * 2026-10-27; web `MemberSuggestPanel.tsx`). Only a service off the page and not already waiting
- * can be ticked; the rest say where they stand.
+ * can be ticked; a waiting one says so, one on the page is left to the list below, and once every
+ * service is on the page the card goes (2026-10-29).
  *
  * jest hoists mock factories above imports, so every closed-over variable is prefixed `mock*`.
  */
@@ -86,7 +87,7 @@ beforeEach(() => {
 });
 
 describe('MemberSuggestPanel', () => {
-  it('says where each service stands, and lets only the free ones be ticked', async () => {
+  it('lists the services off the page, and lets only the free ones be ticked', async () => {
     await renderPanel();
     expect(await screen.findByText('Your services')).toBeTruthy();
     expect(
@@ -96,10 +97,9 @@ describe('MemberSuggestPanel', () => {
     ).toBeTruthy();
     expect(screen.getAllByText('Not on the page')).toHaveLength(2);
     expect(screen.getByText('Suggested to Host Venue')).toBeTruthy();
-    expect(screen.getByText('On the page')).toBeTruthy();
-    expect(screen.getAllByText('45 min · £30.00 · Brows')).toHaveLength(4);
+    expect(screen.queryByText('Balayage')).toBeNull();
+    expect(screen.getAllByText('45 min · £30.00 · Brows')).toHaveLength(3);
     expect(screen.getByLabelText('Lash lift').props.accessibilityState?.disabled).toBe(true);
-    expect(screen.getByLabelText('Balayage').props.accessibilityState?.disabled).toBe(true);
     // Nothing ticked yet: the button waits.
     expect(screen.getByRole('button', { name: 'Suggest to Host Venue (0)' }).props.accessibilityState?.disabled).toBe(true);
   });
@@ -118,7 +118,7 @@ describe('MemberSuggestPanel', () => {
     ]);
     expect(await screen.findByText('Sent 2 suggestions to Host Venue.')).toBeTruthy();
     // Read again: both now wait for the host, so nothing is left to suggest.
-    expect(await screen.findByText('Every service of yours is on the page or waiting for Host Venue.')).toBeTruthy();
+    expect(await screen.findByText('These are waiting for Host Venue to add them.')).toBeTruthy();
   });
 
   it('names a single service it sent', async () => {
@@ -158,6 +158,17 @@ describe('MemberSuggestPanel', () => {
     };
     await renderPanel();
     await waitFor(() => expect(mockCalls).toHaveLength(1));
+    expect(screen.queryByText('Your services')).toBeNull();
+  });
+
+  it('hides itself once every service is on the page', async () => {
+    mockServices = mockServices.map((s) => ({ ...s, on_page: true, suggested_at: null }));
+    await renderPanel();
+    await waitFor(() => expect(mockCalls).toHaveLength(1));
+    // Let the answer land before looking: nothing shows while it loads either.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
     expect(screen.queryByText('Your services')).toBeNull();
   });
 });

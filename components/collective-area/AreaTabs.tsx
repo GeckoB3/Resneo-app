@@ -50,12 +50,17 @@ export function MemberServicesList({
   services,
   hostName,
   collectiveName,
+  onChooseCalendars,
 }: {
   services: AreaService[];
   hostName: string;
   collectiveName: string;
+  /**
+   * A page service tapped: choose which of this venue's calendars offer it, on this screen (owner,
+   * 2026-10-29; it used to send the member to the Services screen).
+   */
+  onChooseCalendars: (serviceId: string) => void;
 }) {
-  const router = useRouter();
   const { colors } = useTheme();
   const onPage = services.filter((s) => s.collective?.role === 'replica');
   const parked = services.filter((s) => s.collective?.role === 'parked');
@@ -112,17 +117,38 @@ export function MemberServicesList({
               {caption}
             </Text>
             <Card padded={false}>
-              {rows.map((s, index) => (
-                <View
-                  key={s.id}
-                  style={[styles.memberRow, index > 0 ? [styles.rowDivider, { borderTopColor: colors.border }] : null]}
-                >
-                  <Text variant="bodySmall" style={styles.flex1}>
-                    {s.name}
-                  </Text>
-                  {badge(s)}
-                </View>
-              ))}
+              {rows.map((s, index) => {
+                const rowStyle = [styles.memberRow, index > 0 ? [styles.rowDivider, { borderTopColor: colors.border }] : null];
+                const content = (
+                  <>
+                    <Text variant="bodySmall" style={styles.flex1}>
+                      {s.name}
+                    </Text>
+                    {badge(s)}
+                  </>
+                );
+                // A service on the page: tap it to choose its calendars here.
+                return s.collective?.role === 'replica' ? (
+                  <Pressable
+                    key={s.id}
+                    accessibilityRole="button"
+                    accessibilityLabel={areaCopy('ms.openService', { service: s.name })}
+                    onPress={() => onChooseCalendars(s.id)}
+                    style={({ pressed }) => [rowStyle, styles.tapRow, pressed ? { opacity: 0.6 } : null]}
+                  >
+                    {content}
+                    <SymbolView
+                      name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
+                      tintColor={colors.textMuted}
+                      size={14}
+                    />
+                  </Pressable>
+                ) : (
+                  <View key={s.id} style={rowStyle}>
+                    {content}
+                  </View>
+                );
+              })}
             </Card>
           </>
         ) : null}
@@ -133,9 +159,8 @@ export function MemberServicesList({
   return (
     <View style={styles.stack}>
       <Text variant="bodySmall" tone="secondary">
-        Choose which of your calendars offer each service on your Services screen.
+        Tap a service to choose which of your calendars offer it.
       </Text>
-      <Button label="Open Services" variant="secondary" onPress={() => router.push('/manage/services' as Href)} />
       {section(
         'on-page',
         areaCopy('svc.member.section.fromHostTitle', { host: hostName, collective: collectiveName }),
@@ -632,6 +657,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   rowDivider: { borderTopWidth: StyleSheet.hairlineWidth },
+  tapRow: { minHeight: 44 },
   // A sentence where the sync badge would be: it wraps rather than squeezing the service's name.
   switchedOffNote: { flexShrink: 1, maxWidth: '55%', textAlign: 'right' },
   note: { borderWidth: StyleSheet.hairlineWidth, borderRadius: radius.card, padding: spacing.md, gap: spacing.xs },

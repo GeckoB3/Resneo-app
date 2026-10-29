@@ -37,6 +37,7 @@ import {
 import { HistoryPanel, MemberServicesList, VenuesPanel, type VenueRow } from '@/components/collective-area/AreaTabs';
 import { LinkTodosCard } from '@/components/collective-area/LinkTodosCard';
 import { ListingsPanel } from '@/components/collective-area/ListingsPanel';
+import { MemberCalendarsSheet } from '@/components/collective-area/MemberCalendarsSheet';
 import { MemberSuggestPanel } from '@/components/collective-area/MemberSuggestPanel';
 import { ServicesGridBar, ServicesGridList, useServicesGrid } from '@/components/collective-area/ServicesGrid';
 import { SuggestionsReviewCard } from '@/components/collective-area/SuggestionsReviewCard';
@@ -181,6 +182,8 @@ function AreaBody({
   const params = useLocalSearchParams<{ view?: string; venue?: string; filter?: string }>();
   const [tab, setTab] = useState<AreaTab>('services');
   const [historyVenueId, setHistoryVenueId] = useState<string | null>(null);
+  /** A member's page service opened from its list, to choose its calendars here (2026-10-29). */
+  const [calendarsServiceId, setCalendarsServiceId] = useState<string | null>(null);
   const [servicesView, setServicesView] = useState<ServicesView>(
     oneParam(params.view) === 'venues' ? 'venues' : 'page',
   );
@@ -337,7 +340,15 @@ function AreaBody({
                     services={services}
                     hostName={collective.hostVenueName}
                     collectiveName={collective.name}
+                    onChooseCalendars={setCalendarsServiceId}
                   />
+                  {calendarsServiceId ? (
+                    <MemberCalendarsSheet
+                      serviceId={calendarsServiceId}
+                      currencySymbol={currencySymbol}
+                      onClose={() => setCalendarsServiceId(null)}
+                    />
+                  ) : null}
                   <LeaveCollectiveCard
                     collectiveId={collective.id}
                     collectiveName={collective.name}
