@@ -15,6 +15,26 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ---
 
+## Unreleased OTA: Checkout without "New", members choose calendars on Manage Collective (2026-10-29)
+
+Ships in one update with the three collective entries below, from `main` above `ac6ef65`. These two
+commits use only routes production already had; the collective entries need the web merge of
+2026-10-29 (`ce7fddf8`, PR #240), which is live, and migrations `20270414120000` to
+`20270414150000` on the production database. Checks in the 2026-10-29 run in
+`Docs/GO_LIVE_CHECK.md`.
+
+- **Checkout** (`da3551a`, web `10b2358e`): the More tab's Checkout tile and the Today offer card no
+  longer say "New". The tile still shows to an admin of a venue offered Checkout, opening the
+  landing.
+- **Manage Collective, member** (`ac6ef65`, web `97ad858f`): tap a service on the page to choose
+  which of your calendars offer it, in the Services screen's own sheet (with Edit values on a
+  calendar where the host lets calendars have their own values), instead of the "Open Services"
+  button. "Your services" lists only the services off the page, and goes once every service is on
+  it.
+- Not device-tested; covered by `collective-area.test.tsx`, `MemberCalendarsSheet.test.tsx`,
+  `MemberSuggestPanel.test.tsx` and the Checkout tile and card tests. The web side was checked live
+  as a member.
+
 ## Unreleased OTA: collectives, choosing calendars, inviting any venue and joining in one step (2026-10-28, third round)
 
 Parity with the web round of 2026-10-28 (web staging working tree, uncommitted when written). **Needs
@@ -149,11 +169,11 @@ parts hide and the old one-at-a-time card stays (the app reads a 404 from venue-
   now reads "On the {collective} page".
 - Device-tested on Android (Expo Go against the local web server), 2026-10-27; iOS not tested.
 
-## Unreleased OTA: collective booking settings, declined requests, Checkout support banner
+## OTA on iOS 1.3.0 / Android 1.3.0, 2026-10-26: collective booking settings, declined requests, Checkout support banner
 
-From `3f7946a` (three commits above `1ab01af`). Checks in the 2026-10-26 run in
-`Docs/GO_LIVE_CHECK.md`. Publish only once the web merge of 2026-10-26 (staging `613ce871`) is live
-on www.resneo.com; the production database already has migration `20270413120000`.
+Published 2026-10-26 from `ac05700` (the app changes are `3f7946a` and the two below it; `ac05700`
+adds the go-live record): iOS group `a382eb67-04ef-461c-8296-11d714fd2998` and Android group
+`4a8b788a-1df4-4f09-93ca-86cf4b0af0aa`. Checks in the 2026-10-26 run in `Docs/GO_LIVE_CHECK.md`.
 
 ### Collective booking settings (owner, 2026-10-26)
 

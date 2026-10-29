@@ -1,5 +1,99 @@
 # Go-live check — Resneo app
 
+## Run 2026-10-29: collectives across venues, members choose calendars, Checkout without "New", iOS 1.3.0 and Android 1.3.0, from `ac6ef65`
+
+**Scope:** `ac05700..ac6ef65`, five commits:
+- `f7f210a`: curate a collective's services from every venue (web `d09f0ed9`).
+- `0c5ba1c`: calendar values, calendar ticks, staff notes and join steps across venues (web `2fd7af01`).
+- `7f2cbc1`: one invitation links and joins, the calendar picker, invite any venue, Switch it on
+  (web `1c0d96bb`).
+- `da3551a`: the Checkout tile and the Today offer card lose "New" (web `10b2358e`).
+- `ac6ef65`: a member chooses calendars on Manage Collective, and "Your services" goes once every
+  service is on the page (web `97ad858f`).
+
+`CHANGELOG.md` has them under the four "Unreleased OTA" entries at the top. The 2026-10-26 entry is
+retitled as published, with its groups.
+
+**Verdict: cleared to publish, one update per platform (§6).** Nothing native moved. The web side
+is live.
+
+### 1. Version and reach
+
+| Check | Result |
+|---|---|
+| Published tip | iOS `a382eb67` and Android `4a8b788a`, both from `ac05700`, 2026-10-26 22:14 and 22:13 UTC, runtime 1.3.0 (`update:list --branch production`, `update:view`) |
+| Store binaries | `build:list --profile production`: iOS 1.3.0 build 27 and Android 1.3.0 build 19, from `7a5de9a` (2026-10-18). No newer store build |
+| Runtime | `app.json` root `version` and `android.version` 1.3.0, `appVersion` policy: the update reaches the 1.3.0 installs |
+
+### 2. Nothing native moved
+
+`git diff ac05700 ac6ef65` over `package.json`, `package-lock.json`, `app.json`, `app.config.js`,
+`eas.json`, `metro.config.js`, `babel.config.js`, `modules`, `patches`, `plugins`, `ios` and
+`android`: empty. Since the store build (`7a5de9a`) the only native-side change is still
+`expo-image-manipulator`, cleared for updates in the 2026-10-25 run (§2 there).
+
+### 3. Verified on this machine
+
+- `tsc --noEmit`: clean. `jest`: **617 suites / 5,831 tests pass**. `expo lint`: 0 errors,
+  635 warnings (601 at the last run).
+- EAS `production` environment (`eas env:list production`): `EXPO_PUBLIC_API_URL` www.resneo.com,
+  `EXPO_PUBLIC_SUPABASE_URL` njualfobtudvlugqkqho (live), the live publishable key, the `pk_live_`
+  Stripe key and the Sentry DSN; unchanged.
+- Cleared-cache export under `eas env:exec production` (`npx expo export --clear --platform all`),
+  both Hermes bundles (iOS 15.5 MB, Android 15.7 MB). Counts:
+
+| Marker | iOS | Android |
+|---|---|---|
+| live Supabase URL / `www.resneo.com` / `pk_live_` / Sentry ingest host | 1 / 1 / 1 / 1 | 1 / 1 / 1 / 1 |
+| `zkppmyyvkjvbsvemakbb` / full dev publishable key / full dev Stripe key / `pk_test_` | none | none |
+| `192.168.` / `10.0.2.2` | none / none | none / none |
+| `reserve-ni.vercel.app` | once: the `getWebUrl()` fallbacks | same |
+| `localhost:3000` | once: expo-router's `head/url.js` fallback | none |
+| `localhost:8081` | once: React Native's `getDevServer` fallback | same |
+| `TERMINAL_SIMULATED` / `ALLOW_SCREENSHOTS` | none / none | none / none |
+| New code: "Tap a service to choose which of your calendars offer it", "Choose calendars for {service}", "These are waiting for {host} to add them" | each present | each present |
+| Gone: the old "Every service of yours is on the page" line, `app.sw.tile.badge`, `sw.offer.eyebrow` | none | none |
+
+### 4. Web
+
+The collective commits call routes and read fields that reached production in the merge of
+2026-10-29 (`ce7fddf8`, PR #240, staging `0ab46458`): `GET /api/venue/collectives/{id}/venue-services`,
+`GET /api/venue/collectives/{id}/invite-check`, `GET /api/venue/collectives/link-todos`, the one-step
+join and the calendar-values changes. The owner applied migrations `20270414120000`,
+`20270414130000`, `20270414140000` and `20270414150000` to the production database before the merge
+(the owner's word; not re-read here). Vercel reports the production deployment of `ce7fddf8`
+complete, and www.resneo.com answers 401, not 404, on `link-todos` and `venue-services`, so the new
+routes are live. `da3551a` and `ac6ef65` use only routes production already had.
+
+### 5. Device testing
+
+The three collective commits were device-tested on Android (Expo Go against the local web server)
+on 2026-10-27 and 2026-10-28, as their changelog entries record, with the later parts covered by
+tests only. Today's two commits (`da3551a`, `ac6ef65`) are **not device-tested**; they are covered by
+`collective-area.test.tsx`, `MemberCalendarsSheet.test.tsx`, `MemberSuggestPanel.test.tsx` and the
+Checkout tile and card tests. Their web counterparts were checked live on the local server as
+Light 16, a member of Aura's collective: Choose calendars opened on the page, a calendar tick saved,
+Edit values opened, and the tick was put back. **Not tested:** an iPhone, and the store binaries.
+
+### 6. Publish
+
+Run from `C:\Resneo-app` on a clean `main` at this record's commit (`eas.json` requires a commit):
+
+```
+npx eas-cli update --channel production --platform ios --environment production --clear-cache --message "Collectives across venues, choosing calendars, Checkout without New"
+npx eas-cli update --channel production --platform android --environment production --clear-cache --message "Collectives across venues, choosing calendars, Checkout without New"
+```
+
+To roll back, republish the 2026-10-26 groups:
+`npx eas-cli update:republish --group a382eb67-04ef-461c-8296-11d714fd2998 --message "Roll back"`
+(iOS) and `npx eas-cli update:republish --group 4a8b788a-1df4-4f09-93ca-86cf4b0af0aa --message "Roll back"`
+(Android).
+
+After publishing, retitle the four changelog entries as published with the two groups, and watch
+Sentry for new crashes over the next day.
+
+---
+
 ## Run 2026-10-26: collective booking settings, declined requests, Checkout support banner, iOS 1.3.0 and Android 1.3.0, from `3f7946a`
 
 **Scope:** `1ab01af..3f7946a`, three commits:
