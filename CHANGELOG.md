@@ -15,10 +15,11 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ---
 
-## Unreleased OTA: Checkout without "New", members choose calendars on Manage Collective (2026-10-29)
+## OTA on iOS 1.3.0 / Android 1.3.0, 2026-10-29: Checkout without "New", members choose calendars on Manage Collective
 
-Ships in one update with the three collective entries below, from `main` above `ac6ef65`. These two
-commits use only routes production already had; the collective entries need the web merge of
+Published 2026-10-29 from `e12e365` (the go-live record above `ac6ef65`), with the three collective
+entries below in the same update: iOS group `d4fd2fb1-56c1-4d67-ad2f-522f6b274e34` and Android group
+`fa69f3fc-3dad-4c8a-925d-71c6dbe8b3a1`. These two commits use only routes production already had; the collective entries need the web merge of
 2026-10-29 (`ce7fddf8`, PR #240), which is live, and migrations `20270414120000` to
 `20270414150000` on the production database. Checks in the 2026-10-29 run in
 `Docs/GO_LIVE_CHECK.md`.
@@ -35,7 +36,10 @@ commits use only routes production already had; the collective entries need the 
   `MemberSuggestPanel.test.tsx` and the Checkout tile and card tests. The web side was checked live
   as a member.
 
-## Unreleased OTA: collectives, choosing calendars, inviting any venue and joining in one step (2026-10-28, third round)
+## OTA on iOS 1.3.0 / Android 1.3.0, 2026-10-29: collectives, choosing calendars, inviting any venue and joining in one step (2026-10-28, third round)
+
+Published 2026-10-29 in the same update as the entry above: iOS group
+`d4fd2fb1-56c1-4d67-ad2f-522f6b274e34` and Android group `fa69f3fc-3dad-4c8a-925d-71c6dbe8b3a1`.
 
 Parity with the web round of 2026-10-28 (web staging working tree, uncommitted when written). **Needs
 that web change deployed first**: the app calls `GET /api/venue/collectives/{id}/invite-check`,
@@ -105,7 +109,10 @@ nothing to change. A blocked join sheet now shows only the reason and the links 
   leaves from **Leave {collective}** at the foot of Manage Collective's Services tab.
 - **Member's view**: "Parked while you are part of…" and "No longer offered by…" start folded.
 
-## Unreleased OTA: collectives working across venues (2026-10-28)
+## OTA on iOS 1.3.0 / Android 1.3.0, 2026-10-29: collectives working across venues (2026-10-28)
+
+Published 2026-10-29 in the same update as the entry above: iOS group
+`d4fd2fb1-56c1-4d67-ad2f-522f6b274e34` and Android group `fa69f3fc-3dad-4c8a-925d-71c6dbe8b3a1`.
 
 Ships with the curation OTA below, from the same web round (web uncommitted when written; see
 `Docs/collective-curation-plan.md` §6 and §7 in the web repo). Needs the web change live and the
@@ -149,7 +156,10 @@ screens and the join steps need a host account and an invitation, so they are co
   whole collective, as the Calendar tab's toolbar does (they booked only the venue's own calendars).
 - **What needs you**: a hidden reason counts only where that venue's calendars offer the service.
 
-## Unreleased OTA: curate a collective's services from every venue
+## OTA on iOS 1.3.0 / Android 1.3.0, 2026-10-29: curate a collective's services from every venue
+
+Published 2026-10-29 in the same update as the entry above: iOS group
+`d4fd2fb1-56c1-4d67-ad2f-522f6b274e34` and Android group `fa69f3fc-3dad-4c8a-925d-71c6dbe8b3a1`.
 
 Publish only once the web change (staging `d09f0ed9`, "Collectives: curate the page from every
 venue's services, with nobody asked") is live on www.resneo.com and the production database has
