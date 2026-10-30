@@ -1,5 +1,74 @@
 # Go-live check — Resneo app
 
+## Run 2026-10-30: collectives QA fixes (OTA A and B together), iOS 1.3.0 and Android 1.3.0, from `2a67fb0`
+
+**Scope:** `e12e365..2a67fb0`, three commits:
+- `d83a7cf`: OTA A. Links that hold a collective, the leave sheet, notices by type, the host grid (venue selection, bookings question, removal question, 60-second Undo), the Services page control, new services at every venue's calendars, the switch-off question, member calendar diffs, option lock, Put it back with cleared values, labels.
+- `e0ba822`: OTA B. Create collective ported from the web, the page's public name and rename, the address question.
+- `2a67fb0`: fixes from testing as a host on a phone.
+
+The plan was two updates; both are on `main`, so this is one. `CHANGELOG.md` has it under "Unreleased OTA" at the top.
+
+**Verdict: clear to publish, one update per platform (see Publish), once the web is live on production (see Web). Do not publish before that.** Nothing native moved.
+
+### 1. Version and reach
+
+| Check | Result |
+|---|---|
+| Published tip | iOS `d4fd2fb1` and Android `fa69f3fc`, runtime 1.3.0 (`update:list --branch production`) |
+| Store binaries | `build:list --profile production`: iOS 1.3.0 build 27 and Android 1.3.0 build 19, from `7a5de9a` (2026-10-18). No newer store build |
+| Runtime | `app.json` root `version` and `android.version` 1.3.0, `appVersion` policy: the update reaches the 1.3.0 installs |
+
+### 2. Nothing native moved
+
+`git diff e12e365 2a67fb0` over `package.json`, `package-lock.json`, `app.json`, `app.config.js`, `eas.json`, `metro.config.js`, `babel.config.js`, `modules`, `patches`, `plugins`, `ios` and `android`: empty.
+
+### 3. Verified on this machine
+
+- At `2a67fb0`: `tsc --noEmit` clean. `jest`: **635 suites / 6,036 tests pass**. `expo lint`: 0 errors, 671 warnings (635 at the last run). GitHub Actions `verify` passed.
+- EAS `production` environment (`eas env:list production`): `EXPO_PUBLIC_API_URL` www.resneo.com, `EXPO_PUBLIC_SUPABASE_URL` njualfobtudvlugqkqho (live), publishable keys and the Sentry DSN set; unchanged.
+- Cleared-cache export under `eas env:exec production` (`npx expo export --clear --platform all`), both Hermes bundles (iOS 14.9 MB, Android 15.1 MB). Counts:
+
+| Marker | iOS | Android |
+|---|---|---|
+| live Supabase URL / `www.resneo.com` / `pk_live_` | 1 / 1 / 1 | 1 / 1 / 1 |
+| `zkppmyyvkjvbsvemakbb` / `pk_test_` | none | none |
+| `192.168.` / `10.0.2.2` | none / none | none / none |
+| `reserve-ni.vercel.app` | once: the `getWebUrl()` fallbacks | same |
+| `localhost:3000` | once: expo-router's `head/url.js` fallback | none |
+| `localhost:8081` | once: React Native's `getDevServer` fallback | same |
+| `TERMINAL_SIMULATED` / `ALLOW_SCREENSHOTS` | none / none | none / none |
+| New code: "Take these calendars off?", "Clear calendars' own values?", "Name on your booking page", "All calendars at every venue", "Switched on at every venue" | each present | each present |
+| Gone: "Page name (shown to customers)", `joinOnWeb` | none | none |
+
+### 4. Web
+
+**Not live on production at the time of writing.** The update needs web `staging` at `58b3c83d` or later (CI green) merged to `main` and deployed. No migration: `supabase/migrations` does not differ between `staging` and `main`. An older server ignores the member calendar diff (`calendars: { add, remove }`) and the offer's `calendars`, so a member's calendar change would be lost. The CQ-12 backfill has nothing to do on production (counted 2026-10-29, read only).
+
+### 5. Device testing
+
+Android, Expo Go against the local web server, 2026-10-30.
+- **As light3 (member):** Linked venues hold lines and Past dates; Unlink, Reduce access and Leave warnings, each cancelled; Link a venue with a pasted page address; Booking page summary; Reports "(you)"; notice routes; a real member calendar diff save, added and removed, checked in the database; the switched-off line.
+- **As aura@resneo.com (host):** grid save and Undo both ways; venue selection; the removal and bookings questions, with a real test booking; Every venue's services put on and Undo; the page control both ways; Switch it on; the switch-off question; Put it back, restoring a cleared price; the option lock; a new service reaching six calendars at three venues; page names round trip; Remove, End the collective and the host's Unlink warning, each cancelled.
+
+**Not tested:** an iPhone; the store binaries; Create collective (needs a throwaway venue); the address question (needs both accounts); Update now on a venue that is behind; the `?choose=` button on Services (the state did not arise). Those rest on jest.
+
+### 6. Publish
+
+Run from `C:\Resneo-app` on a clean `main` at this record's commit (`eas.json` requires a commit):
+
+```
+npx eas-cli update --channel production --platform ios --environment production --clear-cache --message "Collectives: warnings, undo, page controls, create and names"
+npx eas-cli update --channel production --platform android --environment production --clear-cache --message "Collectives: warnings, undo, page controls, create and names"
+```
+
+To roll back, republish the 2026-10-29 groups:
+`npx eas-cli update:republish --group d4fd2fb1-56c1-4d67-ad2f-522f6b274e34 --message "Roll back"` (iOS) and `npx eas-cli update:republish --group fa69f3fc-3dad-4c8a-925d-71c6dbe8b3a1 --message "Roll back"` (Android).
+
+After publishing, retitle the changelog entry as published with the two groups, and watch Sentry for new crashes over the next day.
+
+---
+
 ## Run 2026-10-29: collectives across venues, members choose calendars, Checkout without "New", iOS 1.3.0 and Android 1.3.0, from `ac6ef65`
 
 **Scope:** `ac05700..ac6ef65`, five commits:
