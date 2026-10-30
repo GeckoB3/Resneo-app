@@ -1,5 +1,6 @@
 import {
   collectiveAdoptedSlug,
+  collectiveCustomPublicName,
   collectiveEmbedOptions,
   collectivePublicPath,
   combinedScopeEmbedTarget,
@@ -110,5 +111,21 @@ describe('collectiveEmbedOptions', () => {
     expect(collectiveEmbedOptions([{ ...base, myMembershipStatus: 'invited' }])).toEqual([]);
     expect(collectiveEmbedOptions([{ ...base, activeMemberCount: 1 }])).toEqual([]);
     expect(collectiveEmbedOptions([{ ...base, status: 'dissolved' }])).toEqual([]);
+  });
+});
+
+describe('collectiveCustomPublicName (web collective-public-name.ts, D58)', () => {
+  it('reads the different name the host chose, trimmed and to the limit', () => {
+    expect(collectiveCustomPublicName({ public_name: 'Northside Hair Group' })).toBe('Northside Hair Group');
+    expect(collectiveCustomPublicName({ public_name: '  Northside  ' })).toBe('Northside');
+    expect(collectiveCustomPublicName({ public_name: 'x'.repeat(200) })).toHaveLength(120);
+  });
+
+  it("is null when the page shows the host's name", () => {
+    expect(collectiveCustomPublicName({ public_name: '' })).toBeNull();
+    expect(collectiveCustomPublicName({ public_name: 'x' })).toBeNull();
+    expect(collectiveCustomPublicName({ public_name: 42 })).toBeNull();
+    expect(collectiveCustomPublicName(null)).toBeNull();
+    expect(collectiveCustomPublicName({})).toBeNull();
   });
 });

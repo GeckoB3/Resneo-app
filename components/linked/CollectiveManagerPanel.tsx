@@ -7,6 +7,7 @@ import { CollectiveMembersPanel } from '@/components/linked/CollectiveMembersPan
 import { CombinedPageAboutSection } from '@/components/linked/CombinedPageAboutSection';
 import { CombinedPageAddressRow } from '@/components/linked/CombinedPageAddressRow';
 import { CombinedPageConfigEditor } from '@/components/linked/CombinedPageConfigEditor';
+import { CombinedPageNameSection } from '@/components/linked/CombinedPageNameSection';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Segmented } from '@/components/ui/Segmented';
@@ -74,7 +75,9 @@ export function CollectiveManagerPanel({
       <View style={styles.tabBody}>
         {tab === 'page' ? (
           <>
-            {/* The page's address first (owner's decision 2026-09-09: the combined
+            {/* The name guests see and the collective's own name (CQ-10.10; web `PageNameSection`). */}
+            {collective.isHost ? <CombinedPageNameSection key={collective.id} collective={collective} onChanged={onChanged} /> : null}
+            {/* The page's address next (owner's decision 2026-09-09: the combined
                 page settings must show the URL with a copy button). */}
             <Card style={styles.addressCard}>
               <CombinedPageAddressRow collective={collective} />

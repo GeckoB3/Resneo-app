@@ -18,9 +18,10 @@ import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
 import { ReleaseReviewCard } from '@/components/services/collective/ReleaseReviewCard';
 import { ApiError } from '@/lib/api/client';
+import { areaCopy } from '@/lib/collective-area/copy';
 import { getWebUrl } from '@/lib/env';
 import { collectivePublicPath } from '@/lib/linked/collective-page';
-import { fullMutualLinks } from '@/lib/linked/grants';
+import { useCollectiveCandidates } from '@/lib/queries/useCollectiveLinks';
 import {
   useCollectiveMemberAction,
   useCollectives,
@@ -76,11 +77,13 @@ export default function CollectivesScreen() {
     () => query.data?.collectives ?? [],
     [query.data?.collectives],
   );
-  const eligibleLinks = useMemo(
-    () => fullMutualLinks(linksQuery.data?.links ?? []),
-    [linksQuery.data?.links],
-  );
   const hasLiveCollective = collectives.some((c) => c.status !== 'dissolved');
+  // Every venue this one is linked with: Create lists them all, and says which cannot join and why
+  // (R2-12 option A), so a link that gives less than full access no longer greys the button out.
+  const candidatesQuery = useCollectiveCandidates({ enabled: isAdmin && !hasLiveCollective });
+  const hasCandidates = (candidatesQuery.data?.length ?? 0) > 0;
+  // Only once the server has said so: a list still loading, or one that failed, is not "no links".
+  const noLinkedVenues = candidatesQuery.isSuccess && !hasCandidates;
 
   // What each venue is waiting for (web plan §4): the hosts still setting a page up, and the
   // members whose host is. The same feed drives the banner above the tabs.
@@ -187,7 +190,10 @@ export default function CollectivesScreen() {
       refreshControl={
         <RefreshControl
           refreshing={query.isRefetching}
-          onRefresh={() => void query.refetch()}
+          onRefresh={() => {
+            void query.refetch();
+            if (isAdmin && !hasLiveCollective) void candidatesQuery.refetch();
+          }}
           tintColor={colors.brand}
         />
       }>
@@ -202,34 +208,35 @@ export default function CollectivesScreen() {
         under one brand.
       </Text>
 
-      {/* Create — hidden once already in a live collective (one per venue); disabled
-          until a full create/edit/cancel link exists. Mirrors the web panel header. */}
+      {/* Create: hidden once already in a live collective (one per venue); disabled only while this
+          venue has no linked venues at all. */}
       {!hasLiveCollective ? (
         <Button
           label="Create venue collective"
           variant="primary"
           fullWidth
-          disabled={eligibleLinks.length === 0}
+          disabled={!hasCandidates}
           onPress={() => setCreateOpen(true)}
         />
       ) : null}
 
-      {/* Why the create button is disabled. Shown whenever it's visible (no live
-          collective) but disabled (no full create/edit/cancel link) — the web
-          shows the same amber note rather than just a tooltip. */}
-      {!hasLiveCollective && eligibleLinks.length === 0 ? (
+      {/* Why the create button is disabled, on the screen rather than in a tooltip. */}
+      {!hasLiveCollective && noLinkedVenues ? (
         <View style={[styles.amberNote, { backgroundColor: colors.warningSurface }]}>
           <Text variant="caption" color={colors.warning}>
-            To create a combined page you need a link granting create, edit & cancel access in both
-            directions (full calendar detail, no calendar limits). Open Linked venues, choose the
-            link, tap Edit permissions, and set both directions to create/edit/cancel.
+            {setupCopy('create.venues.empty.body')}
           </Text>
         </View>
       ) : null}
+      {!hasLiveCollective && candidatesQuery.isError ? (
+        <Text variant="caption" tone="danger">
+          {areaCopy('ov.venues.invite.loadFailed')}
+        </Text>
+      ) : null}
 
       {collectives.length === 0 ? (
-        // The amber note above already explains the no-eligible-link case.
-        eligibleLinks.length === 0 ? null : (
+        // The amber note above already explains having no linked venues.
+        noLinkedVenues ? null : (
           <Text variant="bodySmall" tone="muted">
             No venue collectives yet. Create one to offer a combined booking page.
           </Text>
@@ -279,11 +286,13 @@ export default function CollectivesScreen() {
       <CreateCollectiveSheet
         visible={createOpen}
         venueName={venueName ?? 'your venue'}
-        eligibleLinks={eligibleLinks}
+        venueSlug={linksQuery.data?.venue?.slug ?? null}
         onClose={() => setCreateOpen(false)}
-        onCreated={() => {
+        // The sheet stays open on its receipt; the list behind it now holds the new collective.
+        onCreated={() => void query.refetch()}
+        onOpen={(href) => {
           setCreateOpen(false);
-          void query.refetch();
+          router.push(href as Href);
         }}
       />
 

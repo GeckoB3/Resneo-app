@@ -42,6 +42,9 @@ jest.mock('@/lib/queries/useCollectives', () => ({
   }),
   useCollectiveMemberAction: () => ({ mutate: jest.fn(), isPending: false }),
 }));
+jest.mock('@/lib/queries/useCollectiveLinks', () => ({
+  useCollectiveCandidates: () => ({ data: [], isSuccess: true, isError: false, refetch: jest.fn() }),
+}));
 jest.mock('@/lib/queries/useLinkedVenues', () => ({
   useIncomingLinks: () => ({ data: undefined, refetch: jest.fn() }),
   useLinkedVenues: () => ({ data: { links: [] } }),

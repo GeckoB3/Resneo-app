@@ -120,6 +120,14 @@ describe('CombinedPageConfigEditor — live preview wiring', () => {
     expect(p.coverCropBox).toEqual({ x: 0.1, y: 0.1, w: 0.8, h: 0.6, ar: 1.6 });
   });
 
+  it('previews the name guests see, and leaves the names to CombinedPageNameSection (CQ-10.10)', async () => {
+    await render(<CombinedPageConfigEditor collective={makeCollective({ publicName: 'Glow Studio' })} onChanged={jest.fn()} />);
+    expect(latestPreview().venueName).toBe('Glow Studio');
+    // This field saved the collective's own name, which customers never see, as "shown to customers".
+    expect(screen.queryByLabelText('Page name (shown to customers)')).toBeNull();
+    expect(screen.queryByDisplayValue('Glow Collective')).toBeNull();
+  });
+
   it('passes null colours / crop to the preview when the config is empty', async () => {
     await render(
       <CombinedPageConfigEditor

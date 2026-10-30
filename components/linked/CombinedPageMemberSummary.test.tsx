@@ -8,6 +8,7 @@
  */
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
+import { ApiError } from '@/lib/api/client';
 import type { CollectiveView } from '@/types/collectives';
 
 jest.mock('@/components/linked/CombinedPageAboutSection', () => ({ CombinedPageAboutSection: () => null }));
@@ -21,7 +22,18 @@ jest.mock('@/lib/queries/useCollectives', () => ({
     error: null,
     data: { catalogue: { items: mockItems } },
   }),
+  useAnswerAddressAdoption: () => ({
+    isPending: false,
+    mutate: (input: unknown, callbacks: { onSuccess: () => void; onError: (err: unknown) => void }) => {
+      mockAnswer(input);
+      if (mockAnswerError) callbacks.onError(mockAnswerError);
+      else callbacks.onSuccess();
+    },
+  }),
 }));
+jest.mock('@/lib/env', () => ({ ...jest.requireActual('@/lib/env'), getWebUrl: () => 'https://resneo.test' }));
+const mockAnswer = jest.fn();
+let mockAnswerError: unknown = null;
 
 import { CombinedPageMemberSummary } from './CombinedPageMemberSummary';
 
@@ -55,6 +67,69 @@ function collective(serviceModel: string): CollectiveView {
 
 beforeEach(() => {
   mockItems = [];
+  mockAnswer.mockReset();
+  mockAnswerError = null;
+});
+
+/** The host's request to use this venue's page address (CQ-10.10, web N38). */
+describe('CombinedPageMemberSummary address adoption', () => {
+  const asked = (): CollectiveView => {
+    const c = collective('replicas');
+    return {
+      ...c,
+      pendingAdoptedVenueId: 'v-me',
+      members: c.members.map((m) => (m.venueId === 'v-me' ? { ...m, venueSlug: 'aura-2' } : m)),
+    };
+  };
+  const ASK =
+    'Aura Hair Studio would like the Plus 1 page to use your page address, https://resneo.test/book/aura-2. Nothing changes unless you agree, and you get the address back if you leave.';
+
+  it('asks the venue it is waiting for, and says nothing changes unless it agrees', async () => {
+    await render(<CombinedPageMemberSummary collective={asked()} />);
+    expect(screen.getByText(ASK)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Agree' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Not now' })).toBeTruthy();
+  });
+
+  it('asks nobody else, and nothing on an older server', async () => {
+    await render(<CombinedPageMemberSummary collective={{ ...collective('replicas'), pendingAdoptedVenueId: 'v-host' }} />);
+    expect(screen.queryByTestId('address-adoption-ask')).toBeNull();
+    await render(<CombinedPageMemberSummary collective={{ ...collective('replicas'), pendingAdoptedVenueId: null }} />);
+    expect(screen.queryByTestId('address-adoption-ask')).toBeNull();
+    await render(<CombinedPageMemberSummary collective={collective('replicas')} />);
+    expect(screen.queryByTestId('address-adoption-ask')).toBeNull();
+  });
+
+  it('sends Agree, and keeps saying so after the refreshed collective stops asking', async () => {
+    const view = await render(<CombinedPageMemberSummary collective={asked()} />);
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: 'Agree' }));
+    });
+    expect(mockAnswer).toHaveBeenCalledWith({ collectiveId: 'col-1', accept: true });
+    expect(screen.getByText('The Plus 1 page now uses your page address.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Agree' })).toBeNull();
+    await view.rerender(<CombinedPageMemberSummary collective={{ ...asked(), pendingAdoptedVenueId: null }} />);
+    expect(screen.getByText('The Plus 1 page now uses your page address.')).toBeTruthy();
+  });
+
+  it('sends Not now', async () => {
+    await render(<CombinedPageMemberSummary collective={asked()} />);
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: 'Not now' }));
+    });
+    expect(mockAnswer).toHaveBeenCalledWith({ collectiveId: 'col-1', accept: false });
+    expect(screen.getByText('Your page address stays as it is.')).toBeTruthy();
+  });
+
+  it("shows the server's sentence on a refusal and keeps the question open", async () => {
+    mockAnswerError = new ApiError('Only an admin can answer this.', 403);
+    await render(<CombinedPageMemberSummary collective={asked()} />);
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: 'Agree' }));
+    });
+    expect(screen.getByText('Only an admin can answer this.')).toBeTruthy();
+    expect(screen.getByText(ASK)).toBeTruthy();
+  });
 });
 
 describe('CombinedPageMemberSummary', () => {

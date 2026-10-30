@@ -527,6 +527,27 @@ export const AREA_COPY = {
   "bp.member.calendars": "You and {host} can each choose which of your calendars offer the services, in Manage Collective.",
   "bp.member.calendarsNone": "None of your calendars offers a service on the {collective} page yet. You or {host} can choose them in Manage Collective.",
   "bp.member.leaving": "To stop taking part, leave {collective} at the foot of Manage Collective.",
+  // The name guests see, and the collective's own name (CQ-10.10; web PageNameSection, whose strings are
+  // hardcoded on the web at the time of writing). Word for word from the web component.
+  "bp.name.heading": "Name on your booking page",
+  "bp.name.help": "Guests see this name at the top of the page, in search results and in their booking emails.",
+  "bp.name.host.body": "Your venue’s name, so the page reads as your business. If you rename your venue under Settings, Profile, the page follows.",
+  "bp.name.custom": "A different name",
+  "bp.name.custom.label": "Name to show on the booking page",
+  "bp.name.custom.tooShort": "Type a name of at least 2 characters.",
+  "bp.name.custom.example": "For example, the name your clients already know you by.",
+  "bp.name.collective.label": "Collective name",
+  "bp.name.collective.help": "What the collective is called in your dashboard, for example on the Booking Page and Linked Accounts tabs, and in messages between the venues. Customers never see it. They see the name you choose above.",
+  "bp.name.saving": "Saving…",
+  "bp.name.saved": "Saved",
+  "bp.name.saveFailed": "Couldn’t save, try again",
+  // A member's answer to the host's request to use its page address (CQ-10.10; web AddressAdoptionAsk, N38).
+  "bp.address.adopt.ask": "{host} would like the {collective} page to use your page address, {ownAddress}. Nothing changes unless you agree, and you get the address back if you leave.",
+  "bp.address.adopt.confirm": "Agree",
+  "bp.address.adopt.decline": "Not now",
+  "bp.address.adopt.done": "The {collective} page now uses your page address.",
+  "bp.address.adopt.declined": "Your page address stays as it is.",
+  "bp.address.adopt.failed": "Could not save your answer. Please try again.",
   // Same-name venues on staff screens (CQ-07 phase 3): a partner's booking and a client of another venue.
   "staff.partner.at": "Booked at {venue}",
   "staff.contact.ownerLine": "Client of {venue}",

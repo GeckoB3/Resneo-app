@@ -27,6 +27,10 @@ jest.mock('@/components/linked/CombinedPageAboutSection', () => {
 });
 jest.mock('@/components/linked/CombinedPageAddressRow', () => ({ CombinedPageAddressRow: () => null }));
 jest.mock('@/components/linked/CombinedPageConfigEditor', () => ({ CombinedPageConfigEditor: () => null }));
+jest.mock('@/components/linked/CombinedPageNameSection', () => {
+  const { Text } = require('react-native');
+  return { CombinedPageNameSection: () => <Text>Name section</Text> };
+});
 
 import { CollectiveManagerPanel } from './CollectiveManagerPanel';
 
@@ -62,6 +66,23 @@ const panel = (c: CollectiveView, initialTab?: 'page' | 'services' | 'about' | '
 beforeEach(() => mockPush.mockReset());
 
 describe('CollectiveManagerPanel', () => {
+  it('opens the Page tab on the names, for a host on either model (CQ-10.10)', async () => {
+    const shared = await render(panel(collective('replicas')));
+    expect(screen.getByText('Name section')).toBeTruthy();
+    await shared.unmount();
+    await render(panel(collective('legacy_copies')));
+    expect(screen.getByText('Name section')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByRole('tab', { name: 'About' }));
+    });
+    expect(screen.queryByText('Name section')).toBeNull();
+  });
+
+  it('never shows the names to a venue that is not the host', async () => {
+    await render(panel({ ...collective('replicas'), isHost: false }));
+    expect(screen.queryByText('Name section')).toBeNull();
+  });
+
   it('shows Page and About only on shared services, with the way to Manage Collective', async () => {
     await render(panel(collective('replicas')));
     expect(screen.getByRole('tab', { name: 'Page' })).toBeTruthy();

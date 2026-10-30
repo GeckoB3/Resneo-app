@@ -1,7 +1,7 @@
 import { isSharedServices, memberSummaryIntro } from '@/lib/linked/collective-membership-copy';
 import { CollectiveBookingSettingsSummary } from '@/components/linked/CollectiveBookingSettingsSummary';
 import { collectiveSettingsCopy } from '@/lib/linked/collective-settings-copy';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { CombinedPageAboutSection } from '@/components/linked/CombinedPageAboutSection';
@@ -11,9 +11,78 @@ import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { areaCopy } from '@/lib/collective-area/copy';
-import { useCollectiveCatalogue } from '@/lib/queries/useCollectives';
-import { spacing } from '@/theme/index';
+import { getWebUrl } from '@/lib/env';
+import { useAnswerAddressAdoption, useCollectiveCatalogue } from '@/lib/queries/useCollectives';
+import { radius, spacing } from '@/theme/index';
+import { useTheme } from '@/theme/useTheme';
 import type { CollectiveView } from '@/types/collectives';
+
+/**
+ * The host's request to use this venue's page address, waiting for this member's admin (web
+ * `AddressAdoptionAsk`, N38, CQ-10.10). Nothing changes unless they agree. The answer stays on the
+ * screen after the refreshed collective stops asking.
+ */
+export function AddressAdoptionAsk({ collective, host }: { collective: CollectiveView; host: string }) {
+  const { colors } = useTheme();
+  const [answer, setAnswer] = useState<'adopted' | 'declined' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const asked = Boolean(collective.pendingAdoptedVenueId) && collective.pendingAdoptedVenueId === collective.myVenueId;
+  if (answer) {
+    return (
+      <Text variant="bodySmall" accessibilityLiveRegion="polite">
+        {answer === 'adopted' ? areaCopy('bp.address.adopt.done', { collective: collective.name }) : areaCopy('bp.address.adopt.declined')}
+      </Text>
+    );
+  }
+  if (!asked) return null;
+  const ownSlug = collective.members.find((m) => m.venueId === collective.myVenueId)?.venueSlug ?? null;
+  const origin = getWebUrl() || 'https://app.resneo.com';
+  return (
+    <View testID="address-adoption-ask" style={[styles.ask, { backgroundColor: colors.warningSurface }]}>
+      <Text variant="bodySmall">
+        {areaCopy('bp.address.adopt.ask', {
+          host,
+          collective: collective.name,
+          ownAddress: ownSlug ? `${origin}/book/${ownSlug}` : 'your page address',
+        })}
+      </Text>
+      {error ? (
+        <Text variant="bodySmall" tone="danger" accessibilityRole="alert">
+          {error}
+        </Text>
+      ) : null}
+      <AddressAdoptionButtons collectiveId={collective.id} onAnswered={setAnswer} onError={setError} />
+    </View>
+  );
+}
+
+function AddressAdoptionButtons({
+  collectiveId,
+  onAnswered,
+  onError,
+}: {
+  collectiveId: string;
+  onAnswered: (answer: 'adopted' | 'declined') => void;
+  onError: (message: string | null) => void;
+}) {
+  const answer = useAnswerAddressAdoption();
+  const send = (accept: boolean) => {
+    onError(null);
+    answer.mutate(
+      { collectiveId, accept },
+      {
+        onSuccess: () => onAnswered(accept ? 'adopted' : 'declined'),
+        onError: (err) => onError(err instanceof ApiError ? err.message : areaCopy('bp.address.adopt.failed')),
+      },
+    );
+  };
+  return (
+    <View style={styles.askButtons}>
+      <Button label={areaCopy('bp.address.adopt.confirm')} size="sm" disabled={answer.isPending} onPress={() => send(true)} />
+      <Button label={areaCopy('bp.address.adopt.decline')} size="sm" variant="secondary" disabled={answer.isPending} onPress={() => send(false)} />
+    </View>
+  );
+}
 
 /**
  * A member's (non-host's) view of the combined page (web
@@ -68,6 +137,7 @@ export function CombinedPageMemberSummary({
           {memberSummaryIntro(collective, host)}
         </Text>
         <CombinedPageAddressRow collective={collective} />
+        <AddressAdoptionAsk collective={collective} host={host} />
       </Card>
 
       <CombinedPageAboutSection collective={collective} />
@@ -161,5 +231,15 @@ const styles = StyleSheet.create({
   },
   row: {
     gap: 2,
+  },
+  ask: {
+    gap: spacing.sm,
+    borderRadius: radius.md,
+    padding: spacing.md,
+  },
+  askButtons: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
   },
 });

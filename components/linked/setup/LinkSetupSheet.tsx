@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { GrantPairEditor } from '@/components/linked/GrantPairEditor';
 import { ChoiceRow } from '@/components/linked/setup/ChoiceRow';
+import { CollectiveChangesStep, CollectiveNameStep, collectiveNameStepReason, useCollectiveAddress } from '@/components/linked/setup/CreateSteps';
 import { StepShell } from '@/components/linked/setup/StepShell';
 import { VenuePicker, type PickedVenue } from '@/components/linked/VenuePicker';
 import { Button } from '@/components/ui/Button';
@@ -10,7 +11,6 @@ import { Input } from '@/components/ui/Input';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
-import { getWebUrl } from '@/lib/env';
 import { describeGrant, isLinkConfigurationValid, normaliseGrant } from '@/lib/linked/grants';
 import {
   DEFAULT_LINK_LEVEL,
@@ -21,7 +21,6 @@ import {
   type LinkLevelId,
 } from '@/lib/linked/link-levels';
 import { setupCopy } from '@/lib/linked/setup-copy';
-import { useSlugAvailable } from '@/lib/queries/useCollectives';
 import { useLinkSetup, useMyCalendars, useVenueLookup } from '@/lib/queries/useLinkedVenues';
 import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
@@ -48,14 +47,6 @@ const STEP_FOR_FIELD: Record<LinkSetupErrorField, Step | null> = {
   slug: 'name',
   plan: null,
 };
-
-const slugify = (value: string) =>
-  value
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 60);
 
 export interface LinkSetupResult {
   venueName: string;
@@ -99,12 +90,14 @@ export function LinkSetupSheet({
   const [theirs, setTheirs] = useState<LinkGrant>(grantForLevel(DEFAULT_LINK_LEVEL));
   const [wantCollective, setWantCollective] = useState<boolean | null>(null);
   const [name, setName] = useState('');
-  const [slug, setSlug] = useState('');
-  const [slugTouched, setSlugTouched] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState<{ message: string; field: LinkSetupErrorField | null } | null>(null);
   const [sent, setSent] = useState<LinkSetupResult | null>(null);
+  const address = useCollectiveAddress(name, wantCollective === true);
+  const effectiveSlug = address.slug;
+  const addressState = address.state;
+  const resetAddress = address.reset;
 
   // Reset on each open (bounded key-based reset on the visible transition, as the app's other sheets).
   useEffect(() => {
@@ -119,13 +112,12 @@ export function LinkSetupSheet({
     setTheirs(grantForLevel(DEFAULT_LINK_LEVEL));
     setWantCollective(null);
     setName('');
-    setSlug('');
-    setSlugTouched(false);
+    resetAddress();
     setAcknowledged(false);
     setMessage('');
     setError(null);
     setSent(null);
-  }, [visible, prefill]);
+  }, [visible, prefill, resetAddress]);
 
   // One lookup with the collective standing for the venue chosen or pasted (web `lookupVenue`).
   const lookup = useVenueLookup(picked?.slug ?? null, { collective: true });
@@ -146,18 +138,6 @@ export function LinkSetupSheet({
   }, [picked, lookup.data]);
 
   const otherName = venue?.name ?? 'the other venue';
-  const effectiveSlug = slugTouched ? slug : slugify(name);
-  const slugQuery = useSlugAvailable(wantCollective ? effectiveSlug : '');
-  const addressState: 'idle' | 'checking' | 'free' | 'taken' | 'format' = !effectiveSlug
-    ? 'idle'
-    : slugQuery.isFetching || !slugQuery.data
-      ? 'checking'
-      : slugQuery.data.available
-        ? 'free'
-        : slugQuery.data.format
-          ? 'format'
-          : 'taken';
-
   const grants = useMemo(
     () =>
       customising
@@ -189,11 +169,7 @@ export function LinkSetupSheet({
       case 'collective':
         return wantCollective === null ? setupCopy('setup.disabled.collective') : null;
       case 'name':
-        return name.trim().length < 2
-          ? setupCopy('create.disabled.name')
-          : addressState !== 'free'
-            ? setupCopy('create.disabled.address')
-            : null;
+        return collectiveNameStepReason(name, addressState);
       case 'changes':
         return acknowledged ? null : setupCopy('create.changes.ack', { venue: venueName });
       default:
@@ -458,93 +434,37 @@ export function LinkSetupSheet({
       ) : null}
 
       {step === 'name' ? (
-        <View style={styles.section}>
-          <Text variant="bodyMedium">{setupCopy('create.what.host', { venue: venueName })}</Text>
-          <Input
-            label={setupCopy('create.name.label')}
-            helper={setupCopy('create.name.help', { venue: venueName })}
-            value={name}
-            maxLength={120}
-            autoFocus
-            onChangeText={(v) => {
-              setName(v);
-              setError(null);
-            }}
-          />
-          <Input
-            label="Page address"
-            value={effectiveSlug}
-            maxLength={60}
-            autoCapitalize="none"
-            autoCorrect={false}
-            onChangeText={(v) => {
-              setSlugTouched(true);
-              setSlug(v.toLowerCase().replace(/[^a-z0-9-]/g, ''));
-              setError(null);
-            }}
-            helper={
-              effectiveSlug
-                ? addressState === 'free'
-                  ? setupCopy('create.address.free')
-                  : addressState === 'checking'
-                    ? setupCopy('create.address.checking')
-                    : undefined
-                : undefined
-            }
-            error={addressState === 'taken' ? setupCopy('create.address.taken') : addressState === 'format' ? setupCopy('create.address.format') : undefined}
-          />
-          {effectiveSlug ? (
-            <Text variant="caption" tone="muted">
-              {setupCopy('create.address.preview', { origin: getWebUrl(), slug: effectiveSlug })}
-            </Text>
-          ) : null}
-          {disabledReason ? (
-            <Text variant="caption" tone="muted">
-              {disabledReason}
-            </Text>
-          ) : null}
-        </View>
+        <CollectiveNameStep
+          venueName={venueName}
+          name={name}
+          onChangeName={(v) => {
+            setName(v);
+            setError(null);
+          }}
+          slug={effectiveSlug}
+          addressState={addressState}
+          onChangeAddress={(v) => {
+            address.change(v);
+            setError(null);
+          }}
+          disabledReason={disabledReason}
+          autoFocus
+        />
       ) : null}
 
       {step === 'changes' ? (
-        <View style={styles.section}>
-          <Text variant="bodyMedium">{setupCopy('create.changes.title', { collective: name.trim() || 'your collective' })}</Text>
-          <Text variant="bodySmall" tone="secondary">
-            {setupCopy('create.changes.intro')}
-          </Text>
-          <View style={[styles.infoCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            {[
-              { name: venueName, slug: venueSlug },
-              { name: otherName, slug: venue?.slug ?? null },
-            ].map((row) => (
-              <Text key={row.name} variant="caption" tone="secondary">
-                {`${row.name}${row.slug ? ` (/book/${row.slug})` : ''} leads to /book/c/${effectiveSlug}`}
-              </Text>
-            ))}
-            <Text variant="caption" tone="secondary">
-              {`${setupCopy('create.changes.address.note', { collective: name.trim() })} ${setupCopy('create.changes.address.when')}`}
-            </Text>
-          </View>
-          {(['services', 'owns', 'clients'] as const).map((key) => (
-            <View key={key} style={[styles.infoCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Text variant="label">{setupCopy(`create.changes.${key}.title` as 'create.changes.services.title')}</Text>
-              <Text variant="caption" tone="secondary">
-                {key === 'clients'
-                  ? setupCopy('setup.changes.clients.body', { collective: name.trim() })
-                  : setupCopy(`create.changes.${key}.body` as 'create.changes.services.body', { collective: name.trim() })}
-              </Text>
-            </View>
-          ))}
-          <Text variant="caption" tone="secondary">
-            {setupCopy('create.changes.ending', { collective: name.trim() })}
-          </Text>
-          <ChoiceRow
-            kind="checkbox"
-            selected={acknowledged}
-            title={setupCopy('create.changes.ack', { venue: venueName })}
-            onPress={() => setAcknowledged((v) => !v)}
-          />
-        </View>
+        <CollectiveChangesStep
+          collective={name.trim() || 'your collective'}
+          slug={effectiveSlug}
+          venues={[
+            { name: venueName, slug: venueSlug },
+            { name: otherName, slug: venue?.slug ?? null },
+          ]}
+          clientsBody={setupCopy('setup.changes.clients.body', { collective: name.trim() })}
+          venueName={venueName}
+          acknowledged={acknowledged}
+          onToggleAcknowledged={() => setAcknowledged((v) => !v)}
+        />
       ) : null}
 
       {step === 'check' ? (

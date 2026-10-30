@@ -4,6 +4,19 @@ type CollectiveAddressView = Pick<CollectiveView, 'slug' | 'slugStrategy' | 'ado
   members: Pick<CollectiveMemberView, 'venueId' | 'venueSlug'>[];
 };
 
+/** The limits on the name a host gives its page (web `collective-public-name.ts`, D58). */
+export const COLLECTIVE_PUBLIC_NAME_MIN = 2;
+export const COLLECTIVE_PUBLIC_NAME_MAX = 120;
+
+/** The different name the host chose for the page, or null when the page shows the host's name. */
+export function collectiveCustomPublicName(config: unknown): string | null {
+  if (!config || typeof config !== 'object') return null;
+  const raw = (config as { public_name?: unknown }).public_name;
+  if (typeof raw !== 'string') return null;
+  const name = raw.trim();
+  return name.length >= COLLECTIVE_PUBLIC_NAME_MIN ? name.slice(0, COLLECTIVE_PUBLIC_NAME_MAX) : null;
+}
+
 /**
  * The member venue's own booking slug when the collective adopted that venue's
  * address, else null. Needs `members[].venueSlug`, which the collectives list

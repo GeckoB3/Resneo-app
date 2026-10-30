@@ -26,7 +26,7 @@ describe('app place names', () => {
   it('leaves no web screen named in a sentence the app shows', () => {
     // The refusal an older app shows names the web on purpose; nothing else may.
     const allowed = new Set(['linkBreak.refused']);
-    const web = /Linked Accounts|Linked accounts|Settings, Payments|Settings, Booking Page|on this tab|from this tab|on your dashboard/;
+    const web = /Linked Accounts|Linked accounts|Settings, Payments|Settings, Booking Page|Settings, Profile|Active links|Go to Collective|on this tab|from this tab|on your dashboard|in your dashboard/;
     const offenders = [
       ...Object.keys(SETUP_COPY).map((id) => [id, setupCopy(id as SetupCopyId)] as const),
       ...Object.keys(AREA_COPY).map((id) => [id, areaCopy(id as AreaCopyId)] as const),

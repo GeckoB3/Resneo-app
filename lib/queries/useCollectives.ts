@@ -148,6 +148,29 @@ export function useUpdateCollective() {
   });
 }
 
+/**
+ * POST /api/venue/collectives/[id]/address-adoption { accept }: a member's admin answers the host's
+ * request to use this venue's page address for the collective page (web N38).
+ */
+export function useAnswerAddressAdoption() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: { collectiveId: string; accept: boolean }): Promise<{ ok: boolean; status: string | null }> => {
+      if (!accessToken) throw new Error('Missing access token');
+      return apiFetch<{ ok: boolean; status: string | null }>(`/api/venue/collectives/${input.collectiveId}/address-adoption`, {
+        accessToken,
+        method: 'POST',
+        body: JSON.stringify({ accept: input.accept }),
+      });
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.collectives.all() });
+    },
+  });
+}
+
 /** DELETE /api/venue/collectives/[id] — dissolve the collective (tombstones slug). */
 export function useDissolveCollective() {
   const accessToken = useAccessToken();

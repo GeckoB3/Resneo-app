@@ -89,6 +89,8 @@ export interface CollectiveView {
   pageMode: PageMode;
   slugStrategy: SlugStrategy;
   adoptedVenueId: string | null;
+  /** The member the host has asked to use the page address of, until its admin answers (web N38). Optional: older payloads omit it. */
+  pendingAdoptedVenueId?: string | null;
   timezone: string | null;
   bookingPageConfig: CombinedBookingPageConfig | null;
   isHost: boolean;
@@ -234,6 +236,8 @@ export interface UpdateCollectivePayload {
   bookingPageConfig?: CombinedBookingPageConfig;
   logoUrl?: string | null;
   coverPhotoUrl?: string | null;
+  /** The name guests see (web D58): a different name, or null for the host's own. */
+  publicName?: string | null;
 }
 
 export type CollectiveMemberAction =

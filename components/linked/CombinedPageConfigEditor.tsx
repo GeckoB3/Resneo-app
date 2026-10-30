@@ -100,7 +100,7 @@ function assembleConfig(raw: {
 /**
  * Combined-page config editor (Flow 11/12, host only). Parity with the
  * single-venue `manage/booking-page.tsx`: a live booking-page preview at the top,
- * page name, address (dedicated vs adopt a member's slug), brand colours, font
+ * address (dedicated vs adopt a member's slug; the names are in `CombinedPageNameSection`), brand colours, font
  * preset, logo + cover upload with crop/reposition framing, announcement, about +
  * social links, tab toggles. Branding/content autosaves (debounced) via
  * `useUpdateCollective` (config merged non-destructively, including the
@@ -129,10 +129,6 @@ export function CombinedPageConfigEditor({
   const upload = useUploadPageAsset();
 
   const cfg = collective.bookingPageConfig ?? {};
-
-  // Page name (inline save on blur).
-  const [name, setName] = useState(collective.name);
-  const [nameSave, setNameSave] = useState<SaveStatus>('idle');
 
   // Address strategy.
   const adopt = collective.slugStrategy === 'adopt_member';
@@ -174,7 +170,6 @@ export function CombinedPageConfigEditor({
   useEffect(() => {
     const c = collective.bookingPageConfig ?? {};
     // eslint-disable-next-line react-hooks/set-state-in-effect -- seed local form state on entity switch
-    setName(collective.name);
     setPrimary(c.brand_primary ?? '');
     setFontPreset(isBookingFontPreset(c.font_preset) ? c.font_preset : 'default');
     setAnnouncement(c.announcement ?? '');
@@ -191,7 +186,6 @@ export function CombinedPageConfigEditor({
     setCoverUrl(c.cover_photo_url ?? null);
     setLogoCrop(c.logo_crop ?? null);
     setCoverCropBox(c.cover_crop_box ?? null);
-    setNameSave('idle');
     setSaveStatus('idle');
     lastSavedJsonRef.current = JSON.stringify(
       assembleConfig({
@@ -254,20 +248,6 @@ export function CombinedPageConfigEditor({
 
   const applyPalette = (p: string) => {
     setPrimary(p);
-  };
-
-  const commitName = () => {
-    const v = name.trim();
-    if (v.length < 2 || v === collective.name) return;
-    setNameSave('saving');
-    update
-      .mutateAsync({ collectiveId: collective.id, payload: { name: v } })
-      .then(() => {
-        setNameSave('saved');
-        onChanged();
-        setTimeout(() => setNameSave((s) => (s === 'saved' ? 'idle' : s)), 2500);
-      })
-      .catch(() => setNameSave('error'));
   };
 
   const setAddressDedicated = () => {
@@ -360,7 +340,7 @@ export function CombinedPageConfigEditor({
           normalised colours + crop framing), exactly like the single-venue
           booking-page editor. */}
       <BookingPagePreview
-        venueName={name}
+        venueName={collective.publicName ?? collective.name}
         logoUrl={logoUrl}
         coverUrl={coverUrl}
         coverFullWidth={editorConfig.cover_full_width ?? false}
@@ -378,27 +358,6 @@ export function CombinedPageConfigEditor({
           {saveLabel}
         </Text>
       ) : null}
-
-      {/* Page name */}
-      <SectionHeader title="Page name" />
-      <Card style={styles.card}>
-        <Input
-          label="Page name (shown to customers)"
-          value={name}
-          onChangeText={setName}
-          onBlur={commitName}
-          maxLength={120}
-          helper={
-            nameSave === 'saving'
-              ? 'Saving…'
-              : nameSave === 'saved'
-                ? 'Saved'
-                : nameSave === 'error'
-                  ? 'Couldn’t save. Try again.'
-                  : undefined
-          }
-        />
-      </Card>
 
       {/* Booking-page address */}
       <SectionHeader title="Booking page address" />

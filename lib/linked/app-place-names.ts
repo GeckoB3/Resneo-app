@@ -19,6 +19,9 @@ const LINKED_SCREEN = 'the Linked venues screen';
 export const APP_PLACE_NAMES: Readonly<Record<string, readonly PlaceSwap[]>> = {
   // Linking and joining (setup-copy.ts)
   'create.name.help': [['called in your dashboard', 'called inside ResNeo']],
+  'create.venues.empty.body': [['under Active links', `on ${LINKED_SCREEN}`]],
+  'create.done.cta': [['Go to Collective', 'Go to Manage Collective']],
+  'create.next.design.body': [['under Settings, Booking Page', 'under More, Booking page']],
   'join.block.links': [['under Linked accounts', `under ${LINKED}`]],
   'join.links.lasts': [['in Linked Accounts', `in ${LINKED}`]],
   'join.block.linksLeft': [['in Linked Accounts', `in ${LINKED}`]],
@@ -41,6 +44,8 @@ export const APP_PLACE_NAMES: Readonly<Record<string, readonly PlaceSwap[]>> = {
   'ov.venues.invite.linkCta': [['Go to Linked Accounts', `Go to ${LINKED}`]],
   'ov.linkTodo.change': [['in Linked Accounts', `in ${LINKED}`]],
   'leave.body.access': [['go to Linked accounts', `go to ${LINKED}`]],
+  'bp.name.host.body': [['under Settings, Profile', 'under More, Venue profile']],
+  'bp.name.collective.help': [['in your dashboard, for example on the Booking Page and Linked Accounts tabs,', `inside ResNeo, for example on the Booking page and ${LINKED} screens,`]],
 };
 
 /** The deck's sentence with the app's place names in it. Keys with no swaps come back unchanged. */
