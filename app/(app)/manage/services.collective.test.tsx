@@ -534,6 +534,46 @@ describe('a new service at a host', () => {
   });
 });
 
+describe('switching a permission off with values set (found on the phone, 2026-10-30)', () => {
+  it('asks first, naming each calendar, and Go back sends nothing', async () => {
+    master().staff_may_customize_price = true;
+    const calendar = fixture().collective_calendars![1]!.calendars[0]!;
+    calendar.assigned[0]!.values = { ...calendar.assigned[0]!.values, custom_price_pence: 1500 } as never;
+    await openTheForm();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Staff override permissions'));
+    });
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Staff may change: Price'), 'valueChange', false);
+    });
+    await pressName('Save changes');
+    expect(patches()).toEqual([]);
+    expect(screen.getByText("Clear calendars' own values?")).toBeTruthy();
+    expect(screen.getByText('Mo at Light 3: price')).toBeTruthy();
+
+    await pressName('Go back');
+    expect(patches()).toEqual([]);
+
+    await pressName('Save changes');
+    await pressName('Clear and save');
+    expect((patches()[0]?.body as Record<string, unknown>).staff_may_customize_price).toBe(false);
+  });
+
+  it('asks nothing when no calendar has its own value', async () => {
+    master().staff_may_customize_price = true;
+    await openTheForm();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Staff override permissions'));
+    });
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Staff may change: Price'), 'valueChange', false);
+    });
+    await pressName('Save changes');
+    expect(screen.queryByText("Clear calendars' own values?")).toBeNull();
+    expect(patches()).toHaveLength(1);
+  });
+});
+
 describe('switching a page service off (CQ-13)', () => {
   it('reads "Switched on at every venue" and asks first, naming every venue, and Go back sends nothing', async () => {
     await openTheForm();

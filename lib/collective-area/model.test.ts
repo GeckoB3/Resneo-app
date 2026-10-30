@@ -374,6 +374,27 @@ describe('choosing calendars for the services picked (web CollectiveBulkCalendar
     expect(result.changeCount).toBe(1);
   });
 
+  it('collapses three or more services into one line, so a big removal fits on the screen', () => {
+    const names = ['Cut', 'Tint', 'Perm', 'Wash', 'Dry'];
+    const list = names.map((name, i) => ({ id: `s${i}`, name, itemId: `i${i}` }));
+    const offering = names.map((_, i) => ({ item_id: `i${i}`, service_id: `s${i}`, values, last_changed: null }));
+    const venue = (id: string, name: string, calendarId: string): CollectiveCalendarGroup => ({
+      ...zen,
+      venue_id: id,
+      venue_name: name,
+      calendars: [{ ...zen.calendars[0]!, id: calendarId, name: 'Cy', is_active: true, assigned: offering }],
+    });
+    const everywhere = [venue('v-a', 'Zen in Holywood', 'c-a'), venue('v-b', 'Elm', 'c-b')];
+    const off = (venueId: string, calendarId: string): BulkOp[] =>
+      list.map((s) => ({ op: 'unassign', service_id: s.id, venue_id: venueId, calendar_id: calendarId }));
+    expect(removalWarnings(off('v-a', 'c-a'), list, everywhere)).toEqual([
+      'Nobody at Zen in Holywood will offer 5 of these services: Cut, Tint, Perm and 2 more.',
+    ]);
+    expect(removalWarnings([...off('v-a', 'c-a'), ...off('v-b', 'c-b')], list, everywhere)).toEqual([
+      'Nobody will be able to book 5 of these services at any venue: Cut, Tint, Perm and 2 more.',
+    ]);
+  });
+
   it('asks before taking calendars off, naming a venue left with nobody and a service nobody offers (CQ-11)', () => {
     // Clearing Ada and Ben leaves Cut offered nowhere; Balayage is still offered nowhere else either.
     const ops: BulkOp[] = [

@@ -28,7 +28,7 @@
  * on Venues while it has no other venue, to invite one or end it (CQ-10.3).
  */
 import { Stack, useLocalSearchParams, useRouter, type Href } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
 import {
@@ -197,7 +197,7 @@ function AreaBody({
   const toast = useToast();
   const { colors } = useTheme();
   const { venue } = useVenueContext();
-  const params = useLocalSearchParams<{ view?: string; venue?: string; filter?: string; tab?: string }>();
+  const params = useLocalSearchParams<{ view?: string; venue?: string; filter?: string; tab?: string; choose?: string }>();
   // A host opens on Venues when asked, or while its collective has no other venue and nothing on the
   // page, as the web does (CQ-10.3).
   const [tab, setTab] = useState<AreaTab>(() =>
@@ -228,6 +228,16 @@ function AreaBody({
     services,
     groups,
   });
+  // `?choose={venueId}` opens straight on that venue's calendars (What needs you on Services).
+  const chooseVenueId = oneParam(params.choose);
+  const chooseHandled = useRef(false);
+  const focusVenue = grid.focusVenue;
+  useEffect(() => {
+    if (!chooseVenueId || chooseHandled.current) return;
+    if (!groups.some((g) => g.venue_id === chooseVenueId)) return;
+    chooseHandled.current = true;
+    focusVenue(chooseVenueId);
+  }, [chooseVenueId, groups, focusVenue]);
   const currencySymbol = CURRENCY_SYMBOL[(venue?.currency ?? 'GBP').toUpperCase()] ?? '£';
 
   const todos = useMemo(

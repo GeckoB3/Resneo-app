@@ -161,6 +161,49 @@ export function fieldsTurnedOnBySaving(shown: readonly CalendarValueField[], fla
   return shown.filter((f) => !flags[f.flag]);
 }
 
+/**
+ * What a save would clear, for the question asked before it (web `calendarValuesClearedByFlagChange`):
+ * each calendar holding its own value under a permission the save turns off.
+ */
+const VALUES_CLEARED_WHEN_FLAG_OFF = [
+  { flag: 'staff_may_customize_price', column: 'custom_price_pence', label: 'price' },
+  { flag: 'staff_may_customize_deposit', column: 'custom_deposit_pence', label: 'deposit' },
+  { flag: 'staff_may_customize_duration', column: 'custom_duration_minutes', label: 'length' },
+  { flag: 'staff_may_customize_buffer', column: 'custom_buffer_minutes', label: 'buffer' },
+] as const;
+
+export interface CalendarValuesCleared {
+  calendarId: string;
+  calendarName: string;
+  fields: string[];
+}
+
+export function calendarValuesClearedByFlagChange(params: {
+  before: object;
+  after: object;
+  links: readonly ({ calendar_id: string } & object)[];
+  calendarName: (calendarId: string) => string;
+}): CalendarValuesCleared[] {
+  const before = params.before as Record<string, unknown>;
+  const after = params.after as Record<string, unknown>;
+  const turnedOff = VALUES_CLEARED_WHEN_FLAG_OFF.filter((f) => before[f.flag] === true && after[f.flag] !== true);
+  if (turnedOff.length === 0) return [];
+  const out: CalendarValuesCleared[] = [];
+  for (const link of params.links) {
+    const row = link as Record<string, unknown>;
+    const fields = turnedOff.filter((f) => typeof row[f.column] === 'number').map((f) => f.label as string);
+    if (fields.length > 0) {
+      out.push({ calendarId: link.calendar_id, calendarName: params.calendarName(link.calendar_id), fields });
+    }
+  }
+  return out;
+}
+
+/** "price", "price and length", "price, length and buffer". */
+export function andList(words: readonly string[]): string {
+  return words.length <= 1 ? (words[0] ?? '') : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
+}
+
 /** "price", "price or length", "price, length or buffer". */
 export function orList(words: readonly string[]): string {
   return words.length <= 1 ? (words[0] ?? '') : `${words.slice(0, -1).join(', ')} or ${words[words.length - 1]}`;

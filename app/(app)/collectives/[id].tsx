@@ -81,7 +81,7 @@ export default function CollectiveDetailScreen() {
   // scope (web: Linked accounts' modal and the Booking Page tab share one
   // implementation).
   return (
-    <Screen scroll contentContainerStyle={styles.content}>
+    <Screen scroll keyboardAvoiding contentContainerStyle={styles.content}>
       <Stack.Screen options={{ title: collective.name }} />
       {collective.isHost ? (
         <CollectiveManagerPanel

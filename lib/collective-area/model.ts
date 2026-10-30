@@ -887,7 +887,8 @@ export function removalWarnings(
   services: readonly PickerService[],
   groups: readonly CollectiveCalendarGroup[],
 ): string[] {
-  const lines: string[] = [];
+  const nowhere: string[] = [];
+  const atVenue = new Map<string, string[]>();
   const serviceIds = [...new Set(ops.filter((op) => op.op === 'unassign').map((op) => op.service_id))];
   for (const serviceId of serviceIds) {
     const service = services.find((s) => s.id === serviceId);
@@ -915,14 +916,30 @@ export function removalWarnings(
       if (before > 0 && after === 0) emptied.push(group.venue_name);
     }
     if (anywhere === 0) {
-      lines.push(areaCopy('ov.bulk.choose.confirmNowhere', { service: service.name }));
+      nowhere.push(service.name);
       continue;
     }
-    for (const venue of emptied) {
-      lines.push(areaCopy('ov.bulk.choose.confirmVenueNone', { venue, service: service.name }));
+    for (const venue of emptied) atVenue.set(venue, [...(atVenue.get(venue) ?? []), service.name]);
+  }
+  // Three or more services read as one line, so a big removal still fits on the screen.
+  const lines: string[] =
+    nowhere.length >= 3
+      ? [areaCopy('ov.bulk.choose.confirmNowhereMany', { count: nowhere.length, list: someNames(nowhere) })]
+      : nowhere.map((name) => areaCopy('ov.bulk.choose.confirmNowhere', { service: name }));
+  for (const [venue, names] of atVenue) {
+    if (names.length >= 3) {
+      lines.push(areaCopy('ov.bulk.choose.confirmVenueNoneMany', { venue, count: names.length, list: someNames(names) }));
+    } else {
+      for (const name of names) lines.push(areaCopy('ov.bulk.choose.confirmVenueNone', { venue, service: name }));
     }
   }
   return lines;
+}
+
+/** "A, B, C and 13 more". */
+function someNames(names: readonly string[]): string {
+  const shown = names.slice(0, 3).join(', ');
+  return names.length > 3 ? `${shown} and ${names.length - 3} more` : shown;
 }
 
 /**

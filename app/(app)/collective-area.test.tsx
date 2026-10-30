@@ -526,6 +526,23 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
     expect(screen.queryByRole('button', { name: 'Take off the page' })).toBeNull();
   });
 
+  it('opens straight on a venue\'s calendars with ?choose= (What needs you on Services)', async () => {
+    mockGroups = [
+      hostGroup,
+      {
+        venue_id: 'v-zen',
+        venue_name: 'Zen Studio',
+        is_host: false,
+        sync,
+        calendars: [{ id: 'c3', name: 'Cy', is_active: true, assigned: [] }],
+      },
+    ];
+    mockParams = { choose: 'v-zen' };
+    await render(<CollectiveAreaScreen />);
+    expect(screen.getByLabelText('Cy at Zen Studio')).toBeTruthy();
+    expect(screen.queryByLabelText('Ada at Host Venue')).toBeNull();
+  });
+
   it("marks the host's own venue (you) on the Venues tab (CQ-07)", async () => {
     mockCollectives = [
       {

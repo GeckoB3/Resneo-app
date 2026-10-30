@@ -157,7 +157,10 @@ import {
 import {
   anyCalendarValueFlag,
   calendarValueDefaults,
+  andList,
   calendarValueFlags,
+  calendarValuesClearedByFlagChange,
+  type CalendarValuesCleared,
   calendarValuesTarget,
   OPTION_SET_FLAGS,
   ownCalendarValuesTarget,
@@ -913,6 +916,7 @@ export default function ServicesScreen() {
   const [formFromSetup, setFormFromSetup] = useState(false);
   /** The save is switching a page service off at every venue, and asks first as a step of the sheet (CQ-13). */
   const [deactivateAsk, setDeactivateAsk] = useState(false);
+  const [flagClearAsk, setFlagClearAsk] = useState<CalendarValuesCleared[] | null>(null);
   /** The last save to a page service, with its Put it back. Each save has its own key, and minute (CQ-11). */
   const [collectiveSave, setCollectiveSave] = useState<{
     key: string;
@@ -1609,6 +1613,7 @@ export default function ServicesScreen() {
     setCreating(false);
     setValuesStep(null);
     setDeactivateAsk(false);
+    setFlagClearAsk(null);
     focusCalendars.current = false;
     // Swiping the sheet away while it is asking about the bookings left behind
     // abandons that save; without this the next edit would open straight onto a
@@ -1637,6 +1642,13 @@ export default function ServicesScreen() {
     });
   }
 
+  // The result of a page change, and a save's Put it back, sit at the top of the list, usually out of
+  // sight of the card that asked for them, so bring them into view.
+  const collectiveSaveKey = collectiveSave?.key ?? null;
+  useEffect(() => {
+    if (pageNote || collectiveSaveKey) listRef.current?.scrollToOffset({ offset: 0, animated: true });
+  }, [pageNote, collectiveSaveKey]);
+
   /** The same message after the New service form and after the page control (CQ-05). */
   function showOfferSummary(serviceId: string, collectiveName: string, answer: OfferOnPageAnswer | null | undefined) {
     const summary = offerDoneSummary({
@@ -1649,8 +1661,9 @@ export default function ServicesScreen() {
     setPageNote({ serviceId, tone: 'ok', lines: summary.lines, chooseCalendars: summary.chooseCalendars });
   }
 
-  async function handleSave(opts: { deactivateConfirmed?: boolean } = {}) {
+  async function handleSave(opts: { deactivateConfirmed?: boolean; flagClearConfirmed?: boolean } = {}) {
     setError(null);
+    setPageNote(null);
     // Options (variants) drive the parent service's duration/buffer/price when present.
     const usesVariants = isAdmin && variantDrafts.length > 0;
 
@@ -1794,6 +1807,46 @@ export default function ServicesScreen() {
     if (editingPageMaster && wasActive && !isActive && !opts.deactivateConfirmed) {
       setDeactivateAsk(true);
       return;
+    }
+
+    // Turning off a permission clears the values calendars set under it: ask first (the web does).
+    const savedService = editTarget ? services.find((svc) => svc.id === editTarget.id) : undefined;
+    if (savedService && isAdmin && !opts.flagClearConfirmed) {
+      const names = new Map(practitioners.map((p) => [p.id, p.name]));
+      const memberLinks = editingCollectiveBlock
+        ? collectiveCalendars
+            .filter((group) => !group.is_host)
+            .flatMap((group) =>
+              group.calendars.flatMap((calendar) =>
+                calendar.assigned
+                  .filter((assigned) => assigned.item_id === editingCollectiveBlock.item_id)
+                  .map((assigned) => {
+                    names.set(calendar.id, `${calendar.name} at ${group.venue_name}`);
+                    return { calendar_id: calendar.id, ...assigned.values };
+                  }),
+              ),
+            )
+        : [];
+      const clears = calendarValuesClearedByFlagChange({
+        before: savedService,
+        after: {
+          staff_may_customize_price: staffMaySends('price'),
+          staff_may_customize_deposit: staffMaySends('deposit'),
+          staff_may_customize_duration: staffMaySends('duration'),
+          staff_may_customize_buffer: staffMaySends('buffer'),
+        },
+        links: [
+          ...practitionerServices
+            .filter((link) => link.service_id === savedService.id)
+            .map((link) => ({ ...link, calendar_id: link.practitioner_id })),
+          ...memberLinks,
+        ],
+        calendarName: (calendarId) => names.get(calendarId) ?? 'A calendar',
+      });
+      if (clears.length > 0) {
+        setFlagClearAsk(clears);
+        return;
+      }
     }
 
     // Web parity (appointment-service-form-to-payload.ts): only persist a deposit
@@ -2576,6 +2629,7 @@ export default function ServicesScreen() {
               <TodoStrip
                 todos={collectiveTodos}
                 onOpenService={openTodoService}
+                onOpenVenue={(venueId) => router.push(`/collective-area?choose=${venueId}` as Href)}
                 onSwitchOn={(serviceId) => {
                   const service = services.find((s) => s.id === serviceId);
                   if (service) handleSwitchOn(service);
@@ -3028,10 +3082,44 @@ export default function ServicesScreen() {
             </View>
           </View>
         ) : null}
+        {flagClearAsk ? (
+          <View style={[styles.sheetBodyWrap, styles.sectionStack]}>
+            <Text variant="subheading">{areaCopy('svc.flagClear.title')}</Text>
+            <Text variant="bodySmall" tone="secondary">
+              {areaCopy('svc.flagClear.message')}
+            </Text>
+            {flagClearAsk.map((clear) => (
+              <Text key={clear.calendarId} variant="bodySmall">
+                {areaCopy('svc.flagClear.row', { calendar: clear.calendarName, fields: andList(clear.fields) })}
+              </Text>
+            ))}
+            <View style={styles.actions}>
+              <Button
+                label={areaCopy('ov.bulk.confirm.back')}
+                variant="secondary"
+                style={styles.flex1}
+                disabled={saving}
+                onPress={() => setFlagClearAsk(null)}
+              />
+              <Button
+                label={areaCopy('svc.flagClear.confirm')}
+                variant="danger"
+                style={styles.flex1}
+                loading={saving}
+                onPress={() => {
+                  setFlagClearAsk(null);
+                  void handleSave({ deactivateConfirmed: true, flagClearConfirmed: true });
+                }}
+              />
+            </View>
+          </View>
+        ) : null}
         <View
           style={[
             styles.sheetBodyWrap,
-            (valuesStep && editingService) || (deactivateAsk && editingService?.collective) ? styles.hidden : null,
+            (valuesStep && editingService) || (deactivateAsk && editingService?.collective) || flagClearAsk
+              ? styles.hidden
+              : null,
           ]}>
           <Text variant="overline" tone="muted">
             {editTarget ? 'Edit service' : 'New service'}

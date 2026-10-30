@@ -542,7 +542,7 @@ export default function BookingPageScreen() {
 
   if (!isLoading && !isAdmin) {
     return (
-      <Screen scroll contentContainerStyle={styles.content}>
+      <Screen scroll keyboardAvoiding contentContainerStyle={styles.content}>
         <Stack.Screen options={{ headerShown: true, title: 'Booking page' }} />
         <EmptyState
           title="Admins only"
@@ -557,7 +557,7 @@ export default function BookingPageScreen() {
   // The combined scope: the host's manager inline, or the member's summary.
   if (collectiveNote && scope === 'combined') {
     return (
-      <Screen scroll contentContainerStyle={styles.content}>
+      <Screen scroll keyboardAvoiding contentContainerStyle={styles.content}>
         <Stack.Screen options={{ headerShown: true, title: 'Booking page' }} />
         <CombinedPageScopeSwitch
           collective={collectiveNote}
@@ -587,7 +587,7 @@ export default function BookingPageScreen() {
   }
 
   return (
-    <Screen scroll contentContainerStyle={styles.content}>
+    <Screen scroll keyboardAvoiding contentContainerStyle={styles.content}>
       <Stack.Screen
         options={{
           headerShown: true,
