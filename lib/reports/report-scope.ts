@@ -160,6 +160,14 @@ export function ownVenueName(options: ReportShowingOptions): string {
   return options.venue?.name ?? reportScopeCopy('scope.yourVenue');
 }
 
+/**
+ * Your venue in the picker beside businesses: "{name} (you)", so it is told from a business of the
+ * same name, which the server lists with its town ("Aura Hair Studio in Holywood", CQ-07, W6-20).
+ */
+function ownPickerName(options: ReportShowingOptions): string {
+  return options.venue ? `${options.venue.name} (you)` : reportScopeCopy('scope.yourVenue');
+}
+
 function businessAllLabel(b: Pick<ReportBusinessOption, 'name' | 'all_calendars'>): string {
   return reportScopeCopy(b.all_calendars ? 'scope.allOf' : 'scope.sharedOf', { name: b.name });
 }
@@ -296,7 +304,7 @@ export function showingPickerGroups(options: ReportShowingOptions): ShowingPicke
   if (options.businesses.length === 0) {
     return [{ key: 'own', heading: null, rows: ownRows('All calendars') }];
   }
-  const venueName = ownVenueName(options);
+  const venueName = ownPickerName(options);
   const groups: ShowingPickerGroup[] = [
     { key: 'own', heading: venueName, rows: ownRows(reportScopeCopy('scope.allOf', { name: venueName })) },
   ];
@@ -327,7 +335,7 @@ export function showingPickerGroups(options: ReportShowingOptions): ShowingPicke
 /** The picker's closed line: what is chosen, named so it reads alone. */
 export function showingPickerLabel(options: ReportShowingOptions, showing: ResolvedShowing): string {
   if (showing.kind === 'venue') {
-    return options.businesses.length > 0 ? reportScopeCopy('scope.allOf', { name: ownVenueName(options) }) : 'All calendars';
+    return options.businesses.length > 0 ? reportScopeCopy('scope.allOf', { name: ownPickerName(options) }) : 'All calendars';
   }
   if (showing.kind === 'calendar') {
     if (!showing.business) {

@@ -190,7 +190,7 @@ export function LinkSetupSheet({
         return wantCollective === null ? setupCopy('setup.disabled.collective') : null;
       case 'name':
         return name.trim().length < 2
-          ? setupCopy('create.name.help')
+          ? setupCopy('create.disabled.name')
           : addressState !== 'free'
             ? setupCopy('create.disabled.address')
             : null;
@@ -462,7 +462,7 @@ export function LinkSetupSheet({
           <Text variant="bodyMedium">{setupCopy('create.what.host', { venue: venueName })}</Text>
           <Input
             label={setupCopy('create.name.label')}
-            helper={setupCopy('create.name.help')}
+            helper={setupCopy('create.name.help', { venue: venueName })}
             value={name}
             maxLength={120}
             autoFocus

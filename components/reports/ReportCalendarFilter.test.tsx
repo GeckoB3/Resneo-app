@@ -112,12 +112,13 @@ describe('ReportCalendarPicker', () => {
   it('groups your venue, each business and everyone together, in that order', async () => {
     const onChange = jest.fn();
     await render(<ReportCalendarPicker options={WITH_BUSINESSES} value={show(WITH_BUSINESSES, { kind: 'venue' })} onChange={onChange} />);
-    expect(screen.getByRole('button', { name: 'Showing, Plus 1: all calendars' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Showing, Plus 1 (you): all calendars' })).toBeTruthy();
     await act(async () => {
       fireEvent.press(screen.getByHintText('Opens the choices of what to show'));
     });
+    // Your own venue reads "(you)" beside the businesses, which may share its name (CQ-07, W6-20).
     expect(screen.getAllByRole('radio').map((r) => r.props.accessibilityLabel)).toEqual([
-      'Plus 1: all calendars',
+      'Plus 1 (you): all calendars',
       'Hannah',
       'Jenny',
       'Jo (no longer active)',
@@ -130,7 +131,7 @@ describe('ReportCalendarPicker', () => {
     // Each group is headed with its business's name.
     expect(screen.getAllByRole('header').map((h) => h.props.children)).toEqual([
       'Show figures for',
-      'Plus 1',
+      'Plus 1 (you)',
       'Light 3',
       'Aura',
       'Together',

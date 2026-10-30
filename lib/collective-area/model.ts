@@ -63,11 +63,34 @@ export interface CollectiveCalendarGroup {
 
 export type BulkOpKind = 'offer' | 'withdraw' | 'assign' | 'unassign' | 'retry';
 
+/**
+ * A calendar's own values an assign can put back (web `BULK_RESTORABLE_VALUE_KEYS`, CQ-11): the
+ * Undo of a removal sends the values the calendar had, so taking it off and back loses nothing.
+ */
+export const BULK_RESTORABLE_VALUE_KEYS = [
+  'custom_price_pence',
+  'custom_duration_minutes',
+  'custom_buffer_minutes',
+  'custom_deposit_pence',
+  'custom_colour',
+] as const;
+
+export type BulkAssignValues = Partial<Record<(typeof BULK_RESTORABLE_VALUE_KEYS)[number], number | string | null>>;
+
 export interface BulkOp {
   op: BulkOpKind;
   service_id: string;
   venue_id?: string;
   calendar_id?: string;
+  /** An assign only (CQ-11): the calendar's own values, put back with it. A server before 2026-10-29 refuses it. */
+  values?: BulkAssignValues;
+}
+
+/** One upcoming booking a calendar removal would leave behind: dates, times and calendar, never a guest. */
+export interface BulkAffectedBooking {
+  booking_date: string;
+  booking_time: string;
+  calendar_id: string;
 }
 
 export interface BulkOpResult {
@@ -75,6 +98,15 @@ export interface BulkOpResult {
   ok: boolean;
   code?: string;
   message?: string;
+  /**
+   * With `COLLECTIVE_AFFECTED_BOOKINGS` (CQ-04): the bookings the removal would leave behind,
+   * soonest first, at most 20. Absent on older servers, which still refuse the removal.
+   */
+  affected_bookings?: BulkAffectedBooking[];
+  /** With `COLLECTIVE_AFFECTED_BOOKINGS`: how many there are in all. */
+  affected_count?: number;
+  /** An assign sent with `values` (CQ-11): whether the calendar's own values were put back. */
+  values_restored?: boolean;
 }
 
 export interface PreviewVenue {
@@ -205,11 +237,22 @@ export function gridRows(
     const onPage = isOnPage(service);
     if (filter === 'off_page') return !onPage;
     if (filter === 'all') return true;
-    if (!onPage) return false;
-    const block = service.collective!;
-    const noCalendars = groups.every((g) => cellState(g, block.item_id) === 'none');
-    return noCalendars || block.status === 'failed' || block.status === 'hidden' || isSwitchedOff(service);
+    return needsAttention(service, groups);
   });
+}
+
+/** On the page, and a guest cannot book it everywhere, or no calendar offers it (web `needsAttention`). */
+export function needsAttention(service: AreaService, groups: readonly CollectiveCalendarGroup[]): boolean {
+  if (!isOnPage(service)) return false;
+  const block = service.collective!;
+  const noCalendars = groups.every((g) => cellState(g, block.item_id) === 'none');
+  return noCalendars || block.status === 'failed' || block.status === 'hidden' || isSwitchedOff(service);
+}
+
+/** "Needs attention (3)": counted whatever the search, so the filter says so before it is opened (CQ-13). */
+export function attentionLabel(services: readonly AreaService[], groups: readonly CollectiveCalendarGroup[]): string {
+  const count = services.filter((s) => needsAttention(s, groups)).length;
+  return count > 0 ? areaCopy('ov.filter.attentionCount', { count }) : areaCopy('ov.filter.attention');
 }
 
 // ---------------------------------------------------------------------------
@@ -278,12 +321,22 @@ export function toggleCalendar(
   return offer === assignedNow ? rest : [...rest, { ...op, key }];
 }
 
+/**
+ * Changes not saved for a service; at one venue, its calendar changes only: a page change is the
+ * whole row's news (web, CQ-03), so it no longer reads "(1 not saved)" at every venue.
+ */
 export function stagedCountFor(staged: readonly StagedOp[], serviceId: string, venueId?: string): number {
   return staged.filter(
     (s) =>
       s.service_id === serviceId &&
-      (venueId == null || ((s.op === 'assign' || s.op === 'unassign') ? s.venue_id === venueId : true)),
+      (venueId == null || ((s.op === 'assign' || s.op === 'unassign') && s.venue_id === venueId)),
   ).length;
+}
+
+/** Whether a service is staged to go on the page or come off it. */
+export function pageStaged(staged: readonly StagedOp[], serviceId: string): PageOpKind | null {
+  const change = staged.find((s) => s.service_id === serviceId && (s.op === 'offer' || s.op === 'withdraw'));
+  return change ? (change.op as PageOpKind) : null;
 }
 
 export type PageOpKind = 'offer' | 'withdraw';
@@ -305,23 +358,55 @@ export function pageChangeable(
   });
 }
 
+/** What the bulk lane works on (web `crossing`, CQ-03). */
+export interface GridCrossing {
+  /** The services Choose calendars and Try these again act on. */
+  serviceIds: string[];
+  /** The venues they act on: the venues picked, or every venue when none is. */
+  venueIds: string[];
+  /** Only the services ticked: Put on the page and Take off the page never act on anything else. */
+  tickedServiceIds: string[];
+}
+
 /**
- * The bulk lane: put on or take off the page, or try again, across the services and venues picked
- * (every one when none are). Calendars are chosen in their own step (`pickerResult`), not here:
- * staging "every calendar" at every venue picked staged changes that changed nothing (2026-10-28).
+ * Ticked services when there are any; with only a venue picked, the services on the page shown,
+ * because a venue is about its calendars (CQ-03); with nothing picked, every service shown, for
+ * Try these again.
  */
-export function bulkOps(
-  kind: PageOpKind | 'retry',
-  serviceIds: readonly string[],
-  venueIds: readonly string[],
-  services: readonly AreaService[],
-): BulkOp[] {
+export function gridCrossing(input: {
+  selectedServices: Iterable<string>;
+  selectedVenues: Iterable<string>;
+  rows: readonly AreaService[];
+  groups: readonly CollectiveCalendarGroup[];
+}): GridCrossing {
+  const ticked = [...input.selectedServices];
+  const venues = [...input.selectedVenues];
+  return {
+    serviceIds:
+      ticked.length > 0
+        ? ticked
+        : venues.length > 0
+          ? input.rows.filter(isOnPage).map((r) => r.id)
+          : input.rows.map((r) => r.id),
+    venueIds: venues.length > 0 ? venues : input.groups.map((g) => g.venue_id),
+    tickedServiceIds: ticked,
+  };
+}
+
+/**
+ * The bulk lane: put on or take off the page (the services ticked, and only where it changes
+ * something), or try again across the services and venues the lane works on. A venue picked on its
+ * own can never empty the page (CQ-03). Calendars are chosen in their own step (`pickerResult`).
+ */
+export function bulkOps(kind: PageOpKind | 'retry', crossing: GridCrossing, services: readonly AreaService[]): BulkOp[] {
   if (kind === 'retry') {
-    return serviceIds.flatMap((serviceId) =>
-      venueIds.map((venueId): BulkOp => ({ op: 'retry', service_id: serviceId, venue_id: venueId })),
+    return crossing.serviceIds.flatMap((serviceId) =>
+      crossing.venueIds.map((venueId): BulkOp => ({ op: 'retry', service_id: serviceId, venue_id: venueId })),
     );
   }
-  return pageChangeable(kind, serviceIds, services).map((serviceId): BulkOp => ({ op: kind, service_id: serviceId }));
+  return pageChangeable(kind, crossing.tickedServiceIds, services).map(
+    (serviceId): BulkOp => ({ op: kind, service_id: serviceId }),
+  );
 }
 
 /** The calendar ticks staged for one service, at every venue: what its sheet's Save sends. */
@@ -395,12 +480,17 @@ export interface PickerResult {
   changeCount: number;
 }
 
-/** What the picker's Save sends: only the calendars touched, only where they differ (web `onSave`). */
+/**
+ * What the picker's Save sends: only the calendars touched, only where they differ (web `onSave`).
+ * `skip` holds the changes an earlier Save settled (went through, or will only be refused again),
+ * which are not sent or counted again until their calendar is touched (CQ-04).
+ */
 export function pickerResult(
   groups: readonly CollectiveCalendarGroup[],
   services: readonly PickerService[],
   staged: readonly StagedOp[],
   choice: PickerChoice,
+  skip: ReadonlySet<string> = new Set(),
 ): PickerResult {
   const onPage = services.filter((s) => s.itemId);
   const ops: BulkOp[] = [];
@@ -413,6 +503,7 @@ export function pickerResult(
       for (const service of onPage) {
         const ref = { service_id: service.id, venue_id: group.venue_id, calendar_id: calendar.id };
         const key = keyOf({ op: 'assign', ...ref });
+        if (skip.has(key)) continue;
         if (staged.some((s) => s.key === key)) settledKeys.push(key);
         if (calendarWillOffer(staged, service.id, group.venue_id, calendar, service.itemId) !== chosen) changeCount += 1;
         if (chosen !== savedOn(group, calendar.id, service.itemId)) ops.push({ op: chosen ? 'assign' : 'unassign', ...ref });
@@ -438,29 +529,509 @@ export function toBulkOps(staged: readonly StagedOp[]): BulkOp[] {
   return staged.map(({ key: _key, ...op }) => op);
 }
 
-/** "This changes {count} services at {venueList}", counted from what is staged. */
-export function confirmSummary(staged: readonly StagedOp[], groups: readonly CollectiveCalendarGroup[]): string {
-  const serviceIds = new Set(staged.map((s) => s.service_id));
-  const venueIds = new Set(
-    staged.flatMap((s) =>
-      s.op === 'assign' || s.op === 'unassign' || (s.op === 'retry' && s.venue_id)
-        ? [s.venue_id as string]
-        : groups.map((g) => g.venue_id),
-    ),
-  );
-  const names = groups.filter((g) => venueIds.has(g.venue_id)).map((g) => g.venue_name);
-  return areaCopy(serviceIds.size === 1 ? 'ov.bulk.confirm.messageOne' : 'ov.bulk.confirm.message', {
-    count: serviceIds.size,
-    venueList: formatVenueList(names),
-  });
-}
-
 /** "2 services at 1 venue selected". */
 export function selectionSummary(serviceCount: number, venueCount: number): string {
   return areaCopy('ov.bulk.selected', {
     services: `${serviceCount} ${areaCopy(serviceCount === 1 ? 'ov.venue.service' : 'ov.venue.services')}`,
     venues: `${venueCount} ${areaCopy(venueCount === 1 ? 'ov.bulk.venue' : 'ov.bulk.venues')}`,
   });
+}
+
+/**
+ * The bar's line for what is picked (web, CQ-03): "2 services picked" never claims "at 3 venues"
+ * when no venue was picked, and a venue picked on its own reads "Zen Studio picked".
+ */
+export function selectionLabel(
+  serviceCount: number,
+  venueIds: readonly string[],
+  groups: readonly CollectiveCalendarGroup[],
+): string {
+  if (venueIds.length === 0) {
+    return areaCopy('ov.bulk.servicesPicked', {
+      services: `${serviceCount} ${areaCopy(serviceCount === 1 ? 'ov.venue.service' : 'ov.venue.services')}`,
+    });
+  }
+  if (serviceCount === 0) {
+    return areaCopy('ov.bulk.venuesPicked', {
+      venueList: formatVenueList(groups.filter((g) => venueIds.includes(g.venue_id)).map(gridVenueName)),
+    });
+  }
+  return selectionSummary(serviceCount, venueIds.length);
+}
+
+// ---------------------------------------------------------------------------
+// What a save does, in words, and what came back (web `bulk-describe.ts`; CQ-03, CQ-04, CQ-11)
+// ---------------------------------------------------------------------------
+
+/** How long the last save in the grid can be undone (web `UNDO_WINDOW_MS`, owner 2026-10-29). */
+export const UNDO_WINDOW_MS = 60_000;
+
+/**
+ * A venue as the host reads it (web `gridVenueName`, CQ-07): only the host sees the grid, so its
+ * own venue is "Aura Hair Studio (you)". A member of the same name arrives labelled with its town.
+ */
+export function gridVenueName(group: Pick<CollectiveCalendarGroup, 'is_host' | 'venue_name'>): string {
+  return group.is_host ? areaCopy('svc.cal.venueYou', { venue: group.venue_name }) : group.venue_name;
+}
+
+export interface DescribeService {
+  id: string;
+  name: string;
+}
+
+/** Names in a sentence: "A", "A and B", "A, B and C", then "A, B, C, D, E and 3 more" (web `listNames`). */
+export function listNames(names: readonly string[], max = 6): string {
+  if (names.length <= max) {
+    if (names.length <= 1) return names[0] ?? '';
+    return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  }
+  return areaCopy('ov.bulk.choose.andMore', {
+    names: names.slice(0, max - 1).join(', '),
+    count: names.length - (max - 1),
+  });
+}
+
+function lookups(services: readonly DescribeService[], groups: readonly CollectiveCalendarGroup[]) {
+  const serviceName = (id: string) => services.find((s) => s.id === id)?.name ?? 'A service';
+  const venueName = (id: string | undefined) => groups.find((g) => g.venue_id === id)?.venue_name ?? 'a venue';
+  const calendarName = (venueId: string | undefined, calendarId: string | undefined) =>
+    groups.find((g) => g.venue_id === venueId)?.calendars.find((c) => c.id === calendarId)?.name ?? 'A calendar';
+  return { serviceName, venueName, calendarName };
+}
+
+export interface StagedDescription {
+  title: string;
+  /** One sentence per kind of change and service, the page changes first. */
+  lines: string[];
+  /** Something comes off the page for every venue, so the confirm is red. */
+  destructive: boolean;
+  confirmLabel: string;
+}
+
+/** Lines shown before the rest are counted as "And N more changes." */
+export const DESCRIBE_MAX_LINES = 8;
+
+/**
+ * The ask before a grid save (web `describeStaged`, CQ-03): a title, one line per change in plain
+ * words, and a red "Take N off the page" when anything is coming off the page for every venue.
+ */
+export function describeStaged(
+  staged: readonly BulkOp[],
+  services: readonly DescribeService[],
+  groups: readonly CollectiveCalendarGroup[],
+  maxLines = DESCRIBE_MAX_LINES,
+): StagedDescription {
+  const { serviceName, venueName, calendarName } = lookups(services, groups);
+  const lines: { text: string; ops: number }[] = [];
+
+  const withdrawn = staged.filter((op) => op.op === 'withdraw').map((op) => serviceName(op.service_id));
+  if (withdrawn.length === 1) {
+    lines.push({ text: areaCopy('ov.bulk.confirm.lineWithdrawOne', { service: withdrawn[0] }), ops: 1 });
+  } else if (withdrawn.length > 1) {
+    lines.push({
+      text: areaCopy('ov.bulk.confirm.lineWithdraw', { services: listNames(withdrawn, 12) }),
+      ops: withdrawn.length,
+    });
+  }
+
+  const offered = staged.filter((op) => op.op === 'offer').map((op) => serviceName(op.service_id));
+  if (offered.length > 0) {
+    lines.push({ text: areaCopy('ov.bulk.confirm.lineOffer', { services: listNames(offered, 12) }), ops: offered.length });
+  }
+
+  for (const kind of ['assign', 'unassign'] as const) {
+    // Per service, in the order staged; within it, per venue: "Ada and Ben at Host Venue and Cy at Zen Studio".
+    const byService = new Map<string, Map<string, string[]>>();
+    for (const op of staged) {
+      if (op.op !== kind) continue;
+      const venueId = op.venue_id ?? '';
+      const venues = byService.get(op.service_id) ?? new Map<string, string[]>();
+      const calendars = venues.get(venueId) ?? [];
+      calendars.push(calendarName(op.venue_id, op.calendar_id));
+      venues.set(venueId, calendars);
+      byService.set(op.service_id, venues);
+    }
+    for (const [serviceId, venues] of byService) {
+      const total = [...venues.values()].reduce((n, calendars) => n + calendars.length, 0);
+      const where = listNames(
+        [...venues.entries()].map(([venueId, calendars]) =>
+          areaCopy('ov.bulk.confirm.calendarsAt', { calendars: listNames(calendars), venue: venueName(venueId) }),
+        ),
+      );
+      const id: AreaCopyId =
+        kind === 'assign'
+          ? total === 1
+            ? 'ov.bulk.confirm.lineAssignOne'
+            : 'ov.bulk.confirm.lineAssign'
+          : total === 1
+            ? 'ov.bulk.confirm.lineUnassignOne'
+            : 'ov.bulk.confirm.lineUnassign';
+      lines.push({ text: areaCopy(id, { service: serviceName(serviceId), calendar: where, calendars: where }), ops: total });
+    }
+  }
+
+  const retries = staged.filter((op) => op.op === 'retry');
+  if (retries.length > 0) {
+    const serviceIds = [...new Set(retries.map((op) => op.service_id))];
+    const venueIds = retries.some((op) => !op.venue_id)
+      ? groups.map((g) => g.venue_id)
+      : [...new Set(retries.map((op) => op.venue_id as string))];
+    lines.push({
+      text: areaCopy('ov.bulk.confirm.lineRetry', {
+        services: listNames(serviceIds.map(serviceName)),
+        venueList: listNames(venueIds.map(venueName)),
+      }),
+      ops: retries.length,
+    });
+  }
+
+  const shown = lines.length > maxLines ? lines.slice(0, maxLines) : lines;
+  const hidden = lines.slice(shown.length).reduce((n, line) => n + line.ops, 0);
+  const text = shown.map((line) => line.text);
+  if (hidden > 0) text.push(areaCopy('ov.bulk.confirm.more', { count: hidden }));
+
+  const off = withdrawn.length;
+  return {
+    title:
+      off === 1
+        ? areaCopy('ov.bulk.confirm.titleWithdrawOne', { service: withdrawn[0] })
+        : off > 1
+          ? areaCopy('ov.bulk.confirm.titleWithdraw', { count: off })
+          : areaCopy('ov.bulk.confirm.title'),
+    lines: text,
+    destructive: off > 0,
+    confirmLabel:
+      off === 1
+        ? areaCopy('ov.bulk.confirm.confirmWithdrawOne')
+        : off > 1
+          ? areaCopy('ov.bulk.confirm.confirmWithdraw', { count: off })
+          : areaCopy('ov.bulk.confirm.confirm'),
+  };
+}
+
+/**
+ * Whether sending the same change again could go through (web `bulkFailureRetryable`, CQ-04). One
+ * with no code is ours or the network's, and a venue's copy that is not ready yet will be in a
+ * minute; anything else coded (not on the page, bookings to see first) is refused again.
+ */
+export function bulkFailureRetryable(result: Pick<BulkOpResult, 'code'>): boolean {
+  return !result.code || result.code === 'COLLECTIVE_REPLICA_NOT_READY';
+}
+
+/** A change the engine refused, kept with whether sending it again could go through. */
+export interface BulkFailure {
+  key: string;
+  op: BulkOp;
+  code?: string;
+  message: string;
+  /** False for a refusal that will repeat: it is listed, and never sent again by itself. */
+  retryable: boolean;
+}
+
+export const BULK_FAILURE_FALLBACK = 'That change did not go through.';
+
+export function bulkFailure(op: BulkOp, result: Pick<BulkOpResult, 'code' | 'message'>): BulkFailure {
+  return {
+    key: keyOf(op),
+    op,
+    code: result.code,
+    message: result.message ?? BULK_FAILURE_FALLBACK,
+    retryable: bulkFailureRetryable(result),
+  };
+}
+
+/** "Facial, Chair 2 at Zen Studio", "Facial at Zen Studio", or just "Facial" for a page change. */
+export function failureSubject(
+  op: BulkOp,
+  services: readonly DescribeService[],
+  groups: readonly CollectiveCalendarGroup[],
+): string {
+  const { serviceName, venueName, calendarName } = lookups(services, groups);
+  if (op.op === 'assign' || op.op === 'unassign') {
+    return areaCopy('ov.bulk.failed.subjectCalendar', {
+      service: serviceName(op.service_id),
+      calendar: calendarName(op.venue_id, op.calendar_id),
+      venue: venueName(op.venue_id),
+    });
+  }
+  if (op.op === 'retry' && op.venue_id) {
+    return areaCopy('ov.bulk.failed.subjectVenue', { service: serviceName(op.service_id), venue: venueName(op.venue_id) });
+  }
+  return serviceName(op.service_id);
+}
+
+/** "{service} at {venue}: {reason}" for every failure, in the order they came back (web `failureRows`). */
+export function failureRows(
+  failed: readonly Pick<BulkFailure, 'key' | 'op' | 'message'>[],
+  services: readonly DescribeService[],
+  groups: readonly CollectiveCalendarGroup[],
+): { key: string; text: string }[] {
+  return failed.map((f) => ({
+    key: f.key,
+    text: areaCopy('ov.bulk.failed.row', { subject: failureSubject(f.op, services, groups), reason: f.message }),
+  }));
+}
+
+/** The line under a list of failures, only when some of them are still kept to send again. */
+export function failedKeptLine(list: readonly Pick<BulkFailure, 'retryable'>[]): string | null {
+  const kept = list.filter((f) => f.retryable).length;
+  if (kept === 0) return null;
+  if (list.length === 1) return areaCopy('ov.bulk.failed.keptOne');
+  if (kept === 1) return areaCopy('ov.bulk.failed.keptOneOfMany');
+  return areaCopy('ov.bulk.failed.kept', { count: kept });
+}
+
+/** A removal the engine held back because the calendar has upcoming bookings for the service. */
+export interface AffectedRefusal {
+  key: string;
+  op: BulkOp;
+  /** Soonest first, at most 20; empty from a server that does not send them yet. */
+  bookings: BulkAffectedBooking[];
+  /** How many there are in all. */
+  count: number;
+}
+
+export function isAffectedRefusal(result: Pick<BulkOpResult, 'ok' | 'code'>): boolean {
+  return !result.ok && result.code === 'COLLECTIVE_AFFECTED_BOOKINGS';
+}
+
+export function affectedRefusal(op: BulkOp, result: BulkOpResult): AffectedRefusal {
+  const bookings = result.affected_bookings ?? [];
+  return { key: keyOf(op), op, bookings, count: Math.max(result.affected_count ?? 0, bookings.length) };
+}
+
+/** One service at one calendar with its bookings, named, for the bookings step. */
+export interface AffectedBookingsItem {
+  key: string;
+  serviceName: string;
+  calendarName: string;
+  venueName: string;
+  bookings: BulkAffectedBooking[];
+  count: number;
+}
+
+export function groupAffected(
+  refusals: readonly AffectedRefusal[],
+  services: readonly DescribeService[],
+  groups: readonly CollectiveCalendarGroup[],
+): AffectedBookingsItem[] {
+  const { serviceName, venueName, calendarName } = lookups(services, groups);
+  return refusals.map((r) => ({
+    key: r.key,
+    serviceName: serviceName(r.op.service_id),
+    calendarName: calendarName(r.op.venue_id, r.op.calendar_id),
+    venueName: venueName(r.op.venue_id),
+    bookings: r.bookings,
+    count: r.count,
+  }));
+}
+
+/** "Tue 3 Nov", with the year when it is not this year (web `affectedBookingDateLabel`). */
+export function affectedBookingDateLabel(ymd: string, thisYear = new Date().getUTCFullYear()): string {
+  const parsed = new Date(`${ymd}T12:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return ymd;
+  return parsed.toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    ...(parsed.getUTCFullYear() === thisYear ? {} : { year: 'numeric' }),
+    timeZone: 'UTC',
+  });
+}
+
+/** "Chair 2 has upcoming bookings for Facial", or the general title for more than one. */
+export function affectedBookingsTitle(items: readonly AffectedBookingsItem[]): string {
+  const [first] = items;
+  return items.length === 1 && first
+    ? areaCopy('ov.bulk.bookings.titleOne', { calendar: first.calendarName, service: first.serviceName })
+    : areaCopy('ov.bulk.bookings.title');
+}
+
+/** Dates listed per calendar before the rest are counted. */
+const AFFECTED_DATES_SHOWN = 5;
+
+/** "Chair 2 at Zen Studio, Facial: Tue 3 Nov, 10:00; Wed 4 Nov, 11:30 and 2 more" (web `affectedBookingsRow`). */
+export function affectedBookingsRow(item: AffectedBookingsItem, thisYear?: number): string {
+  const shown = item.bookings.slice(0, AFFECTED_DATES_SHOWN).map((booking) =>
+    areaCopy('ov.bulk.bookings.date', {
+      date: affectedBookingDateLabel(booking.booking_date, thisYear),
+      time: booking.booking_time.slice(0, 5),
+    }),
+  );
+  // A server that sends no dates yet still names the calendar and service.
+  if (shown.length === 0) {
+    return areaCopy('ov.bulk.failed.subjectCalendar', {
+      service: item.serviceName,
+      calendar: item.calendarName,
+      venue: item.venueName,
+    });
+  }
+  const more = item.count - shown.length;
+  const dates =
+    more > 0 ? `${shown.join('; ')} ${areaCopy('ov.bulk.bookings.more', { count: more })}` : shown.join('; ');
+  return areaCopy('ov.bulk.bookings.row', {
+    calendar: item.calendarName,
+    venue: item.venueName,
+    service: item.serviceName,
+    dates,
+  });
+}
+
+/**
+ * What a picker save that takes calendars off leaves behind (web `removalWarnings`, CQ-11): a venue
+ * left with no calendar for a service, or a service no calendar anywhere would offer. Counted on
+ * what is saved plus these changes, over every venue, active calendars only.
+ */
+export function removalWarnings(
+  ops: readonly BulkOp[],
+  services: readonly PickerService[],
+  groups: readonly CollectiveCalendarGroup[],
+): string[] {
+  const lines: string[] = [];
+  const serviceIds = [...new Set(ops.filter((op) => op.op === 'unassign').map((op) => op.service_id))];
+  for (const serviceId of serviceIds) {
+    const service = services.find((s) => s.id === serviceId);
+    if (!service?.itemId) continue;
+    const itemId = service.itemId;
+    const offersAfter = (venueId: string, calendarId: string, saved: boolean) => {
+      const change = ops.find(
+        (op) =>
+          (op.op === 'assign' || op.op === 'unassign') &&
+          op.service_id === serviceId &&
+          op.venue_id === venueId &&
+          op.calendar_id === calendarId,
+      );
+      return change ? change.op === 'assign' : saved;
+    };
+    let anywhere = 0;
+    const emptied: string[] = [];
+    for (const group of groups) {
+      const active = group.calendars.filter((c) => c.is_active);
+      const before = active.filter((c) => c.assigned.some((a) => a.item_id === itemId)).length;
+      const after = active.filter((c) =>
+        offersAfter(group.venue_id, c.id, c.assigned.some((a) => a.item_id === itemId)),
+      ).length;
+      anywhere += after;
+      if (before > 0 && after === 0) emptied.push(group.venue_name);
+    }
+    if (anywhere === 0) {
+      lines.push(areaCopy('ov.bulk.choose.confirmNowhere', { service: service.name }));
+      continue;
+    }
+    for (const venue of emptied) {
+      lines.push(areaCopy('ov.bulk.choose.confirmVenueNone', { venue, service: service.name }));
+    }
+  }
+  return lines;
+}
+
+/**
+ * What undoes a save (web `inverseOps`, CQ-11): the changes that went through, turned round and in
+ * reverse order, so a put-on with its calendars comes off calendars first. A calendar taken off
+ * goes back with the values it had before the save (`groupsBefore`), so its own price is not lost.
+ * Bringing copies up to date has nothing to undo.
+ */
+export function inverseOps(
+  succeeded: readonly BulkOp[],
+  groupsBefore: readonly CollectiveCalendarGroup[],
+  /** The offering a service had before the save, to find a calendar's values for it. */
+  itemIdOf: (serviceId: string) => string | null | undefined,
+): BulkOp[] {
+  const out: BulkOp[] = [];
+  for (const op of [...succeeded].reverse()) {
+    if (op.op === 'offer') out.push({ op: 'withdraw', service_id: op.service_id });
+    else if (op.op === 'withdraw') out.push({ op: 'offer', service_id: op.service_id });
+    else if (op.op === 'assign') {
+      out.push({ op: 'unassign', service_id: op.service_id, venue_id: op.venue_id, calendar_id: op.calendar_id });
+    } else if (op.op === 'unassign') {
+      const values = valuesBefore(groupsBefore, itemIdOf(op.service_id), op.venue_id, op.calendar_id);
+      out.push({
+        op: 'assign',
+        service_id: op.service_id,
+        venue_id: op.venue_id,
+        calendar_id: op.calendar_id,
+        ...(values ? { values } : {}),
+      });
+    }
+  }
+  return out;
+}
+
+/** A calendar's own values for an offering, as they were: only the ones it set, or null. */
+function valuesBefore(
+  groups: readonly CollectiveCalendarGroup[],
+  itemId: string | null | undefined,
+  venueId: string | undefined,
+  calendarId: string | undefined,
+): BulkAssignValues | null {
+  if (!itemId) return null;
+  const calendar = groups.find((g) => g.venue_id === venueId)?.calendars.find((c) => c.id === calendarId);
+  const assigned = calendar?.assigned.find((a) => a.item_id === itemId);
+  if (!assigned) return null;
+  const out: BulkAssignValues = {};
+  for (const key of BULK_RESTORABLE_VALUE_KEYS) {
+    const value = (assigned.values as unknown as Record<string, unknown>)[key];
+    if (typeof value === 'number' || (typeof value === 'string' && value !== '')) out[key] = value;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+const VALUE_WORDS: Record<(typeof BULK_RESTORABLE_VALUE_KEYS)[number], string> = {
+  custom_price_pence: 'price',
+  custom_duration_minutes: 'length',
+  custom_buffer_minutes: 'buffer',
+  custom_deposit_pence: 'deposit',
+  custom_colour: 'colour',
+};
+
+/** "Chair 2 at Zen Studio offers it again, but its own price could not be put back. ..." */
+export function valuesNotRestoredLine(
+  op: BulkOp,
+  services: readonly DescribeService[],
+  groups: readonly CollectiveCalendarGroup[],
+): string {
+  const { venueName, calendarName } = lookups(services, groups);
+  const fields = BULK_RESTORABLE_VALUE_KEYS.filter((key) => op.values?.[key] !== undefined && op.values?.[key] !== null);
+  return areaCopy('ov.bulk.undoValues', {
+    calendar: calendarName(op.venue_id, op.calendar_id),
+    venue: venueName(op.venue_id),
+    fields: listNames(fields.map((key) => VALUE_WORDS[key])),
+  });
+}
+
+/** Why an update did not reach a venue, in the host's words (web `syncFailureReason`). */
+export function syncFailureReason(code: string | null | undefined, venueName: string): string {
+  if (code === 'lock_timeout' || code === 'timeout' || code === '55P03' || code === 'busy') {
+    return areaCopy('sync.reason.busy', { venue: venueName });
+  }
+  if (code === 'membership_suspended' || code === 'subscription_lapsed') {
+    return areaCopy('sync.reason.subscription', { venue: venueName });
+  }
+  return areaCopy('sync.reason.unknown');
+}
+
+/** What Update now did for one venue (web `retryOutcome`, CQ-11). */
+export interface RetryOutcome {
+  state: 'done' | 'pending' | 'failed';
+  text: string;
+}
+
+export function retryOutcome(sync: CollectiveSync | null | undefined, venueName: string): RetryOutcome {
+  const failed = sync?.failed[0];
+  if (failed) {
+    return {
+      state: 'failed',
+      text: areaCopy('ov.venue.retryFailed', {
+        venue: venueName,
+        // The reason is a sentence of its own; the line adds its own full stop.
+        reason: syncFailureReason(failed.code, venueName).replace(/\.$/, ''),
+      }),
+    };
+  }
+  if ((sync?.pending.length ?? 0) > 0) {
+    return { state: 'pending', text: areaCopy('ov.venue.retryPending', { venue: venueName }) };
+  }
+  return { state: 'done', text: areaCopy('ov.venue.retryDone', { venue: venueName }) };
 }
 
 /** "12 services, 3 calendars on the page" for one venue. */
@@ -494,7 +1065,7 @@ export function venueWarnings(
   if (itemId && (group.awaiting_answer ?? []).includes(itemId)) {
     out.push(areaCopy('svc.cal.warn.awaiting', { venue: group.venue_name }));
   }
-  for (const venue of group.sync.pending) out.push(areaCopy('svc.cal.warn.settingUp', { venue: venue.venue_name }));
+  for (const venue of group.sync.pending) out.push(areaCopy('svc.cal.warn.updating', { venue: venue.venue_name }));
   for (const venue of group.sync.failed) {
     out.push(
       areaCopy('svc.cal.warn.failed', {
@@ -513,15 +1084,22 @@ export function venueWarnings(
   return out;
 }
 
-/** What a calendar charges or times differently (web `valueChips`). */
-export function valueChips(assignment: CollectiveCalendarAssignment | undefined, currencySymbol: string): string[] {
+/**
+ * What a calendar charges or times differently (web `valueChips`). `hasOptions` (CQ-12): each option
+ * sets its own price, length and buffer, so a value left over for those is not what guests are charged.
+ */
+export function valueChips(
+  assignment: CollectiveCalendarAssignment | undefined,
+  currencySymbol: string,
+  hasOptions = false,
+): string[] {
   if (!assignment) return [];
   const v = assignment.values;
   const money = (p: number) => `${currencySymbol}${(p / 100).toFixed(2)}`;
   const chips: string[] = [];
-  if (v.custom_price_pence != null) chips.push(areaCopy('svc.cal.chip.price', { price: money(v.custom_price_pence) }));
-  if (v.custom_duration_minutes != null) chips.push(areaCopy('svc.cal.chip.length', { minutes: v.custom_duration_minutes }));
-  if (v.custom_buffer_minutes != null) chips.push(areaCopy('svc.cal.chip.buffer', { minutes: v.custom_buffer_minutes }));
+  if (!hasOptions && v.custom_price_pence != null) chips.push(areaCopy('svc.cal.chip.price', { price: money(v.custom_price_pence) }));
+  if (!hasOptions && v.custom_duration_minutes != null) chips.push(areaCopy('svc.cal.chip.length', { minutes: v.custom_duration_minutes }));
+  if (!hasOptions && v.custom_buffer_minutes != null) chips.push(areaCopy('svc.cal.chip.buffer', { minutes: v.custom_buffer_minutes }));
   if (v.custom_deposit_pence != null) chips.push(areaCopy('svc.cal.chip.deposit', { price: money(v.custom_deposit_pence) }));
   if (v.custom_colour) chips.push(areaCopy('svc.cal.chip.colour'));
   if (v.custom_name) chips.push(areaCopy('svc.cal.chip.name'));
@@ -537,7 +1115,9 @@ export type TodoAction =
   | { kind: 'venue_calendars'; venueId: string; label: string }
   | { kind: 'payments'; label: string }
   | { kind: 'forms'; label: string }
-  | { kind: 'retry'; venueId: string; label: string };
+  | { kind: 'retry'; venueId: string; label: string }
+  /** Switch a page service back on at the host (the Services screen's switch), from the strip (CQ-13). */
+  | { kind: 'switch_on'; serviceId: string; label: string };
 
 export interface CollectiveTodo {
   id: string;
@@ -548,6 +1128,12 @@ export interface CollectiveTodo {
 const counted = (id: AreaCopyId, count: number, params: Record<string, string | number>): string =>
   areaCopy(count === 1 ? (`${id}One` as AreaCopyId) : id, { ...params, count });
 
+/**
+ * How long after a service goes on the page the host is told which venues offer it on no calendar
+ * (web `NEW_OFFER_WINDOW_MS`, CQ-05, owner 2026-10-29).
+ */
+export const NEW_OFFER_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+
 export function buildCollectiveTodos(input: {
   isHost: boolean;
   services: readonly AreaService[];
@@ -557,6 +1143,8 @@ export function buildCollectiveTodos(input: {
   /** Member only: its own venue id, to read the hidden reasons that are about itself. */
   ownVenueId?: string | null;
   limit?: number;
+  /** The clock, for the two weeks after a service goes on the page; injectable for tests. */
+  now?: number;
 }): CollectiveTodo[] {
   const onPage = input.services.filter(
     (s) => s.collective && s.collective.role !== 'parked' && s.collective.role !== 'retired',
@@ -578,6 +1166,16 @@ export function buildCollectiveTodos(input: {
         });
       }
     }
+    // Switched off on the Services screen while on the page (CQ-13): one switch hid it at every
+    // venue, and the grid counts it as needing attention, so this list says so too.
+    for (const service of onPage) {
+      if (!isSwitchedOff(service)) continue;
+      todos.push({
+        id: `switched-off-${service.id}`,
+        text: areaCopy('ov.todo.switchedOff', { service: service.name }),
+        action: { kind: 'switch_on', serviceId: service.id, label: areaCopy('ov.grid.row.turnOn') },
+      });
+    }
     // A member asked whether to use its own same-named service (web plan L13): its calendars can be
     // chosen once it answers, so the host is told what it is waiting on.
     for (const service of onPage) {
@@ -591,6 +1189,7 @@ export function buildCollectiveTodos(input: {
         });
       }
     }
+    todos.push(...notAtVenueTodos(onPage, groups, input.now ?? Date.now()));
     for (const group of groups) {
       if (group.is_host) continue;
       if (!group.calendars.some((c) => c.assigned.length > 0)) {
@@ -641,6 +1240,51 @@ export function buildCollectiveTodos(input: {
     );
   }
   return todos.slice(0, input.limit ?? 5);
+}
+
+/**
+ * For two weeks after a service goes on the page, the venues that offer other page services but
+ * not this one (web `notAtVenueTodos`, CQ-05). A venue that offers nothing yet has its own row, one
+ * still deciding about a same-named service cannot be chosen for yet, and a service no calendar
+ * offers anywhere has the louder row. A server without `offered_at` shows none.
+ */
+function notAtVenueTodos(
+  onPage: readonly AreaService[],
+  groups: readonly CollectiveCalendarGroup[],
+  now: number,
+): CollectiveTodo[] {
+  const offersItem = (group: CollectiveCalendarGroup, itemId: string) =>
+    group.calendars.some((c) => c.assigned.some((a) => a.item_id === itemId));
+  const missing = new Map<string, { group: CollectiveCalendarGroup; services: AreaService[] }>();
+  for (const service of onPage) {
+    const itemId = service.collective?.item_id;
+    const offeredAt = service.collective?.offered_at ? Date.parse(service.collective.offered_at) : NaN;
+    if (!itemId || !Number.isFinite(offeredAt) || now - offeredAt > NEW_OFFER_WINDOW_MS) continue;
+    if (!groups.some((g) => offersItem(g, itemId))) continue;
+    for (const group of groups) {
+      if (group.is_host || (group.awaiting_answer ?? []).includes(itemId)) continue;
+      if (!group.calendars.some((c) => c.assigned.length > 0)) continue;
+      if (!group.calendars.some((c) => c.is_active)) continue;
+      if (offersItem(group, itemId)) continue;
+      const seen = missing.get(group.venue_id) ?? { group, services: [] };
+      seen.services.push(service);
+      missing.set(group.venue_id, seen);
+    }
+  }
+  const label = areaCopy('svc.offer.chooseCalendars');
+  return [...missing.values()].map(({ group, services }) =>
+    services.length === 1
+      ? {
+          id: `not-at-venue-${group.venue_id}-${services[0]!.id}`,
+          text: areaCopy('ov.todo.notAtVenue', { service: services[0]!.name, venue: group.venue_name }),
+          action: { kind: 'service' as const, serviceId: services[0]!.id, label },
+        }
+      : {
+          id: `not-at-venue-${group.venue_id}`,
+          text: areaCopy('ov.todo.notAtVenueMany', { venue: group.venue_name, count: services.length }),
+          action: { kind: 'venue_calendars' as const, venueId: group.venue_id, label },
+        },
+  );
 }
 
 function hiddenReasonTodos(

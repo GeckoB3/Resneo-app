@@ -11,10 +11,8 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Segmented } from '@/components/ui/Segmented';
 import { Text } from '@/components/ui/Text';
-import {
-  SHARED_SERVICES_POINTER,
-  isSharedServices,
-} from '@/lib/linked/collective-membership-copy';
+import { areaCopy } from '@/lib/collective-area/copy';
+import { isSharedServices } from '@/lib/linked/collective-membership-copy';
 import { spacing } from '@/theme/index';
 import type { CollectiveView } from '@/types/collectives';
 import type { AccountLinkView } from '@/types/linked-venues';
@@ -29,6 +27,11 @@ type TabKey = CollectiveManagerTab;
  * Booking page screen and the collective screen under Linked venues edit the
  * same thing the same way (web `CombinedPageManagerPanel`, inline or in its
  * modal).
+ *
+ * On shared services (CQ-10.4, web `CombinedPageManager`, 2026-10-29) it shows Page and About only:
+ * the services, the venues, the hosting and ending the collective are all in Manage Collective, and a
+ * card at the foot of Page says so. Its Members tab sent Make host, which shared services refuse, and
+ * ended the collective without the typed name Manage Collective asks for.
  */
 export function CollectiveManagerPanel({
   collective,
@@ -44,16 +47,26 @@ export function CollectiveManagerPanel({
   /** The tab to open on, e.g. Members from the Collective area's "Invite a venue". */
   initialTab?: CollectiveManagerTab;
 }) {
-  const [tab, setTab] = useState<TabKey>(initialTab);
+  const shared = isSharedServices(collective);
+  const [tab, setTab] = useState<TabKey>(
+    shared && (initialTab === 'members' || initialTab === 'services') ? 'page' : initialTab,
+  );
   return (
     <View style={styles.root}>
       <Segmented<TabKey>
-        options={[
-          { value: 'page', label: 'Page' },
-          { value: 'services', label: 'Services' },
-          { value: 'about', label: 'About' },
-          { value: 'members', label: 'Members' },
-        ]}
+        options={
+          shared
+            ? [
+                { value: 'page', label: 'Page' },
+                { value: 'about', label: 'About' },
+              ]
+            : [
+                { value: 'page', label: 'Page' },
+                { value: 'services', label: 'Services' },
+                { value: 'about', label: 'About' },
+                { value: 'members', label: 'Members' },
+              ]
+        }
         value={tab}
         onChange={setTab}
       />
@@ -67,20 +80,15 @@ export function CollectiveManagerPanel({
               <CombinedPageAddressRow collective={collective} />
             </Card>
             <CombinedPageConfigEditor collective={collective} onChanged={onChanged} />
+            {shared ? <ManageCollectivePointerCard collectiveName={collective.name} /> : null}
           </>
         ) : null}
 
-        {tab === 'services' ? (
-          isSharedServices(collective) ? (
-            <SharedServicesPointerCard />
-          ) : (
-            <CollectiveCatalogueBuilder collectiveId={collective.id} />
-          )
-        ) : null}
+        {tab === 'services' && !shared ? <CollectiveCatalogueBuilder collectiveId={collective.id} /> : null}
 
         {tab === 'about' ? <CombinedPageAboutSection collective={collective} /> : null}
 
-        {tab === 'members' ? (
+        {tab === 'members' && !shared ? (
           <CollectiveMembersPanel
             collective={collective}
             eligibleLinks={eligibleLinks}
@@ -107,16 +115,20 @@ const styles = StyleSheet.create({
   },
 });
 
-/** Shared services: where the page's services and calendars are managed, with a way to each. */
-function SharedServicesPointerCard() {
+/** Shared services: the services, venues, hosting and ending are in Manage Collective (CQ-10.4). */
+function ManageCollectivePointerCard({ collectiveName }: { collectiveName: string }) {
   const router = useRouter();
   return (
-    <Card style={styles.pointer}>
+    <Card style={styles.pointer} testID="manage-collective-pointer">
       <Text variant="bodySmall" tone="secondary">
-        {SHARED_SERVICES_POINTER}
+        {areaCopy('bp.manage.elsewhere', { collective: collectiveName })}
       </Text>
-      <Button label="Open Services" variant="primary" fullWidth onPress={() => router.push('/manage/services' as Href)} />
-      <Button label="Manage Collective" variant="secondary" fullWidth onPress={() => router.push('/collective-area' as Href)} />
+      <Button
+        label={areaCopy('bp.manage.elsewhere.cta')}
+        variant="secondary"
+        fullWidth
+        onPress={() => router.push('/collective-area?tab=venues' as Href)}
+      />
     </Card>
   );
 }

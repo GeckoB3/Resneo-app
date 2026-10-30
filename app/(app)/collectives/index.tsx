@@ -4,18 +4,19 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Linking, RefreshControl, StyleSheet, View } from 'react-native';
 
 import { CreateCollectiveSheet } from '@/components/linked/CreateCollectiveSheet';
+import { LeaveCollectiveSheet } from '@/components/linked/LeaveCollectiveSheet';
 import { CollectiveSetupSheet } from '@/components/linked/setup/CollectiveSetupSheet';
 import { JoinCollectiveSheet } from '@/components/linked/setup/JoinCollectiveSheet';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { ListSkeleton } from '@/components/ui/Skeletons';
 import { PressableScale } from '@/components/ui/PressableScale';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
+import { ReleaseReviewCard } from '@/components/services/collective/ReleaseReviewCard';
 import { ApiError } from '@/lib/api/client';
 import { getWebUrl } from '@/lib/env';
 import { collectivePublicPath } from '@/lib/linked/collective-page';
@@ -34,12 +35,9 @@ import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { CollectiveView } from '@/types/collectives';
 import {
-  COLLECTIVE_JOIN_WEB_PATH,
   collectiveMembersLine,
   isConsentRequired,
   isSharedServices,
-  joinOnWebCopy,
-  leaveCollectiveMessage,
 } from '@/lib/linked/collective-membership-copy';
 
 export default function CollectivesScreen() {
@@ -57,9 +55,8 @@ export default function CollectivesScreen() {
   const memberAction = useCollectiveMemberAction();
 
   const [createOpen, setCreateOpen] = useState(false);
+  /** Leaving: the sheet reads what leaving changes first (CQ-10.1). */
   const [leaveTarget, setLeaveTarget] = useState<CollectiveView | null>(null);
-  /** An invitation the one-tap accept could not take: joining needs the web's consent step. */
-  const [joinOnWeb, setJoinOnWeb] = useState<CollectiveView | null>(null);
   /** Joining on shared services, natively (web `JoinCollectiveDialog`); the sheet reads the preview itself. */
   const [joinTarget, setJoinTarget] = useState<CollectiveView | null>(null);
   /** The host's finish-setup wizard (web plan L8), opened from a row or from the banner's `?setup=`. */
@@ -119,8 +116,8 @@ export default function CollectivesScreen() {
 
   // The address customers actually use: a member venue's own page when the
   // collective adopted it, else the dedicated combined address (web 2026-09-05).
-  // A dashboard path (joining on the web) names this venue (`?site=`, web roles plan §6.2b); a
-  // public booking page is left as it is.
+  // A dashboard path names this venue (`?site=`, web roles plan §6.2b); a public booking page is
+  // left as it is.
   const openWeb = (publicPath: string) => {
     const base = getWebUrl() || 'https://app.resneo.com';
     const url = `${base}${siteLink(publicPath)}`;
@@ -195,6 +192,10 @@ export default function CollectivesScreen() {
         />
       }>
       <Stack.Screen options={{ title: 'Venue collectives' }} />
+
+      {/* After leaving, being removed or the end of a collective: the services to look over (web
+          shows it on the Venue collectives panel; CQ-10.1). Nothing shows otherwise. */}
+      <ReleaseReviewCard enabled={isAdmin} />
 
       <Text variant="bodySmall" tone="secondary">
         A venue collective is a shared public booking page joining two or more fully linked venues
@@ -286,25 +287,12 @@ export default function CollectivesScreen() {
         }}
       />
 
-      <ConfirmSheet
+      <LeaveCollectiveSheet
+        collective={leaveTarget}
         visible={leaveTarget !== null}
-        title="Leave this collective?"
-        message={
-          leaveTarget
-            ? leaveCollectiveMessage(leaveTarget)
-            : undefined
-        }
-        confirmLabel="Leave collective"
-        cancelLabel="Cancel"
-        destructive
-        loading={busy}
-        onConfirm={() => {
-          if (!leaveTarget) return;
-          const target = leaveTarget;
-          setLeaveTarget(null);
-          runMember(target.id, { action: 'leave' }, `Left ${target.name}.`);
-        }}
         onClose={() => setLeaveTarget(null)}
+        // Already on Venue collectives: the review card above shows once the list is read again.
+        onLeft={() => void query.refetch()}
       />
 
       <JoinCollectiveSheet
@@ -330,27 +318,6 @@ export default function CollectivesScreen() {
           void feed.refetch();
         }}
       />
-
-      {joinOnWeb
-        ? (() => {
-            const copy = joinOnWebCopy(joinOnWeb.name);
-            return (
-              <ConfirmSheet
-                visible
-                title={copy.title}
-                message={copy.message}
-                confirmLabel={copy.confirmLabel}
-                cancelLabel="Not now"
-                destructive={false}
-                onConfirm={() => {
-                  setJoinOnWeb(null);
-                  openWeb(COLLECTIVE_JOIN_WEB_PATH);
-                }}
-                onClose={() => setJoinOnWeb(null)}
-              />
-            );
-          })()
-        : null}
     </Screen>
   );
 }
@@ -358,6 +325,13 @@ export default function CollectivesScreen() {
 // ---------------------------------------------------------------------------
 // Card
 // ---------------------------------------------------------------------------
+
+function formatEndedDate(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
 
 function CollectiveCard({
   collective,
@@ -402,6 +376,8 @@ function CollectiveCard({
   const accent =
     collective.bookingPageConfig?.brand_primary ?? collective.branding?.primary_colour ?? null;
   const showLink = !dissolved && collective.activeMemberCount >= 2;
+  // When it ended (CQ-10.11): read only when the server sends it.
+  const endedDate = formatEndedDate(collective.dissolvedAt ?? null);
 
   return (
     <Card style={styles.cardBody}>
@@ -425,6 +401,11 @@ function CollectiveCard({
       <Text variant="caption" tone="muted">
         {collectiveMembersLine(collective)}
       </Text>
+      {dissolved && endedDate ? (
+        <Text variant="caption" tone="muted">
+          {`Ended ${endedDate}`}
+        </Text>
+      ) : null}
       {hostWaiting ? (
         <Text variant="caption" color={colors.warning}>
           {setupCopy('la.row.host.waiting', { venueList: formatVenueList(invitedNames, 2) })}

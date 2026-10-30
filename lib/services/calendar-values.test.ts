@@ -53,6 +53,15 @@ describe('which fields the step shows', () => {
     );
   });
 
+  // CQ-12 (Rule B): each option sets its own price, length and buffer, so only a deposit is a calendar's own.
+  it('leaves out price, length and buffer on a service with options, for the host and an admin alike', () => {
+    const deposit = calendarValueDefaults({ duration_minutes: 30, payment_requirement: 'deposit', deposit_pence: 500 });
+    const every = { price: true, duration: true, buffer: true, deposit: true };
+    expect(keys(shownCalendarValueFields('host', NO_CALENDAR_VALUE_FLAGS, deposit, true))).toEqual(['custom_deposit_pence']);
+    expect(keys(shownCalendarValueFields('own', every, null, true))).toEqual(['custom_deposit_pence']);
+    expect(shownCalendarValueFields('host', NO_CALENDAR_VALUE_FLAGS, null, true)).toEqual([]);
+  });
+
   it('names the settings a host save would turn on, in an "or" list', () => {
     const flags = { ...NO_CALENDAR_VALUE_FLAGS, price: true };
     const shown = shownCalendarValueFields('host', flags, null);

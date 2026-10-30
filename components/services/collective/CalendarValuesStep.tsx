@@ -47,7 +47,10 @@ export interface CalendarValuesEditorInput {
   flags: CalendarValueFlags;
   defaults: CalendarValueDefaults | null;
   currencySymbol: string;
-  /** The service has active options, whose own values win over a calendar's. */
+  /**
+   * The service has active options (CQ-12, Rule B): each option sets its own price, length and
+   * buffer, so only the deposit is offered here, and a server refusal says why.
+   */
   hasOptions: boolean;
   /** Saved, with the settings the host's save turned on for the service (none in own mode). */
   onSaved: (turnedOn: CalendarValueFlag[]) => void;
@@ -56,12 +59,12 @@ export interface CalendarValuesEditorInput {
 }
 
 export function useCalendarValuesEditor(input: CalendarValuesEditorInput) {
-  const { mode, collectiveId, target, flags, defaults, onSaved, onUnchanged } = input;
+  const { mode, collectiveId, target, flags, defaults, hasOptions, onSaved, onUnchanged } = input;
   const hostSave = useSaveCollectiveCalendarValues();
   const ownSave = useUpdateServiceOverride();
   const [text, setText] = useState<Record<CalendarValueKey, string>>(() => calendarValuesText(target.current));
   const [error, setError] = useState<string | null>(null);
-  const shown = shownCalendarValueFields(mode, flags, defaults);
+  const shown = shownCalendarValueFields(mode, flags, defaults, hasOptions);
   const turnsOn = mode === 'host' ? fieldsTurnedOnBySaving(shown, flags) : [];
   const saving = hostSave.isPending || ownSave.isPending;
 
@@ -119,7 +122,7 @@ export function CalendarValuesFields({ editor }: { editor: CalendarValuesEditor 
       </Text>
       {shown.length === 0 ? (
         <Text variant="bodySmall" tone="secondary">
-          {areaCopy('values.noneAllowed')}
+          {hasOptions ? areaCopy('values.noneAllowedOptions', { service: serviceName }) : areaCopy('values.noneAllowed')}
         </Text>
       ) : (
         <>

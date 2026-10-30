@@ -80,9 +80,9 @@ describe('the picker', () => {
 
   it('with businesses groups your venue, each business, then together', () => {
     const groups = showingPickerGroups(OPTIONS);
-    expect(groups.map((g) => g.heading)).toEqual(['Plus 1', 'Light 3', 'Aura', 'Together']);
+    expect(groups.map((g) => g.heading)).toEqual(['Plus 1 (you)', 'Light 3', 'Aura', 'Together']);
     expect(groups.flatMap((g) => g.rows.map((r) => r.label))).toEqual([
-      'Plus 1: all calendars',
+      'Plus 1 (you): all calendars',
       'Hannah',
       'Jo (no longer active)',
       'Light 3: all calendars',
@@ -102,7 +102,7 @@ describe('the picker', () => {
   });
 
   it('names what is chosen on its closed line', () => {
-    expect(showingPickerLabel(OPTIONS, WHOLE_VENUE)).toBe('Plus 1: all calendars');
+    expect(showingPickerLabel(OPTIONS, WHOLE_VENUE)).toBe('Plus 1 (you): all calendars');
     expect(showingPickerLabel({ ...OPTIONS, businesses: [] }, WHOLE_VENUE)).toBe('All calendars');
     expect(showingPickerLabel(OPTIONS, resolveShowing(OPTIONS, { kind: 'partner-calendar', venueId: 'v2', calendarId: 'p1' }))).toBe(
       'Jess at Light 3',

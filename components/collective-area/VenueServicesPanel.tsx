@@ -10,8 +10,13 @@
  *
  * Laid out as the services grid is (`ServicesGrid.tsx`): `useVenueServicesPanel` holds the state,
  * the list renders inside the screen's scroll, and the screen pins the bar under it.
+ *
+ * A save can be undone for 60 seconds (web CQ-11): what went on comes off, and what came off goes
+ * back on, joining by name. A member's service that joined a page service goes back with the host's
+ * price and length (its own were not kept, R3-09), and the Undo says so. A service that did not
+ * change is listed as "{service} at {venue}: {reason}" (CQ-04).
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ChoiceRow } from '@/components/linked/setup/ChoiceRow';
@@ -24,8 +29,10 @@ import { Segmented } from '@/components/ui/Segmented';
 import { Sheet } from '@/components/ui/Sheet';
 import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
-import { areaCopy } from '@/lib/collective-area/copy';
+import { areaCopy, formatVenueList } from '@/lib/collective-area/copy';
+import { UNDO_WINDOW_MS } from '@/lib/collective-area/model';
 import {
+  curateFailureRows,
   curateOutcome,
   curateSelection,
   curateTitle,
@@ -41,6 +48,8 @@ import {
   venueServiceKey,
   venueServiceRows,
   type CurateAction,
+  type CurateItem,
+  type CurateResult,
   type VenueServicesFilter,
 } from '@/lib/collective-area/venue-services';
 import { useCurateServices, useDeclineSuggestions, useVenueServices } from '@/lib/queries/useCollectiveCurate';
@@ -49,7 +58,45 @@ import { hapticSelect } from '@/lib/haptics';
 import { minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
-type Note = { tone: 'ok' | 'error'; text: string };
+/** `rows`: one line per service that did not change, or what an Undo could not put back as it was. */
+type Note = { tone: 'ok' | 'error'; text: string; rows?: string[] };
+
+/** A service a save changed, named as it was then, for its Undo. */
+type UndoItem = CurateItem & { name: string; venueName: string };
+
+/** The last save, while it can be undone (CQ-11): the opposite action, for these services. */
+export interface LastCurate {
+  action: CurateAction;
+  items: UndoItem[];
+  /** Services that joined a page service: undoing them keeps the host's price and length. */
+  joined: UndoItem[];
+  expiresAt: number;
+}
+
+/**
+ * What undoes a save (web `VenueServicesPanel`, CQ-11): on comes off, off goes back on. "Already"
+ * and "not on the page" changed nothing, so there is nothing to undo for them. Null when nothing can.
+ */
+export function curateUndo(
+  action: CurateAction,
+  results: readonly CurateResult[],
+  named: (result: CurateResult) => { name: string; venueName: string },
+  now: number,
+): LastCurate | null {
+  const undoable = results.filter(
+    (r) =>
+      r.ok &&
+      (action === 'add' ? r.status === 'added' || r.status === 'matched' : r.status === 'withdrawn' || r.status === 'released'),
+  );
+  if (undoable.length === 0) return null;
+  const items = undoable.map((r) => ({ venue_id: r.venue_id, service_id: r.service_id, ...named(r) }));
+  return {
+    action: action === 'add' ? 'remove' : 'add',
+    items,
+    joined: action === 'add' ? items.filter((_item, i) => undoable[i]!.status === 'matched') : [],
+    expiresAt: now + UNDO_WINDOW_MS,
+  };
+}
 
 /** "All venues" is the web's own words for the first chip (not in the copy table). */
 const ALL_VENUES = 'All venues';
@@ -75,6 +122,14 @@ export function useVenueServicesPanel(input: {
   const [confirming, setConfirming] = useState<CurateAction | null>(null);
   const [separate, setSeparate] = useState(false);
   const [askingDecline, setAskingDecline] = useState(false);
+  const [lastCurate, setLastCurate] = useState<LastCurate | null>(null);
+
+  // The Undo goes once its minute is up.
+  useEffect(() => {
+    if (!lastCurate) return;
+    const timer = setTimeout(() => setLastCurate(null), Math.max(0, lastCurate.expiresAt - Date.now()));
+    return () => clearTimeout(timer);
+  }, [lastCurate]);
 
   /** undefined while loading; null when the server has no such route (before 2026-10-27). */
   const data = query.data;
@@ -113,7 +168,12 @@ export function useVenueServicesPanel(input: {
     const list = action === 'add' ? selection.toAdd : selection.toRemove;
     if (list.length === 0) return;
     setNote(null);
+    // The last save only: a new one replaces the Undo of the one before.
+    setLastCurate(null);
     const names = new Map(list.map((c) => [venueServiceKey(c.group.venue_id, c.service.id), c.service.name]));
+    const venues = new Map(list.map((c) => [venueServiceKey(c.group.venue_id, c.service.id), c.group.venue_name]));
+    const nameOf = (r: CurateResult) => names.get(venueServiceKey(r.venue_id, r.service_id)) ?? 'A service';
+    const venueOf = (r: CurateResult) => venues.get(venueServiceKey(r.venue_id, r.service_id)) ?? 'a venue';
     curate.mutate(
       {
         action,
@@ -122,13 +182,9 @@ export function useVenueServicesPanel(input: {
       },
       {
         onSuccess: ({ results }) => {
-          const outcome = curateOutcome(
-            action,
-            results,
-            (r) => names.get(venueServiceKey(r.venue_id, r.service_id)) ?? 'A service',
-            collectiveName,
-          );
-          setNote({ tone: outcome.tone, text: outcome.text });
+          const outcome = curateOutcome(action, results, nameOf, collectiveName, venueOf);
+          setNote({ tone: outcome.tone, text: outcome.text, rows: outcome.rows });
+          setLastCurate(curateUndo(action, results, (r) => ({ name: nameOf(r), venueName: venueOf(r) }), Date.now()));
           // A service that did not change stays ticked, so trying again is one tap.
           setSelected(new Set(outcome.failedKeys));
         },
@@ -137,6 +193,58 @@ export function useVenueServicesPanel(input: {
           setConfirming(null);
           setSeparate(false);
         },
+      },
+    );
+  };
+
+  /** Undo (CQ-11): the opposite of the last save, with no question; a member's join keeps the host's price. */
+  const undoLast = () => {
+    const last = lastCurate;
+    if (!last) return;
+    setLastCurate(null);
+    setNote(null);
+    const named = (r: CurateResult) =>
+      last.items.find((i) => i.venue_id === r.venue_id && i.service_id === r.service_id) ?? {
+        name: 'A service',
+        venueName: 'a venue',
+      };
+    curate.mutate(
+      { action: last.action, mode: 'match', items: last.items.map(({ venue_id, service_id }) => ({ venue_id, service_id })) },
+      {
+        onSuccess: ({ results }) => {
+          const failed = results.filter((r) => !r.ok);
+          if (failed.length > 0) {
+            setNote({
+              tone: 'error',
+              text:
+                failed.length === 1
+                  ? areaCopy('ov.bulk.undoFailedOne')
+                  : areaCopy('ov.bulk.undoFailed', { count: failed.length }),
+              rows: curateFailureRows(failed, (r) => named(r).name, (r) => named(r).venueName),
+            });
+          } else {
+            const host = groups.find((g) => g.is_host)?.venue_name ?? 'the host';
+            setNote({
+              tone: 'ok',
+              text: areaCopy('vs.undone'),
+              rows:
+                last.joined.length > 0
+                  ? [
+                      areaCopy('vs.undoJoined', {
+                        services: formatVenueList(
+                          last.joined.map((j) => j.name),
+                          3,
+                        ),
+                        venueList: formatVenueList([...new Set(last.joined.map((j) => j.venueName))]),
+                        host,
+                      }),
+                    ]
+                  : undefined,
+            });
+          }
+          setSelected(new Set());
+        },
+        onError: () => setNote({ tone: 'error', text: areaCopy('ov.venue.retryError') }),
       },
     );
   };
@@ -199,6 +307,9 @@ export function useVenueServicesPanel(input: {
       setNote(null);
     },
     note,
+    /** The last save, while its Undo lasts (60 seconds). */
+    lastCurate,
+    undoLast,
     confirming,
     setConfirming,
     separate,
@@ -216,7 +327,7 @@ export function useVenueServicesPanel(input: {
       setFilter('suggested');
       setSearch('');
     },
-    showBar: selection.chosen.length > 0 || note !== null,
+    showBar: selection.chosen.length > 0 || note !== null || lastCurate !== null,
   };
 }
 
@@ -438,6 +549,21 @@ export function VenueServicesBar({ panel }: { panel: VenueServicesPanelState }) 
               : { backgroundColor: colors.successSurface, borderColor: colors.success },
           ]}>
           <Text variant="bodySmall">{panel.note.text}</Text>
+          {(panel.note.rows ?? []).map((row, index) => (
+            <Text key={index} variant="caption">
+              {`• ${row}`}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+      {panel.lastCurate ? (
+        <View style={styles.undoRow} accessibilityLiveRegion="polite">
+          <UndoButton
+            key={panel.lastCurate.expiresAt}
+            expiresAt={panel.lastCurate.expiresAt}
+            disabled={panel.busy}
+            onPress={panel.undoLast}
+          />
         </View>
       ) : null}
       <View style={styles.barHead}>
@@ -484,6 +610,24 @@ export function VenueServicesBar({ panel }: { panel: VenueServicesPanelState }) 
         </View>
       ) : null}
     </View>
+  );
+}
+
+/** "Undo (42s)", counting down to the end of the save's minute. */
+function UndoButton({ expiresAt, disabled, onPress }: { expiresAt: number; disabled: boolean; onPress: () => void }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const tick = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(tick);
+  }, []);
+  return (
+    <Button
+      label={areaCopy('ov.bulk.undo', { seconds: Math.max(0, Math.ceil((expiresAt - now) / 1000)) })}
+      variant="secondary"
+      size="sm"
+      disabled={disabled}
+      onPress={onPress}
+    />
   );
 }
 
@@ -572,6 +716,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   barHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  undoRow: { flexDirection: 'row', justifyContent: 'flex-start' },
   barGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   barCell: { flexGrow: 1, flexBasis: '45%' },
   note: {

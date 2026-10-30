@@ -98,7 +98,8 @@ export function CollectiveMembersPanel({
               ]}>
               <View style={styles.flex1}>
                 <Text variant="bodyMedium" numberOfLines={1}>
-                  {m.venueName}
+                  {/* Your own venue reads "(you)" beside a member of the same name (CQ-07). */}
+                  {m.venueId === collective.myVenueId ? areaCopy('svc.cal.venueYou', { venue: m.venueName }) : m.venueName}
                 </Text>
                 {isHostMember ? (
                   <Text variant="caption" color={colors.brand}>

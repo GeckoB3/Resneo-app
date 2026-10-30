@@ -52,6 +52,9 @@ jest.mock('@/lib/queries/useServicesManage', () => ({
     data: { services: mockServices, collective_calendars: mockGroups },
     refetch: jest.fn(),
   }),
+  // A service's sheet puts it on the page or takes it off straight away (CQ-10.8).
+  useOfferServiceOnPage: () => ({ mutateAsync: jest.fn(), isPending: false }),
+  useTakeServiceOffPage: () => ({ mutateAsync: jest.fn(), isPending: false }),
 }));
 let mockCollectives: unknown[] = [];
 jest.mock('@/lib/queries/useCollectives', () => ({
@@ -111,7 +114,8 @@ jest.mock('@/lib/queries/useUpdateServiceOverride', () => ({
   useUpdateServiceOverride: () => ({ mutate: jest.fn(), isPending: false }),
 }));
 jest.mock('@/providers/VenueProvider', () => ({ useVenueContext: () => ({ venue: { currency: 'GBP' } }) }));
-jest.mock('@/providers/ToastProvider', () => ({ useToast: () => ({ error: jest.fn(), success: jest.fn() }) }));
+const mockToast = { error: jest.fn(), success: jest.fn(), info: jest.fn() };
+jest.mock('@/providers/ToastProvider', () => ({ useToast: () => mockToast }));
 
 import { ApiError } from '@/lib/api/client';
 
@@ -393,7 +397,9 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
       fireEvent.press(screen.getByRole('button', { name: 'Save 1 change' }));
     });
     expect(mockBulkSave).toHaveBeenCalledWith([{ op: 'assign', service_id: 's1', venue_id: 'v-host', calendar_id: 'c2' }]);
-    expect(screen.getByText('Saved.')).toBeTruthy();
+    // Adding calendars goes straight through, and can be undone for a minute (CQ-11).
+    expect(screen.getByText('Saved 1 change.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Undo \(\d+s\)$/ })).toBeTruthy();
     expect(screen.queryByText('For Balayage.')).toBeNull();
   });
 
@@ -441,8 +447,18 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
       fireEvent.press(screen.getByLabelText('Switch it on: Balayage'));
     });
     expect(mockSwitchOn).toHaveBeenCalledWith('s1');
+    // What needs you says so too, with the same switch (CQ-13).
+    expect(
+      screen.getByText('Balayage is switched off on your Services page, so nobody can book it at any venue.'),
+    ).toBeTruthy();
     await act(async () => {
-      fireEvent.press(screen.getByText('Needs attention'));
+      fireEvent.press(screen.getByRole('button', { name: 'Switch it on' }));
+    });
+    expect(mockSwitchOn).toHaveBeenLastCalledWith('s1');
+    expect(mockSwitchOn).toHaveBeenCalledTimes(2);
+    // The filter counts it before it is opened.
+    await act(async () => {
+      fireEvent.press(screen.getByText('Needs attention (1)'));
     });
     expect(screen.getByText('Balayage')).toBeTruthy();
   });
@@ -473,6 +489,109 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
       fireEvent.press(screen.getByLabelText('Update now: Zen Studio'));
     });
     expect(mockRetry.mock.calls[0]?.[0]).toBe('v-zen');
+    // Regression (CQ-11): Update now said nothing when it went through.
+    await act(async () => {
+      mockRetry.mock.calls[0]?.[1]?.onSuccess?.({ collective_sync: { venues: 1, applied: 1, pending: [], failed: [] } });
+    });
+    expect(mockToast.success).toHaveBeenCalledWith('Zen Studio is up to date.');
+    await act(async () => {
+      mockRetry.mock.calls[0]?.[1]?.onSuccess?.({
+        collective_sync: { venues: 1, applied: 0, pending: [{ venue_id: 'v-zen', venue_name: 'Zen Studio' }], failed: [] },
+      });
+    });
+    expect(mockToast.info).toHaveBeenCalledWith('Zen Studio is still updating. We will keep trying.');
+  });
+
+  // Regression (CQ-10.7): the new venue's row had no button, so the host could not act on it here.
+  it("opens Choose calendars for a new venue's calendars from What needs you", async () => {
+    mockGroups = [
+      hostGroup,
+      {
+        venue_id: 'v-zen',
+        venue_name: 'Zen Studio',
+        is_host: false,
+        sync,
+        calendars: [{ id: 'c3', name: 'Cy', is_active: true, assigned: [] }],
+      },
+    ];
+    await render(<CollectiveAreaScreen />);
+    expect(screen.getByText('Zen Studio has joined. Choose their calendars on 1 service.')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: 'Choose calendars' }));
+    });
+    expect(screen.getByText('For Balayage.')).toBeTruthy();
+    expect(screen.getByLabelText('Cy at Zen Studio')).toBeTruthy();
+    expect(screen.queryByLabelText('Ada at Host Venue')).toBeNull();
+    // The venue alone picked: never the page buttons (CQ-03).
+    expect(screen.queryByRole('button', { name: 'Take off the page' })).toBeNull();
+  });
+
+  it("marks the host's own venue (you) on the Venues tab (CQ-07)", async () => {
+    mockCollectives = [
+      {
+        id: 'col-1',
+        name: 'Northside',
+        hostVenueId: 'v-host',
+        myVenueId: 'v-host',
+        serviceModel: 'replicas',
+        members: [
+          { venueId: 'v-host', venueName: 'Aura Hair Studio', status: 'active' },
+          { venueId: 'v-zen', venueName: 'Aura Hair Studio in Holywood', status: 'active' },
+        ],
+      },
+    ];
+    await render(<CollectiveAreaScreen />);
+    await act(async () => {
+      fireEvent.press(screen.getByText('Venues'));
+    });
+    expect(screen.getByText('Aura Hair Studio (you)')).toBeTruthy();
+    expect(screen.getByText('Aura Hair Studio in Holywood')).toBeTruthy();
+  });
+
+  // CQ-10.3 (R2-21): right after Create, or when the only member leaves, nothing is parked or on the
+  // page, so the services carry no collective. The host used to read "No collective" here.
+  it('opens a host with nothing on the page and no other venue on Venues, from the collectives list', async () => {
+    mockServices = [{ id: 's1', name: 'Cut', collective: null }];
+    mockCollectives = [
+      {
+        id: 'col-1',
+        name: 'Northside',
+        status: 'active',
+        isHost: true,
+        hostVenueId: 'v-host',
+        myVenueId: 'v-host',
+        serviceModel: 'replicas',
+        activeMemberCount: 1,
+        members: [
+          { venueId: 'v-host', venueName: 'Host Venue', status: 'active' },
+          { venueId: 'v-zen', venueName: 'Zen Studio', status: 'invited' },
+        ],
+      },
+    ];
+    await render(<CollectiveAreaScreen />);
+    expect(screen.queryByText(/not part of a collective yet/)).toBeNull();
+    expect(screen.getByText('Northside')).toBeTruthy();
+    // On Venues: invite a venue, or end it.
+    expect(screen.getByRole('button', { name: 'Invite a venue' })).toBeTruthy();
+    expect(screen.getByText('Host Venue (you)')).toBeTruthy();
+  });
+
+  it("opens on Venues from Manage combined page's pointer (tab=venues)", async () => {
+    mockServices = [{ id: 's1', name: 'Balayage', collective: block('master') }];
+    mockParams = { tab: 'venues' };
+    mockCollectives = [
+      {
+        id: 'col-1',
+        name: 'Northside',
+        hostVenueId: 'v-host',
+        myVenueId: 'v-host',
+        serviceModel: 'replicas',
+        members: [{ venueId: 'v-host', venueName: 'Host Venue', status: 'active' }],
+      },
+    ];
+    await render(<CollectiveAreaScreen />);
+    expect(screen.getByRole('button', { name: 'Invite a venue' })).toBeTruthy();
+    expect(screen.queryByText('Balayage')).toBeNull();
   });
 
   it('opens Choose calendars on this screen when a member taps a page service (2026-10-29)', async () => {
@@ -539,7 +658,7 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
     expect(screen.queryByText(/^(Light|Oak|Ash) is invited/)).toBeNull();
     expect(screen.queryByRole('button', { name: /^Link with / })).toBeNull();
     await act(async () => {
-      fireEvent.press(screen.getByLabelText('Change it in Linked Accounts: Elm'));
+      fireEvent.press(screen.getByLabelText('Change it in Linked venues: Elm'));
     });
     expect(mockPush).toHaveBeenCalledWith('/linked-venues');
   });

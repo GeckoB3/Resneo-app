@@ -286,6 +286,19 @@ export function useComplianceRequirementCounts(
 }
 
 /**
+ * After a requirement change: the requirement lists, and (web CQ-02, 2026-10-29) the services and the
+ * collective reads. At a collective's host a form change on a page service now reaches every venue's
+ * copy before the answer returns, so the copies' state on Services and Manage Collective is new.
+ */
+function invalidateAfterRequirementChange(queryClient: ReturnType<typeof useQueryClient>) {
+  void queryClient.invalidateQueries({ queryKey: queryKeys.compliance.all() });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.services.all() });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.collectives.all() });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.staffCollective.all() });
+  void queryClient.invalidateQueries({ queryKey: ['collectiveHistory'] });
+}
+
+/**
  * POST /api/venue/compliance/requirements — add a requirement (admin). Omit
  * `scope` (or send `service`) with a `service_id`; `scope: 'venue'` makes the
  * type required on every appointment booking and needs no service.
@@ -311,9 +324,7 @@ export function useAddComplianceRequirement() {
         { accessToken, method: 'POST', body: JSON.stringify(input) },
       );
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.compliance.all() });
-    },
+    onSuccess: () => invalidateAfterRequirementChange(queryClient),
   });
 }
 
@@ -338,9 +349,7 @@ export function useUpdateComplianceRequirement() {
         { accessToken, method: 'PATCH', body: JSON.stringify(patch) },
       );
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.compliance.all() });
-    },
+    onSuccess: () => invalidateAfterRequirementChange(queryClient),
   });
 }
 
@@ -359,8 +368,6 @@ export function useDeleteComplianceRequirement() {
         method: 'DELETE',
       });
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.compliance.all() });
-    },
+    onSuccess: () => invalidateAfterRequirementChange(queryClient),
   });
 }

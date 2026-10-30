@@ -139,7 +139,9 @@ describe('SuggestionsReviewCard', () => {
     await act(async () => {
       fireEvent.press(await screen.findByText('Add all 3'));
     });
-    expect(await screen.findByText('These did not change: Nails. Please try them again.')).toBeTruthy();
+    // The web's wording (CQ-04): the heading, then each one with its venue and the route's reason.
+    expect(await screen.findByText('These did not change:')).toBeTruthy();
+    expect(screen.getByText('• Nails at Zen Studio: No')).toBeTruthy();
     expect(screen.getByLabelText('Zen Studio: Nails').props.accessibilityState?.checked).toBe(true);
     expect(screen.getByLabelText('Zen Studio: Brows').props.accessibilityState?.checked).toBe(false);
   });

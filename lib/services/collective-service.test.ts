@@ -78,6 +78,34 @@ describe('collective services', () => {
     expect(collectiveStatusBadge({ collective: block({ status: 'failed' }) })).toEqual({ label: 'Could not update', tone: 'danger' });
   });
 
+  // CQ-13 (regression): a switched-off page service used to read as any other, with its copies' state.
+  it("says a switched-off page service cannot be booked anywhere, naming every venue, in place of how its copies are", () => {
+    const master = {
+      is_active: false,
+      collective: block({ role: 'master', status: 'updating', status_reason: 'Updating at Light 3.' }),
+    };
+    expect(collectiveStatusBadge(master)).toBeNull();
+    expect(collectiveServiceLines(master, { memberVenueNames: ['Light 3', 'Aura Hair Studio'] })).toEqual([
+      'This service is on the Northside page. Saving it updates it at every venue.',
+      'Switched off, so nobody can book it on the Northside page or at Light 3 and Aura Hair Studio.',
+    ]);
+    // Without the names (a member, or an older server), the line still reads.
+    expect(collectiveServiceLines(master)[1]).toBe(
+      'Switched off, so nobody can book it on the Northside page or at the other venues.',
+    );
+  });
+
+  it("says a member's copy the host switched off cannot be booked (R3-20)", () => {
+    const replica = { is_active: false, collective: block({ role: 'replica' }) };
+    expect(collectiveStatusBadge(replica)).toBeNull();
+    expect(collectiveServiceLines(replica)).toEqual([
+      'Bright Cuts manages this service for Northside. You choose which of your calendars offer it. For anything else, ask Bright Cuts.',
+      'Switched off by Bright Cuts, so nobody can book it',
+    ]);
+    // A parked service switched off is the venue's own business: no such line.
+    expect(collectiveServiceLines({ is_active: false, collective: block({ role: 'parked' }) })).toHaveLength(1);
+  });
+
   it('never writes an em-dash', () => {
     for (const role of ['master', 'replica', 'retired', 'parked'] as const) {
       for (const line of collectiveServiceLines({ collective: block({ role }) })) {

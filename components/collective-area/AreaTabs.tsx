@@ -350,7 +350,8 @@ export function VenuesPanel({
           return (
             <View key={row.venue_id} style={[styles.venueRow, index > 0 ? [styles.rowDivider, { borderTopColor: colors.border }] : null]}>
               <Text variant="bodyMedium">
-                {row.venue_name}
+                {/* Only the host sees this tab, so the host row is the viewer's own venue (web CQ-07). */}
+                {row.is_host ? areaCopy('svc.cal.venueYou', { venue: row.venue_name }) : row.venue_name}
                 {row.status === 'invited' ? ` ${areaCopy('ov.venues.invited')}` : ''}
               </Text>
               <View style={styles.badges}>

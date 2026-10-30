@@ -213,8 +213,11 @@ export function useCheckServiceDelete() {
  * collective page (the copies at member venues retire). The web does this before deleting
  * a service that is on the page, and so does the app's delete flow, once the delete is
  * known to be clear to go ({@link useCheckServiceDelete}).
+ *
+ * `waitForServices` (CQ-10.8): resolve only once the services have been read again, as
+ * {@link useOfferServiceOnPage} does, for a sheet that stays open on the service.
  */
-export function useTakeServiceOffPage() {
+export function useTakeServiceOffPage(options: { waitForServices?: boolean } = {}) {
   const accessToken = useAccessToken();
   const queryClient = useQueryClient();
 
@@ -228,7 +231,59 @@ export function useTakeServiceOffPage() {
         { accessToken, method: 'DELETE' },
       );
     },
-    onSuccess: () => invalidateServices(queryClient),
+    onSuccess: () => (options.waitForServices ? refreshAfterPageChange(queryClient) : invalidateServices(queryClient)),
+  });
+}
+
+/** The offerings route's answer (web CQ-05): where the service is set up, and who offers it yet. */
+export interface OfferOnPageAnswer {
+  item_id?: string | null;
+  reoffered?: boolean;
+  links?: { venue_id: string; venue_name: string; status: string; calendar_count?: number | null }[];
+  host_calendar_count?: number | null;
+  pending?: { venue_id: string; venue_name: string }[];
+  matched?: { venue_id: string; venue_name: string }[];
+  calendars?: { assigned: number; not_ready: { venue_id: string; venue_name: string }[]; failed: unknown[] };
+}
+
+/** Services, the booking catalogue and the collective reads, waiting for the services themselves. */
+async function refreshAfterPageChange(queryClient: ReturnType<typeof useQueryClient>): Promise<void> {
+  void queryClient.invalidateQueries({ queryKey: queryKeys.appointments.all() });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.collectives.all() });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.staffCollective.all() });
+  await queryClient.invalidateQueries({ queryKey: queryKeys.services.all() });
+}
+
+/**
+ * POST /api/venue/collectives/[id]/offerings `{ service_id, calendars? }`: a host puts one of its
+ * own services on the collective page (CQ-10.2, 10.8). `calendars` (CQ-05) gives calendars at any
+ * venue the service in the same step; an older server ignores it. Resolves with the route's answer
+ * once the services have been read again, so a sheet that stays open shows the calendars to tick.
+ * Taking it off is {@link useTakeServiceOffPage}.
+ */
+export function useOfferServiceOnPage() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: {
+      collectiveId: string;
+      serviceId: string;
+      calendars?: { venue_id: string; calendar_id: string }[];
+    }): Promise<OfferOnPageAnswer> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<OfferOnPageAnswer>(`/api/venue/collectives/${input.collectiveId}/offerings`, {
+        accessToken,
+        method: 'POST',
+        body: JSON.stringify({
+          service_id: input.serviceId,
+          ...(input.calendars && input.calendars.length > 0 ? { calendars: input.calendars } : {}),
+        }),
+      });
+    },
+    onSuccess: () => refreshAfterPageChange(queryClient),
   });
 }
 

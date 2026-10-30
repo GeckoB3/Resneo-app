@@ -109,7 +109,7 @@ describe('CalendarValuesStep', () => {
     expect(onSaved).toHaveBeenCalledWith(['duration']);
   });
 
-  it('puts a value back to the standard with null, and says when the service has options', async () => {
+  it('puts a value back to the standard with null', async () => {
     await renderStep(
       <CalendarValuesStep
         mode="host"
@@ -119,18 +119,13 @@ describe('CalendarValuesStep', () => {
         flags={{ ...NO_CALENDAR_VALUE_FLAGS, price: true, duration: true, buffer: true }}
         defaults={defaults}
         currencySymbol="£"
-        hasOptions
+        hasOptions={false}
         onSaved={jest.fn()}
         onBack={jest.fn()}
       />,
     );
     // Every setting is on already: nothing to turn on.
     expect(screen.queryByText(/Saving a value here also lets/)).toBeNull();
-    expect(
-      screen.getByText(
-        "Balayage has options. Guests pay each option's own price and time, so a value here only applies to an option that has none of its own.",
-      ),
-    ).toBeTruthy();
     await act(async () => {
       fireEvent.press(screen.getByLabelText('Use standard: Price'));
     });
@@ -142,6 +137,86 @@ describe('CalendarValuesStep', () => {
       service_id: 'replica-1',
       values: { custom_price_pence: null },
     });
+  });
+
+  // CQ-12 (regression): a service with options offered price, length and buffer, which no booking used.
+  it('offers only the deposit on a service with options, and says why', async () => {
+    await renderStep(
+      <CalendarValuesStep
+        mode="host"
+        collectiveId="col-1"
+        serviceName="Balayage"
+        target={memberCalendar}
+        flags={{ ...NO_CALENDAR_VALUE_FLAGS, price: true, duration: true, buffer: true }}
+        defaults={{ ...defaults, depositPence: 1000 }}
+        currencySymbol="£"
+        hasOptions
+        onSaved={jest.fn()}
+        onBack={jest.fn()}
+      />,
+    );
+    expect(screen.queryByLabelText('Price')).toBeNull();
+    expect(screen.queryByLabelText('Length (minutes)')).toBeNull();
+    expect(screen.queryByLabelText('Buffer after (minutes)')).toBeNull();
+    expect(screen.getByLabelText('Deposit')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Balayage has options, so each option sets its own price, length and buffer, the same on every calendar. A deposit set here applies to options that do not set their own.',
+      ),
+    ).toBeTruthy();
+  });
+
+  it('says there is nothing to set on a service with options and no deposit', async () => {
+    await renderStep(
+      <CalendarValuesStep
+        mode="host"
+        collectiveId="col-1"
+        serviceName="Balayage"
+        target={memberCalendar}
+        flags={NO_CALENDAR_VALUE_FLAGS}
+        defaults={defaults}
+        currencySymbol="£"
+        hasOptions
+        onSaved={jest.fn()}
+        onBack={jest.fn()}
+      />,
+    );
+    expect(
+      screen.getByText(
+        'Balayage has options, so each option sets its own price, length and buffer, the same on every calendar. There is nothing to set for one calendar.',
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Save' }).props.accessibilityState?.disabled).toBe(true);
+  });
+
+  it("shows the route's sentence when it refuses a calendar price on a service with options (409 OPTION_VALUES_PER_OPTION)", async () => {
+    const sentence =
+      'This service has options, so each option sets its own price, length and buffer. A calendar cannot have its own.';
+    mockHandler = () => {
+      throw new ApiError(sentence, 409, { error: sentence, code: 'OPTION_VALUES_PER_OPTION' });
+    };
+    // The options were added since this list loaded: the step still offers a price, and the server says no.
+    await renderStep(
+      <CalendarValuesStep
+        mode="host"
+        collectiveId="col-1"
+        serviceName="Balayage"
+        target={memberCalendar}
+        flags={NO_CALENDAR_VALUE_FLAGS}
+        defaults={defaults}
+        currencySymbol="£"
+        hasOptions={false}
+        onSaved={jest.fn()}
+        onBack={jest.fn()}
+      />,
+    );
+    await act(async () => {
+      fireEvent.changeText(screen.getByLabelText('Price'), '50');
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+    });
+    expect(screen.getByText(sentence)).toBeTruthy();
   });
 
   it('names a value the calendar cannot take, and sends nothing', async () => {

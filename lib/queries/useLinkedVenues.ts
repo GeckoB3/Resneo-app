@@ -11,6 +11,7 @@ import type {
   CreateLinkPayload,
   IncomingLinksResponse,
   AcceptCollectiveWithLink,
+  CollectiveBreakAcknowledgement,
   LinkSetupPayload,
   LinkSetupResponse,
   InviteCreateResponse,
@@ -83,21 +84,43 @@ export function useRespondLink() {
       grants?: LinkGrantPair;
       /** On accept: also join the collective proposed with the request (web plan L4, L5). */
       collective?: AcceptCollectiveWithLink;
+      /**
+       * `accept_change` on a link that holds a collective together: the plan the venue was shown
+       * (CQ-01). Without it, or when it no longer matches, the server answers 409
+       * `LINK_HOLDS_COLLECTIVE` with the plan and changes nothing.
+       */
+      acknowledge?: CollectiveBreakAcknowledgement | null;
     }): Promise<LinkResponse> => {
       if (!accessToken) throw new Error('Missing access token');
       return apiFetch<LinkResponse>(`/api/venue/account-links/${input.linkId}`, {
         accessToken,
         method: 'PATCH',
-        body: JSON.stringify({ action: input.action, grants: input.grants, collective: input.collective }),
+        body: JSON.stringify({
+          action: input.action,
+          grants: input.grants,
+          collective: input.collective,
+          ...(input.acknowledge ? { acknowledge_collective: input.acknowledge } : {}),
+        }),
       });
     },
-    onSettled: () => {
+    onSettled: (_data, _err, input) => {
+      if (input.acknowledge) invalidateCollectiveViews(queryClient);
       void queryClient.invalidateQueries({ queryKey: queryKeys.linkedVenues.all() });
       // Link/grant changes alter which linked calendars are visible — refresh the
       // linked-calendar feed (Calendar-tab chips + Bookings venue filter; no realtime).
       void queryClient.invalidateQueries({ queryKey: queryKeys.linkedCalendar.all() });
     },
   });
+}
+
+/**
+ * A link change that took a venue out of a collective, or ended it (CQ-01): the collective's screens,
+ * the services it parked and the staff booking scope all change with it.
+ */
+function invalidateCollectiveViews(queryClient: ReturnType<typeof useQueryClient>) {
+  void queryClient.invalidateQueries({ queryKey: queryKeys.collectives.all() });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.services.all() });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.staffCollective.all() });
 }
 
 // ---------------------------------------------------------------------------
@@ -265,20 +288,30 @@ export function useVerifyInvite(token: string | null | undefined) {
   });
 }
 
-/** DELETE /api/venue/account-links/[id] — unlink an accepted (or suspended) link. */
+/**
+ * DELETE /api/venue/account-links/[id] — unlink an accepted (or suspended) link. On a link that holds
+ * a collective together the body carries `acknowledge_collective`, the plan the venue was shown
+ * (CQ-01); without it the server answers 409 `LINK_HOLDS_COLLECTIVE` and unlinks nothing.
+ */
 export function useUnlinkVenue() {
   const accessToken = useAccessToken();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (linkId: string): Promise<{ ok: boolean }> => {
+    mutationFn: async (input: {
+      linkId: string;
+      acknowledge?: CollectiveBreakAcknowledgement | null;
+    }): Promise<{ ok: boolean }> => {
       if (!accessToken) throw new Error('Missing access token');
-      return apiFetch<{ ok: boolean }>(`/api/venue/account-links/${linkId}`, {
+      return apiFetch<{ ok: boolean }>(`/api/venue/account-links/${input.linkId}`, {
         accessToken,
         method: 'DELETE',
+        ...(input.acknowledge ? { body: JSON.stringify({ acknowledge_collective: input.acknowledge }) } : {}),
       });
     },
-    onSettled: () => {
+    onSettled: (_data, _err, input) => {
+      // A link change can take a venue out of a collective, or end it (CQ-01).
+      if (input.acknowledge) invalidateCollectiveViews(queryClient);
       void queryClient.invalidateQueries({ queryKey: queryKeys.linkedVenues.all() });
       // Link/grant changes alter which linked calendars are visible — refresh the
       // linked-calendar feed (Calendar-tab chips + Bookings venue filter; no realtime).
@@ -331,15 +364,24 @@ export function useReduceAccess() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (input: { linkId: string; grant: LinkGrant }): Promise<LinkResponse> => {
+    mutationFn: async (input: {
+      linkId: string;
+      grant: LinkGrant;
+      /** On a link that holds a collective together: the plan the venue was shown (CQ-01). */
+      acknowledge?: CollectiveBreakAcknowledgement | null;
+    }): Promise<LinkResponse> => {
       if (!accessToken) throw new Error('Missing access token');
       return apiFetch<LinkResponse>(`/api/venue/account-links/${input.linkId}/reduce`, {
         accessToken,
         method: 'POST',
-        body: JSON.stringify({ grant: input.grant }),
+        body: JSON.stringify({
+          grant: input.grant,
+          ...(input.acknowledge ? { acknowledge_collective: input.acknowledge } : {}),
+        }),
       });
     },
-    onSettled: () => {
+    onSettled: (_data, _err, input) => {
+      if (input.acknowledge) invalidateCollectiveViews(queryClient);
       void queryClient.invalidateQueries({ queryKey: queryKeys.linkedVenues.all() });
       // Link/grant changes alter which linked calendars are visible — refresh the
       // linked-calendar feed (Calendar-tab chips + Bookings venue filter; no realtime).

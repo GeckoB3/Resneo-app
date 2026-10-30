@@ -229,7 +229,8 @@ export default function NotificationsScreen() {
     }
 
     // Deep-link navigation.
-    const route = parseNotificationRoute(notification.href);
+    // By its type too: a collective notice opens the screen that answers it (CQ-10.5).
+    const route = parseNotificationRoute(notification.href, notification.type);
     if (route?.type === 'calendar') {
       // Open the calendar tab on the notification's day (the screen reads ?date=).
       router.push(`/(app)/(tabs)/?date=${route.date}` as Href);
@@ -254,6 +255,15 @@ export default function NotificationsScreen() {
         ? `?add_from=${encodeURIComponent(route.addFrom)}${route.service ? `&service=${encodeURIComponent(route.service)}` : ''}`
         : '';
       router.push(`/manage/services${query}` as Href);
+    } else if (route?.type === 'collectives' && isAdmin) {
+      // An invitation to a collective → Venue collectives, where it is accepted or declined.
+      router.push('/collectives' as Href);
+    } else if (route?.type === 'booking-page' && isAdmin) {
+      // The address question (N38) → the Booking page screen.
+      router.push('/manage/booking-page' as Href);
+    } else if (route?.type === 'availability') {
+      // A collective calendar notice → Calendar Availability.
+      router.push('/availability' as Href);
     } else if (route?.type === 'commission-splits' && isAdmin) {
       // A commission split notice → that split, or Commission splits on its businesses section.
       router.push(

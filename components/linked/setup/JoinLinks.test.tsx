@@ -3,14 +3,14 @@
  * 2026-10-28): the server makes every link the joining venue needs in the same request as the join,
  * so the app accepts nothing itself and offers no "Ask {venue} to link". The check step names the
  * venues joining links the venue with. Only a link already in force with less than full access
- * blocks the preview: the checklist says which, with "Change it in Linked Accounts". The review
+ * blocks the preview: the checklist says which, with "Change it in Linked venues" (the app's name for it). The review
  * sheet does the same, leaving out the request under review, and is titled "invited you to join"
  * for a collective already running.
  *
  * `apiFetch` is mocked so a stray request (an accept from the app) would show. jest hoists mock
  * factories above imports, so every closed-over variable is prefixed `mock*`.
  */
-import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, within } from '@testing-library/react-native';
 
 import type { JoinPreview, LinkNeed } from '@/types/collectives';
 import type { AccountLinkView } from '@/types/linked-venues';
@@ -120,8 +120,8 @@ describe('JoinCollectiveSheet held up by a link with less than full access', () 
     );
     // No `withPendingLink` any more: the server counts every link joining makes.
     expect(mockPreviewCalls[0]).toEqual(['col-1', { enabled: true }]);
-    expect(screen.getByText('Linking with the venues in it')).toBeTruthy();
-    expect(screen.getByText('Already linked')).toBeTruthy();
+    expect(screen.getByText('Your links with the venues in it')).toBeTruthy();
+    expect(screen.getByText('Already linked at full access')).toBeTruthy();
     expect(screen.getByText('Linked when you join')).toBeTruthy();
     expect(screen.getByText('Linked with less than full access both ways. Change it first.')).toBeTruthy();
     // Nothing to ask for: the join makes the missing link itself.
@@ -129,7 +129,7 @@ describe('JoinCollectiveSheet held up by a link with less than full access', () 
     expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
 
     await act(async () => {
-      fireEvent.press(screen.getByRole('button', { name: 'Change it in Linked Accounts' }));
+      fireEvent.press(screen.getByRole('button', { name: 'Change it in Linked venues' }));
     });
     expect(onOpenLinked).toHaveBeenCalled();
     expect(mockApiFetch).not.toHaveBeenCalled();
@@ -141,7 +141,7 @@ describe('JoinCollectiveSheet held up by a link with less than full access', () 
       <JoinCollectiveSheet visible collectiveId="col-1" collectiveName="Northside" venueName="Light 3" onClose={jest.fn()} />,
     );
     expect(screen.getByText('Linked with less than full access both ways. Change it first.')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Change it in Linked Accounts' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Change it in Linked venues' })).toBeNull();
   });
 });
 
@@ -160,8 +160,17 @@ describe('JoinCollectiveSheet with links to make', () => {
     await render(
       <JoinCollectiveSheet visible collectiveId="col-1" collectiveName="Northside" venueName="Light 3" onClose={jest.fn()} />,
     );
-    // Not blocked: no checklist, straight through the steps.
-    expect(screen.queryByText('Linking with the venues in it')).toBeNull();
+    // Not blocked: no checklist row asks for a change, straight through the steps.
+    expect(screen.queryByText('Linked with less than full access both ways. Change it first.')).toBeNull();
+    // Step 1 still says which links joining makes, what they let each venue do, and that they last
+    // (CQ-08): host first, each with where its link stands.
+    const disclosure = screen.getByTestId('join-links-disclosure');
+    expect(within(disclosure).getByText('Your links with the venues in it')).toBeTruthy();
+    expect(within(disclosure).getAllByText('Linked when you join')).toHaveLength(3);
+    expect(within(disclosure).getByText('Already linked at full access')).toBeTruthy();
+    expect(
+      within(disclosure).getByText(/^These links stay if you leave Northside, or if it ends, until one of you unlinks in Linked venues\./),
+    ).toBeTruthy();
     await walkToCheck();
     expect(screen.getByText('Joining also links your venue with Ash, Zen and Oak, with full access both ways.')).toBeTruthy();
     await act(async () => {
@@ -265,11 +274,11 @@ describe('ReviewLinkRequestSheet with other venues in the collective', () => {
         onOpenLinked={onOpenLinked}
       />,
     );
-    expect(screen.getByText('Linking with the venues in it')).toBeTruthy();
+    expect(screen.getByText('Your links with the venues in it')).toBeTruthy();
     expect(screen.getByText('Linked with less than full access both ways. Change it first.')).toBeTruthy();
     expect(screen.queryByText('Linked when you join')).toBeNull();
     await act(async () => {
-      fireEvent.press(screen.getByRole('button', { name: 'Change it in Linked Accounts' }));
+      fireEvent.press(screen.getByRole('button', { name: 'Change it in Linked venues' }));
     });
     expect(onOpenLinked).toHaveBeenCalled();
   });

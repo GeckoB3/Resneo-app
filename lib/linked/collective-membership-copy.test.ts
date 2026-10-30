@@ -1,9 +1,9 @@
 import { ApiError } from '@/lib/api/client';
 import {
+  collectiveMembersLine,
   hostSettingsNote,
   isConsentRequired,
   memberSummaryIntro,
-  joinOnWebCopy,
   leaveCollectiveMessage,
 } from '@/lib/linked/collective-membership-copy';
 
@@ -18,11 +18,21 @@ describe('collective membership words', () => {
     expect(isConsentRequired(new Error('offline'))).toBe(false);
   });
 
-  it('sends a joining venue to the web, naming the collective', () => {
-    const copy = joinOnWebCopy('Northside');
-    expect(copy.title).toBe('Open ResNeo on the web to join');
-    expect(copy.message).toContain('Joining Northside');
-    expect(copy.message).not.toContain('—');
+  it('marks your own venue "(you)" in the members line, beside a member of the same name (CQ-07)', () => {
+    const line = collectiveMembersLine({
+      activeMemberCount: 3,
+      myVenueId: 'v-me',
+      members: [
+        { venueId: 'v-host', venueName: 'Aura Hair Studio' },
+        { venueId: 'v-me', venueName: 'Aura Hair Studio' },
+        { venueId: 'v-16', venueName: 'Light 16' },
+      ],
+    });
+    expect(line).toBe('3 active members · Aura Hair Studio, Aura Hair Studio (you), Light 16');
+    // Without the venue's id (an older caller), names stay as they are.
+    expect(collectiveMembersLine({ activeMemberCount: 1, members: [{ venueName: 'Light 3' }] })).toBe(
+      '1 active member · Light 3',
+    );
   });
 
   it('tells a shared-services member its own page comes back, and keeps the older wording otherwise', () => {
@@ -38,8 +48,9 @@ describe('collective membership words', () => {
   it('says the host sets services and sign-in on shared services, and keeps the older notes otherwise', () => {
     expect(hostSettingsNote({ serviceModel: 'replicas' }, 'Bright Cuts')).toMatch(/are Bright Cuts's, and apply at every venue/);
     expect(hostSettingsNote({ serviceModel: 'legacy_copies' }, 'Bright Cuts')).toMatch(/each member venue/);
+    // Members choose their calendars in Manage Collective, and so can the host (CQ-10.6, R2-15).
     expect(memberSummaryIntro({ name: 'Northside', serviceModel: 'replicas' }, 'Bright Cuts')).toMatch(
-      /on your Services screen/,
+      /You and Bright Cuts can each choose which of your calendars offer each one, in Manage Collective/,
     );
     expect(memberSummaryIntro({ name: 'Northside' }, 'Bright Cuts')).toMatch(/under your own Services settings/);
   });

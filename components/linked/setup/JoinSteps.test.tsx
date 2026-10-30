@@ -6,7 +6,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { useState } from 'react';
 
-import { JoinServicesStep, JoinSummaryList } from '@/components/linked/setup/JoinSteps';
+import { JoinMeansStep, JoinServicesStep, JoinSummaryList } from '@/components/linked/setup/JoinSteps';
 import { defaultJoinDraft, joinChoicesFrom, type JoinDraft } from '@/lib/linked/join-choices';
 import type { JoinPreview } from '@/types/collectives';
 
@@ -101,5 +101,40 @@ describe('JoinServicesStep, your other services', () => {
   it('says when the venue has nothing of its own', async () => {
     await render(<Harness from={{ ...preview, own_services: [] }} />);
     expect(screen.getByText('You have no services of your own to decide about.')).toBeTruthy();
+  });
+});
+
+/**
+ * Step 1 of every join (CQ-08, R2-02): joining links the venue with every venue in the collective at
+ * full access both ways, and the links stay after it leaves. Before this step 1 said only "Your clients
+ * and bookings stay yours", and the links were named only when something blocked the join.
+ */
+describe('JoinMeansStep, what joining gives', () => {
+  const withLinks: JoinPreview = {
+    ...preview,
+    links: [
+      { venue_id: 'v-16', venue_name: 'Light 16', venue_slug: 'light-16', is_host: false, state: 'none', link_id: null },
+      { venue_id: 'v-host', venue_name: 'Host Venue', venue_slug: 'host', is_host: true, state: 'full', link_id: 'l0' },
+    ],
+  };
+
+  it('names every venue, host first, what their teams can do, and that the links last', async () => {
+    await render(<JoinMeansStep preview={withLinks} host="Host Venue" collective="Northside" />);
+    expect(screen.getByText('Your links with the venues in it')).toBeTruthy();
+    const names = screen.getAllByText(/^(Host Venue|Light 16)$/).map((n) => n.props.children);
+    expect(names).toEqual(['Host Venue', 'Light 16']);
+    expect(screen.getByText('Already linked at full access')).toBeTruthy();
+    expect(screen.getByText('Linked when you join')).toBeTruthy();
+    expect(screen.getByText('• see your bookings, with client names, emails and phone numbers')).toBeTruthy();
+    expect(screen.getByText('• make, move and cancel bookings in your calendars')).toBeTruthy();
+    expect(screen.getByText('Your team can do the same at each of theirs.')).toBeTruthy();
+    expect(screen.getByText(/^These links stay if you leave Northside, or if it ends/)).toBeTruthy();
+    expect(screen.getByText(/Through your links, the other venues can see and manage them too\.$/)).toBeTruthy();
+  });
+
+  it('still says what joining gives when every link is already in place, and on an older server', async () => {
+    await render(<JoinMeansStep preview={{ ...preview, links: undefined }} host="Host Venue" collective="Northside" />);
+    expect(screen.getByText('Your links with the venues in it')).toBeTruthy();
+    expect(screen.getByText(/^These links stay if you leave Northside/)).toBeTruthy();
   });
 });

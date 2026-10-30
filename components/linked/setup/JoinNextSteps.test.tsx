@@ -119,7 +119,7 @@ describe('JoinNextSteps', () => {
       fireEvent.press(screen.getByRole('button', { name: 'Connect Stripe' }));
     });
     expect(
-      screen.getByText('Could not open Stripe. Please try again, or connect it later in Settings, Payments.'),
+      screen.getByText('Could not open Stripe. Please try again, or connect it later in More, Plan & payments.'),
     ).toBeTruthy();
   });
 

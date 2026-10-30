@@ -249,21 +249,27 @@ export function joiningList(joining: readonly VenueServiceEntry[]): string {
   );
 }
 
+/** The words for a service that did not change when the route gave none. */
+export const CURATE_FAILURE_FALLBACK = 'That did not go through. Please try again.';
+
 /**
- * What a save says: the services that did not change, by name, when any failed; otherwise how
- * many went on or came off.
+ * What a save says: "These did not change:" with one "{service} at {venue}: {reason}" row for each
+ * service that did not (web CQ-04), when any failed; otherwise how many went on or came off.
  */
 export function curateOutcome(
   action: CurateAction,
   results: readonly CurateResult[],
   nameOf: (result: CurateResult) => string,
   collective: string,
-): { tone: 'ok' | 'error'; text: string; failedKeys: string[] } {
+  /** The venue each service belongs to, for its row. */
+  venueOf: (result: CurateResult) => string = () => 'a venue',
+): { tone: 'ok' | 'error'; text: string; rows: string[]; failedKeys: string[] } {
   const failed = results.filter((r) => !r.ok);
   if (failed.length > 0) {
     return {
       tone: 'error',
-      text: areaCopy('vs.done.failed', { list: formatVenueList(failed.map(nameOf), 3) }),
+      text: areaCopy('vs.done.failed'),
+      rows: curateFailureRows(failed, nameOf, venueOf),
       failedKeys: failed.map((r) => venueServiceKey(r.venue_id, r.service_id)),
     };
   }
@@ -274,8 +280,23 @@ export function curateOutcome(
   return {
     tone: 'ok',
     text: areaCopy(id, { count: done.length, service: one ? nameOf(done[0]!) : undefined, collective }),
+    rows: [],
     failedKeys: [],
   };
+}
+
+/** "{service} at {venue}: {reason}" for each service that did not change, in the order they came back. */
+export function curateFailureRows(
+  failed: readonly CurateResult[],
+  nameOf: (result: CurateResult) => string,
+  venueOf: (result: CurateResult) => string,
+): string[] {
+  return failed.map((r) =>
+    areaCopy('ov.bulk.failed.row', {
+      subject: areaCopy('ov.bulk.failed.subjectVenue', { service: nameOf(r), venue: venueOf(r) }),
+      reason: r.message ?? CURATE_FAILURE_FALLBACK,
+    }),
+  );
 }
 
 /** What "Not now" says once the suggestions are left off: one by name and venue, more by count. */

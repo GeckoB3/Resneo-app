@@ -17,10 +17,14 @@ import { useLinkedVenues } from '@/lib/queries/useLinkedVenues';
  */
 export function CombinedPageScopeContent({
   collectiveId,
+  onOpenManageCollective,
   onOpenLinkedVenues,
   onDissolved,
 }: {
   collectiveId: string;
+  /** A member on shared services: Manage Collective, where Leave is (CQ-10.6). */
+  onOpenManageCollective: () => void;
+  /** A member of an older collective: Linked venues, as before. */
   onOpenLinkedVenues: () => void;
   /** The host dissolved the collective from the Members tab. */
   onDissolved: () => void;
@@ -49,7 +53,13 @@ export function CombinedPageScopeContent({
     return <ErrorState message="This collective could not be found. It may have been dissolved." />;
   }
   if (!collective.isHost) {
-    return <CombinedPageMemberSummary collective={collective} onOpenLinkedVenues={onOpenLinkedVenues} />;
+    return (
+      <CombinedPageMemberSummary
+        collective={collective}
+        onOpenManageCollective={onOpenManageCollective}
+        onOpenLinkedVenues={onOpenLinkedVenues}
+      />
+    );
   }
   return (
     <CollectiveManagerPanel

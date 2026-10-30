@@ -24,6 +24,8 @@ import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { areaCopy } from '@/lib/collective-area/copy';
 import { inviteBlocked, inviteLinkWords, inviteSentMessage } from '@/lib/collective-area/invite-links';
+import { setupCopy } from '@/lib/linked/setup-copy';
+import { venueNotFoundLine, venueWhereLine } from '@/lib/linked/venue-where';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useCollectiveMembersPatch } from '@/lib/queries/useCollectiveArea';
 import { fetchInviteCheck, useCollectiveCandidates } from '@/lib/queries/useCollectiveLinks';
@@ -269,9 +271,17 @@ export function InviteVenueSheet({
                       <Text variant="bodyMedium" numberOfLines={1}>
                         {r.name}
                       </Text>
+                      {/* "Holywood · /book/aura-2", and the shared page it was found on (CQ-07, CQ-09). */}
                       <Text variant="caption" tone="muted" numberOfLines={1}>
-                        {`/${r.slug}`}
+                        {venueWhereLine(r) ?? `/book/${r.slug}`}
                       </Text>
+                      {(r as { collective_name?: string | null }).collective_name ? (
+                        <Text variant="caption" tone="muted" numberOfLines={1}>
+                          {setupCopy('setup.venue.onPage', {
+                            collective: (r as { collective_name?: string | null }).collective_name,
+                          })}
+                        </Text>
+                      ) : null}
                     </View>
                     <Text variant="label" tone="brand">
                       {areaCopy('ov.venues.invite.choose')}
@@ -281,7 +291,7 @@ export function InviteVenueSheet({
               </View>
             ) : noResults && !lookup.isFetching && slugCandidate ? (
               <Text variant="bodySmall" tone="muted">
-                No venues found. Check the name or ask them for their booking-page address.
+                {venueNotFoundLine(search.data?.query_kind)}
               </Text>
             ) : null}
             {checking ? (

@@ -139,10 +139,22 @@ export function shownCalendarValueFields(
   mode: CalendarValuesMode,
   flags: CalendarValueFlags,
   defaults: CalendarValueDefaults | null | undefined,
+  /**
+   * The service has active options (CQ-12, Rule B): each option sets its own price, length and
+   * buffer, the same on every calendar, so only a deposit can be a calendar's own.
+   */
+  hasOptions = false,
 ): CalendarValueField[] {
   const takesDeposit = (defaults?.depositPence ?? 0) > 0;
-  return CALENDAR_VALUE_FIELDS.filter((f) => flags[f.flag] || (mode === 'host' && (f.flag !== 'deposit' || takesDeposit)));
+  return CALENDAR_VALUE_FIELDS.filter(
+    (f) =>
+      !(hasOptions && OPTION_SET_FLAGS.includes(f.flag)) &&
+      (flags[f.flag] || (mode === 'host' && (f.flag !== 'deposit' || takesDeposit))),
+  );
 }
+
+/** What each option sets for itself, so no calendar has its own (web `OPTION_LOCKED_STAFF_MAY_KEYS`). */
+export const OPTION_SET_FLAGS: readonly CalendarValueFlag[] = ['price', 'duration', 'buffer'];
 
 /** The shown fields whose setting is still off: saving a value for one turns it on. */
 export function fieldsTurnedOnBySaving(shown: readonly CalendarValueField[], flags: CalendarValueFlags): CalendarValueField[] {

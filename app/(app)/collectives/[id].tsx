@@ -94,6 +94,7 @@ export default function CollectiveDetailScreen() {
       ) : (
         <CombinedPageMemberSummary
           collective={collective}
+          onOpenManageCollective={() => router.push('/collective-area' as never)}
           onOpenLinkedVenues={() => router.push('/linked-venues' as never)}
         />
       )}

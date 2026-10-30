@@ -119,15 +119,17 @@ beforeEach(() => {
     }
     if (call.path.endsWith('/venue-services')) {
       const body = call.body as { action: string; items: { venue_id: string; service_id: string }[] };
+      const statuses = new Map<string, string>();
       for (const g of mockVenues) {
         for (const s of g.services) {
           if (body.items.some((i) => i.service_id === s.id)) {
             s.on_page = body.action === 'add';
             s.suggested_at = null;
+            statuses.set(s.id, body.action === 'add' ? (s.joins ? 'matched' : 'added') : 'withdrawn');
           }
         }
       }
-      return { results: body.items.map((i) => ({ ...i, ok: true })) };
+      return { results: body.items.map((i) => ({ ...i, ok: true, status: statuses.get(i.service_id) })) };
     }
     return { ok: true, already: false, declined: 1 };
   };
@@ -233,11 +235,12 @@ describe("Every venue's services", () => {
     expect(await screen.findByText('Gents cut is off the Northside page.')).toBeTruthy();
   });
 
-  it('names a service that did not change and keeps it ticked', async () => {
+  // CQ-04 (regression): the web's "These did not change:" with a row naming the venue and the reason.
+  it('names a service that did not change, with its venue and why, and keeps it ticked', async () => {
     mockHandler = (call) => {
       if (call.method === 'GET') return { role: 'host', collective_name: 'Northside', host_venue_id: 'v-host', venues: structuredClone(mockVenues) };
       const body = call.body as { items: { venue_id: string; service_id: string }[] };
-      return { results: body.items.map((i) => ({ ...i, ok: false, message: 'No' })) };
+      return { results: body.items.map((i) => ({ ...i, ok: false, message: 'Zen Studio is still updating.' })) };
     };
     await renderPanel({ initialVenueId: 'v-zen' });
     await screen.findByLabelText('Brows');
@@ -248,8 +251,79 @@ describe("Every venue's services", () => {
     await act(async () => {
       fireEvent.press(screen.getAllByText('Put on the page').at(-1)!);
     });
-    expect(await screen.findByText('These did not change: Brows. Please try them again.')).toBeTruthy();
+    expect(await screen.findByText('These did not change:')).toBeTruthy();
+    expect(screen.getByText('• Brows at Zen Studio: Zen Studio is still updating.')).toBeTruthy();
     expect(screen.getByLabelText('Brows').props.accessibilityState?.checked).toBe(true);
+    // Nothing changed, so there is nothing to undo.
+    expect(screen.queryByText(/^Undo \(/)).toBeNull();
+  });
+
+  // CQ-11 (regression): a save on Every venue's services could not be undone.
+  it('undoes a put-on for 60 seconds with the opposite change, and nobody is asked', async () => {
+    await renderPanel({ initialVenueId: 'v-zen' });
+    await screen.findByLabelText('Brows');
+    await tick('Brows');
+    await act(async () => {
+      fireEvent.press(screen.getByText('Put on the page (1)'));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getAllByText('Put on the page').at(-1)!);
+    });
+    expect(await screen.findByText('Brows is on the Northside page.')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByText(/^Undo \((60|59)s\)$/));
+    });
+    expect(posts().at(-1)).toEqual({
+      path: '/api/venue/collectives/col-1/venue-services',
+      method: 'POST',
+      body: { action: 'remove', mode: 'match', items: [{ venue_id: 'v-zen', service_id: 'z1' }] },
+    });
+    expect(await screen.findByText('Undone. Those services are back as they were.')).toBeTruthy();
+    expect(screen.queryByText(/^Undo \(/)).toBeNull();
+  });
+
+  it("says a joined service goes back with the host's price and length when its put-on is undone", async () => {
+    await renderPanel({ initialVenueId: 'v-zen' });
+    await screen.findByLabelText('Balayage');
+    await tick('Balayage');
+    await act(async () => {
+      fireEvent.press(screen.getByText('Put on the page (1)'));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getAllByText('Put on the page').at(-1)!);
+    });
+    await act(async () => {
+      fireEvent.press(await screen.findByText(/^Undo \(/));
+    });
+    expect(posts().at(-1)?.body).toEqual({ action: 'remove', mode: 'match', items: [{ venue_id: 'v-zen', service_id: 'z2' }] });
+    expect(
+      await screen.findByText(
+        "• Balayage went back to Zen Studio with Northside Studio's price and length, not their own.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it('offers Undo after a take-off too, and it goes after a minute', async () => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+    try {
+      await renderPanel({ initialVenueId: 'v-zen' });
+      await screen.findByLabelText('Gents cut');
+      await tick('Gents cut');
+      await act(async () => {
+        fireEvent.press(screen.getByText('Take off the page (1)'));
+      });
+      await act(async () => {
+        fireEvent.press(screen.getAllByText('Take off the page').at(-1)!);
+      });
+      expect(await screen.findByText(/^Undo \(/)).toBeTruthy();
+      await act(async () => {
+        jest.advanceTimersByTime(61_000);
+      });
+      expect(screen.queryByText(/^Undo \(/)).toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
+    expect(posts()).toHaveLength(1);
   });
 
   it('leaves a ticked suggestion off with Not now', async () => {

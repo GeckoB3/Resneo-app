@@ -40,6 +40,7 @@ import { CollapsibleCard } from '@/components/ui/CollapsibleCard';
 import { MetaChip } from '@/components/ui/MetaChip';
 import { QuickAction } from '@/components/ui/QuickAction';
 import { Text } from '@/components/ui/Text';
+import { areaCopy } from '@/lib/collective-area/copy';
 import { ANALYTICS_EVENTS, track } from '@/lib/analytics';
 import { ApiError } from '@/lib/api/client';
 import { resolveCardHoldUiState, type CardHoldPillVariant } from '@/lib/booking/card-hold';
@@ -1256,11 +1257,22 @@ export function BookingDetailContent({
             { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
           ]}>
           <Badge label="Linked" tone="warning" />
-          <Text variant="bodySmall" tone="secondary" style={styles.linkedNoteText}>
-            {diaryLocked && !policy.viewOnly
-              ? ROLES_COPY['diary.booking']
-              : (policy.banner ?? `A booking at ${linked.venueName}.`)}
-          </Text>
+          <View style={styles.linkedNoteText}>
+            {/* Whose booking this is, named as the diary names that venue: a partner that shares
+                your name carries its town (CQ-07, W6-12; web `staff.partner.at`). */}
+            <Text variant="label" testID="linked-owner-venue">
+              {areaCopy('staff.partner.at', { venue: linked.venueName })}
+            </Text>
+            {diaryLocked && !policy.viewOnly ? (
+              <Text variant="bodySmall" tone="secondary">
+                {ROLES_COPY['diary.booking']}
+              </Text>
+            ) : policy.banner ? (
+              <Text variant="bodySmall" tone="secondary">
+                {policy.banner}
+              </Text>
+            ) : null}
+          </View>
         </View>
       ) : diaryLocked ? (
         // View only and Hidden (§5.11): why the actions are missing.

@@ -22,6 +22,10 @@
  *   view=venues        open the host's Services tab on every venue's services
  *   venue=<id>         on that venue
  *   filter=suggested   on the suggestions waiting
+ *   tab=venues         open the host's Venues tab (Manage combined page's pointer, CQ-10.4)
+ *
+ * A host whose collective has nothing on the page yet reads it from the collectives list, and opens
+ * on Venues while it has no other venue, to invite one or end it (CQ-10.3).
  */
 import { Stack, useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useMemo, useState } from 'react';
@@ -54,11 +58,12 @@ import { Screen } from '@/components/ui/Screen';
 import { Segmented } from '@/components/ui/Segmented';
 import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
+import { ApiError } from '@/lib/api/client';
 import { areaCopy } from '@/lib/collective-area/copy';
+import { areaCollectiveWithFallback, type AreaCollectiveWithFallback } from '@/lib/collective-area/fallback';
 import {
-  areaCollective,
   buildCollectiveTodos,
-  type AreaCollective,
+  retryOutcome,
   type AreaService,
   type CollectiveCalendarGroup,
 } from '@/lib/collective-area/model';
@@ -94,7 +99,10 @@ export default function CollectiveAreaScreen() {
     () => servicesQuery.data?.collective_calendars ?? [],
     [servicesQuery.data],
   );
-  const collective = useMemo(() => areaCollective(services), [services]);
+  const collective = useMemo(
+    () => areaCollectiveWithFallback(services, collectivesQuery.data?.collectives),
+    [services, collectivesQuery.data],
+  );
   const entry = useMemo<CollectiveView | null>(
     () => (collectivesQuery.data?.collectives ?? []).find((c) => c.id === collective?.id) ?? null,
     [collectivesQuery.data, collective],
@@ -127,6 +135,16 @@ export default function CollectiveAreaScreen() {
           message="Could not load the collective. Please check your connection."
           onRetry={() => void servicesQuery.refetch()}
         />
+      </Screen>
+    );
+  }
+  if (!collective && collectivesQuery.isLoading) {
+    // The collectives list may still name one with nothing on the page yet: wait for it, so
+    // "No collective" never flashes for a host (CQ-10.3).
+    return (
+      <Screen padded={false}>
+        {header}
+        <ListSkeleton rows={5} />
       </Screen>
     );
   }
@@ -168,7 +186,7 @@ function AreaBody({
   onRefresh,
 }: {
   header: React.ReactNode;
-  collective: AreaCollective;
+  collective: AreaCollectiveWithFallback;
   entry: CollectiveView | null;
   services: AreaService[];
   groups: CollectiveCalendarGroup[];
@@ -179,8 +197,15 @@ function AreaBody({
   const toast = useToast();
   const { colors } = useTheme();
   const { venue } = useVenueContext();
-  const params = useLocalSearchParams<{ view?: string; venue?: string; filter?: string }>();
-  const [tab, setTab] = useState<AreaTab>('services');
+  const params = useLocalSearchParams<{ view?: string; venue?: string; filter?: string; tab?: string }>();
+  // A host opens on Venues when asked, or while its collective has no other venue and nothing on the
+  // page, as the web does (CQ-10.3).
+  const [tab, setTab] = useState<AreaTab>(() =>
+    collective.isHost &&
+    (oneParam(params.tab) === 'venues' || (collective.noServices && (collective.activeMemberCount ?? 0) < 2))
+      ? 'venues'
+      : 'services',
+  );
   const [historyVenueId, setHistoryVenueId] = useState<string | null>(null);
   /** A member's page service opened from its list, to choose its calendars here (2026-10-29). */
   const [calendarsServiceId, setCalendarsServiceId] = useState<string | null>(null);
@@ -224,10 +249,20 @@ function AreaBody({
     [entry],
   );
 
-  const onRetry = (venueId: string) =>
+  // Update now says what it did either way (web `retryVenue`, CQ-11): up to date, still updating,
+  // or why that venue could not be updated.
+  const onRetry = (venueId: string) => {
+    const venueName = groups.find((g) => g.venue_id === venueId)?.venue_name ?? 'That venue';
     retry.mutate(venueId, {
-      onError: () => toast.error('That did not go through. Please try again.'),
+      onSuccess: (data) => {
+        const outcome = retryOutcome(data?.collective_sync, venueName);
+        if (outcome.state === 'done') toast.success(outcome.text);
+        else if (outcome.state === 'pending') toast.info(outcome.text);
+        else toast.error(outcome.text);
+      },
+      onError: (err) => toast.error(err instanceof ApiError ? err.message : areaCopy('ov.venue.retryError')),
     });
+  };
 
   const tabs: { value: AreaTab; label: string }[] = [
     { value: 'services', label: areaCopy('ov.tab.overview') },
@@ -305,7 +340,25 @@ function AreaBody({
                 retryingVenueId={retry.isPending ? (retry.variables ?? null) : null}
                 canRetry={collective.isHost}
               />
-              <TodoStrip todos={todos} onRetry={onRetry} onOpenService={(id) => grid.setOpenServiceId(id)} />
+              {/* What needs you opens what it is about on the page's grid, never behind Every venue's
+                  services, and a venue's row goes straight to its calendars (CQ-10.7). */}
+              <TodoStrip
+                todos={todos}
+                onRetry={onRetry}
+                onOpenService={(id) => {
+                  if (!collective.isHost) {
+                    setCalendarsServiceId(id);
+                    return;
+                  }
+                  setServicesView('page');
+                  grid.setOpenServiceId(id);
+                }}
+                onOpenVenue={(id) => {
+                  setServicesView('page');
+                  grid.focusVenue(id);
+                }}
+                onSwitchOn={collective.isHost ? (id) => void grid.switchOn(id) : undefined}
+              />
               {collective.isHost && panel.supported ? (
                 <SuggestionsReviewCard
                   collectiveId={collective.id}
@@ -353,10 +406,8 @@ function AreaBody({
                     collectiveId={collective.id}
                     collectiveName={collective.name}
                     hostName={collective.hostVenueName}
-                    onLeft={() => {
-                      toast.success(`Left ${collective.name}.`);
-                      router.replace('/collectives' as Href);
-                    }}
+                    // The sheet says "You left {collective}."; Venue collectives shows the review.
+                    onLeft={() => router.replace('/collectives' as Href)}
                   />
                 </>
               ) : showVenueServices ? (

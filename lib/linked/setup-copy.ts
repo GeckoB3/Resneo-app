@@ -2,8 +2,11 @@
  * Copy for the link + collective setup flows (web `src/lib/linked-accounts/collective-copy.ts`,
  * the `setup.*`, `respond.*`, `finish.*`, `banner.*`, `join.*`, `create.*` and `la.row.*` keys;
  * Docs/link-and-collective-setup-wizard-plan.md). Same keys and sentences as the web, so the two
- * never disagree.
+ * never disagree. A sentence that names a web screen is shown with the app's name for it
+ * (`app-place-names.ts`, CQ-10.11).
  */
+import { withAppPlaceNames } from '@/lib/linked/app-place-names';
+
 export const SETUP_COPY = {
   'svc.card.parked': 'Parked while {collective} is live. Put it on the page to take bookings for it.',
   'ov.todo.awaiting': '{venue} has been asked whether to use its own {service} for the one on the page. Its calendars can be chosen once it answers.',
@@ -19,13 +22,14 @@ export const SETUP_COPY = {
   'create.what.3': 'Each venue keeps its own calendars, clients, bookings and payments.',
   'create.what.host': '{venue} will be the host.',
   'create.name.label': 'Collective name',
-  'create.name.help': 'Guests see this name on the booking page and in their emails.',
+  'create.name.help': 'What the collective is called in your dashboard and in messages between the venues. Customers see {venue}\'s name on the booking page, or a different name you choose in the page\'s settings.',
   'create.address.preview': '{origin}/book/c/{slug}',
   'create.address.checking': 'Checking this address...',
   'create.address.free': 'This address is free.',
   'create.address.taken': 'That address is taken. Try another.',
   'create.address.format': 'Use lower-case letters, numbers and hyphens only.',
   'create.disabled.address': 'Choose a free address to continue.',
+  'create.disabled.name': 'Type a collective name of at least 2 characters to continue.',
   'create.venues.warn.noStripe': '{venue} has not connected Stripe. It can join, but guests cannot book its calendars online for services that take a payment.',
   'create.venues.blocked.otherCollective': 'Already part of another collective',
   'create.venues.blocked.timezone': 'In {timezone}, not {yourTimezone}',
@@ -57,10 +61,10 @@ export const SETUP_COPY = {
   'join.means.1': '{host} sets up the services on the {collective} page in your account and controls them: names, descriptions, prices, deposits, payment rules, options, add-ons and forms.',
   'join.means.2': 'Clients pay you, through your own Stripe account, at the prices {host} sets.',
   'join.means.3': 'You choose which of your calendars offer each service. Your working hours and closures stay yours.',
-  'join.means.4': 'Your clients and bookings stay yours.',
+  'join.means.4': 'Your clients and bookings stay yours. Through your links, the other venues can see and manage them too.',
   'join.means.5': 'While you are part of {collective}, guests who visit your own booking page land on the {collective} page.',
   'join.means.6': 'Your services that are not on the {collective} page are parked while you are part of {collective}: nobody can book them, your team included. They stay yours to edit, bookings already made for them are not changed, and you can ask {host} to add any of them.',
-  'join.means.7': 'You can leave at any time. You keep every service and booking.',
+  'join.means.7': 'You can leave at any time. You keep every service and booking, and your links with the other venues stay until you unlink.',
   'join.warn.noStripe': 'You have not connected Stripe. {count} services on the page take a deposit, full payment or card hold, so guests cannot book those with you online until you connect it.',
   'join.warn.formsOn': 'Some services ask for forms. Your calendars can offer those only while compliance records are switched on for your venue, and once on they stay on while you are part of {collective}. We do not switch them on for you.',
   'join.block.timezone': 'You cannot join because your venue is in {yourTimezone} and {collective} is in {timezone}. Change your timezone under Profile first.',
@@ -71,9 +75,18 @@ export const SETUP_COPY = {
   'join.block.links': 'You cannot join yet because your account links with every venue in {collective} need full access both ways. Check them under Linked accounts.',
   // Added (2026-10-28): the venue's links with every venue in the collective, which joining makes in
   // the same step (web JoinLinksChecklist and joinLinkNames in JoinCollectiveDialog.tsx).
-  'join.links.heading': 'Linking with the venues in it',
-  'join.links.help': 'Every venue in {collective} works with every other, so joining links your venue with each of them, with full access both ways: each can see, make, change and cancel bookings in the other’s calendars, with client details. You can see your links in Linked Accounts.',
-  'join.links.state.full': 'Already linked',
+  'join.links.heading': 'Your links with the venues in it',
+  'join.links.help': 'Every venue in {collective} works with every other, so joining links your venue with each of them, with full access both ways: each can see, make, change and cancel bookings in the other’s calendars, with client details. These links stay if you leave, until one of you unlinks.',
+  // CQ-08 (2026-10-29): step 1 of every join says which links joining makes, what they let each
+  // venue do, and that they last (web JoinLinksDisclosure).
+  'join.links.intro': 'Every venue in {collective} works with every other, so joining links your venue with each of them, with full access both ways. Their teams can:',
+  'join.links.can.see': 'see your bookings, with client names, emails and phone numbers',
+  'join.links.can.book': 'make, move and cancel bookings in your calendars',
+  'join.links.can.reports': 'see your booking reports, and your treatment records when they are switched on',
+  'join.links.same': 'Your team can do the same at each of theirs.',
+  'join.links.lasts': 'These links stay if you leave {collective}, or if it ends, until one of you unlinks in Linked Accounts. While you are part of {collective}, unlinking from one of these venues, or giving it less access, takes a venue out of {collective}.',
+  'join.block.linksLeft': 'You have not joined {collective}, but your venue is still linked with {venues}. You can unlink in Linked Accounts if you do not want these links.',
+  'join.links.state.full': 'Already linked at full access',
   'join.links.state.onJoin': 'Linked when you join',
   'join.links.state.not_full': 'Linked with less than full access both ways. Change it first.',
   'join.links.openLinked': 'Change it in Linked Accounts',
@@ -120,7 +133,7 @@ export const SETUP_COPY = {
   'join.summary.useMine': '{count} of your services will be used for services from {host}.',
   'join.summary.park': '{count} of your services will be parked until you leave {collective}.',
   'join.summary.ask': '{host} will be asked to add {count} of your services.',
-  'join.consent': 'I understand that guests who visit {venue}\'s booking page will be sent to the {collective} page, that {host} manages the services on it for {venue}, and that the venues in {collective} can see each other\'s clients and bookings, and the value of those bookings, through our account links.',
+  'join.consent': 'I understand that guests who visit {venue}\'s booking page will be sent to the {collective} page, that {host} manages the services on it for {venue}, and that {venue} will be linked with every venue in {collective} at full access both ways, so each can see, make, change and cancel the others\' bookings, with client details. These links stay if {venue} leaves, until one of us unlinks.',
   'join.confirm': 'Join {collective}',
   'join.next': 'Next',
   'join.back': 'Back',
@@ -132,7 +145,7 @@ export const SETUP_COPY = {
   // one acceptance links it with every venue in it and joins (2026-10-28).
   'banner.requestJoin': '{venue} invited you to join {collective}. Accepting links you with every venue in it and joins, in one step.',
   // An invitation from a host this venue is already linked with: no link request carries it (2026-10-28).
-  'banner.invitation': '{host} invited you to join {collective}. Accepting links you with every venue in it and joins, in one step.',
+  'banner.invitation': '{host} invited you to join {collective}. Accepting links you with every venue in it at full access, and joins, in one step.',
   'notify.invite.cta': 'Review invitation',
   'banner.change': '{venue} proposed a permission change to your link.',
   'banner.setup': '{venueList} joined {collective}. Two short steps make your shared booking page live.',
@@ -152,6 +165,10 @@ export const SETUP_COPY = {
   'setup.step': 'Step {n} of {total}',
   'setup.venue.heading': 'Which venue?',
   'setup.venue.help': 'Search by name, or paste their booking page address.',
+  // CQ-09 (2026-10-29): a pasted booking page address finds that venue, or every venue on a shared page.
+  'setup.venue.notFound': 'No venues found. Check the name, or ask them for their booking page address.',
+  'setup.venue.notFoundAddress': 'We could not find a venue at that address. Check it, or search for them by name.',
+  'setup.venue.onPage': 'On the {collective} page',
   'setup.venue.alreadyLinked': 'You are already linked with {venue}. To start a collective together, use Create a collective on this tab.',
   'setup.level.heading': 'How closely will you work together?',
   'setup.level.help': 'This sets what each venue can see and do in the other’s calendar. {venue} can adjust it before accepting, and either of you can change or end the link at any time.',
@@ -208,7 +225,7 @@ export const SETUP_COPY = {
   'respond.collective.linkOnly.note': 'Accept the link only: the link starts now and the invitation to {collective} stays open on this tab for later.',
   'respond.check.heading': 'Check and accept',
   'respond.check.link': 'The link with {venue} starts as soon as you accept.',
-  'respond.consent': 'I understand what {venue} will be able to see and do, and that {me} joins {collective}: guests who open my booking page land on the {collective} page, {venue} manages the services on it, and through this link the venues can see each other’s clients and bookings, and the value of those bookings.',
+  'respond.consent': 'I understand what {venue} will be able to see and do, and that {me} joins {collective}: guests who open my booking page land on the {collective} page, {venue} manages the services on it, and {me} will be linked with every venue in {collective} at full access both ways, so each can see, make, change and cancel the others’ bookings, with client details. These links stay if {me} leaves, until one of us unlinks.',
   'respond.consent.linkOnly': 'I understand what {venue} will be able to see and do with {me}’s data.',
   'respond.cta.accept': 'Accept',
   'respond.cta.acceptJoin': 'Accept and join {collective}',
@@ -293,12 +310,48 @@ export const SETUP_COPY = {
   'finish.row.cta': 'Continue setup',
   'finish.row.notLive': 'Not live yet: choose the services and calendars for the page.',
   'la.row.invitation.pendingLink': 'Review {host}’s link request on this tab to answer this invitation.',
+  // A link that holds a collective together (CQ-01, 2026-10-29; web P1 section 6): the card line, the
+  // warning in Unlink, Reduce access, Edit permissions and Accept change, and the server's 409.
+  'la.link.holds.you': 'Holds {collective} together. Unlinking, or giving each other less than full access, takes you out of {collective}.',
+  'la.link.holds.them': 'Holds {collective} together. Unlinking, or giving each other less than full access, takes {venue} out of {collective}.',
+  'la.link.holds.ends': 'Holds {collective} together. Unlinking, or giving each other less than full access, ends {collective}.',
+  'la.link.holds.short': 'Holds {collective} together',
+  'linkBreak.title': 'This also changes {collective}',
+  'linkBreak.ifAccepted': 'If {venue} accepts this change:',
+  'linkBreak.youLeave': 'You leave {collective}. You keep every service, calendar and booking, the services from {host} become yours to edit, and guests book you on your own booking page again.',
+  'linkBreak.theyLeave': '{venue} leaves {collective}. It keeps every service, calendar and booking, and its own booking page comes back. Its calendars come off the {collective} page straight away.',
+  'linkBreak.carriesOn': '{collective} carries on with {venueList}.',
+  'linkBreak.ends': '{collective} needs at least two venues, so it ends. Its booking page stops taking bookings, and every venue keeps its services, calendars, clients and bookings.',
+  'linkBreak.waits': 'Only {venue} would be left, so the {collective} page stops taking bookings until another venue joins.',
+  'linkBreak.otherLinks': 'Your links with the other venues in {collective} stay as they are.',
+  'linkBreak.instead.remove': 'Only want {venue} off the page? Remove it from {collective} and keep your link.',
+  'linkBreak.instead.removeButton': 'Remove {venue} from {collective}',
+  'linkBreak.instead.leave': 'Only want to leave {collective}? Leave it and keep your links.',
+  'linkBreak.instead.leaveButton': 'Leave {collective}',
+  'linkBreak.confirm.unlink.youLeave': 'Unlink and leave {collective}',
+  'linkBreak.confirm.unlink.theyLeave': 'Unlink and take {venue} off the page',
+  'linkBreak.confirm.unlink.ends': 'Unlink and end {collective}',
+  'linkBreak.confirm.reduce.youLeave': 'Reduce access and leave {collective}',
+  'linkBreak.confirm.reduce.theyLeave': 'Reduce access and take {venue} off the page',
+  'linkBreak.confirm.reduce.ends': 'Reduce access and end {collective}',
+  'linkBreak.confirm.accept.youLeave': 'Accept and leave {collective}',
+  'linkBreak.confirm.accept.theyLeave': 'Accept and take {venue} off the page',
+  'linkBreak.confirm.accept.ends': 'Accept and end {collective}',
+  'linkBreak.refused': 'This link holds {collective} together, so changing it changes {collective} too. Update the ResNeo app, or use Linked Accounts on the web, to see what happens and confirm.',
+  'linkBreak.changed': '{collective} has changed since you opened this. Check what happens now and confirm again.',
+  // "Remove instead": the host takes the other venue off the page and keeps the link (web `remove.*`).
+  'remove.title': 'Remove {venue} from {collective}?',
+  'remove.message': '{venue} keeps every service, calendar and booking, and its own booking page comes back. Its calendars leave the {collective} page straight away.',
+  'remove.lastMember': '{collective} needs at least two venues, so removing {venue} ends {collective}.',
+  'remove.confirm': 'Remove {venue}',
+  // The name typed when a change would end the collective (web `dissolve.typeToConfirm`).
+  'dissolve.typeToConfirm': 'Type {collective} to confirm',
 } as const;
 
 export type SetupCopyId = keyof typeof SETUP_COPY;
 
 export function setupCopy(id: SetupCopyId, params: Record<string, string | number | null | undefined> = {}): string {
-  return SETUP_COPY[id].replace(/\{(\w+)\}/g, (match, key: string) => {
+  return withAppPlaceNames(id, SETUP_COPY[id]).replace(/\{(\w+)\}/g, (match, key: string) => {
     const value = params[key];
     return value === null || value === undefined ? match : String(value);
   });

@@ -17,6 +17,7 @@ import { ApiError, apiFetch, apiRawFetch } from '@/lib/api/client';
 import type {
   BulkOp,
   BulkOpResult,
+  CollectiveSync,
   HistoryFilter,
   HistoryPage,
   PreviewVenue,
@@ -41,20 +42,29 @@ function useInvalidateArea() {
 /**
  * Save staged changes, 200 at a time. A refused chunk reports every change in it as not done, so
  * nothing is quietly dropped (web `CollectiveAreaClient.commit`).
+ *
+ * `{ ops, acknowledgeAffected: true }` (CQ-04) sends removals the host has been shown the upcoming
+ * bookings for. The flag covers every removal in the request, so send only those.
  */
 export function useCollectiveBulkSave(collectiveId: string | null) {
   const accessToken = useAccessToken();
   const invalidate = useInvalidateArea();
   return useMutation({
-    mutationFn: async (ops: BulkOp[]): Promise<BulkOpResult[]> => {
+    mutationFn: async (input: BulkOp[] | { ops: BulkOp[]; acknowledgeAffected?: boolean }): Promise<BulkOpResult[]> => {
       if (!accessToken || !collectiveId) throw new Error('Missing access token');
+      const ops = Array.isArray(input) ? input : input.ops;
+      const acknowledge = !Array.isArray(input) && input.acknowledgeAffected === true;
       const all: BulkOpResult[] = [];
       for (let start = 0; start < ops.length; start += BULK_CHUNK) {
         const chunk = ops.slice(start, start + BULK_CHUNK);
         try {
           const data = await apiFetch<{ results?: BulkOpResult[] }>(
             `/api/venue/collectives/${collectiveId}/bulk`,
-            { accessToken, method: 'POST', body: JSON.stringify({ ops: chunk }) },
+            {
+              accessToken,
+              method: 'POST',
+              body: JSON.stringify(acknowledge ? { ops: chunk, acknowledge_affected: true } : { ops: chunk }),
+            },
           );
           for (const result of data.results ?? []) all.push({ ...result, index: result.index + start });
         } catch (err) {
@@ -82,14 +92,17 @@ export function useCollectiveBulkPreview(collectiveId: string | null) {
   });
 }
 
-/** Bring one venue up to date again (the collective's one Retry). */
+/**
+ * Bring one venue up to date again (the collective's one Retry). The answer's `collective_sync`
+ * says whether it is up to date now, still updating, or failed (CQ-11, `retryOutcome`).
+ */
 export function useCollectiveRetry(collectiveId: string | null) {
   const accessToken = useAccessToken();
   const invalidate = useInvalidateArea();
   return useMutation({
-    mutationFn: async (venueId: string): Promise<unknown> => {
+    mutationFn: async (venueId: string): Promise<{ collective_sync?: CollectiveSync | null }> => {
       if (!accessToken || !collectiveId) throw new Error('Missing access token');
-      return apiFetch(`/api/venue/collectives/${collectiveId}/replicas/retry`, {
+      return apiFetch<{ collective_sync?: CollectiveSync | null }>(`/api/venue/collectives/${collectiveId}/replicas/retry`, {
         accessToken,
         method: 'POST',
         body: JSON.stringify({ venue_id: venueId }),

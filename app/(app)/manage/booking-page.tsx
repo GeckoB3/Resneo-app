@@ -567,6 +567,7 @@ export default function BookingPageScreen() {
         />
         <CombinedPageScopeContent
           collectiveId={collectiveNote.id}
+          onOpenManageCollective={() => router.push('/collective-area' as Href)}
           onOpenLinkedVenues={() => router.push('/linked-venues' as Href)}
           onDissolved={() => setScope('own')}
         />

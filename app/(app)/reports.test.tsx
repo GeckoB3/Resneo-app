@@ -988,13 +988,14 @@ describe('Reports Showing picker and comparison (release 1)', () => {
     mockBusinesses = [LIGHT3];
     await render(<ReportsScreen />);
     // One calendar of your own, but a business to choose: the picker shows.
-    expect(screen.getByRole('button', { name: 'Showing, Plus 1: all calendars' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Showing, Plus 1 (you): all calendars' })).toBeTruthy();
     expect(lastOverviewScope()).toEqual({ calendarId: null, business: null, compare: 'previous' });
     await act(async () => {
       fireEvent.press(screen.getByHintText('Opens the choices of what to show'));
     });
     expect(screen.getAllByRole('radio').map((r) => r.props.accessibilityLabel)).toEqual([
-      'Plus 1: all calendars',
+      // Your own venue reads "(you)" beside the businesses (CQ-07, W6-20).
+      'Plus 1 (you): all calendars',
       'Hannah',
       'Light 3: all calendars',
       'Jess',
@@ -1022,7 +1023,7 @@ describe('Reports Showing picker and comparison (release 1)', () => {
     });
     // The till section reads no calendar at all.
     expect(screen.getByText('sales calendar: all')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Showing, Plus 1: all calendars' })).toHaveProp(
+    expect(screen.getByRole('button', { name: 'Showing, Plus 1 (you): all calendars' })).toHaveProp(
       'accessibilityState',
       expect.objectContaining({ disabled: true }),
     );

@@ -8,23 +8,36 @@
  * calendar at the venues picked (every venue when none is), ticked when it offers every service
  * picked, clear when it offers none, and a dash when it offers some. Touching a row decides it for
  * every service; an untouched dash leaves each service as it is. Save sends only what differs from
- * what is saved, straight away, and a change that does not go through stays chosen here for
- * another Save. One sheet, opened from the bar while no other sheet is open.
+ * what is saved, straight away.
+ *
+ * After a Save (CQ-04): what went through, and what will only be refused again, is no longer sent;
+ * what can still go through stays chosen here, so Save counts it and sends it again. Each failure
+ * reads "{service}, {calendar} at {venue}: {reason}". A calendar with upcoming bookings for a
+ * service shows them here, and the host decides.
+ *
+ * A Save that takes calendars off asks first, here, naming each change and any venue left with
+ * nobody to offer a service (CQ-11). A Save that only adds calendars goes straight through, and
+ * either can be undone from the bar for a minute. One sheet with steps, never two stacked.
  */
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
+import { AffectedBookingsStep } from '@/components/collective-area/AffectedBookingsStep';
 import type { ServicesGridState } from '@/components/collective-area/ServicesGrid';
 import { Button } from '@/components/ui/Button';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { areaCopy } from '@/lib/collective-area/copy';
 import {
+  describeStaged,
+  gridVenueName,
+  groupAffected,
   pickerDescription,
   pickerKey,
   pickerResult,
   pickerServices,
   pickerState,
+  removalWarnings,
   type CollectiveCalendarGroup,
   type PickerState,
 } from '@/lib/collective-area/model';
@@ -35,12 +48,23 @@ export function BulkCalendarsSheet({ grid }: { grid: ServicesGridState }) {
   const { colors } = useTheme();
   /** Only the calendars the host has touched: true offers every service, false offers none. */
   const [choice, setChoice] = useState<Map<string, boolean>>(new Map());
+  /** Changes a Save settled (by key), which are not sent again unless their calendar is touched. */
+  const [skip, setSkip] = useState<Set<string>>(new Set());
+  /** The ask before a Save that takes calendars off (CQ-11). */
+  const [askingRemoval, setAskingRemoval] = useState(false);
   const [openedFor, setOpenedFor] = useState(grid.choosing);
   // A fresh choice each time it opens, set while rendering so nothing from last time flashes.
   if (grid.choosing !== openedFor) {
     setOpenedFor(grid.choosing);
-    if (grid.choosing) setChoice(new Map());
+    if (grid.choosing) {
+      setChoice(new Map());
+      setSkip(new Set());
+      setAskingRemoval(false);
+    }
   }
+  const settle = (keys: string[]) => {
+    if (keys.length > 0) setSkip((prev) => new Set([...prev, ...keys]));
+  };
 
   const close = () => {
     if (!grid.saving) grid.closeChooser();
@@ -51,16 +75,96 @@ export function BulkCalendarsSheet({ grid }: { grid: ServicesGridState }) {
   const groups = grid.groups.filter((g) => grid.crossing.venueIds.includes(g.venue_id));
   const onPage = services.filter((s) => s.itemId);
   const offPage = services.length - onPage.length;
-  const result = pickerResult(groups, services, grid.staged, choice);
+  const result = pickerResult(groups, services, grid.staged, choice, skip);
+  const removals = result.ops.filter((op) => op.op === 'unassign').length;
   const description = pickerDescription(services);
-  const failed = grid.failures.length;
+  const failures = grid.failures;
+  const send = () => void grid.saveChosen(result).then(settle);
 
-  const set = (group: CollectiveCalendarGroup, calendarIds: string[], on: boolean) =>
+  // The bookings step, in this sheet rather than over it (CQ-04).
+  const bookings = grid.bookingsStep?.where === 'picker' ? grid.bookingsStep : null;
+  if (bookings) {
+    const items = groupAffected(bookings.refusals, grid.services, grid.groups);
+    const keep = () => {
+      settle(items.map((item) => item.key));
+      grid.keepBookings();
+    };
+    return (
+      <Sheet visible onClose={() => (grid.saving ? undefined : keep())} maxHeight="92%" fill>
+        <AffectedBookingsStep
+          items={items}
+          othersSaved={bookings.othersSaved}
+          busy={grid.saving}
+          onKeep={keep}
+          onConfirm={() => void grid.acknowledgeBookings().then(settle)}
+        />
+      </Sheet>
+    );
+  }
+
+  if (askingRemoval && removals > 0) {
+    // What the Save does, change by change, and who is left with nobody to offer a service,
+    // counted over every venue, not only the ones shown.
+    const described = describeStaged(result.ops, services, grid.groups);
+    const warnings = removalWarnings(result.ops, services, grid.groups);
+    return (
+      <Sheet visible onClose={() => (grid.saving ? undefined : setAskingRemoval(false))} maxHeight="92%" fill>
+        <View style={styles.header}>
+          <Text variant="subheading">{areaCopy('ov.bulk.choose.confirmTitle')}</Text>
+        </View>
+        <ScrollView style={styles.flex1} contentContainerStyle={styles.content}>
+          {described.lines.map((line, index) => (
+            <Text key={index} variant="bodySmall" tone="secondary">
+              {line}
+            </Text>
+          ))}
+          {warnings.length > 0 ? (
+            <View style={[styles.notice, { backgroundColor: colors.warningSurface, borderColor: colors.warning }]}>
+              {warnings.map((line, index) => (
+                <Text key={index} variant="bodySmall">
+                  {line}
+                </Text>
+              ))}
+            </View>
+          ) : null}
+        </ScrollView>
+        <View style={styles.footer}>
+          <Button
+            label={areaCopy('ov.bulk.choose.confirmBack')}
+            variant="secondary"
+            style={styles.flex1}
+            disabled={grid.saving}
+            onPress={() => setAskingRemoval(false)}
+          />
+          <Button
+            label={areaCopy(removals === 1 ? 'ov.bulk.choose.confirmGoOne' : 'ov.bulk.choose.confirmGo')}
+            variant="danger"
+            style={styles.flex1}
+            loading={grid.saving}
+            disabled={grid.saving}
+            onPress={() => {
+              setAskingRemoval(false);
+              send();
+            }}
+          />
+        </View>
+      </Sheet>
+    );
+  }
+
+  const set = (group: CollectiveCalendarGroup, calendarIds: string[], on: boolean) => {
     setChoice((prev) => {
       const next = new Map(prev);
       for (const id of calendarIds) next.set(pickerKey(group.venue_id, id), on);
       return next;
     });
+    // Touching a calendar again decides it again, including what an earlier Save settled.
+    setSkip((prev) => {
+      const touched = calendarIds.map((id) => `:${group.venue_id}:${id}`);
+      const next = new Set([...prev].filter((key) => !touched.some((suffix) => key.endsWith(suffix))));
+      return next.size === prev.size ? prev : next;
+    });
+  };
 
   const stateOf = (group: CollectiveCalendarGroup, calendarId: string): PickerState => {
     const calendar = group.calendars.find((c) => c.id === calendarId);
@@ -82,14 +186,26 @@ export function BulkCalendarsSheet({ grid }: { grid: ServicesGridState }) {
       </View>
       <ScrollView style={styles.flex1} contentContainerStyle={styles.content}>
         {/* A toast would sit behind this sheet, so a save that did not go through says so here. */}
-        {failed > 0 ? (
+        {failures.length > 0 ? (
           <View
             accessibilityRole="alert"
             style={[styles.notice, { backgroundColor: colors.dangerSurface, borderColor: colors.danger }]}
           >
             <Text variant="bodySmall" tone="danger">
-              {failed === 1 ? areaCopy('ov.bulk.choose.failedOne') : areaCopy('ov.bulk.choose.failed', { count: failed })}
+              {failures.length === 1
+                ? areaCopy('ov.bulk.choose.failedOne')
+                : areaCopy('ov.bulk.choose.failed', { count: failures.length })}
             </Text>
+            {grid.failureTexts(failures).map((text, index) => (
+              <Text key={failures[index]?.key ?? index} variant="caption" tone="danger">
+                {`• ${text}`}
+              </Text>
+            ))}
+            {failures.some((f) => f.retryable) ? (
+              <Text variant="caption" tone="danger">
+                {areaCopy('ov.bulk.choose.failedKept')}
+              </Text>
+            ) : null}
           </View>
         ) : null}
         {onPage.length === 0 ? (
@@ -116,7 +232,7 @@ export function BulkCalendarsSheet({ grid }: { grid: ServicesGridState }) {
                 <View key={group.venue_id} style={[styles.venue, { borderColor: colors.border }]}>
                   <View style={styles.venueHead}>
                     <Text variant="label" style={styles.flex1}>
-                      {group.is_host ? areaCopy('svc.cal.venueYou', { venue: group.venue_name }) : group.venue_name}
+                      {gridVenueName(group)}
                     </Text>
                     {active.length > 1 ? (
                       <>
@@ -170,6 +286,7 @@ export function BulkCalendarsSheet({ grid }: { grid: ServicesGridState }) {
           </>
         )}
       </ScrollView>
+      {/* Cancel left, Save right, equal widths: Save growing to "Save 5 changes" moves nothing. */}
       <View style={styles.footer}>
         <Button
           label={areaCopy('ov.bulk.choose.cancel')}
@@ -190,7 +307,8 @@ export function BulkCalendarsSheet({ grid }: { grid: ServicesGridState }) {
             style={styles.flex1}
             disabled={result.changeCount === 0 || grid.saving}
             loading={grid.saving}
-            onPress={() => void grid.saveChosen(result)}
+            // Taking calendars off asks first; adding them goes straight through (CQ-11).
+            onPress={() => (removals > 0 ? setAskingRemoval(true) : send())}
           />
         ) : null}
       </View>
@@ -254,7 +372,7 @@ const styles = StyleSheet.create({
   flex1: { flex: 1 },
   header: { paddingHorizontal: spacing.lg, gap: spacing.xxs },
   content: { padding: spacing.lg, paddingTop: spacing.sm, gap: spacing.md },
-  notice: { borderWidth: StyleSheet.hairlineWidth, borderRadius: radius.card, padding: spacing.md },
+  notice: { borderWidth: StyleSheet.hairlineWidth, borderRadius: radius.card, padding: spacing.md, gap: spacing.xxs },
   venue: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: spacing.sm, gap: spacing.xxs },
   venueHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.xxs },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: 44 },

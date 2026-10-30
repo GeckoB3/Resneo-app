@@ -11,7 +11,8 @@ import { useVenueContext } from '@/providers/VenueProvider';
  * without leaving the screen; the web's Manage Collective opens the same editor). It is the
  * Services screen's member sheet, fed from the same reads, so the two cannot drift apart. Manage
  * Collective is for admins only, so each calendar offering it gets Edit values where the host
- * lets calendars have their own.
+ * lets calendars have their own. Switched-off calendars are passed too, so one that still offers the
+ * service is shown with Remove rather than dropped by the save (CQ-06).
  */
 export function MemberCalendarsSheet({
   serviceId,
@@ -24,7 +25,8 @@ export function MemberCalendarsSheet({
 }) {
   const { venue } = useVenueContext();
   const servicesQuery = useManagedServices();
-  const practitionersQuery = usePractitioners();
+  // Switched off ones too (CQ-06): the sheet lists one that still offers the service.
+  const practitionersQuery = usePractitioners({ includeInactive: true });
 
   const service = useMemo(
     () => servicesQuery.data?.services.find((s) => s.id === serviceId) ?? null,
@@ -37,9 +39,7 @@ export function MemberCalendarsSheet({
   const calendars = useMemo(
     () =>
       appointmentCalendarsOf(
-        (practitionersQuery.data?.practitioners ?? [])
-          .filter((p) => p.is_active)
-          .sort((a, b) => a.sort_order - b.sort_order),
+        [...(practitionersQuery.data?.practitioners ?? [])].sort((a, b) => a.sort_order - b.sort_order),
       ),
     [practitionersQuery.data],
   );
@@ -55,8 +55,8 @@ export function MemberCalendarsSheet({
         id: p.id,
         name: p.name,
         offers: links.some((l) => l.practitioner_id === p.id),
+        is_active: p.is_active !== false,
       }))}
-      expectedCalendarIds={links.map((l) => l.practitioner_id)}
       currencySymbol={currencySymbol}
       complianceEnabled={venue?.feature_flags?.resolved?.compliance_records_enabled ?? false}
       canEditValues

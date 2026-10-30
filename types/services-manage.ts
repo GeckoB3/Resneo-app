@@ -147,6 +147,10 @@ export interface ServiceCollectiveBlock {
   hidden_reasons: { venue_id: string; venue_name: string; reason: CollectiveHiddenReasonKind }[];
   /** Member copies: another venue's calendar offers it, so guests can book it (web 2026-10-28). */
   offered_elsewhere?: boolean;
+  /** The host's page service: when it last went on the page (web CQ-05, 2026-10-29). Absent on older servers. */
+  offered_at?: string | null;
+  /** The host's parked service: it was on the page before, so offering it again puts it back (web CQ-05). */
+  was_on_page?: boolean;
 }
 
 /**

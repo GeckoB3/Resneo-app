@@ -55,6 +55,8 @@ import { AddFromVenueSheet } from '@/components/services/collective/AddFromVenue
 import { CalendarValuesStep } from '@/components/services/collective/CalendarValuesStep';
 import { CollectiveCalendarsSection } from '@/components/services/collective/CollectiveCalendarsSection';
 import { MemberServiceSheet } from '@/components/services/collective/MemberServiceSheet';
+import { OnPageControl } from '@/components/services/collective/OnPageControl';
+import { ServiceSaveSummary } from '@/components/services/collective/ServiceSaveSummary';
 import { ReleaseReviewCard } from '@/components/services/collective/ReleaseReviewCard';
 import { SuggestedServicesCard } from '@/components/services/collective/SuggestedServicesCard';
 import { SuggestionsReviewCard } from '@/components/collective-area/SuggestionsReviewCard';
@@ -65,6 +67,7 @@ import {
   useSuggestService,
 } from '@/lib/queries/useCollectiveServiceTools';
 import { useVenueServices } from '@/lib/queries/useCollectiveCurate';
+import { useSwitchServiceOn } from '@/lib/queries/useCollectiveArea';
 import { TodoStrip } from '@/components/collective-area/AreaPieces';
 import { AdoptionRequestsCard } from '@/components/linked/setup/AdoptionSheets';
 import {
@@ -74,6 +77,7 @@ import {
   validateProcessingBlocks,
   type ProcessingBlockDraft,
 } from '@/components/services/ProcessingTimeBlocksEditor';
+import { ChoiceRow } from '@/components/linked/setup/ChoiceRow';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -88,13 +92,15 @@ import { Text } from '@/components/ui/Text';
 import { visibleAddonLibrary } from '@/lib/addons/visible-addon-library';
 import { ApiError, isStaleResource } from '@/lib/api/client';
 import { appointmentCalendarsOf } from '@/lib/calendar/schedule-calendars';
-import { areaCopy } from '@/lib/collective-area/copy';
+import { areaCopy, formatVenueList } from '@/lib/collective-area/copy';
 import { buildCollectiveTodos } from '@/lib/collective-area/model';
+import { offerDoneSummary } from '@/lib/collective-area/offer-summary';
 import {
   collectiveBadge,
   collectiveServiceLines,
   collectiveStatusBadge,
   isManagedByHost,
+  isSwitchedOffOnPage,
   suggestActionFor,
   venueCollectiveOf,
 } from '@/lib/services/collective-service';
@@ -130,9 +136,11 @@ import {
   useCreateService,
   useDeleteService,
   useManagedServices,
+  useOfferServiceOnPage,
   useReorderServices,
   useUpdateService,
   useTakeServiceOffPage,
+  type OfferOnPageAnswer,
   type VariantWriteInput,
 } from '@/lib/queries/useServicesManage';
 import { useCreateHostCalendar, usePractitioners } from '@/lib/queries/usePractitioners';
@@ -151,6 +159,7 @@ import {
   calendarValueDefaults,
   calendarValueFlags,
   calendarValuesTarget,
+  OPTION_SET_FLAGS,
   ownCalendarValuesTarget,
   type CalendarValueFlag,
   type CalendarValuesMode,
@@ -160,8 +169,10 @@ import {
   EMPTY_CALENDARS_DIFF,
   isCalendarsDiffEmpty,
   keepCalendarsOffering,
+  type CollectiveCalendarRef,
   type CollectiveCalendarsDiff,
 } from '@/lib/services/collective-calendars';
+import { clearedValuesFrom, type ClearedCalendarValue, type ServiceSaveSync } from '@/lib/services/save-summary';
 import { staffMayCustomizeAny } from '@/lib/services/service-override';
 import { affectedCalendarIds, type ServiceRemovalMove } from '@/lib/services/service-removal';
 import { useServiceRemovalFlow } from '@/lib/services/useServiceRemovalFlow';
@@ -183,6 +194,9 @@ type EditTarget = {
 };
 
 type ActiveTab = 'services' | 'categories' | 'addons';
+
+/** When a save went through, for its minute of Put it back (a read of the clock, never in render). */
+const saveClock = () => Date.now();
 
 /** Time for one sheet to leave before the next is shown (iOS drops a sheet opened over a closing one). */
 const SHEET_HANDOFF_MS = 350;
@@ -280,6 +294,12 @@ function ServiceRowBase({
   onView = null,
   suggest = null,
   reorderPending = false,
+  pageOn = null,
+  pageBusy = false,
+  onPageChange = null,
+  memberVenueNames,
+  onSwitchOn = null,
+  switchingOn = false,
 }: {
   service: ManagedService;
   expanded: boolean;
@@ -312,6 +332,15 @@ function ServiceRowBase({
    */
   suggest?: { label: string; onPress: ((service: ManagedService) => void) | null } | null;
   reorderPending?: boolean;
+  /** A host admin's own service: whether it is on the collective page. Null shows no control (CQ-10.2). */
+  pageOn?: boolean | null;
+  pageBusy?: boolean;
+  onPageChange?: ((service: ManagedService, next: boolean) => void) | null;
+  /** The other venues, for the host's switched-off line (CQ-13). */
+  memberVenueNames?: readonly string[];
+  /** A page service switched off at the host: switches it back on (CQ-13). */
+  onSwitchOn?: ((service: ManagedService) => void) | null;
+  switchingOn?: boolean;
 }) {
   const { colors } = useTheme();
   const price = formatPence(service.price_pence);
@@ -324,10 +353,10 @@ function ServiceRowBase({
   const isCardHold = service.payment_requirement === 'card_hold';
   const roleBadge = collectiveBadge(service);
   const statusBadge = collectiveStatusBadge(service);
-  const collectiveLines = collectiveServiceLines(service);
+  const collectiveLines = collectiveServiceLines(service, { memberVenueNames });
 
   return (
-    <Card padded={false} style={styles.serviceCard}>
+    <Card padded={false} style={styles.serviceCard} testID={`services-row-${service.id}`}>
       <Pressable
         onPress={() => onToggle(service.id)}
         accessibilityRole="button"
@@ -371,6 +400,17 @@ function ServiceRowBase({
         </Text>
       </Pressable>
 
+      {pageOn !== null ? (
+        <View style={styles.pageControl}>
+          <OnPageControl
+            on={pageOn}
+            busy={pageBusy}
+            label={`${areaCopy('svc.card.onPageSwitch', { collective: service.collective?.collective_name })}: ${service.name}`}
+            onChange={(next) => onPageChange?.(service, next)}
+          />
+        </View>
+      ) : null}
+
       {expanded ? (
         <View style={[styles.serviceBody, { borderTopColor: colors.border }]}>
           {collectiveLines.map((line) => (
@@ -378,6 +418,18 @@ function ServiceRowBase({
               {line}
             </Text>
           ))}
+          {onSwitchOn && isSwitchedOffOnPage(service) ? (
+            <View style={styles.editRow}>
+              <Button
+                label={areaCopy('ov.grid.row.turnOn')}
+                variant="secondary"
+                size="sm"
+                style={styles.editBtnFull}
+                loading={switchingOn}
+                onPress={() => onSwitchOn(service)}
+              />
+            </View>
+          ) : null}
           {service.description?.trim() ? (
             <Text variant="bodySmall" tone="secondary">
               {service.description}
@@ -791,6 +843,10 @@ export default function ServicesScreen() {
   const deleteService = useDeleteService();
   const checkServiceDelete = useCheckServiceDelete();
   const takeOffPage = useTakeServiceOffPage();
+  // The page control and the new service's tick (CQ-10.2): resolved once the services are read again.
+  const offerOnPage = useOfferServiceOnPage();
+  const takeOffPageNow = useTakeServiceOffPage({ waitForServices: true });
+  const { mutate: switchServiceOn, isPending: switchOnPending, variables: switchOnVariables } = useSwitchServiceOn();
   const reorderServices = useReorderServices();
   const toggleCalendarService = useToggleCalendarService();
   const createCalendar = useCreateHostCalendar();
@@ -840,6 +896,37 @@ export default function ServicesScreen() {
   const [suggestAsk, setSuggestAsk] = useState<ManagedService | null>(null);
   const [suggestNote, setSuggestNote] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const suggestService = useSuggestService();
+  /** A host's page control, asking before the service goes on or comes off the page (CQ-10.2). */
+  const [pageAsk, setPageAsk] = useState<{ service: ManagedService; offer: boolean } | null>(null);
+  const [pageBusyId, setPageBusyId] = useState<string | null>(null);
+  /** What the last page change did, with Choose calendars when some venue does not offer it yet (CQ-05). */
+  const [pageNote, setPageNote] = useState<{
+    serviceId: string;
+    tone: 'ok' | 'error';
+    lines: string[];
+    chooseCalendars: boolean;
+  } | null>(null);
+  /** A new service goes on the page unless the host unticks it, with its calendars at any venue (CQ-05). */
+  const [addToPage, setAddToPage] = useState(true);
+  const [newPageCalendars, setNewPageCalendars] = useState<CollectiveCalendarRef[]>([]);
+  /** The form was opened by Set up with AI's More settings: the setup decides about the page itself. */
+  const [formFromSetup, setFormFromSetup] = useState(false);
+  /** The save is switching a page service off at every venue, and asks first as a step of the sheet (CQ-13). */
+  const [deactivateAsk, setDeactivateAsk] = useState(false);
+  /** The last save to a page service, with its Put it back. Each save has its own key, and minute (CQ-11). */
+  const [collectiveSave, setCollectiveSave] = useState<{
+    key: string;
+    savedAt: number;
+    sync: ServiceSaveSync;
+    serviceName: string;
+    collectiveId: string;
+    calendarsChanged: boolean;
+    clearedValues: ClearedCalendarValue[];
+  } | null>(null);
+  const collectiveSaveCount = useRef(0);
+  /** "Choose calendars" opens the form at the calendars, a long way down it. */
+  const sheetScrollRef = useRef<ScrollView>(null);
+  const focusCalendars = useRef(false);
   // Set when that delete failed AFTER the service came off the page; the delete
   // sheet shows it in place of its confirm.
   const [deleteHalfway, setDeleteHalfway] = useState<string | null>(null);
@@ -954,6 +1041,16 @@ export default function ServicesScreen() {
   const practitionersQuery = usePractitioners();
   const practitioners = (practitionersQuery.data?.practitioners ?? [])
     .filter((p) => p.is_active)
+    .sort((a, b) => a.sort_order - b.sort_order);
+  /**
+   * Every calendar, switched off ones too, for a host's service opened at a member (web CQ-06): the
+   * member sheet lists a switched-off calendar that still offers it, with Remove. Read only while
+   * that sheet is open; until it arrives the sheet lists the switched-on calendars, which is safe
+   * because its save names only the calendars that change.
+   */
+  const allCalendarsQuery = usePractitioners({ includeInactive: true, enabled: viewingService !== null });
+  const memberSheetCalendars = (allCalendarsQuery.data?.practitioners ?? practitioners)
+    .slice()
     .sort((a, b) => a.sort_order - b.sort_order);
 
   // The venue's category headings (web 2026-09-02; absent on the legacy path).
@@ -1226,6 +1323,24 @@ export default function ServicesScreen() {
         .map((g) => ({ venue_id: g.venue_id, venue_name: g.venue_name })),
     [collectiveCalendars],
   );
+  const collectiveMemberNames = useMemo(() => collectiveMemberVenues.map((v) => v.venue_name), [collectiveMemberVenues]);
+  /** The other venues in a sentence; a server that lists no calendars still reads. */
+  const memberVenueWords = formatVenueList(collectiveMemberNames) || 'the other venues';
+  /** The open service, when saving it reaches every venue (CQ-13). */
+  const editingPageMaster = !!editTarget && editingService?.collective?.role === 'master';
+  /** A host admin adding a service: the tick is offered, and it decides the rest (CQ-05). */
+  const canAddToPage = creating && !editTarget && isAdmin && !!serviceCollective?.isHost && !formFromSetup;
+  const addingToPage = canAddToPage && addToPage;
+  /** The host's own group, without which the form keeps its plain list of this venue's calendars. */
+  const newServiceHostGroup = useMemo(() => collectiveCalendars.find((g) => g.is_host) ?? null, [collectiveCalendars]);
+  /** A service with options sets its price, length and buffer per option, never per calendar (CQ-12). */
+  const optionsLocked = isAdmin && variantDrafts.some((v) => v.isActive);
+  /** A page service reads the same on every calendar, so none may rename or re-describe it (CQ-05). */
+  const nameLocked = editingPageMaster || addingToPage;
+  const staffMayLocked = (key: keyof StaffMayState): boolean =>
+    (nameLocked && (key === 'name' || key === 'description')) ||
+    (optionsLocked && (OPTION_SET_FLAGS as readonly string[]).includes(key));
+  const staffMaySends = (key: keyof StaffMayState): boolean => !staffMayLocked(key) && staffMay[key];
   /**
    * What needs you (web `buildCollectiveTodos` on the Services page): a service no calendar offers,
    * a venue that has joined and chosen nothing, payments or forms in the way. Empty outside a
@@ -1430,6 +1545,9 @@ export default function ServicesScreen() {
     setCollectiveCalendarsDiff(EMPTY_CALENDARS_DIFF);
     setValuesStep(null);
     setError(null);
+    setAddToPage(true);
+    setNewPageCalendars([]);
+    setFormFromSetup(false);
     setCreating(true);
   };
 
@@ -1447,6 +1565,7 @@ export default function ServicesScreen() {
     // The setup's sheet leaves first; iOS drops a sheet presented while another is closing.
     setTimeout(() => {
       openCreate();
+      setFormFromSetup(true);
       setName(form.name);
       setDescription(form.description);
       setDuration(String(form.duration_minutes));
@@ -1489,6 +1608,8 @@ export default function ServicesScreen() {
     setEditTarget(null);
     setCreating(false);
     setValuesStep(null);
+    setDeactivateAsk(false);
+    focusCalendars.current = false;
     // Swiping the sheet away while it is asking about the bookings left behind
     // abandons that save; without this the next edit would open straight onto a
     // stale list.
@@ -1498,7 +1619,37 @@ export default function ServicesScreen() {
     }
   };
 
-  async function handleSave() {
+  /** The save's answer on a page service: how far it reached, and what Put it back would bring back. */
+  function showCollectiveSave(answer: unknown, details: { serviceName: string; collectiveId: string; calendarsChanged: boolean }) {
+    const body = (answer ?? {}) as { collective_sync?: ServiceSaveSync | null; cleared_values?: unknown };
+    const sync = body.collective_sync ?? null;
+    if (!sync) {
+      setCollectiveSave(null);
+      return;
+    }
+    collectiveSaveCount.current += 1;
+    setCollectiveSave({
+      ...details,
+      sync,
+      key: sync.audit_event_id ?? `save-${collectiveSaveCount.current}`,
+      savedAt: saveClock(),
+      clearedValues: clearedValuesFrom(body.cleared_values, collectiveCalendars, practitioners),
+    });
+  }
+
+  /** The same message after the New service form and after the page control (CQ-05). */
+  function showOfferSummary(serviceId: string, collectiveName: string, answer: OfferOnPageAnswer | null | undefined) {
+    const summary = offerDoneSummary({
+      collectiveName,
+      links: answer?.links ?? [],
+      notReady: answer?.calendars?.not_ready ?? [],
+      awaiting: answer?.pending ?? [],
+      hostCalendarCount: answer?.host_calendar_count ?? null,
+    });
+    setPageNote({ serviceId, tone: 'ok', lines: summary.lines, chooseCalendars: summary.chooseCalendars });
+  }
+
+  async function handleSave(opts: { deactivateConfirmed?: boolean } = {}) {
     setError(null);
     // Options (variants) drive the parent service's duration/buffer/price when present.
     const usesVariants = isAdmin && variantDrafts.length > 0;
@@ -1571,7 +1722,8 @@ export default function ServicesScreen() {
       setError('Enter a price greater than zero to take full payment online.'); return;
     }
     // A page service may be offered only at other venues: the web saves it with none ticked here.
-    if (practitionerIds.length === 0 && !editingCollectiveBlock) {
+    // So may a service going on the page now: its calendars can be any venue's (CQ-05).
+    if (practitionerIds.length === 0 && !editingCollectiveBlock && !addingToPage) {
       setError('Select at least one calendar to offer this service.'); return;
     }
     // Captured now: the bookings question re-sends this same save, whatever the form shows by then.
@@ -1637,6 +1789,13 @@ export default function ServicesScreen() {
       scheduleToSend = customAvailEnabled ? customSchedule : null;
     }
 
+    // Switching off a page service hides it at every venue, so the host is asked first (CQ-13).
+    const wasActive = editTarget ? services.find((svc) => svc.id === editTarget.id)?.is_active !== false : true;
+    if (editingPageMaster && wasActive && !isActive && !opts.deactivateConfirmed) {
+      setDeactivateAsk(true);
+      return;
+    }
+
     // Web parity (appointment-service-form-to-payload.ts): only persist a deposit
     // when "Custom deposit" or "Card hold" is the chosen payment mode (card holds
     // store the no-show fee in the same deposit_pence column). Any other choice
@@ -1678,11 +1837,12 @@ export default function ServicesScreen() {
         category_id: categoryId,
         // Sent with every admin save, as the web does, so turning it off persists.
         is_bookable_online: !staffOnly,
-        staff_may_customize_name: staffMay.name,
-        staff_may_customize_description: staffMay.description,
-        staff_may_customize_duration: staffMay.duration,
-        staff_may_customize_buffer: staffMay.buffer,
-        staff_may_customize_price: staffMay.price,
+        // A box the form has locked saves off, as the server stores it (CQ-05, CQ-12).
+        staff_may_customize_name: staffMaySends('name'),
+        staff_may_customize_description: staffMaySends('description'),
+        staff_may_customize_duration: staffMaySends('duration'),
+        staff_may_customize_buffer: staffMaySends('buffer'),
+        staff_may_customize_price: staffMaySends('price'),
         staff_may_customize_deposit: staffMay.deposit,
         staff_may_customize_colour: staffMay.colour,
         // Location — always sent when admin so a switch back to venue/online clears
@@ -1738,27 +1898,47 @@ export default function ServicesScreen() {
         // Unticking a calendar that still has bookings for this service answers
         // 409 with them listed; the flow holds the save until the operator has
         // seen them, then sends this same patch acknowledged.
+        const pageCollective = editingPageMaster ? (editingService?.collective ?? null) : null;
         const outcome = await removal.start((acknowledge) =>
-          update.mutateAsync({
-            id: editTarget.id,
-            ...shared,
-            ...adminExtras,
-            ...(linksChanged ? { practitioner_ids: practitionerIds } : {}),
-            // The host's ticks at every venue; the engine writes them, before the service itself.
-            ...(calendarsDiff ? { collective_calendars: calendarsDiff } : {}),
-            acknowledge,
-          }),
+          update
+            .mutateAsync({
+              id: editTarget.id,
+              ...shared,
+              ...adminExtras,
+              ...(linksChanged ? { practitioner_ids: practitionerIds } : {}),
+              // The host's ticks at every venue; the engine writes them, before the service itself.
+              ...(calendarsDiff ? { collective_calendars: calendarsDiff } : {}),
+              acknowledge,
+            })
+            .then((answer) => {
+              // Here, not after: the bookings question sends this same save again.
+              if (pageCollective) {
+                showCollectiveSave(answer, {
+                  serviceName: shared.name,
+                  collectiveId: pageCollective.collective_id,
+                  calendarsChanged: Boolean(calendarsDiff) || linksChanged,
+                });
+              }
+              return answer;
+            }),
         );
         if (outcome === 'needs_confirmation') {
           setRemovalSource('form');
           return;
         }
-        // A quiet change says what it did (web N18, 2026-09-20).
-        const wasActive = services.find((svc) => svc.id === editTarget.id)?.is_active !== false;
+        // A quiet change says what it did (web N18, 2026-09-20), at every venue for a page service.
         if (wasActive && !isActive) {
-          toast.success(`"${shared.name}" is now hidden from guests. Bookings already made are not changed.`);
+          toast.success(
+            pageCollective
+              ? areaCopy('svc.deactivate.done', { service: shared.name })
+              : `"${shared.name}" is now hidden from guests. Bookings already made are not changed.`,
+          );
         } else if (!wasActive && isActive) {
-          toast.success(`"${shared.name}" is visible to guests again.`);
+          toast.success(
+            pageCollective
+              ? areaCopy('svc.activate.done', { service: shared.name, collective: pageCollective.collective_name })
+              : `"${shared.name}" is visible to guests again.`,
+          );
         }
       } else {
         const created = (await create.mutateAsync({
@@ -1772,6 +1952,31 @@ export default function ServicesScreen() {
         })) as { id?: string; service?: { id?: string } } | null;
         // Opened by Set up with AI's More settings: the setup marks its draft added.
         if (moreSettingsKey.current) returnToSetup(created?.id ?? created?.service?.id ?? null);
+        // Goes on the page unless unticked. The service is saved either way, so a refusal here is
+        // reported, and it stays parked, never lost. Other venues' calendars go with the offer: the
+        // server gives them the service once each venue's copy exists (CQ-05).
+        const createdId = created?.id ?? created?.service?.id ?? null;
+        if (addingToPage && createdId && serviceCollective) {
+          const memberIds = new Set(collectiveMemberVenues.map((v) => v.venue_id));
+          setPageNote(null);
+          try {
+            const answer = await offerOnPage.mutateAsync({
+              collectiveId: serviceCollective.id,
+              serviceId: createdId,
+              calendars: newPageCalendars
+                .filter((c) => memberIds.has(c.venue_id))
+                .map((c) => ({ venue_id: c.venue_id, calendar_id: c.calendar_id })),
+            });
+            showOfferSummary(createdId, serviceCollective.name, answer);
+          } catch {
+            setPageNote({
+              serviceId: createdId,
+              tone: 'error',
+              lines: [areaCopy('svc.offer.error', { service: shared.name, collective: serviceCollective.name })],
+              chooseCalendars: false,
+            });
+          }
+        }
       }
       hapticSuccess();
       closeSheet();
@@ -1998,6 +2203,12 @@ export default function ServicesScreen() {
     });
   }
 
+  /** The service form, brought to its calendars (web `openEdit(svc, { focus: 'calendars' })`). */
+  const openAtCalendars = (service: ManagedService) => {
+    focusCalendars.current = true;
+    openEdit(service);
+  };
+
   /** A todo's "Choose calendars": the member view for a host's service, else the edit form (web). */
   const openTodoService = (serviceId: string) => {
     const service = services.find((s) => s.id === serviceId);
@@ -2006,11 +2217,83 @@ export default function ServicesScreen() {
       setViewingService(service);
       return;
     }
-    openEdit(service);
+    openAtCalendars(service);
   };
 
+  /** Choosing the other option on a card only asks; the sheet's confirm makes the change. */
+  const handlePageChange = useCallback((service: ManagedService, next: boolean) => {
+    setPageNote(null);
+    setPageAsk({ service, offer: next });
+  }, []);
+
+  async function confirmPageChange() {
+    const ask = pageAsk;
+    if (!ask || !serviceCollective) {
+      setPageAsk(null);
+      return;
+    }
+    setPageBusyId(ask.service.id);
+    try {
+      if (ask.offer) {
+        const answer = await offerOnPage.mutateAsync({ collectiveId: serviceCollective.id, serviceId: ask.service.id });
+        showOfferSummary(ask.service.id, serviceCollective.name, answer);
+      } else {
+        const itemId = ask.service.collective?.item_id;
+        if (!itemId) throw new Error('not on the page');
+        await takeOffPageNow.mutateAsync({ collectiveId: serviceCollective.id, itemId });
+        setPageNote({
+          serviceId: ask.service.id,
+          tone: 'ok',
+          lines: [areaCopy('svc.withdraw.done', { collective: serviceCollective.name })],
+          chooseCalendars: false,
+        });
+      }
+      hapticSuccess();
+    } catch (e) {
+      hapticWarning();
+      setPageNote({
+        serviceId: ask.service.id,
+        tone: 'error',
+        lines: [
+          refusalText(
+            e,
+            ask.offer
+              ? areaCopy('svc.offer.error', { service: ask.service.name, collective: serviceCollective.name })
+              : 'That did not go through. Please try again.',
+            'That did not go through. Please check your connection.',
+          ),
+        ],
+        chooseCalendars: false,
+      });
+    } finally {
+      setPageBusyId(null);
+      setPageAsk(null);
+    }
+  }
+
+  /** "Switch it on" for a page service switched off at the host, on its card or under What needs you (CQ-13). */
+  const handleSwitchOn = useCallback(
+    (service: ManagedService) => {
+      switchServiceOn(service.id, {
+        onSuccess: () => {
+          hapticSuccess();
+          toast.success(
+            areaCopy('svc.activate.done', { service: service.name, collective: service.collective?.collective_name }),
+          );
+        },
+        onError: (e) => {
+          hapticWarning();
+          toast.error(
+            refusalText(e, 'Could not switch it on. Please try again.', 'Could not switch it on. Please check your connection.'),
+          );
+        },
+      });
+    },
+    [switchServiceOn, toast],
+  );
+
   const sheetOpen = editTarget !== null || creating;
-  const saving = update.isPending || create.isPending;
+  const saving = update.isPending || create.isPending || offerOnPage.isPending;
 
   /**
    * An admin's own calendars that offer the open service, each with "Edit values" while the service
@@ -2108,6 +2391,12 @@ export default function ServicesScreen() {
           onView={managedByHost && canManageService(item) ? openServiceView : null}
           suggest={suggestRow(item)}
           reorderPending={reorderServices.isPending}
+          pageOn={isAdmin && serviceCollective?.isHost && item.collective && !managedByHost ? item.collective.role === 'master' : null}
+          pageBusy={pageBusyId === item.id}
+          onPageChange={handlePageChange}
+          memberVenueNames={collectiveMemberNames}
+          onSwitchOn={isAdmin && item.collective?.role === 'master' ? handleSwitchOn : null}
+          switchingOn={switchOnPending && switchOnVariables === item.id}
         />
         </>
       );
@@ -2130,6 +2419,13 @@ export default function ServicesScreen() {
       reorderServices.isPending,
       openServiceView,
       suggestRow,
+      serviceCollective?.isHost,
+      pageBusyId,
+      handlePageChange,
+      collectiveMemberNames,
+      handleSwitchOn,
+      switchOnPending,
+      switchOnVariables,
     ],
   );
 
@@ -2140,7 +2436,7 @@ export default function ServicesScreen() {
   const bookingRulesSummary = `${advanceDays ? `${advanceDays}d ahead` : 'Book ahead not set'} · ${noticeHours || '0'}h notice${
     sameDay ? '' : ' · no same-day'
   }`;
-  const staffMayCount = STAFF_MAY_FIELDS.reduce((n, { key }) => n + (staffMay[key] ? 1 : 0), 0);
+  const staffMayCount = STAFF_MAY_FIELDS.reduce((n, { key }) => n + (staffMaySends(key) ? 1 : 0), 0);
   const staffMaySummary =
     staffMayCount === 0 ? 'None' : `${staffMayCount} of ${STAFF_MAY_FIELDS.length} allowed`;
   const locationSummary = LOCATION_TYPE_LABELS[locationType];
@@ -2277,7 +2573,63 @@ export default function ServicesScreen() {
                   }}
                 />
               ) : null}
-              <TodoStrip todos={collectiveTodos} onOpenService={openTodoService} />
+              <TodoStrip
+                todos={collectiveTodos}
+                onOpenService={openTodoService}
+                onSwitchOn={(serviceId) => {
+                  const service = services.find((s) => s.id === serviceId);
+                  if (service) handleSwitchOn(service);
+                }}
+              />
+              {collectiveSave ? (
+                <ServiceSaveSummary
+                  key={collectiveSave.key}
+                  savedAt={collectiveSave.savedAt}
+                  sync={collectiveSave.sync}
+                  serviceName={collectiveSave.serviceName}
+                  collectiveId={collectiveSave.collectiveId}
+                  venueNames={collectiveMemberNames}
+                  calendarsChanged={collectiveSave.calendarsChanged}
+                  clearedValues={collectiveSave.clearedValues}
+                />
+              ) : null}
+              {pageNote ? (
+                <View
+                  accessibilityRole={pageNote.tone === 'error' ? 'alert' : 'summary'}
+                  accessibilityLiveRegion="polite"
+                  testID="page-note"
+                  style={[
+                    styles.addFromDone,
+                    styles.pageNote,
+                    pageNote.tone === 'error'
+                      ? { backgroundColor: colors.dangerSurface, borderColor: colors.danger }
+                      : { backgroundColor: colors.surface, borderColor: colors.border },
+                  ]}>
+                  {pageNote.lines.map((line, index) => (
+                    <Text
+                      key={line}
+                      variant="bodySmall"
+                      color={pageNote.tone === 'error' ? undefined : index === 0 ? colors.success : colors.warning}>
+                      {line}
+                    </Text>
+                  ))}
+                  <View style={styles.pageNoteActions}>
+                    {pageNote.chooseCalendars ? (
+                      <Button
+                        label={areaCopy('svc.offer.chooseCalendars')}
+                        variant="secondary"
+                        size="sm"
+                        onPress={() => {
+                          const service = services.find((s) => s.id === pageNote.serviceId);
+                          setPageNote(null);
+                          if (service) openAtCalendars(service);
+                        }}
+                      />
+                    ) : null}
+                    <Button label="Close" variant="ghost" size="sm" onPress={() => setPageNote(null)} />
+                  </View>
+                </View>
+              ) : null}
               {/* After leaving a collective, what to check (web J7). Only when not in one now. */}
               <ReleaseReviewCard enabled={isAdmin && !serviceCollective} />
               {isAdmin && serviceCollective && !serviceCollective.isHost ? (
@@ -2501,6 +2853,39 @@ export default function ServicesScreen() {
         />
       ) : null}
 
+      {/* The host's page control: what goes where, before it does (CQ-10.2). */}
+      <ConfirmSheet
+        visible={pageAsk !== null}
+        title={
+          pageAsk && serviceCollective
+            ? areaCopy(pageAsk.offer ? 'svc.offer.title' : 'svc.withdraw.title', {
+                service: pageAsk.service.name,
+                collective: serviceCollective.name,
+              })
+            : ''
+        }
+        message={
+          pageAsk && serviceCollective
+            ? areaCopy(
+                !pageAsk.offer
+                  ? 'svc.withdraw.message'
+                  : pageAsk.service.collective?.was_on_page
+                    ? 'svc.offer.messageAgain'
+                    : 'svc.offer.message',
+                { service: pageAsk.service.name, collective: serviceCollective.name, venueList: memberVenueWords },
+              )
+            : undefined
+        }
+        confirmLabel={areaCopy(pageAsk?.offer === false ? 'svc.withdraw.confirm' : 'svc.offer.confirm')}
+        cancelLabel={areaCopy('ov.bulk.confirm.back')}
+        destructive={pageAsk?.offer === false}
+        loading={pageBusyId !== null}
+        onClose={() => {
+          if (pageBusyId === null) setPageAsk(null);
+        }}
+        onConfirm={() => void confirmPageChange()}
+      />
+
       {/* A member suggests one of its parked services to the host (web "Suggest to {host}"). */}
       <ConfirmSheet
         visible={suggestAsk !== null && !!serviceCollective}
@@ -2559,12 +2944,12 @@ export default function ServicesScreen() {
           key={viewingService.id}
           service={viewingService}
           block={viewingService.collective}
-          calendars={appointmentCalendarsOf(practitioners).map((p) => ({
+          calendars={appointmentCalendarsOf(memberSheetCalendars).map((p) => ({
             id: p.id,
             name: p.name,
             offers: calendarOffersService(p.id, viewingService.id),
+            is_active: p.is_active !== false,
           }))}
-          expectedCalendarIds={linkedCalendarIds(viewingService.id)}
           currencySymbol={currencySymbolFor(venue?.currency)}
           complianceEnabled={complianceEnabled}
           canEditValues={isAdmin}
@@ -2611,15 +2996,62 @@ export default function ServicesScreen() {
             onBack={() => setValuesStep(null)}
           />
         ) : null}
-        <View style={[styles.sheetBodyWrap, valuesStep && editingService ? styles.hidden : null]}>
+        {/* Switching off a page service asks first, as a step of this sheet too (CQ-13). */}
+        {deactivateAsk && editingService?.collective ? (
+          <View style={[styles.sheetBodyWrap, styles.sectionStack]}>
+            <Text variant="subheading">{areaCopy('svc.deactivate.title', { service: name.trim() || editingService.name })}</Text>
+            <Text variant="bodySmall" tone="secondary">
+              {areaCopy('svc.deactivate.message', {
+                service: name.trim() || editingService.name,
+                collective: editingService.collective.collective_name,
+                venueList: memberVenueWords,
+              })}
+            </Text>
+            <View style={styles.actions}>
+              <Button
+                label={areaCopy('ov.bulk.confirm.back')}
+                variant="secondary"
+                style={styles.flex1}
+                disabled={saving}
+                onPress={() => setDeactivateAsk(false)}
+              />
+              <Button
+                label={areaCopy('svc.deactivate.confirm')}
+                variant="danger"
+                style={styles.flex1}
+                loading={saving}
+                onPress={() => {
+                  setDeactivateAsk(false);
+                  void handleSave({ deactivateConfirmed: true });
+                }}
+              />
+            </View>
+          </View>
+        ) : null}
+        <View
+          style={[
+            styles.sheetBodyWrap,
+            (valuesStep && editingService) || (deactivateAsk && editingService?.collective) ? styles.hidden : null,
+          ]}>
           <Text variant="overline" tone="muted">
             {editTarget ? 'Edit service' : 'New service'}
           </Text>
 
           <ScrollView
+            ref={sheetScrollRef}
             style={styles.sheetScroll}
             contentContainerStyle={styles.sheetBody}
             keyboardShouldPersistTaps="handled">
+            {canAddToPage && serviceCollective ? (
+              <ChoiceRow
+                kind="checkbox"
+                selected={addToPage}
+                title={areaCopy('svc.add.onPageCheckbox', { collective: serviceCollective.name })}
+                summary={areaCopy('svc.add.onPageHelp', { venueList: memberVenueWords, collective: serviceCollective.name })}
+                disabled={saving}
+                onPress={() => setAddToPage((on) => !on)}
+              />
+            ) : null}
             <Input label="Name" value={name} onChangeText={setName} maxLength={200} />
             <Input
               label="Description (optional)"
@@ -2921,10 +3353,43 @@ export default function ServicesScreen() {
                 are preserved on save, so a non-admin edit never strips them.
                 The host's page service steps this aside for the calendars at every
                 venue (web CollectiveCalendarsSection). */}
-            {editingCollectiveBlock && editingCollectiveBlock.item_id ? (
+            {addingToPage && serviceCollective && newServiceHostGroup ? (
+              // Every venue's calendars, the host's first (CQ-05). The host's ticks are the form's own
+              // calendars, so the create sends them as before; the rest go with the offer.
+              <CollectiveCalendarsSection
+                mode="new"
+                groups={collectiveCalendars}
+                itemId={null}
+                collectiveName={serviceCollective.name}
+                currencySymbol={currencySymbolFor(venue?.currency)}
+                value={{
+                  add: [
+                    ...practitionerIds.map((id) => ({ calendar_id: id, venue_id: newServiceHostGroup.venue_id })),
+                    ...newPageCalendars,
+                  ],
+                  remove: [],
+                }}
+                onChange={(next) => {
+                  const hostId = newServiceHostGroup.venue_id;
+                  const shownHere = new Set(newServiceHostGroup.calendars.filter((c) => c.is_active).map((c) => c.id));
+                  const hostTicks = next.add.filter((r) => r.venue_id === hostId).map((r) => r.calendar_id);
+                  setPractitionerIds((prev) => [...new Set([...prev.filter((id) => !shownHere.has(id)), ...hostTicks])]);
+                  setNewPageCalendars(next.add.filter((r) => r.venue_id !== hostId));
+                }}
+                disabled={saving}
+              />
+            ) : editingCollectiveBlock && editingCollectiveBlock.item_id ? (
+              <View
+                onLayout={(event) => {
+                  if (!focusCalendars.current) return;
+                  focusCalendars.current = false;
+                  sheetScrollRef.current?.scrollTo({ y: event.nativeEvent.layout.y, animated: true });
+                }}>
               <CollectiveCalendarsSection
                 groups={collectiveCalendars}
                 itemId={editingCollectiveBlock.item_id}
+                collectiveId={editingCollectiveBlock.collective_id}
+                hasOptions={optionsLocked}
                 collectiveName={editingCollectiveBlock.collective_name}
                 currencySymbol={currencySymbolFor(venue?.currency)}
                 value={collectiveCalendarsDiff}
@@ -2937,6 +3402,7 @@ export default function ServicesScreen() {
                 hiddenReasons={editingCollectiveBlock.hidden_reasons}
                 disabled={saving}
               />
+              </View>
             ) : (
             <>
             <Text variant="overline" tone="muted">Offered by</Text>
@@ -3021,8 +3487,14 @@ export default function ServicesScreen() {
             )}
 
             <View style={styles.switchRow}>
-              <Text variant="bodyMedium">Active (visible to clients)</Text>
-              <Switch value={isActive} onValueChange={setIsActive} />
+              <Text variant="bodyMedium">
+                {editingPageMaster ? areaCopy('svc.card.activeOffered') : 'Active (visible to clients)'}
+              </Text>
+              <Switch
+                value={isActive}
+                onValueChange={setIsActive}
+                accessibilityLabel={editingPageMaster ? areaCopy('svc.card.activeOffered') : 'Active (visible to clients)'}
+              />
             </View>
 
             {isAdmin ? (
@@ -3056,15 +3528,32 @@ export default function ServicesScreen() {
                     </Text>
                     {STAFF_MAY_FIELDS.map(({ key, label }) => (
                       <View key={key} style={styles.switchRow}>
-                        <Text variant="bodyMedium">{label}</Text>
+                        <Text variant="bodyMedium" tone={staffMayLocked(key) ? 'muted' : undefined}>
+                          {label}
+                        </Text>
                         <Switch
-                          value={staffMay[key]}
+                          // A locked box shows off, as the server stores it, and the save sends it off.
+                          value={staffMaySends(key)}
+                          disabled={staffMayLocked(key)}
+                          accessibilityLabel={`Staff may change: ${label}`}
                           onValueChange={(v) =>
                             setStaffMay((prev) => ({ ...prev, [key]: v }))
                           }
                         />
                       </View>
                     ))}
+                    {optionsLocked ? (
+                      <Text variant="caption" tone="muted">
+                        {areaCopy('svc.form.staffMay.optionsLocked')}
+                      </Text>
+                    ) : null}
+                    {nameLocked ? (
+                      <Text variant="caption" tone="muted">
+                        {areaCopy('svc.form.staffMay.nameLocked', {
+                          collective: editingService?.collective?.collective_name ?? serviceCollective?.name,
+                        })}
+                      </Text>
+                    ) : null}
                   </View>
                 </CollapsibleCard>
 
@@ -3300,6 +3789,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: radius.md,
     padding: spacing.md,
+  },
+  pageNote: {
+    gap: spacing.xs,
+  },
+  pageNoteActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  pageControl: {
+    paddingHorizontal: spacing.base,
+    paddingBottom: spacing.base,
   },
   headerActions: {
     flexDirection: 'row',

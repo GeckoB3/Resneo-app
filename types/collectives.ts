@@ -141,6 +141,8 @@ export interface CollectiveView {
   activeMemberCount: number;
   /** When the collective lost its host and is waiting for one (web W7). */
   pausedAt?: string | null;
+  /** When an ended collective ended, for its Dissolved row. Not sent by the server yet (CQ-10.11). */
+  dissolvedAt?: string | null;
   /** A move of hosting in progress (web W7). */
   pendingHost?: { venueId: string; venueName: string; transferAt: string | null } | null;
 }

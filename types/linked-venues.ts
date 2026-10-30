@@ -65,8 +65,11 @@ export interface LinkGrantPair {
 export interface AccountLinkView {
   id: string;
   status: LinkStatus;
-  /** The other venue on this link. */
-  otherVenue: { id: string; name: string; slug: string };
+  /**
+   * The other venue on this link. `name` carries "{name} in {town}" when it shares a name with
+   * another venue in the answer or with yours (CQ-07); `town` is set when its Profile gives one.
+   */
+  otherVenue: { id: string; name: string; slug: string; town?: string | null };
   /** Whether this venue initiated the request. */
   initiatedByMe: boolean;
   /** What I am allowed to do to the other venue's data. */
@@ -205,6 +208,60 @@ export interface AccountLinksListResponse {
   maxOutgoingPending: number;
   /** The collective invitation riding on a pending request, by link id (web plan L11). Absent on older servers. */
   proposedCollectives?: Record<string, ProposedCollectiveSummary>;
+  /** Each active link that holds this venue's collective together, by link id (CQ-01). Absent on older servers. */
+  collectiveHolds?: Record<string, LinkCollectiveHold>;
+}
+
+// ---------------------------------------------------------------------------
+// Links that hold a collective together (CQ-01; web `collective-link-break.ts`, 2026-10-29)
+// ---------------------------------------------------------------------------
+
+export type LinkBreakOutcome = 'continues' | 'ends' | 'waits';
+
+export interface LinkBreakVenue {
+  venueId: string;
+  name: string;
+}
+
+/** What a link change does to the collective, in names. */
+export interface LinkBreakPlan {
+  /** The venues that leave, in the order they are released. Never the host. */
+  leaving: LinkBreakVenue[];
+  /** The venues still in afterwards, host first. */
+  remaining: LinkBreakVenue[];
+  outcome: LinkBreakOutcome;
+}
+
+/** A link between two venues of the same live collective that holds it together, seen from one of them. */
+export interface LinkCollectiveHold {
+  collectiveId: string;
+  collectiveName: string;
+  hostVenueId: string;
+  hostName: string;
+  iAmHost: boolean;
+  otherIsHost: boolean;
+  /** I unlink, reduce, or propose a change they accept: the cause is me. */
+  ifIChange: LinkBreakPlan;
+  /** I accept a change they proposed: the cause is them. */
+  ifTheyChange: LinkBreakPlan;
+}
+
+/** What a 409 `LINK_HOLDS_COLLECTIVE` carries: the plan for this change, as it stands now. */
+export interface LinkCollectiveBreak {
+  collectiveId: string;
+  collectiveName: string;
+  hostVenueId: string;
+  hostName: string;
+  iAmHost: boolean;
+  otherIsHost: boolean;
+  plan: LinkBreakPlan;
+}
+
+/** "I have seen this": sent with Unlink, Reduce access and Accept change; it must match the server's plan. */
+export interface CollectiveBreakAcknowledgement {
+  collective_id: string;
+  leaving: string[];
+  outcome: LinkBreakOutcome;
 }
 
 /** A pending request in the banner feed, naming the collective proposed with it, if any. */
@@ -248,10 +305,16 @@ export interface VenueSearchResult {
   slug: string;
   eligible: boolean;
   reason: string | null;
+  /** The shared page's public name, on a venue found from a pasted `/book/c/...` address (CQ-09). */
+  collective_name?: string | null;
+  /** The venue's town, when its Profile address gives one (CQ-07). */
+  town?: string | null;
 }
 export interface VenueSearchResponse {
   results: VenueSearchResult[];
   truncated: boolean;
+  /** How the search read the input (CQ-09): a pasted address finds exact matches only. Absent on older servers. */
+  query_kind?: 'address' | 'name';
 }
 
 export type VenueLookupResponse =

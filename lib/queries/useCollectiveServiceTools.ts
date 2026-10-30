@@ -253,9 +253,15 @@ export function useDismissReleaseReview() {
 /** The member's settings on a host service: the only fields the server lets it change. */
 export interface MemberServiceSettingsBody {
   id: string;
-  practitioner_ids: string[];
-  /** The calendars that offered it when the view opened, so a change elsewhere is caught. */
-  expected_calendar_ids: string[];
+  /**
+   * Only what changes (web CQ-06, 2026-10-29): this venue's calendars to start and stop offering it.
+   * Left out of a save that changes no calendars. A switched-off calendar is never dropped by it.
+   */
+  calendars?: { add: string[]; remove: string[] };
+  /** The whole list, as builds before CQ-06 sent it. Never sent with `calendars`. */
+  practitioner_ids?: string[];
+  /** The calendars that offered it when the view opened, with `practitioner_ids`. */
+  expected_calendar_ids?: string[];
   online_meeting_url?: string;
   online_meeting_info?: string;
   pre_appointment_instructions?: string;

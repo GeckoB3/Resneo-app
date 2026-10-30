@@ -16,7 +16,7 @@
  * @see Docs/MOBILE_API.md (web), "Venue collectives: what changes for the app"
  */
 import type { BadgeTone } from '@/components/ui/Badge';
-import { areaCopy } from '@/lib/collective-area/copy';
+import { areaCopy, formatVenueList } from '@/lib/collective-area/copy';
 import type { ManagedService, ServiceCollectiveBlock } from '@/types/services-manage';
 
 export function collectiveBlockOf(service: Pick<ManagedService, 'collective'>): ServiceCollectiveBlock | null {
@@ -56,10 +56,21 @@ export function collectiveBadge(service: Pick<ManagedService, 'collective'>): Co
   }
 }
 
+/**
+ * A page service, or a member's copy of one, that is switched off (web CQ-13): nobody can book it at
+ * any venue, so "up to date" would be the wrong news and the card says it is switched off instead.
+ */
+export function isSwitchedOffOnPage(service: Pick<ManagedService, 'collective' | 'is_active'>): boolean {
+  const role = service.collective?.role;
+  return service.is_active === false && (role === 'master' || role === 'replica');
+}
+
 /** How the copies are doing, as a short badge, when there is something to say. */
-export function collectiveStatusBadge(service: Pick<ManagedService, 'collective'>): CollectiveBadge | null {
+export function collectiveStatusBadge(service: Pick<ManagedService, 'collective' | 'is_active'>): CollectiveBadge | null {
   const block = service.collective;
   if (!block || block.role === 'parked' || block.role === 'retired') return null;
+  // Switched off, the copies' state is beside the point: the card says it is switched off (CQ-13).
+  if (isSwitchedOffOnPage(service)) return null;
   switch (block.status) {
     case 'setting_up':
       return { label: 'Setting up', tone: 'neutral' };
@@ -82,8 +93,14 @@ export function collectiveStatusBadge(service: Pick<ManagedService, 'collective'
   }
 }
 
-/** The sentences under an expanded row: what the venue may do, and why guests may not book. */
-export function collectiveServiceLines(service: Pick<ManagedService, 'collective'>): string[] {
+/**
+ * The sentences under an expanded row: what the venue may do, and why guests may not book.
+ * `memberVenueNames` names the other venues in the host's switched-off line (CQ-13).
+ */
+export function collectiveServiceLines(
+  service: Pick<ManagedService, 'collective' | 'is_active'>,
+  opts: { memberVenueNames?: readonly string[] } = {},
+): string[] {
   const block = service.collective;
   if (!block) return [];
   const host = block.host_venue_name;
@@ -112,6 +129,18 @@ export function collectiveServiceLines(service: Pick<ManagedService, 'collective
           : `Parked while your venue is part of ${collective}: nobody can book it, your team included. Bookings already made are not changed. It is bookable again if you leave.`,
       );
       break;
+  }
+  if (isSwitchedOffOnPage(service)) {
+    // In place of how the copies are doing (web `CollectiveServicePills`, CQ-13).
+    lines.push(
+      block.role === 'master'
+        ? areaCopy('svc.card.inactiveOffered', {
+            collective,
+            venueList: formatVenueList([...(opts.memberVenueNames ?? [])]) || 'the other venues',
+          })
+        : areaCopy('svc.member.switchedOff', { host }),
+    );
+    return lines;
   }
   if (block.role !== 'parked' && block.status_reason) lines.push(block.status_reason);
   return lines;

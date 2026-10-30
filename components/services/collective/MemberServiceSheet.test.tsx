@@ -1,6 +1,7 @@
 /**
  * A host's service as the member reads it (web `MemberServiceView`): the three zones, a save that
- * sends only the member's own fields with the calendars it opened with, and the bookings question:
+ * sends only the member's own fields and only the calendars that change (CQ-06), a switched-off
+ * calendar listed with Remove, and the bookings question:
  * a 409 listing upcoming bookings turns the button into "Remove and keep bookings", and the next
  * save is acknowledged. A retired copy cannot be ticked.
  *
@@ -119,7 +120,6 @@ describe('MemberServiceSheet', () => {
         service={service()}
         block={block()}
         calendars={calendars}
-        expectedCalendarIds={['cal-a']}
         currencySymbol="£"
         complianceEnabled
         onClose={jest.fn()}
@@ -166,7 +166,6 @@ describe('MemberServiceSheet', () => {
         service={service()}
         block={block()}
         calendars={calendars}
-        expectedCalendarIds={['cal-a']}
         currencySymbol="£"
         complianceEnabled={false}
         onClose={jest.fn()}
@@ -185,7 +184,7 @@ describe('MemberServiceSheet', () => {
     expect(mockCalls[0]).toEqual({
       path: '/api/venue/appointment-services',
       method: 'PATCH',
-      body: { id: 's1', practitioner_ids: ['cal-b'], expected_calendar_ids: ['cal-a'] },
+      body: { id: 's1', calendars: { add: ['cal-b'], remove: ['cal-a'] } },
     });
     expect(await screen.findByText('Amy has 2 upcoming bookings for Balayage. They are kept.')).toBeTruthy();
     expect(onSaved).not.toHaveBeenCalled();
@@ -198,13 +197,81 @@ describe('MemberServiceSheet', () => {
     expect(onSaved).toHaveBeenCalled();
   });
 
+  // CQ-06 (regression): an instructions-only save sent the whole calendar list, which dropped a
+  // switched-off calendar the list never showed.
+  it('sends no calendars when none changed', async () => {
+    await renderSheet(
+      <MemberServiceSheet
+        service={service()}
+        block={block()}
+        calendars={[...calendars, { id: 'cal-z', name: 'Zoe', offers: true, is_active: false }]}
+        currencySymbol="£"
+        complianceEnabled={false}
+        onClose={jest.fn()}
+        onSaved={jest.fn()}
+      />,
+    );
+    await act(async () => {
+      fireEvent.changeText(screen.getByLabelText('Before the appointment'), 'Ring the bell.');
+    });
+    await act(async () => {
+      fireEvent.press(saveButton());
+    });
+    expect(mockCalls[0]?.body).toEqual({ id: 's1', pre_appointment_instructions: 'Ring the bell.' });
+  });
+
+  it('lists a switched-off calendar that offers it, and Remove stages it until Keep it', async () => {
+    await renderSheet(
+      <MemberServiceSheet
+        service={service()}
+        block={block()}
+        calendars={[
+          ...calendars,
+          { id: 'cal-z', name: 'Zoe', offers: true, is_active: false },
+          // Switched off and not offering it: nothing to show.
+          { id: 'cal-y', name: 'Yan', offers: false, is_active: false },
+        ]}
+        currencySymbol="£"
+        complianceEnabled={false}
+        onClose={jest.fn()}
+        onSaved={jest.fn()}
+      />,
+    );
+    expect(screen.getByText('(switched off)')).toBeTruthy();
+    expect(screen.queryByLabelText('Zoe offers Balayage')).toBeNull();
+    expect(screen.queryByText(/Yan/)).toBeNull();
+    expect(
+      screen.getByText(
+        'Switched off calendars keep offering Balayage, so it is ready when you switch them back on. Remove one to stop that.',
+      ),
+    ).toBeTruthy();
+    expect(saveButton().props.accessibilityState?.disabled).toBe(true);
+
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Remove Zoe'));
+    });
+    expect(screen.getByText('Not saved yet: will stop offering')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Keep Zoe'));
+    });
+    expect(screen.queryByText('Not saved yet: will stop offering')).toBeNull();
+    expect(saveButton().props.accessibilityState?.disabled).toBe(true);
+
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Remove Zoe'));
+    });
+    await act(async () => {
+      fireEvent.press(saveButton());
+    });
+    expect(mockCalls[0]?.body).toEqual({ id: 's1', calendars: { add: [], remove: ['cal-z'] } });
+  });
+
   it('sends the meeting link for an online service, and the instructions only when changed', async () => {
     await renderSheet(
       <MemberServiceSheet
         service={service({ location_type: 'online', online_meeting_url: 'https://meet.example/a', online_meeting_info: '' })}
         block={block()}
         calendars={calendars}
-        expectedCalendarIds={['cal-a']}
         currencySymbol="£"
         complianceEnabled={false}
         onClose={jest.fn()}
@@ -219,8 +286,6 @@ describe('MemberServiceSheet', () => {
     });
     expect(mockCalls[0]?.body).toEqual({
       id: 's1',
-      practitioner_ids: ['cal-a'],
-      expected_calendar_ids: ['cal-a'],
       online_meeting_url: 'https://meet.example/a',
       online_meeting_info: '',
       pre_appointment_instructions: 'Park round the back.',
@@ -233,7 +298,6 @@ describe('MemberServiceSheet', () => {
         service={service({ staff_may_customize_price: true } as Partial<ManagedService>)}
         block={block()}
         calendars={calendars}
-        expectedCalendarIds={['cal-a']}
         currencySymbol="£"
         complianceEnabled={false}
         canEditValues
@@ -273,7 +337,6 @@ describe('MemberServiceSheet', () => {
         service={service()}
         block={block()}
         calendars={calendars}
-        expectedCalendarIds={['cal-a']}
         currencySymbol="£"
         complianceEnabled={false}
         canEditValues
@@ -290,7 +353,6 @@ describe('MemberServiceSheet', () => {
         service={service()}
         block={block({ role: 'retired' })}
         calendars={calendars}
-        expectedCalendarIds={['cal-a']}
         currencySymbol="£"
         complianceEnabled={false}
         onClose={jest.fn()}

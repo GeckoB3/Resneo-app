@@ -43,6 +43,48 @@ export function JoinMeansStep({ preview, host, collective }: { preview: JoinPrev
           {setupCopy('join.warn.formsOn', { collective })}
         </Text>
       ) : null}
+      <JoinLinksDisclosure links={preview.links} collective={collective} />
+    </View>
+  );
+}
+
+/**
+ * Step 1 of every join (CQ-08; web `JoinLinksDisclosure`, 2026-10-29): joining links the venue with
+ * every venue in the collective, at full access both ways, and those links stay after it leaves. Each
+ * venue is named, host first, with where the link stands, then what each venue's team can do, and
+ * that the links last. Shown whatever state the links are in, so a venue already linked with everyone
+ * still reads what it is agreeing to. Used by the join sheet and the review sheet's means step.
+ */
+export function JoinLinksDisclosure({ links, collective }: { links: LinkNeed[] | undefined; collective: string }) {
+  const { colors } = useTheme();
+  const heading = setupCopy('join.links.heading');
+  const venues = [...(links ?? [])].sort((a, b) => Number(b.is_host) - Number(a.is_host));
+  return (
+    <View
+      accessibilityLabel={heading}
+      testID="join-links-disclosure"
+      style={[styles.card, { borderColor: colors.brand, backgroundColor: colors.brandSubtle }]}>
+      <Text variant="label">{heading}</Text>
+      {venues.map((need) => (
+        <View key={need.venue_id} style={styles.group}>
+          <Text variant="bodySmall" style={styles.strong}>
+            {need.venue_name}
+          </Text>
+          <Text variant="caption" tone="secondary">
+            {joinLinkStateWords(need.state)}
+          </Text>
+        </View>
+      ))}
+      <Text variant="bodySmall">{setupCopy('join.links.intro', { collective })}</Text>
+      {(['join.links.can.see', 'join.links.can.book', 'join.links.can.reports'] as const).map((id) => (
+        <Text key={id} variant="bodySmall">
+          {`• ${setupCopy(id)}`}
+        </Text>
+      ))}
+      <Text variant="bodySmall">{setupCopy('join.links.same')}</Text>
+      <Text variant="bodySmall" style={styles.strong}>
+        {setupCopy('join.links.lasts', { collective })}
+      </Text>
     </View>
   );
 }
@@ -334,5 +376,8 @@ const styles = StyleSheet.create({
   },
   start: {
     alignSelf: 'flex-start',
+  },
+  strong: {
+    fontWeight: '600',
   },
 });

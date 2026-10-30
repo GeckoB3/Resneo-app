@@ -137,6 +137,7 @@ describe("every venue's services", () => {
     expect(curateOutcome('add', [{ venue_id: 'v-zen', service_id: 'z2', ok: true, status: 'added' }], nameOf, 'Northside')).toEqual({
       tone: 'ok',
       text: 'Brows is on the Northside page.',
+      rows: [],
       failedKeys: [],
     });
     expect(
@@ -155,15 +156,22 @@ describe("every venue's services", () => {
         'add',
         [
           { venue_id: 'v-zen', service_id: 'z2', ok: true },
-          { venue_id: 'v-zen', service_id: 'z3', ok: false, message: 'No' },
+          { venue_id: 'v-zen', service_id: 'z3', ok: false, message: 'Zen Studio is still updating.' },
+          { venue_id: 'v-zen', service_id: 'z2', ok: false },
         ],
         nameOf,
         'Northside',
+        () => 'Zen Studio',
       ),
     ).toEqual({
+      // CQ-04: the web's wording, with a row for each that names the venue and the reason.
       tone: 'error',
-      text: 'These did not change: Balayage. Please try them again.',
-      failedKeys: ['v-zen:z3'],
+      text: 'These did not change:',
+      rows: [
+        'Balayage at Zen Studio: Zen Studio is still updating.',
+        'Brows at Zen Studio: That did not go through. Please try again.',
+      ],
+      failedKeys: ['v-zen:z3', 'v-zen:z2'],
     });
   });
 

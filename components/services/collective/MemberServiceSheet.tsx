@@ -27,23 +27,26 @@ import type { ManagedService, PractitionerServiceLink, ServiceCollectiveBlock } 
  *      "Before the appointment"), in one place.
  *   3. What the host has set: plain values, written out, so nothing reads as missing data.
  *
- * The save sends only those fields, with the calendars that offered it when the view opened.
- * Unticking a calendar with upcoming bookings is answered with them listed (409); the next save
- * keeps them and goes ahead, and the button says so.
+ * The save sends only those fields, and of the calendars only what changes (web CQ-06): the ones to
+ * start and stop offering it, so a calendar this list does not show is never taken off. A
+ * switched-off calendar that offers it is listed as "(switched off)" with Remove. Unticking a
+ * calendar with upcoming bookings is answered with them listed (409); the next save keeps them and
+ * goes ahead, and the button says so.
  */
 export interface MemberServiceCalendar {
   id: string;
   name: string;
   /** True when this calendar already offers the service. */
   offers: boolean;
+  /** False for a switched-off calendar (CQ-06). Absent means switched on. */
+  is_active?: boolean;
 }
 
 export interface MemberServiceSheetProps {
   service: ManagedService;
   block: ServiceCollectiveBlock;
+  /** Every calendar of this venue, switched off ones too with `is_active: false`. */
   calendars: MemberServiceCalendar[];
-  /** The calendars offering it now, from the links the screen loaded (`expected_calendar_ids`). */
-  expectedCalendarIds: string[];
   currencySymbol: string;
   /** The venue's forms feature: the "Forms" fact reads the service's own requirements. */
   complianceEnabled: boolean;
@@ -75,7 +78,6 @@ export function MemberServiceSheet({
   service,
   block,
   calendars,
-  expectedCalendarIds,
   currencySymbol,
   complianceEnabled,
   canEditValues = false,
@@ -92,8 +94,14 @@ export function MemberServiceSheet({
   const saving = save.isPending;
   const savedInstructions = (service as WithInstructions).pre_appointment_instructions ?? '';
 
-  const savedCalendarIds = useMemo(() => calendars.filter((c) => c.offers).map((c) => c.id), [calendars]);
+  // Ticks for the calendars that are switched on; a switched-off one that still offers the service
+  // gets a row with Remove; one that does not offer it has nothing to show (web MemberServiceView).
+  const activeCalendars = useMemo(() => calendars.filter((c) => c.is_active !== false), [calendars]);
+  const switchedOffCalendars = useMemo(() => calendars.filter((c) => c.is_active === false && c.offers), [calendars]);
+  const savedCalendarIds = useMemo(() => activeCalendars.filter((c) => c.offers).map((c) => c.id), [activeCalendars]);
   const [chosen, setChosen] = useState<string[]>(savedCalendarIds);
+  /** Switched-off calendars staged to stop offering it when the member saves. */
+  const [removing, setRemoving] = useState<string[]>([]);
   const [meetingUrl, setMeetingUrl] = useState(service.online_meeting_url ?? '');
   const [meetingInfo, setMeetingInfo] = useState(service.online_meeting_info ?? '');
   const [instructions, setInstructions] = useState(savedInstructions);
@@ -110,9 +118,11 @@ export function MemberServiceSheet({
     [requirements.data],
   );
 
+  const added = chosen.filter((id) => !savedCalendarIds.includes(id));
+  const removed = [...savedCalendarIds.filter((id) => !chosen.includes(id)), ...removing];
+  const calendarsChanged = added.length > 0 || removed.length > 0;
   const changed =
-    chosen.length !== savedCalendarIds.length ||
-    chosen.some((id) => !savedCalendarIds.includes(id)) ||
+    calendarsChanged ||
     meetingUrl !== (service.online_meeting_url ?? '') ||
     meetingInfo !== (service.online_meeting_info ?? '') ||
     instructions !== savedInstructions;
@@ -125,8 +135,8 @@ export function MemberServiceSheet({
     const acknowledge = needsAck;
     const body: MemberServiceSettingsBody = {
       id: service.id,
-      practitioner_ids: chosen,
-      expected_calendar_ids: expectedCalendarIds,
+      // Only what changes, and only when something does (CQ-06).
+      ...(calendarsChanged ? { calendars: { add: added, remove: removed } } : {}),
       ...(isOnline ? { online_meeting_url: meetingUrl, online_meeting_info: meetingInfo } : {}),
       // Only when changed: a calendar-only save sends nothing else.
       ...(instructions !== savedInstructions ? { pre_appointment_instructions: instructions } : {}),
@@ -255,12 +265,12 @@ export function MemberServiceSheet({
           <Text variant="caption" tone="muted">
             {areaCopy('svc.member.view.calendarsHelp', { service: service.name, collective: block.collective_name })}
           </Text>
-          {calendars.length === 0 ? (
+          {activeCalendars.length + switchedOffCalendars.length === 0 ? (
             <Text variant="bodySmall" tone="secondary">
               {areaCopy('svc.member.card.noCalendars')}
             </Text>
           ) : (
-            calendars.map((calendar) => (
+            activeCalendars.map((calendar) => (
               <View key={calendar.id} style={[styles.calendarRow, { borderColor: colors.border, backgroundColor: colors.surface }]}>
                 <Text variant="bodySmall" numberOfLines={1} style={styles.flex1}>
                   {calendar.name}
@@ -286,6 +296,50 @@ export function MemberServiceSheet({
               </View>
             ))
           )}
+          {switchedOffCalendars.map((calendar) => {
+            const staged = removing.includes(calendar.id);
+            return (
+              <View key={calendar.id} style={[styles.calendarRow, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+                <View style={styles.flex1}>
+                  <Text variant="bodySmall" numberOfLines={1}>
+                    {`${calendar.name} `}
+                    <Text variant="bodySmall" tone="muted">
+                      {areaCopy('svc.member.view.switchedOff')}
+                    </Text>
+                  </Text>
+                  {staged ? (
+                    <Text variant="caption" color={colors.warning}>
+                      {areaCopy('svc.cal.notSaved.remove')}
+                    </Text>
+                  ) : null}
+                </View>
+                {staged ? (
+                  <Button
+                    label={areaCopy('svc.member.view.keep')}
+                    variant="ghost"
+                    size="sm"
+                    disabled={saving}
+                    accessibilityLabel={areaCopy('svc.member.view.keepFor', { calendar: calendar.name })}
+                    onPress={() => setRemoving((prev) => prev.filter((id) => id !== calendar.id))}
+                  />
+                ) : (
+                  <Button
+                    label={areaCopy('svc.member.view.remove')}
+                    variant="ghost"
+                    size="sm"
+                    disabled={retired || saving}
+                    accessibilityLabel={areaCopy('svc.member.view.removeFor', { calendar: calendar.name })}
+                    onPress={() => setRemoving((prev) => [...prev, calendar.id])}
+                  />
+                )}
+              </View>
+            );
+          })}
+          {switchedOffCalendars.length > 0 ? (
+            <Text variant="caption" tone="muted">
+              {areaCopy('svc.member.view.switchedOffHelp', { service: service.name })}
+            </Text>
+          ) : null}
         </View>
 
         {isOnline ? (

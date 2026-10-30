@@ -39,7 +39,8 @@ describe('the invite checklist', () => {
     expect(inviteLinkWords(need({ state: 'my_request' }), 'Light 3')).toBe('Linked with Light 3 when they join.');
     expect(inviteLinkWords(need({ state: 'full' }), 'Light 3')).toBe('Linked.');
     expect(inviteLinkWords(need({ state: 'not_full' }), 'Light 3')).toBe(
-      'Your link with Light 3 gives less than full access both ways. Change it in Linked Accounts, or they cannot join.',
+      // The app's name for Linked Accounts (CQ-10.11, app-place-names.ts).
+      'Your link with Light 3 gives less than full access both ways. Change it in Linked venues, or they cannot join.',
     );
   });
 

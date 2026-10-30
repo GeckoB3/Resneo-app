@@ -28,7 +28,7 @@ describe('the join links checklist', () => {
   });
 
   it('reads every link joining makes as linked when you join, and only one with less access as needing a change', () => {
-    expect(joinLinkStateWords('full')).toBe('Already linked');
+    expect(joinLinkStateWords('full')).toBe('Already linked at full access');
     expect(joinLinkStateWords('their_request')).toBe('Linked when you join');
     expect(joinLinkStateWords('my_request')).toBe('Linked when you join');
     expect(joinLinkStateWords('none')).toBe('Linked when you join');

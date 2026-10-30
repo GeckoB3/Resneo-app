@@ -1,4 +1,4 @@
-import { memberSummaryIntro } from '@/lib/linked/collective-membership-copy';
+import { isSharedServices, memberSummaryIntro } from '@/lib/linked/collective-membership-copy';
 import { CollectiveBookingSettingsSummary } from '@/components/linked/CollectiveBookingSettingsSummary';
 import { collectiveSettingsCopy } from '@/lib/linked/collective-settings-copy';
 import { useMemo } from 'react';
@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { areaCopy } from '@/lib/collective-area/copy';
 import { useCollectiveCatalogue } from '@/lib/queries/useCollectives';
 import { spacing } from '@/theme/index';
 import type { CollectiveView } from '@/types/collectives';
@@ -22,14 +23,23 @@ import type { CollectiveView } from '@/types/collectives';
  * shows, this venue's calendars on the page with the offerings each provides,
  * and where to go to leave. Members are never shown host controls; the API
  * refuses them anyway.
+ *
+ * On shared services (CQ-10.6) the venue and the host each choose the venue's calendars, and the
+ * venue leaves at the foot of Manage Collective, so the card says that and opens Manage Collective.
+ * An older collective keeps its words and Linked venues.
  */
 export function CombinedPageMemberSummary({
   collective,
+  onOpenManageCollective,
   onOpenLinkedVenues,
 }: {
   collective: CollectiveView;
+  /** Shared services: Manage Collective, where the calendars are chosen and Leave is. */
+  onOpenManageCollective?: () => void;
+  /** An older collective: Linked venues, as before. */
   onOpenLinkedVenues?: () => void;
 }) {
+  const shared = isSharedServices(collective);
   const host =
     collective.members.find((m) => m.venueId === collective.hostVenueId)?.venueName ?? 'The host venue';
   const catalogueQuery = useCollectiveCatalogue(collective.id);
@@ -76,7 +86,9 @@ export function CombinedPageMemberSummary({
           </Text>
         ) : calendars.length === 0 ? (
           <Text variant="bodySmall" tone="secondary">
-            {`None of your calendars is offered on the combined page yet. ${host} chooses which calendars take part.`}
+            {shared
+              ? areaCopy('bp.member.calendarsNone', { collective: collective.name, host })
+              : `None of your calendars is offered on the combined page yet. ${host} chooses which calendars take part.`}
           </Text>
         ) : (
           <View style={styles.list}>
@@ -90,12 +102,35 @@ export function CombinedPageMemberSummary({
             ))}
           </View>
         )}
-        <Text variant="caption" tone="muted">
-          {`${host} chooses which calendars are offered. To stop taking part, leave the collective under Linked venues.`}
-        </Text>
-        {onOpenLinkedVenues ? (
-          <Button label="Open Linked venues" size="sm" variant="ghost" onPress={onOpenLinkedVenues} />
-        ) : null}
+        {shared ? (
+          <>
+            {calendars.length > 0 ? (
+              <Text variant="caption" tone="muted">
+                {areaCopy('bp.member.calendars', { host })}
+              </Text>
+            ) : null}
+            <Text variant="caption" tone="muted">
+              {areaCopy('bp.member.leaving', { collective: collective.name })}
+            </Text>
+            {onOpenManageCollective ? (
+              <Button
+                label={areaCopy('bp.manage.elsewhere.cta')}
+                size="sm"
+                variant="ghost"
+                onPress={onOpenManageCollective}
+              />
+            ) : null}
+          </>
+        ) : (
+          <>
+            <Text variant="caption" tone="muted">
+              {`${host} chooses which calendars are offered. To stop taking part, leave the collective under Linked venues.`}
+            </Text>
+            {onOpenLinkedVenues ? (
+              <Button label="Open Linked venues" size="sm" variant="ghost" onPress={onOpenLinkedVenues} />
+            ) : null}
+          </>
+        )}
       </Card>
 
       {/* Web collective booking settings plan §7.6: where the member's people on the page come from. */}

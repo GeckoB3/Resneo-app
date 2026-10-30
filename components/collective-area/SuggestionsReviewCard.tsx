@@ -13,7 +13,8 @@ import { refusalText, useCollectiveSuggestions, type WaitingSuggestion } from '@
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
-type Note = { tone: 'ok' | 'error'; text: string };
+/** `rows`: one "{service} at {venue}: {reason}" line per suggestion that did not go on (CQ-04). */
+type Note = { tone: 'ok' | 'error'; text: string; rows?: string[] };
 
 /**
  * The members' suggestions waiting for the host, answered all at once or a few at a time (owner,
@@ -86,8 +87,15 @@ export function SuggestionsReviewCard({
             return;
           }
           const nameOf = (id: string) => list.find((s) => s.service_id === id)?.service_name ?? 'A service';
-          const outcome = curateOutcome('add', results, (r) => nameOf(r.service_id), collectiveName);
-          setNote({ tone: outcome.tone, text: outcome.text });
+          const venueOf = (id: string) => list.find((s) => s.service_id === id)?.venue_name ?? 'a venue';
+          const outcome = curateOutcome(
+            'add',
+            results,
+            (r) => nameOf(r.service_id),
+            collectiveName,
+            (r) => venueOf(r.service_id),
+          );
+          setNote({ tone: outcome.tone, text: outcome.text, rows: outcome.rows });
           // Keep only the ones that did not go on, so they can be tried again.
           const failed = new Set(results.filter((r) => !r.ok).map((r) => r.service_id));
           setSelected(failed);
@@ -214,6 +222,11 @@ export function SuggestionsReviewCard({
               : { backgroundColor: colors.successSurface, borderColor: colors.success },
           ]}>
           <Text variant="bodySmall">{note.text}</Text>
+          {(note.rows ?? []).map((row, index) => (
+            <Text key={index} variant="caption">
+              {`• ${row}`}
+            </Text>
+          ))}
         </View>
       ) : null}
       <ConfirmSheet

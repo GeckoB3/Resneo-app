@@ -20,9 +20,10 @@ import { PressableScale } from '@/components/ui/PressableScale';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { collectiveHoldShort } from '@/lib/linked/collective-hold';
 import { summariseGrant } from '@/lib/linked/grants';
 import { setupCopy } from '@/lib/linked/setup-copy';
-import { terminationReasonLabel } from '@/lib/linked/linkStatus';
+import { pastLinkLine } from '@/lib/linked/linkStatus';
 import { useLinkedVenues, useMyCalendars, useRespondLink } from '@/lib/queries/useLinkedVenues';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useToast } from '@/providers/ToastProvider';
@@ -42,12 +43,15 @@ import {
 function LinkRow({
   title,
   subtitle,
+  note,
   status,
   isFirst,
   onPress,
 }: {
   title: string;
   subtitle?: string;
+  /** A second line, e.g. "Holds {collective} together" (CQ-01). */
+  note?: string | null;
   status?: AccountLinkView['status'];
   isFirst: boolean;
   onPress: () => void;
@@ -65,8 +69,14 @@ function LinkRow({
             {title}
           </Text>
           {subtitle ? (
-            <Text variant="caption" tone="muted" numberOfLines={1}>
+            // Two lines: an access summary or a Past reason with its date wraps (CQ-07, A8-21).
+            <Text variant="caption" tone="muted" numberOfLines={2}>
               {subtitle}
+            </Text>
+          ) : null}
+          {note ? (
+            <Text variant="caption" color={colors.warning} numberOfLines={2}>
+              {note}
             </Text>
           ) : null}
         </View>
@@ -197,6 +207,8 @@ export default function LinkedVenuesScreen() {
   const maxOutgoing = query.data?.maxOutgoingPending ?? 10;
   /** The collective invitation riding on a pending request, by link id (web plan L11). */
   const proposedCollectives = query.data?.proposedCollectives ?? {};
+  /** Each active link that holds this venue's collective together (CQ-01). */
+  const collectiveHolds = query.data?.collectiveHolds ?? {};
   const myVenue = query.data?.venue ?? null;
 
   useEffect(() => {
@@ -446,6 +458,7 @@ export default function LinkedVenuesScreen() {
               isFirst={i === 0}
               title={link.otherVenue.name}
               subtitle={summariseGrant(link.iCan)}
+              note={collectiveHolds[link.id] ? collectiveHoldShort(collectiveHolds[link.id]!) : null}
               status={link.status}
               onPress={() => router.push(`/linked-venues/${link.id}` as Href)}
             />
@@ -480,7 +493,7 @@ export default function LinkedVenuesScreen() {
               key={link.id}
               isFirst={i === 0}
               title={link.otherVenue.name}
-              subtitle={terminationReasonLabel(link.terminationReason) ?? undefined}
+              subtitle={pastLinkLine(link)}
               status={link.status}
               onPress={() => router.push(`/linked-venues/${link.id}` as Href)}
             />

@@ -6,6 +6,7 @@
  * web shows: the one-tap accept answers 409 `COLLECTIVE_CONSENT_REQUIRED`.
  */
 import { apiErrorCode } from '@/lib/api/client';
+import { areaCopy } from '@/lib/collective-area/copy';
 
 export const CONSENT_REQUIRED_CODE = 'COLLECTIVE_CONSENT_REQUIRED';
 
@@ -13,28 +14,24 @@ export function isConsentRequired(error: unknown): boolean {
   return apiErrorCode(error) === CONSENT_REQUIRED_CODE;
 }
 
-/** The web page where an invitation is accepted with its consent. */
-export const COLLECTIVE_JOIN_WEB_PATH = '/dashboard/settings?tab=linked-accounts';
-
-/** "2 active members · Light 3, Plus 1 Staging", with no trailing dot when nobody is left. */
+/**
+ * "2 active members · Light 3 (you), Plus 1 Staging", with no trailing dot when nobody is left. Your
+ * own venue reads "(you)", so it is never mistaken for a member of the same name, which the server
+ * names with its town (CQ-07, web VenueCollectivesPanel).
+ */
 export function collectiveMembersLine(collective: {
   activeMemberCount: number;
-  members: readonly { venueName: string }[];
+  members: readonly { venueName: string; venueId?: string }[];
+  myVenueId?: string;
 }): string {
   const count = `${collective.activeMemberCount} active ${collective.activeMemberCount === 1 ? 'member' : 'members'}`;
-  const names = collective.members.map((m) => m.venueName).filter(Boolean).join(', ');
+  const names = collective.members
+    .filter((m) => Boolean(m.venueName))
+    .map((m) =>
+      collective.myVenueId && m.venueId === collective.myVenueId ? areaCopy('svc.cal.venueYou', { venue: m.venueName }) : m.venueName,
+    )
+    .join(', ');
   return names ? `${count} · ${names}` : count;
-}
-
-export function joinOnWebCopy(collectiveName: string): { title: string; message: string; confirmLabel: string } {
-  return {
-    title: 'Open ResNeo on the web to join',
-    message:
-      `Joining ${collectiveName} means agreeing to how shared services, your booking page and your ` +
-      'clients work in a collective. That step is on the web: open Settings, then Linked Accounts, ' +
-      'and accept the invitation there.',
-    confirmLabel: 'Open ResNeo on the web',
-  };
 }
 
 export function isSharedServices(collective: { serviceModel?: string | null }): boolean {
@@ -55,13 +52,9 @@ export function hostSettingsNote(collective: { serviceModel?: string | null }, h
 /** What a member reads at the top of its combined-page summary. */
 export function memberSummaryIntro(collective: { name: string; serviceModel?: string | null }, hostName: string): string {
   return isSharedServices(collective)
-    ? `${hostName} hosts ${collective.name} and manages its booking page and the services on it, with their prices, lengths, deposits, options and forms, for every venue. You choose which of your calendars offer each one on your Services screen, and your own hours and closures decide when they are free.`
+    ? `${hostName} hosts ${collective.name} and manages its booking page and the services on it, with their prices, lengths, deposits, options and forms, for every venue. You and ${hostName} can each choose which of your calendars offer each one, in Manage Collective, and your own hours and closures decide when they are free.`
     : `${hostName} hosts ${collective.name} and manages its combined booking page: the services on it, which calendars are offered, its headings, photos and branding. Your services appear there with the price, length and availability set under your own Services settings.`;
 }
-
-/** Shared services: where the page's services and calendars are managed now. */
-export const SHARED_SERVICES_POINTER =
-  'On shared services, the services on the page are the ones marked Collective on your Services screen, and the calendars at every venue that offer them are chosen in Manage Collective. Each venue chooses its own calendars on its Services screen.';
 
 export function leaveCollectiveMessage(collective: { name: string; serviceModel?: string | null }): string {
   if (collective.serviceModel === 'replicas') {

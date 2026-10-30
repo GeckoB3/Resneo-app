@@ -55,7 +55,7 @@ describe('bannerItemsFromFeed (web plan §4)', () => {
       {
         id: 'invitation:c 1',
         kind: 'invitation',
-        text: 'Bright Cuts invited you to join Northside. Accepting links you with every venue in it and joins, in one step.',
+        text: 'Bright Cuts invited you to join Northside. Accepting links you with every venue in it at full access, and joins, in one step.',
         cta: 'Review invitation',
         href: '/collectives?join=c%201',
       },

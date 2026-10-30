@@ -6,6 +6,7 @@ import { EditPermissionsSheet } from '@/components/linked/EditPermissionsSheet';
 import { GrantBullets } from '@/components/linked/GrantBullets';
 import { ReviewLinkRequestSheet } from '@/components/linked/setup/ReviewLinkRequestSheet';
 import { LinkAuditView } from '@/components/linked/LinkAuditView';
+import { LinkBreakSheet, type LinkBreakMode, type LinkBreakView } from '@/components/linked/LinkBreakSheet';
 import { LinkStatusBadge } from '@/components/linked/LinkStatusBadge';
 import { ReduceAccessSheet } from '@/components/linked/ReduceAccessSheet';
 import { Button } from '@/components/ui/Button';
@@ -18,9 +19,19 @@ import { Screen } from '@/components/ui/Screen';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import {
+  breakFromHold,
+  collectiveHoldLine,
+  grantsHoldCollective,
+  linkBreakFromError,
+} from '@/lib/linked/collective-hold';
 import { describeGrant } from '@/lib/linked/grants';
 import { terminationReasonLabel } from '@/lib/linked/linkStatus';
-import { PAST_LINK_STATUSES } from '@/types/linked-venues';
+import {
+  PAST_LINK_STATUSES,
+  type CollectiveBreakAcknowledgement,
+  type LinkCollectiveBreak,
+} from '@/types/linked-venues';
 import {
   useLinkedVenues,
   useMyCalendars,
@@ -61,8 +72,21 @@ export default function LinkedVenueDetailScreen() {
   const [reduceOpen, setReduceOpen] = useState(false);
   const [auditOpen, setAuditOpen] = useState(false);
   const [declineChangeOpen, setDeclineChangeOpen] = useState(false);
+  /**
+   * Unlink or Accept change on a link that holds a collective together (CQ-01): who leaves, before
+   * anything is confirmed. Opened from the link's hold, or from the server's 409 when it knew of a
+   * hold the list did not; `error` is the server's sentence when the plan moved after it was shown.
+   */
+  const [breakSheet, setBreakSheet] = useState<{
+    mode: LinkBreakMode;
+    info: LinkCollectiveBreak;
+    error: string | null;
+    initialView?: LinkBreakView;
+  } | null>(null);
 
   const link = (query.data?.links ?? []).find((l) => l.id === linkId) ?? null;
+  const myVenueId = query.data?.venue.id ?? '';
+  const hold = link ? (query.data?.collectiveHolds?.[link.id] ?? null) : null;
 
   if (!staffQuery.isLoading && !isAdmin) {
     return (
@@ -111,16 +135,45 @@ export default function LinkedVenueDetailScreen() {
 
   const busy = respond.isPending || unlink.isPending;
 
-  const handleUnlink = () => {
-    unlink.mutate(link.id, {
-      onSuccess: () => {
-        toast.success(`Unlinked from ${name}.`);
-        setUnlinkOpen(false);
-        router.back();
+  /** A refused link change that takes a venue out of a collective: show who, and ask again (CQ-01). */
+  const showBreak = (mode: LinkBreakMode, err: unknown, acknowledged: boolean): boolean => {
+    const refused = linkBreakFromError(err);
+    if (!refused) return false;
+    // The first refusal is expected when the warning was not shown; a second means the plan moved.
+    const next = { mode, info: refused.info, error: acknowledged ? refused.message : null };
+    if (unlinkOpen) {
+      // The plain confirm was open (the list did not know of the hold): let it close before the
+      // warning opens, since iOS can refuse to present a sheet while another is going away.
+      setUnlinkOpen(false);
+      setTimeout(() => setBreakSheet(next), 400);
+    } else {
+      setBreakSheet(next);
+    }
+    return true;
+  };
+
+  const handleUnlink = (acknowledge: CollectiveBreakAcknowledgement | null = null) => {
+    unlink.mutate(
+      { linkId: link.id, acknowledge },
+      {
+        onSuccess: () => {
+          toast.success(`Unlinked from ${name}.`);
+          setUnlinkOpen(false);
+          setBreakSheet(null);
+          router.back();
+        },
+        onError: (err) => {
+          if (showBreak('unlink', err, acknowledge !== null)) return;
+          toast.error(err instanceof ApiError ? err.message : 'Could not unlink.');
+        },
       },
-      onError: (err) =>
-        toast.error(err instanceof ApiError ? err.message : 'Could not unlink.'),
-    });
+    );
+  };
+
+  const openUnlink = () => {
+    // A link that holds a collective together says what unlinking does to it (CQ-01).
+    if (hold) setBreakSheet({ mode: 'unlink', info: breakFromHold(hold, 'ifIChange'), error: null });
+    else setUnlinkOpen(true);
   };
 
   const handleCancel = () => {
@@ -138,15 +191,30 @@ export default function LinkedVenueDetailScreen() {
     );
   };
 
-  const handleAcceptChange = () => {
+  const handleAcceptChange = (acknowledge: CollectiveBreakAcknowledgement | null = null) => {
     respond.mutate(
-      { linkId: link.id, action: 'accept_change' },
+      { linkId: link.id, action: 'accept_change', acknowledge },
       {
-        onSuccess: () => toast.success('Permission change accepted.'),
-        onError: (err) =>
-          toast.error(err instanceof ApiError ? err.message : 'Failed to update link.'),
+        onSuccess: () => {
+          toast.success('Permission change accepted.');
+          setBreakSheet(null);
+        },
+        onError: (err) => {
+          if (showBreak('accept', err, acknowledge !== null)) return;
+          toast.error(err instanceof ApiError ? err.message : 'Failed to update link.');
+        },
       },
     );
+  };
+
+  const openAcceptChange = () => {
+    // Accepting a change that takes the link below full access asks first; anything else stays one tap.
+    const pc = link.pendingChange;
+    if (hold && pc && !grantsHoldCollective(pc.iCan, pc.theyCan)) {
+      setBreakSheet({ mode: 'accept', info: breakFromHold(hold, 'ifTheyChange'), error: null });
+    } else {
+      handleAcceptChange();
+    }
   };
 
   const handleDeclineChange = () => {
@@ -185,6 +253,14 @@ export default function LinkedVenueDetailScreen() {
         <Text variant="title">{name}</Text>
         <LinkStatusBadge status={link.status} />
       </View>
+
+      {hold && isActive ? (
+        <View
+          testID="collective-hold-line"
+          style={[styles.banner, { backgroundColor: colors.warningSurface, borderColor: colors.warning }]}>
+          <Text variant="bodySmall">{collectiveHoldLine(hold, myVenueId)}</Text>
+        </View>
+      ) : null}
 
       {link.status === 'suspended' ? (
         <View style={[styles.banner, { backgroundColor: colors.warningSurface, borderColor: colors.warning }]}>
@@ -225,7 +301,7 @@ export default function LinkedVenueDetailScreen() {
                 style={styles.flex1}
                 disabled={busy}
                 loading={respond.isPending && respond.variables?.action === 'accept_change'}
-                onPress={handleAcceptChange}
+                onPress={openAcceptChange}
               />
               <Button
                 label="Decline change"
@@ -314,7 +390,7 @@ export default function LinkedVenueDetailScreen() {
             fullWidth
             disabled={busy}
             loading={unlink.isPending}
-            onPress={() => setUnlinkOpen(true)}
+            onPress={openUnlink}
           />
         </View>
       ) : null}
@@ -367,9 +443,27 @@ export default function LinkedVenueDetailScreen() {
         cancelLabel="Cancel"
         destructive
         loading={unlink.isPending}
-        onConfirm={handleUnlink}
+        onConfirm={() => handleUnlink()}
         onClose={() => setUnlinkOpen(false)}
       />
+
+      {breakSheet ? (
+        <LinkBreakSheet
+          key={`${breakSheet.mode}-${breakSheet.initialView ?? 'change'}`}
+          visible
+          mode={breakSheet.mode}
+          otherVenueId={link.otherVenue.id}
+          otherVenueName={name}
+          myVenueId={myVenueId}
+          info={breakSheet.info}
+          busy={breakSheet.mode === 'unlink' ? unlink.isPending : respond.isPending}
+          error={breakSheet.error}
+          initialView={breakSheet.initialView}
+          onClose={() => setBreakSheet(null)}
+          onConfirm={(ack) => (breakSheet.mode === 'unlink' ? handleUnlink(ack) : handleAcceptChange(ack))}
+          onRemoved={() => void query.refetch()}
+        />
+      ) : null}
 
       <ConfirmSheet
         visible={cancelOpen}
@@ -388,6 +482,9 @@ export default function LinkedVenueDetailScreen() {
         visible={editOpen}
         myCalendars={myCalendars}
         onClose={() => setEditOpen(false)}
+        myVenueId={myVenueId}
+        hold={hold}
+        onRemoved={() => void query.refetch()}
       />
 
       <ReduceAccessSheet
@@ -395,6 +492,9 @@ export default function LinkedVenueDetailScreen() {
         visible={reduceOpen}
         myCalendars={myCalendars}
         onClose={() => setReduceOpen(false)}
+        myVenueId={myVenueId}
+        hold={hold}
+        onRemoved={() => void query.refetch()}
       />
 
       <ConfirmSheet

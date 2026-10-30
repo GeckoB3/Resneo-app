@@ -7,6 +7,7 @@ import { useRouter, type Href } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Switch, View } from 'react-native';
 
+import { LeaveCollectiveSheet } from '@/components/linked/LeaveCollectiveSheet';
 import { Badge, type BadgeTone } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -55,11 +56,14 @@ export function TodoStrip({
   onOpenService,
   onOpenVenue,
   onRetry,
+  onSwitchOn,
 }: {
   todos: CollectiveTodo[];
   onOpenService?: (serviceId: string) => void;
   onOpenVenue?: (venueId: string) => void;
   onRetry?: (venueId: string) => void;
+  /** A page service switched off at the host goes back on (CQ-13). */
+  onSwitchOn?: (serviceId: string) => void;
 }) {
   const { colors } = useTheme();
   const router = useRouter();
@@ -81,7 +85,9 @@ export function TodoStrip({
                   ? () => onOpenVenue(action.venueId)
                   : action.kind === 'retry' && onRetry
                     ? () => onRetry(action.venueId)
-                    : null;
+                    : action.kind === 'switch_on' && onSwitchOn
+                      ? () => onSwitchOn(action.serviceId)
+                      : null;
         return (
           <View key={todo.id} style={styles.todoRow}>
             <Text variant="bodySmall">{todo.text}</Text>
@@ -432,29 +438,22 @@ export function EndCollectiveCard({
 /**
  * A member leaves from here (2026-10-28): while the venue is in a live collective the More tab
  * shows one collective row, Manage Collective, rather than that and Venue collectives side by side,
- * so leaving has to be reachable from the area itself. The sheet's error shows inside it.
+ * so leaving has to be reachable from the area itself. The sheet is the one leave sheet (CQ-10.1):
+ * what leaving changes, the last-member warning, then the review on Venue collectives.
  */
 export function LeaveCollectiveCard({
   collectiveId,
   collectiveName,
-  hostName,
   onLeft,
 }: {
   collectiveId: string;
   collectiveName: string;
-  hostName: string;
+  /** Kept for callers; the sheet reads the host's name with what leaving changes. */
+  hostName?: string;
   onLeft: () => void;
 }) {
   const { colors } = useTheme();
-  const patch = useCollectiveMembersPatch(collectiveId);
   const [open, setOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const close = () => {
-    if (patch.isPending) return;
-    setOpen(false);
-    setError(null);
-  };
 
   return (
     <Card style={[styles.endCard, { borderColor: colors.border }]}>
@@ -464,41 +463,12 @@ export function LeaveCollectiveCard({
         customColors={{ background: colors.surfaceRaised, text: colors.danger, border: colors.danger }}
         onPress={() => setOpen(true)}
       />
-      <Sheet visible={open} onClose={close}>
-        <View style={styles.sheetBody}>
-          <Text variant="subheading">{areaCopy('leave.title', { collective: collectiveName })}</Text>
-          <Text variant="bodySmall" tone="secondary">
-            {areaCopy('leave.message', { host: hostName })}
-          </Text>
-          {error ? (
-            <Text variant="bodySmall" tone="danger" accessibilityRole="alert">
-              {error}
-            </Text>
-          ) : null}
-          <Button
-            label={areaCopy('leave.confirm', { collective: collectiveName })}
-            variant="danger"
-            fullWidth
-            disabled={patch.isPending}
-            loading={patch.isPending}
-            onPress={() => {
-              setError(null);
-              patch.mutate(
-                { action: 'leave' },
-                {
-                  onSuccess: () => {
-                    setOpen(false);
-                    onLeft();
-                  },
-                  onError: (err) =>
-                    setError(err instanceof ApiError ? err.message : 'That did not go through. Please try again.'),
-                },
-              );
-            }}
-          />
-          <Button label="Go back" variant="secondary" fullWidth disabled={patch.isPending} onPress={close} />
-        </View>
-      </Sheet>
+      <LeaveCollectiveSheet
+        collective={{ id: collectiveId, name: collectiveName, serviceModel: 'replicas' }}
+        visible={open}
+        onClose={() => setOpen(false)}
+        onLeft={onLeft}
+      />
     </Card>
   );
 }

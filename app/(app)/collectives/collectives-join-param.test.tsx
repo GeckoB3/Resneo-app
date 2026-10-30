@@ -19,6 +19,8 @@ jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn(async () => und
 
 // The sheets themselves are tested elsewhere: here only which one opens, and for what.
 jest.mock('@/components/linked/CreateCollectiveSheet', () => ({ CreateCollectiveSheet: () => null }));
+jest.mock('@/components/linked/LeaveCollectiveSheet', () => ({ LeaveCollectiveSheet: () => null }));
+jest.mock('@/components/services/collective/ReleaseReviewCard', () => ({ ReleaseReviewCard: () => null }));
 jest.mock('@/components/linked/setup/CollectiveSetupSheet', () => ({ CollectiveSetupSheet: () => null }));
 jest.mock('@/components/linked/setup/JoinCollectiveSheet', () => {
   const React = require('react');

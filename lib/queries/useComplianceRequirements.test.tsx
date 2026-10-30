@@ -26,6 +26,7 @@ import {
   useVenueWideComplianceRequirements,
   useVenueWideRequirementNames,
 } from '@/lib/queries/useComplianceRequirements';
+import { queryKeys } from '@/lib/queries/keys';
 
 function makeWrapper() {
   const client = new QueryClient({
@@ -202,5 +203,50 @@ describe('useDeleteComplianceRequirement', () => {
     const [path, opts] = mockApiFetch.mock.calls[0]!;
     expect(path).toBe('/api/venue/compliance/requirements/r1');
     expect((opts as { method: string }).method).toBe('DELETE');
+  });
+});
+
+// CQ-02 (regression): a form change on a page service now reaches every venue at once, so the
+// services and the collective area are read again; before, only the requirement lists were.
+describe('after a requirement change', () => {
+  const keysInvalidated = async (run: (client: QueryClient) => Promise<unknown>) => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    const spy = jest.spyOn(client, 'invalidateQueries');
+    await run(client);
+    return spy.mock.calls.map(([filters]) => JSON.stringify((filters as { queryKey?: unknown }).queryKey));
+  };
+  const wrapperFor = (client: QueryClient) =>
+    function Wrapper({ children }: { children: ReactNode }) {
+      return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    };
+  const expectServicesAndArea = (keys: string[]) => {
+    expect(keys).toContain(JSON.stringify(queryKeys.compliance.all()));
+    expect(keys).toContain(JSON.stringify(queryKeys.services.all()));
+    expect(keys).toContain(JSON.stringify(queryKeys.collectives.all()));
+    expect(keys).toContain(JSON.stringify(queryKeys.staffCollective.all()));
+  };
+
+  it('reads the services and the collective area again after an add', async () => {
+    mockApiFetch.mockResolvedValueOnce({ requirement: { id: 'r1' } });
+    const keys = await keysInvalidated(async (client) => {
+      const { result } = await renderHook(() => useAddComplianceRequirement(), { wrapper: wrapperFor(client) });
+      await result.current.mutateAsync({ service_id: 'svc-1', compliance_type_id: 'type-1', enforcement: 'block_online' });
+    });
+    expectServicesAndArea(keys);
+  });
+
+  it('and after a change and a removal', async () => {
+    mockApiFetch.mockResolvedValueOnce({ requirement: { id: 'r1' } });
+    const patched = await keysInvalidated(async (client) => {
+      const { result } = await renderHook(() => useUpdateComplianceRequirement(), { wrapper: wrapperFor(client) });
+      await result.current.mutateAsync({ id: 'r1', enforcement: 'warn_client' });
+    });
+    expectServicesAndArea(patched);
+    mockApiFetch.mockResolvedValueOnce({ success: true });
+    const removed = await keysInvalidated(async (client) => {
+      const { result } = await renderHook(() => useDeleteComplianceRequirement(), { wrapper: wrapperFor(client) });
+      await result.current.mutateAsync('r1');
+    });
+    expectServicesAndArea(removed);
   });
 });

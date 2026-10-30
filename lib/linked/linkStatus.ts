@@ -41,3 +41,22 @@ export function terminationReasonLabel(reason: LinkTerminationReason | null): st
       return null;
   }
 }
+
+/**
+ * A Past link's line in the list: "{reason} on {date}", from when it ended (CQ-07, A8-21: two links
+ * with one venue read apart). Without a reason, "Ended {date}", as the link's own screen says.
+ */
+export function pastLinkLine(link: {
+  terminationReason: LinkTerminationReason | null;
+  terminatedAt: string | null;
+  respondedAt: string | null;
+}): string | undefined {
+  const reason = terminationReasonLabel(link.terminationReason);
+  const iso = link.terminatedAt ?? link.respondedAt;
+  const d = iso ? new Date(iso) : null;
+  const date =
+    d && !Number.isNaN(d.getTime()) ? d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : null;
+  if (reason && date) return `${reason} on ${date}`;
+  if (date) return `Ended ${date}`;
+  return reason ?? undefined;
+}

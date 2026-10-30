@@ -6,6 +6,8 @@ import { IconButton } from '@/components/ui/IconButton';
 import { SearchBar } from '@/components/ui/SearchBar';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { setupCopy } from '@/lib/linked/setup-copy';
+import { venueNotFoundLine, venueWhereLine } from '@/lib/linked/venue-where';
 import { useVenueLookup, useVenueSearch } from '@/lib/queries/useLinkedVenues';
 import { minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -45,13 +47,27 @@ function ResultRow({
         <Text variant="bodyMedium" numberOfLines={1}>
           {result.name}
         </Text>
+        {/* "Holywood · /book/aura-2": two venues of one name read apart (CQ-07, R1-12). */}
         <Text variant="caption" tone="muted" numberOfLines={1}>
-          {`/${result.slug}`}
+          {venueWhereLine(result) ?? `/book/${result.slug}`}
         </Text>
+        {result.collective_name ? (
+          <Text variant="caption" tone="muted" numberOfLines={1}>
+            {setupCopy('setup.venue.onPage', { collective: result.collective_name })}
+          </Text>
+        ) : null}
       </View>
-      <Text variant="caption" color={result.eligible ? colors.success : colors.textMuted}>
-        {result.eligible ? 'Available' : 'Unavailable'}
-      </Text>
+      <View style={styles.availability}>
+        <Text variant="caption" color={result.eligible ? colors.success : colors.textMuted}>
+          {result.eligible ? 'Available' : 'Unavailable'}
+        </Text>
+        {/* Why not, under Unavailable (CQ-09, W6-05). */}
+        {!result.eligible && result.reason ? (
+          <Text variant="caption" tone="muted" numberOfLines={3} style={styles.reason}>
+            {result.reason}
+          </Text>
+        ) : null}
+      </View>
     </Pressable>
   );
 }
@@ -168,7 +184,7 @@ export function VenuePicker({
 
         {noResults && !lookup.isFetching && !lookupVenue ? (
           <Text variant="bodySmall" tone="muted">
-            No venues found. Check the name or ask them for their booking-page address.
+            {venueNotFoundLine(search.data?.query_kind)}
           </Text>
         ) : null}
 
@@ -195,7 +211,7 @@ export function VenuePicker({
                 {lookupVenue.name}
               </Text>
               <Text variant="caption" tone="muted" numberOfLines={1}>
-                {`/${lookupVenue.slug}`}
+                {`/book/${lookupVenue.slug}`}
               </Text>
             </View>
             <SymbolView
@@ -260,6 +276,13 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.base,
     minHeight: minTouchTarget,
+  },
+  availability: {
+    alignItems: 'flex-end',
+    maxWidth: '45%',
+  },
+  reason: {
+    textAlign: 'right',
   },
   flex1: {
     flex: 1,
