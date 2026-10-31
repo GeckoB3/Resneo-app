@@ -15,6 +15,17 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ---
 
+## Unreleased OTA, iOS 1.3.0 / Android 1.3.0: link wizard friction (needs web staging `6a816a4c` live first)
+
+From `dea046b`. JS only. Checks in the 2026-10-31 run in `Docs/GO_LIVE_CHECK.md`.
+
+- **Level step:** nothing is picked until you choose, and it says why a shared page is not possible with this venue.
+- **Already linked or asked:** the message fits, with Edit permissions where the link needs widening and Review their request where they asked you.
+- **Request limit:** Link a venue is held at 10 waiting requests, with the reason under it.
+- **Hosts:** a new step, "Bring {venue} onto the {collective} page?", with Just link for now or Also invite them.
+
+---
+
 ## OTA on iOS 1.3.0 / Android 1.3.0, 2026-10-30: collectives QA fixes
 
 Published by the owner after the web merge of 2026-10-30 (`88e5a396`, PR #241, the same tree as staging `58b3c83d`): iOS group `4217d6fa-3d3e-4296-87f8-abf20d769687` and Android group `82f2efc4-77e1-4a83-90cb-c7e686640ba6`. From `e12e365..2a67fb0` (`d83a7cf`, `e0ba822`, `2a67fb0`). JS only. Checks in the 2026-10-30 run in `Docs/GO_LIVE_CHECK.md`.

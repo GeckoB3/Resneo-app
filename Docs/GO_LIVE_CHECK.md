@@ -1,5 +1,69 @@
 # Go-live check — Resneo app
 
+## Run 2026-10-31: link wizard friction (CQ-17), iOS 1.3.0 and Android 1.3.0, from `dea046b`
+
+**Scope:** `2a67fb0..dea046b`: `dea046b` is the code; `29989c3` and `e7e6f54` are this file and the changelog. `CHANGELOG.md` has it under "Unreleased OTA" at the top.
+
+**Verdict: clear to publish, one update per platform (see Publish), once the web is live on production (see Web).** Nothing native moved.
+
+### 1. Version and reach
+
+| Check | Result |
+|---|---|
+| Published tip | iOS `4217d6fa` and Android `82f2efc4`, runtime 1.3.0 (`update:list --branch production`) |
+| Store binaries | `build:list --profile production`: iOS 1.3.0 build 27 and Android 1.3.0 build 19, from `7a5de9a` (2026-10-18). No newer store build |
+| Runtime | `app.json` root `version` and `android.version` 1.3.0, `appVersion` policy: the update reaches the 1.3.0 installs |
+
+### 2. Nothing native moved
+
+`git diff 2a67fb0 dea046b` over `package.json`, `package-lock.json`, `app.json`, `app.config.js`, `eas.json`, `metro.config.js`, `babel.config.js`, `modules`, `patches`, `plugins`, `ios` and `android`: empty.
+
+### 3. Verified on this machine
+
+- At `dea046b`: `tsc --noEmit` clean. `jest`: **636 suites / 6,072 tests pass**. `expo lint`: 0 errors, 672 warnings (671 at the last run). GitHub Actions `verify` passed.
+- EAS `production` environment (`eas env:list production`): `EXPO_PUBLIC_API_URL` www.resneo.com, `EXPO_PUBLIC_SUPABASE_URL` njualfobtudvlugqkqho (live), publishable keys and the Sentry DSN set; unchanged.
+- Cleared-cache export under `eas env:exec production` (`npx expo export --clear --platform all`), both Hermes bundles (iOS 14.9 MB, Android 15.1 MB). Counts:
+
+| Marker | iOS | Android |
+|---|---|---|
+| live Supabase URL / `www.resneo.com` / `pk_live_` | 1 / 1 / 1 | 1 / 1 / 1 |
+| `zkppmyyvkjvbsvemakbb` / `pk_test_` | none | none |
+| `192.168.` / `10.0.2.2` | none / none | none / none |
+| `reserve-ni.vercel.app` | once: the `getWebUrl()` fallbacks | same |
+| `localhost:3000` | once: expo-router's `head/url.js` fallback | none |
+| `localhost:8081` | once: React Native's `getDevServer` fallback | same |
+| `TERMINAL_SIMULATED` / `ALLOW_SCREENSHOTS` | none / none | none / none |
+| New code: "Choose how closely you will work together", "Bring {venue} onto the {collective} page?", "Also invite them to {collective}", "Review their request", "No shared page with {venue}" | each present | each present |
+| Gone: `DEFAULT_LINK_LEVEL` | none | none |
+
+### 4. Web
+
+**Not live on production at the time of writing.** The update needs web `staging` at `6a816a4c` or later (CI green) merged to `main` and deployed. No migration. On an older server the level step still has no default, but the new messages and the host's invite step do not appear, and sending `inviteTo` would be ignored, so a host's invitation would silently not go.
+
+### 5. Device testing
+
+Android, Expo Go against the local web server, 2026-10-31, as light3 (member): the same-collective line; the member's level line with no shared-page step; a request sent, the "already asked" line with the app's screen names, and the request cancelled.
+
+The web half was tested as aura@resneo.com, including the host's invite to a real venue (one pending link, one invited row, one notice) and Cancel request closing the invitation.
+
+**Not tested:** an iPhone; the store binaries; the host's invite step in the app (the phone was light3); Review their request; the request limit; Edit permissions from the "link needs widening" line; an accept that links and joins. Those rest on jest.
+
+### 6. Publish
+
+Run from `C:\Resneo-app` on a clean `main` at this record's commit (`eas.json` requires a commit):
+
+```
+npx eas-cli update --channel production --platform ios --environment production --clear-cache --message "Link wizard: no default level, clearer messages, invite from the wizard"
+npx eas-cli update --channel production --platform android --environment production --clear-cache --message "Link wizard: no default level, clearer messages, invite from the wizard"
+```
+
+To roll back, republish the 2026-10-30 groups:
+`npx eas-cli update:republish --group 4217d6fa-3d3e-4296-87f8-abf20d769687 --message "Roll back"` (iOS) and `npx eas-cli update:republish --group 82f2efc4-77e1-4a83-90cb-c7e686640ba6 --message "Roll back"` (Android).
+
+After publishing, retitle the changelog entry as published with the two groups, and watch Sentry for new crashes over the next day.
+
+---
+
 ## Run 2026-10-30: collectives QA fixes (OTA A and B together), iOS 1.3.0 and Android 1.3.0, from `2a67fb0`
 
 **Scope:** `e12e365..2a67fb0`, three commits:
