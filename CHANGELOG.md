@@ -15,9 +15,9 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ---
 
-## Unreleased OTA, iOS 1.3.0 / Android 1.3.0: link wizard friction (needs web staging `6a816a4c` live first)
+## OTA on iOS 1.3.0 / Android 1.3.0, 2026-10-31: link wizard friction
 
-From `dea046b`. JS only. Checks in the 2026-10-31 run in `Docs/GO_LIVE_CHECK.md`.
+Published by the owner after the web merge of 2026-10-31 (`58245b75`, PR #242, the same tree as staging `6a816a4c`): iOS group `10913c22-76d4-4d93-a194-1a85162d6c22` and Android group `ddeff9c0-2f85-4e32-b188-c74df2aaca1b`. From `dea046b`. JS only. Checks in the 2026-10-31 run in `Docs/GO_LIVE_CHECK.md`.
 
 - **Level step:** nothing is picked until you choose, and it says why a shared page is not possible with this venue.
 - **Already linked or asked:** the message fits, with Edit permissions where the link needs widening and Review their request where they asked you.
