@@ -15,9 +15,9 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ---
 
-## Unreleased OTA, iOS 1.3.0 / Android 1.3.0: collectives QA fixes (needs web staging `58b3c83d` live first)
+## OTA on iOS 1.3.0 / Android 1.3.0, 2026-10-30: collectives QA fixes
 
-From `e12e365..2a67fb0` (`d83a7cf`, `e0ba822`, `2a67fb0`). JS only. Checks in the 2026-10-30 run in `Docs/GO_LIVE_CHECK.md`.
+Published by the owner after the web merge of 2026-10-30 (`88e5a396`, PR #241, the same tree as staging `58b3c83d`): iOS group `4217d6fa-3d3e-4296-87f8-abf20d769687` and Android group `82f2efc4-77e1-4a83-90cb-c7e686640ba6`. From `e12e365..2a67fb0` (`d83a7cf`, `e0ba822`, `2a67fb0`). JS only. Checks in the 2026-10-30 run in `Docs/GO_LIVE_CHECK.md`.
 
 - **Links and joining:** a link that holds a collective says so, and Unlink, Reduce access, Edit permissions and Accept change warn who leaves, with Remove or Leave instead. Joining says what it gives. Pasted booking addresses find the venue.
 - **Leaving:** one leave sheet with a preview and the last-member warning.
