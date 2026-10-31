@@ -3,7 +3,7 @@
  *
  * The copy decks (`lib/linked/setup-copy.ts`, `lib/collective-area/copy.ts`) hold the web's sentences
  * word for word, so the two never drift. A few of those sentences name a web screen: "Linked
- * Accounts", "Settings, Payments", "Settings, Booking Page", "this tab" (the web's Linked Accounts
+ * Accounts", "Settings, Payments", "Settings, Booking Page", "Pending requests", "this tab" (the web's Linked Accounts
  * tab) or "your dashboard". In the app those places have other names, so `setupCopy` and `areaCopy`
  * swap each such phrase for the app's own, and this list is the only difference between the decks
  * and the web. A test checks that every phrase here is still in its sentence, so a web rewording that
@@ -27,10 +27,14 @@ export const APP_PLACE_NAMES: Readonly<Record<string, readonly PlaceSwap[]>> = {
   'join.block.linksLeft': [['in Linked Accounts', `in ${LINKED}`]],
   'join.links.openLinked': [['in Linked Accounts', `in ${LINKED}`]],
   'join.next.stripeFailed': [['in Settings, Payments', 'in More, Plan & payments']],
-  'setup.venue.alreadyLinked': [['use Create a collective on this tab', `use Create venue collective on ${VENUE_COLLECTIVES}`]],
+  'setup.venue.alreadyLinked': [['under Venue collectives', `on ${VENUE_COLLECTIVES}`]],
+  // The web's Pending requests section is Sent by you on the app's Linked venues screen.
+  'setup.venue.youAsked': [['under Pending requests', `under Sent by you on ${LINKED_SCREEN}`]],
+  'setup.limit': [['under Pending requests', 'under Sent by you']],
+  'create.refused.invited': [['in Settings, Linked Accounts', `on ${VENUE_COLLECTIVES}`]],
   'setup.collective.no.body': [['from this tab', `from ${VENUE_COLLECTIVES}`]],
   'setup.done.next.collective': [['a banner on your dashboard', 'a banner in the app']],
-  'setup.done.next.where': [['on this tab', `on ${LINKED_SCREEN}`]],
+  'setup.done.next.where': [['under Pending requests on this tab', `under Sent by you on ${LINKED_SCREEN}`]],
   'setup.done.next.watch': [['a notice on your dashboard and on this tab', `a notice in the app and on ${LINKED_SCREEN}`]],
   'respond.collective.linkOnly.note': [['stays open on this tab', `stays open on ${VENUE_COLLECTIVES}`]],
   'respond.done.joinFailed': [['from the collective’s row on this tab', `from ${VENUE_COLLECTIVES}`]],

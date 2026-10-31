@@ -8,9 +8,10 @@
  */
 import { render, screen } from '@testing-library/react-native';
 
-import type { VenueSearchResponse } from '@/types/linked-venues';
+import type { VenueLookupResponse, VenueSearchResponse } from '@/types/linked-venues';
 
 let mockSearch: VenueSearchResponse | undefined;
+let mockLookup: VenueLookupResponse | undefined;
 jest.mock('@/lib/queries/useLinkedVenues', () => ({
   useVenueSearch: () => ({
     data: mockSearch,
@@ -19,7 +20,7 @@ jest.mock('@/lib/queries/useLinkedVenues', () => ({
     isError: false,
     error: null,
   }),
-  useVenueLookup: () => ({ data: undefined, isFetching: false }),
+  useVenueLookup: () => ({ data: mockLookup, isFetching: false }),
 }));
 
 import { VenuePicker } from './VenuePicker';
@@ -66,5 +67,13 @@ describe('VenuePicker', () => {
     mockSearch = { truncated: false, results: [] };
     await render(picker);
     expect(screen.getAllByText('No venues found. Check the name, or ask them for their booking page address.').length).toBeGreaterThan(0);
+  });
+
+  it('says why not on a venue found by its address too (CQ-17.2)', async () => {
+    mockSearch = { truncated: false, results: [] };
+    mockLookup = { found: true, name: 'Light 3', slug: 'light-3', eligible: false, reason: 'You are already linked with this venue.' };
+    await render(picker);
+    expect(screen.getByText('Unavailable: You are already linked with this venue.')).toBeTruthy();
+    mockLookup = undefined;
   });
 });

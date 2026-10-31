@@ -213,6 +213,12 @@ export function VenuePicker({
               <Text variant="caption" tone="muted" numberOfLines={1}>
                 {`/book/${lookupVenue.slug}`}
               </Text>
+              {/* The same "why not" as a search row (CQ-17.2). */}
+              {!lookupVenue.eligible && lookupVenue.reason ? (
+                <Text variant="caption" tone="muted">
+                  {`Unavailable: ${lookupVenue.reason}`}
+                </Text>
+              ) : null}
             </View>
             <SymbolView
               name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}

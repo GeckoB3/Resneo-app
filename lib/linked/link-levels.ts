@@ -5,7 +5,7 @@
  * The permission model underneath has three dimensions per direction. A new owner does not think
  * in those terms, so the wizard asks one question, "how closely will you work together?", and maps
  * the answer onto the same grant for both directions. "Customise" opens the full editor, and a pair
- * that matches no preset reads back as `custom`.
+ * that matches no preset reads back as `custom`. Nothing is picked until the owner chooses (CQ-17.5).
  */
 import { normaliseGrant } from '@/lib/linked/grants';
 import type { LinkGrant } from '@/types/linked-venues';
@@ -55,8 +55,6 @@ export const LINK_LEVELS: readonly LinkLevel[] = [
     unlocksCollective: true,
   },
 ];
-
-export const DEFAULT_LINK_LEVEL: LinkLevelId = 'full';
 
 export function linkLevel(id: LinkLevelId): LinkLevel {
   return LINK_LEVELS.find((l) => l.id === id) ?? LINK_LEVELS[LINK_LEVELS.length - 1]!;

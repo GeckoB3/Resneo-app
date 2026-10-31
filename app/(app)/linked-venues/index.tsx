@@ -36,6 +36,9 @@ import {
   type LinkGrant,
 } from '@/types/linked-venues';
 
+/** iOS drops a Modal presented while another is still sliding away, so the wizard goes first. */
+const MODAL_SWAP_DELAY_MS = 400;
+
 // ---------------------------------------------------------------------------
 // Row
 // ---------------------------------------------------------------------------
@@ -196,15 +199,40 @@ export default function LinkedVenuesScreen() {
   const reviewParam = typeof params.review === 'string' ? params.review : null;
   const reviewHandledRef = useRef(false);
 
+  const links = useMemo<AccountLinkView[]>(() => query.data?.links ?? [], [query.data?.links]);
+  const maxOutgoing = query.data?.maxOutgoingPending ?? 10;
+  // The most requests a venue can have waiting: the server refuses another, so nothing opens (CQ-17.3).
+  const atRequestLimit = (query.data?.outgoingPendingCount ?? 0) >= maxOutgoing;
+
   // A verified invite resolves to a venue → open the request editor pre-filled.
   const handleInviteVerified = (venue: { slug: string; name: string }) => {
     setAcceptOpen(false);
+    // At the limit the wizard could only end in a refusal, so say so now (CQ-17.3).
+    if (atRequestLimit) {
+      toast.error(setupCopy('setup.limit', { max: maxOutgoing }));
+      return;
+    }
     setInvitePrefill(venue);
     setSendOpen(true);
   };
 
-  const links = useMemo<AccountLinkView[]>(() => query.data?.links ?? [], [query.data?.links]);
-  const maxOutgoing = query.data?.maxOutgoingPending ?? 10;
+  const closeWizard = () => {
+    setSendOpen(false);
+    setInvitePrefill(null);
+  };
+
+  // The wizard's "Review their request" (CQ-17.6): the same review target as `?review=`. A request
+  // that arrived after this list was read is fetched first; one withdrawn meanwhile is gone.
+  const handleReviewRequest = async (linkId: string) => {
+    closeWizard();
+    const isRequest = (l: AccountLinkView) => l.id === linkId && l.status === 'pending' && !l.initiatedByMe;
+    const match = links.find(isRequest) ?? (await query.refetch()).data?.links.find(isRequest);
+    if (!match) {
+      toast.error('That request is no longer waiting.');
+      return;
+    }
+    setTimeout(() => setReviewLink(match), MODAL_SWAP_DELAY_MS);
+  };
   /** The collective invitation riding on a pending request, by link id (web plan L11). */
   const proposedCollectives = query.data?.proposedCollectives ?? {};
   /** Each active link that holds this venue's collective together (CQ-01). */
@@ -302,7 +330,7 @@ export default function LinkedVenuesScreen() {
 
   // Shared across the empty + populated layouts so the invite flow behaves
   // identically in both. `prefill` is set when arriving from a verified invite.
-  const invitePrompt = canCreate ? (
+  const invitePrompt = canCreate && !atRequestLimit ? (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel="Have an invite link?"
@@ -325,12 +353,19 @@ export default function LinkedVenuesScreen() {
       prefill={invitePrefill}
       venueName={myVenue?.name ?? 'Your venue'}
       venueSlug={myVenue?.slug ?? null}
-      onClose={() => {
-        setSendOpen(false);
-        setInvitePrefill(null);
+      onClose={closeWizard}
+      onReviewRequest={(linkId) => void handleReviewRequest(linkId)}
+      onEditPermissions={(linkId) => {
+        closeWizard();
+        router.push(`/linked-venues/${linkId}` as Href);
       }}
     />
   );
+  const limitLine = atRequestLimit ? (
+    <Text variant="caption" tone="muted">
+      {setupCopy('setup.limit', { max: maxOutgoing })}
+    </Text>
+  ) : null;
   const getInviteSheet = (
     <InviteLinkSheet visible={inviteOpen} onClose={() => setInviteOpen(false)} />
   );
@@ -360,9 +395,10 @@ export default function LinkedVenuesScreen() {
           <Button
             label={setupCopy('setup.button')}
             fullWidth
-            disabled={!canCreate}
+            disabled={!canCreate || atRequestLimit}
             onPress={() => setSendOpen(true)}
           />
+          {limitLine}
           <Button
             label="Get invite link"
             variant="secondary"
@@ -398,7 +434,7 @@ export default function LinkedVenuesScreen() {
         <Button
           label={setupCopy('setup.button')}
           style={styles.flex1}
-          disabled={!canCreate}
+          disabled={!canCreate || atRequestLimit}
           onPress={() => setSendOpen(true)}
         />
         <Button
@@ -409,6 +445,8 @@ export default function LinkedVenuesScreen() {
           onPress={() => setInviteOpen(true)}
         />
       </View>
+
+      {limitLine}
 
       {invitePrompt}
 

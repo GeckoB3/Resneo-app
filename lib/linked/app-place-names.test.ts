@@ -26,7 +26,7 @@ describe('app place names', () => {
   it('leaves no web screen named in a sentence the app shows', () => {
     // The refusal an older app shows names the web on purpose; nothing else may.
     const allowed = new Set(['linkBreak.refused']);
-    const web = /Linked Accounts|Linked accounts|Settings, Payments|Settings, Booking Page|Settings, Profile|Active links|Go to Collective|on this tab|from this tab|on your dashboard|in your dashboard/;
+    const web = /Linked Accounts|Linked accounts|Settings, Payments|Settings, Booking Page|Settings, Profile|Active links|Pending requests|Go to Collective|on this tab|from this tab|on your dashboard|in your dashboard/;
     const offenders = [
       ...Object.keys(SETUP_COPY).map((id) => [id, setupCopy(id as SetupCopyId)] as const),
       ...Object.keys(AREA_COPY).map((id) => [id, areaCopy(id as AreaCopyId)] as const),
@@ -39,6 +39,21 @@ describe('app place names', () => {
     expect(setupCopy('join.links.openLinked')).toBe('Change it in Linked venues');
     expect(setupCopy('respond.done.joinFailed', { venue: 'Aura', collective: 'Plus 1', error: 'Nope.' })).toBe(
       'The link with Aura is active, but joining Plus 1 did not finish: Nope. You can join from the Venue collectives screen.',
+    );
+  });
+
+  it("names the app's screens in the linking wizard (CQ-17)", () => {
+    expect(setupCopy('setup.venue.alreadyLinked', { venue: 'Aura' })).toBe(
+      'You are already linked with Aura. To share one booking page with them, use Create venue collective, on the Venue collectives screen.',
+    );
+    expect(setupCopy('setup.venue.youAsked', { venue: 'Aura' })).toBe(
+      'You have already asked Aura to link. The request waits under Sent by you on the Linked venues screen, where you can cancel it.',
+    );
+    expect(setupCopy('setup.limit', { max: 10 })).toBe(
+      'You have 10 link requests waiting, the most you can have at once. Cancel one under Sent by you to send another.',
+    );
+    expect(setupCopy('setup.done.next.where')).toBe(
+      'The request is listed under Sent by you on the Linked venues screen. You can cancel it there.',
     );
   });
 });

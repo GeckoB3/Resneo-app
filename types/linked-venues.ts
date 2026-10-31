@@ -169,6 +169,8 @@ export interface LinkSetupPayload {
   requestMessage?: string;
   grants: LinkGrantPair;
   collective?: { name: string; slug: string };
+  /** The collective this venue hosts: the other venue is invited to it with the link (CQ-17.7). Never with `collective`. */
+  inviteTo?: string;
 }
 
 export type LinkSetupErrorField = 'venue' | 'level' | 'collective' | 'venues' | 'name' | 'slug' | 'plan';
@@ -176,6 +178,8 @@ export type LinkSetupErrorField = 'venue' | 'level' | 'collective' | 'venues' | 
 export interface LinkSetupResponse {
   link: AccountLinkView | null;
   collective: { id: string; name: string; slug: string } | null;
+  /** The collective the other venue was invited to, when the request sent `inviteTo` (CQ-17.7). */
+  invitedTo?: { id: string; name: string } | null;
 }
 
 /** The collective invitation that rides on a pending link request (web plan L11). */
@@ -317,6 +321,20 @@ export interface VenueSearchResponse {
   query_kind?: 'address' | 'name';
 }
 
+/** The live link between this venue and the one looked up (CQ-17). */
+export interface VenueLookupLink {
+  id: string;
+  state: 'full' | 'not_full' | 'their_request' | 'my_request';
+  requested_at: string | null;
+}
+
+/** The collective this venue is already in, which a new link cannot start another beside (CQ-17.7). */
+export interface RequesterCollective {
+  id: string;
+  name: string;
+  role: 'host' | 'member' | 'invited';
+}
+
 export type VenueLookupResponse =
   | { found: false }
   | {
@@ -329,6 +347,10 @@ export type VenueLookupResponse =
       alreadyLinked?: boolean;
       /** Present when asked with `&collective=1`: the venue's standing for a collective the caller would host. */
       collective?: CollectiveStandingResult;
+      /** CQ-17. All three absent on older servers. */
+      link?: VenueLookupLink | null;
+      requester_collective?: RequesterCollective | null;
+      same_collective?: boolean;
     };
 
 export interface InviteCreateResponse {

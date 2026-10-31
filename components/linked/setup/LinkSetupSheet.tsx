@@ -13,7 +13,6 @@ import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { describeGrant, isLinkConfigurationValid, normaliseGrant } from '@/lib/linked/grants';
 import {
-  DEFAULT_LINK_LEVEL,
   LINK_LEVELS,
   grantForLevel,
   isFullAccessBothWays,
@@ -25,7 +24,13 @@ import { useLinkSetup, useMyCalendars, useVenueLookup } from '@/lib/queries/useL
 import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
-import type { CollectiveStandingResult, LinkGrant, LinkSetupErrorField } from '@/types/linked-venues';
+import type {
+  CollectiveStandingResult,
+  LinkGrant,
+  LinkSetupErrorField,
+  RequesterCollective,
+  VenueLookupLink,
+} from '@/types/linked-venues';
 
 /**
  * Link with a venue (web `LinkSetupWizard.tsx`; plan L1 to L4).
@@ -34,6 +39,8 @@ import type { CollectiveStandingResult, LinkGrant, LinkSetupErrorField } from '@
  * venue; how closely the two will work together (three plain levels, or the full editor); whether
  * to share one booking page; the collective's name and address and what changes; check and send;
  * sent. One call makes the link request and the collective, and one notice reaches the other venue.
+ * A venue that already hosts a collective cannot start another, so that step offers to invite the
+ * other venue to the one it has instead (CQ-17.7).
  */
 
 type Step = 'venue' | 'level' | 'collective' | 'name' | 'changes' | 'check' | 'done';
@@ -51,17 +58,45 @@ const STEP_FOR_FIELD: Record<LinkSetupErrorField, Step | null> = {
 export interface LinkSetupResult {
   venueName: string;
   collective: { id: string; name: string; slug: string } | null;
+  /** The name of the collective this venue hosts, when the request also invites the other venue to it. */
+  invitedTo: string | null;
 }
 
 interface VenueChoice extends PickedVenue {
   alreadyLinked: boolean;
   collective: CollectiveStandingResult | null;
+  /** The next three come from the lookup (CQ-17). An older server sends none, and today's messages stand. */
+  link: VenueLookupLink | null;
+  requesterCollective: RequesterCollective | null;
+  sameCollective: boolean;
+}
+
+/** Why this venue cannot be picked, and what to do about it (CQ-17.2, CQ-17.6). */
+function venueNotice(venue: VenueChoice): { text: string; plain: boolean; review: boolean; edit: boolean } {
+  const params = { venue: venue.name, collective: venue.requesterCollective?.name };
+  const line = (text: string, more: { plain?: boolean; review?: boolean; edit?: boolean } = {}) => ({
+    text,
+    plain: more.plain ?? false,
+    review: more.review ?? false,
+    edit: more.edit ?? false,
+  });
+  if (venue.link?.state === 'their_request') return line(setupCopy('setup.venue.theyAsked', params), { plain: true, review: true });
+  if (venue.link?.state === 'my_request') return line(setupCopy('setup.venue.youAsked', params), { plain: true });
+  if (!venue.alreadyLinked) return line(venue.reason ?? 'This venue is not available to link right now.');
+  if (venue.sameCollective && venue.requesterCollective) return line(setupCopy('setup.venue.alreadyLinked.sameCollective', params));
+  if (venue.requesterCollective?.role === 'host') return line(setupCopy('setup.venue.alreadyLinked.hosts', params));
+  // A member or an invited venue cannot start a shared page, so it is pointed at no way to start one (as the web).
+  if (venue.requesterCollective) return line(venue.reason ?? 'You are already linked with this venue.');
+  if (venue.link?.state === 'not_full') return line(setupCopy('setup.venue.alreadyLinked.notFull', params), { edit: true });
+  return line(setupCopy('setup.venue.alreadyLinked', params));
 }
 
 export function LinkSetupSheet({
   visible,
   onClose,
   onSent,
+  onReviewRequest,
+  onEditPermissions,
   venueName,
   venueSlug,
   prefill,
@@ -69,6 +104,10 @@ export function LinkSetupSheet({
   visible: boolean;
   onClose: () => void;
   onSent?: (result: LinkSetupResult) => void;
+  /** The other venue has already asked: close this and open the review of their request. */
+  onReviewRequest: (linkId: string) => void;
+  /** A link at less than full access: close this and open the link, where Edit permissions is. */
+  onEditPermissions: (linkId: string) => void;
   /** This venue's name and booking address, for the "what changes" list. */
   venueName: string;
   venueSlug: string | null;
@@ -84,10 +123,11 @@ export function LinkSetupSheet({
   const [step, setStep] = useState<Step>('venue');
   const [mode, setMode] = useState<'form' | 'picker'>('form');
   const [picked, setPicked] = useState<PickedVenue | null>(null);
-  const [levelId, setLevelId] = useState<LinkLevelId>(DEFAULT_LINK_LEVEL);
+  // No level until the owner picks one (CQ-17.5). The grants below stand in for nothing until then.
+  const [levelId, setLevelId] = useState<LinkLevelId | null>(null);
   const [customising, setCustomising] = useState(false);
-  const [mine, setMine] = useState<LinkGrant>(grantForLevel(DEFAULT_LINK_LEVEL));
-  const [theirs, setTheirs] = useState<LinkGrant>(grantForLevel(DEFAULT_LINK_LEVEL));
+  const [mine, setMine] = useState<LinkGrant>(grantForLevel('view'));
+  const [theirs, setTheirs] = useState<LinkGrant>(grantForLevel('view'));
   const [wantCollective, setWantCollective] = useState<boolean | null>(null);
   const [name, setName] = useState('');
   const [acknowledged, setAcknowledged] = useState(false);
@@ -106,10 +146,10 @@ export function LinkSetupSheet({
     setStep('venue');
     setMode('form');
     setPicked(prefill ? { name: prefill.name, slug: prefill.slug, eligible: true, reason: null } : null);
-    setLevelId(DEFAULT_LINK_LEVEL);
+    setLevelId(null);
     setCustomising(false);
-    setMine(grantForLevel(DEFAULT_LINK_LEVEL));
-    setTheirs(grantForLevel(DEFAULT_LINK_LEVEL));
+    setMine(grantForLevel('view'));
+    setTheirs(grantForLevel('view'));
     setWantCollective(null);
     setName('');
     resetAddress();
@@ -132,9 +172,12 @@ export function LinkSetupSheet({
         reason: data.reason,
         alreadyLinked: Boolean(data.alreadyLinked),
         collective: data.collective ?? null,
+        link: data.link ?? null,
+        requesterCollective: data.requester_collective ?? null,
+        sameCollective: Boolean(data.same_collective),
       };
     }
-    return { ...picked, alreadyLinked: false, collective: null };
+    return { ...picked, alreadyLinked: false, collective: null, link: null, requesterCollective: null, sameCollective: false };
   }, [picked, lookup.data]);
 
   const otherName = venue?.name ?? 'the other venue';
@@ -142,22 +185,38 @@ export function LinkSetupSheet({
     () =>
       customising
         ? { mine: normaliseGrant(mine), theirs: normaliseGrant(theirs) }
-        : { mine: grantForLevel(levelId), theirs: grantForLevel(levelId) },
+        : { mine: grantForLevel(levelId ?? 'view'), theirs: grantForLevel(levelId ?? 'view') },
     [customising, mine, theirs, levelId],
   );
   const fullAccess = isFullAccessBothWays(grants.mine, grants.theirs);
   const grantsValid = isLinkConfigurationValid(grants.mine, grants.theirs);
   const collectiveStanding = venue?.collective ?? null;
   const collectiveBlocked = collectiveStanding?.standing === 'blocked';
-  const collectivePossible = fullAccess && Boolean(venue) && !collectiveBlocked;
+  // A venue already in a collective cannot start another (CQ-17.7). A host can invite to the one it has.
+  const requesterCollective = venue?.requesterCollective ?? null;
+  const collectiveOpen = fullAccess && Boolean(venue) && !collectiveBlocked;
+  const collectivePossible = collectiveOpen && !requesterCollective;
+  const invitePossible = collectiveOpen && requesterCollective?.role === 'host';
+  const inviteTarget = invitePossible && wantCollective === true ? requesterCollective : null;
+  const collectiveWords = { venue: otherName, collective: requesterCollective?.name };
+
+  // What the full card says about a shared page (CQ-17.4). The step itself is left out when there is none.
+  const levelNote: { note: string; reason: string | null } = (() => {
+    if (requesterCollective?.role === 'member') return { note: setupCopy('setup.collective.member', collectiveWords), reason: null };
+    // Not part of it yet, so the sentence for a member would not be true.
+    if (requesterCollective?.role === 'invited') return { note: setupCopy('create.refused.invited', collectiveWords), reason: null };
+    if (collectiveBlocked) return { note: setupCopy('setup.level.collectiveNotPossible', { venue: otherName }), reason: collectiveStanding?.reason ?? null };
+    if (requesterCollective?.role === 'host') return { note: setupCopy('setup.collective.hosts', collectiveWords), reason: null };
+    return { note: setupCopy('setup.level.collectiveReady'), reason: null };
+  })();
 
   const steps = useMemo<Step[]>(() => {
     const out: Step[] = ['venue', 'level'];
-    if (collectivePossible) out.push('collective');
+    if (collectivePossible || invitePossible) out.push('collective');
     if (collectivePossible && wantCollective) out.push('name', 'changes');
     out.push('check');
     return out;
-  }, [collectivePossible, wantCollective]);
+  }, [collectivePossible, invitePossible, wantCollective]);
   const index = Math.max(0, steps.indexOf(step));
 
   const disabledReason: string | null = (() => {
@@ -165,6 +224,7 @@ export function LinkSetupSheet({
       case 'venue':
         return venue?.eligible && !lookup.isFetching ? null : setupCopy('setup.disabled.venue');
       case 'level':
+        if (!customising && levelId === null) return setupCopy('setup.level.choose');
         return grantsValid ? null : setupCopy('setup.disabled.level');
       case 'collective':
         return wantCollective === null ? setupCopy('setup.disabled.collective') : null;
@@ -198,10 +258,15 @@ export function LinkSetupSheet({
         requestMessage: message.trim() || undefined,
         grants,
         ...(withCollective ? { collective: { name: name.trim(), slug: effectiveSlug } } : {}),
+        ...(inviteTarget ? { inviteTo: inviteTarget.id } : {}),
       },
       {
         onSuccess: (data) => {
-          const result: LinkSetupResult = { venueName: venue.name, collective: data.collective ?? null };
+          const result: LinkSetupResult = {
+            venueName: venue.name,
+            collective: data.collective ?? null,
+            invitedTo: inviteTarget?.name ?? null,
+          };
           setSent(result);
           setStep('done');
           toast.success(`Link request sent to ${venue.name}.`);
@@ -221,6 +286,7 @@ export function LinkSetupSheet({
 
   const busy = send.isPending;
   const errorStep = error?.field ? STEP_FOR_FIELD[error.field] : null;
+  const notice = venue && !venue.eligible && !lookup.isFetching ? venueNotice(venue) : null;
   const levelLabel =
     customising && levelForGrants(grants.mine, grants.theirs) === 'custom'
       ? setupCopy('setup.level.custom')
@@ -303,11 +369,9 @@ export function LinkSetupSheet({
                   <Text variant="caption" tone="muted">
                     Checking the venue...
                   </Text>
-                ) : !venue.eligible ? (
-                  <Text variant="caption" tone="danger">
-                    {venue.alreadyLinked
-                      ? setupCopy('setup.venue.alreadyLinked', { venue: venue.name })
-                      : (venue.reason ?? 'This venue is not available to link right now.')}
+                ) : notice ? (
+                  <Text variant="caption" tone={notice.plain ? 'secondary' : 'danger'}>
+                    {notice.text}
                   </Text>
                 ) : null}
               </View>
@@ -320,6 +384,12 @@ export function LinkSetupSheet({
           ) : (
             <Button label="Find a venue" variant="secondary" onPress={() => setMode('picker')} />
           )}
+          {notice?.review && venue?.link ? (
+            <Button label={setupCopy('setup.venue.theyAsked.cta')} variant="secondary" onPress={() => onReviewRequest(venue.link!.id)} />
+          ) : null}
+          {notice?.edit && venue?.link ? (
+            <Button label="Edit permissions" variant="secondary" onPress={() => onEditPermissions(venue.link!.id)} />
+          ) : null}
         </View>
       ) : null}
 
@@ -338,18 +408,24 @@ export function LinkSetupSheet({
                   title={level.title}
                   summary={`${level.summary} ${setupCopy('setup.level.mutual')}.`}
                   bullets={level.bullets}
-                  note={level.unlocksCollective ? 'Collective ready' : null}
+                  note={level.unlocksCollective ? levelNote.note : null}
                   onPress={() => {
                     setLevelId(level.id);
                     setError(null);
-                  }}
-                />
+                  }}>
+                  {level.unlocksCollective && levelNote.reason ? (
+                    <Text variant="caption" tone="secondary">
+                      {levelNote.reason}
+                    </Text>
+                  ) : null}
+                </ChoiceRow>
               ))}
               <Pressable
                 accessibilityRole="button"
                 onPress={() => {
-                  setMine(grantForLevel(levelId));
-                  setTheirs(grantForLevel(levelId));
+                  // With nothing picked yet, the editor starts from the least (CQ-17.5).
+                  setMine(grantForLevel(levelId ?? 'view'));
+                  setTheirs(grantForLevel(levelId ?? 'view'));
                   setCustomising(true);
                 }}>
                 <Text variant="label" tone="brand">
@@ -390,18 +466,24 @@ export function LinkSetupSheet({
 
       {step === 'collective' ? (
         <View style={styles.section}>
-          <Text variant="bodyMedium">{setupCopy('setup.collective.heading')}</Text>
-          <Text variant="bodySmall" tone="secondary">
-            {setupCopy('setup.collective.intro')}
-          </Text>
-          <View style={[styles.infoCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text variant="label">{setupCopy('create.what.title')}</Text>
-            {(['1', '2', '3'] as const).map((n) => (
-              <Text key={n} variant="caption" tone="secondary">
-                {`• ${setupCopy(`create.what.${n}` as 'create.what.1')}`}
+          {invitePossible ? (
+            <Text variant="bodyMedium">{setupCopy('setup.collective.invite.heading', collectiveWords)}</Text>
+          ) : (
+            <>
+              <Text variant="bodyMedium">{setupCopy('setup.collective.heading')}</Text>
+              <Text variant="bodySmall" tone="secondary">
+                {setupCopy('setup.collective.intro')}
               </Text>
-            ))}
-          </View>
+              <View style={[styles.infoCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Text variant="label">{setupCopy('create.what.title')}</Text>
+                {(['1', '2', '3'] as const).map((n) => (
+                  <Text key={n} variant="caption" tone="secondary">
+                    {`• ${setupCopy(`create.what.${n}` as 'create.what.1')}`}
+                  </Text>
+                ))}
+              </View>
+            </>
+          )}
           {collectiveStanding?.standing === 'no_payments' && collectiveStanding.reason ? (
             <Text variant="caption" color={colors.warning}>
               {collectiveStanding.reason}
@@ -410,7 +492,7 @@ export function LinkSetupSheet({
           <ChoiceRow
             selected={wantCollective === false}
             title={setupCopy('setup.collective.no')}
-            summary={setupCopy('setup.collective.no.body')}
+            summary={invitePossible ? null : setupCopy('setup.collective.no.body')}
             onPress={() => {
               setWantCollective(false);
               setError(null);
@@ -418,14 +500,15 @@ export function LinkSetupSheet({
           />
           <ChoiceRow
             selected={wantCollective === true}
-            title={setupCopy('setup.collective.yes')}
-            summary={setupCopy('setup.collective.yes.body', { venue: otherName })}
+            title={invitePossible ? setupCopy('setup.collective.invite', collectiveWords) : setupCopy('setup.collective.yes')}
+            summary={invitePossible ? setupCopy('setup.collective.invite.body', collectiveWords) : setupCopy('setup.collective.yes.body', { venue: otherName })}
             onPress={() => {
               setWantCollective(true);
               setError(null);
             }}
           />
-          {disabledReason ? (
+          {/* "Choose whether to start a collective" is not the question for a host. */}
+          {disabledReason && !invitePossible ? (
             <Text variant="caption" tone="muted">
               {disabledReason}
             </Text>
@@ -474,13 +557,15 @@ export function LinkSetupSheet({
             {[
               { term: setupCopy('setup.check.venue'), value: otherName, to: 'venue' as Step },
               { term: setupCopy('setup.check.level'), value: levelLabel, to: 'level' as Step },
-              ...(collectivePossible
+              ...(collectivePossible || invitePossible
                 ? [
                     {
                       term: setupCopy('setup.check.collective'),
-                      value: wantCollective
-                        ? setupCopy('setup.check.collective.value', { collective: name.trim(), slug: effectiveSlug })
-                        : setupCopy('setup.check.collective.none'),
+                      value: inviteTarget
+                        ? setupCopy('setup.check.collective.invite', { collective: inviteTarget.name })
+                        : collectivePossible && wantCollective
+                          ? setupCopy('setup.check.collective.value', { collective: name.trim(), slug: effectiveSlug })
+                          : setupCopy('setup.check.collective.none'),
                       to: 'collective' as Step,
                     },
                   ]
@@ -519,9 +604,9 @@ export function LinkSetupSheet({
             <Text variant="caption" tone="secondary">
               {`${setupCopy('setup.check.youCan')} ${describeGrant(grants.mine).join(', ')}.`}
             </Text>
-            {collectivePossible && wantCollective ? (
+            {inviteTarget || (collectivePossible && wantCollective) ? (
               <Text variant="caption" tone="secondary">
-                {`${venueName} invited you to join ${name.trim()}`}
+                {`${venueName} invited you to join ${inviteTarget?.name ?? name.trim()}`}
               </Text>
             ) : null}
           </View>
@@ -534,9 +619,11 @@ export function LinkSetupSheet({
             {setupCopy('setup.done.body')}
           </Text>
           {[
-            sent.collective
-              ? setupCopy('setup.done.next.collective', { venue: sent.venueName, collective: sent.collective.name })
-              : setupCopy('setup.done.next.link', { venue: sent.venueName }),
+            sent.invitedTo
+              ? setupCopy('setup.done.next.invite', { venue: sent.venueName, collective: sent.invitedTo })
+              : sent.collective
+                ? setupCopy('setup.done.next.collective', { venue: sent.venueName, collective: sent.collective.name })
+                : setupCopy('setup.done.next.link', { venue: sent.venueName }),
             setupCopy('setup.done.next.watch', { venue: sent.venueName }),
             setupCopy('setup.done.next.where'),
           ].map((line, i) => (
