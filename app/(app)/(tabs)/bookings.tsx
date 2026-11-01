@@ -477,7 +477,7 @@ export default function BookingsScreen() {
   const liveState = useVenueLiveSync({
     venueId,
     subscriptions: [{ table: 'bookings', filter: venueId ? `venue_id=eq.${venueId}` : undefined }],
-    onRefresh: useCallback(() => void activeQuery.refetch(), [activeQuery]),
+    onRefresh: useCallback(() => void activeQuery.refetch({ cancelRefetch: false }), [activeQuery]),
     enabled: Boolean(venueId),
   });
 

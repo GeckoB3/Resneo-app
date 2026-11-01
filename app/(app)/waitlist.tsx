@@ -436,8 +436,8 @@ export default function WaitlistScreen() {
 
   // Realtime subscription — 30s polling fallback
   const onRefresh = useCallback(() => {
-    void query.refetch();
-    if (isStaffChoose) void alertsQuery.refetch();
+    void query.refetch({ cancelRefetch: false });
+    if (isStaffChoose) void alertsQuery.refetch({ cancelRefetch: false });
   }, [query, alertsQuery, isStaffChoose]);
 
   const liveState = useVenueLiveSync({

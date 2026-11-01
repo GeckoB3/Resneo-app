@@ -80,9 +80,9 @@ export default function EventsScreen() {
   }, [query.data, filter]);
 
   const onRefresh = useCallback(() => {
-    void query.refetch();
+    void query.refetch({ cancelRefetch: false });
     // Refresh any open roster too (it has its own query key).
-    void queryClient.invalidateQueries({ queryKey: experienceEventKeys.attendeesAll() });
+    void queryClient.invalidateQueries({ queryKey: experienceEventKeys.attendeesAll() }, { cancelRefetch: false });
   }, [query, queryClient]);
 
   // Realtime refresh — the same two tables the web event-manager watches:

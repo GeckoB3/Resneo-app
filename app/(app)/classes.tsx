@@ -108,7 +108,7 @@ export default function ClassesScreen() {
   // Sessions and the open roster both nest under queryKeys.bookings.all(), so a
   // single invalidate refreshes the timetable and any selected session's roster.
   const onLiveRefresh = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() }, { cancelRefetch: false });
   }, [queryClient]);
 
   const liveState = useVenueLiveSync({

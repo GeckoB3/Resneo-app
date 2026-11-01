@@ -444,7 +444,7 @@ export default function ClientsScreen() {
       // Page 0 still refetches (it is the active query), and deeper pages are
       // left as they are: a new contact appears on the next manual pull, which
       // is a far smaller surprise than losing your place.
-      if (pageRef.current === 0) void guestsQuery.refetch();
+      if (pageRef.current === 0) void guestsQuery.refetch({ cancelRefetch: false });
     }, [guestsQuery]),
     enabled: Boolean(venueId),
   });

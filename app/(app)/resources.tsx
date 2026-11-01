@@ -81,8 +81,8 @@ export default function ResourcesScreen() {
 
   // Realtime refresh — same tables the web page watches (30s polling fallback).
   const onLiveRefresh = useCallback(() => {
-    void resourcesQuery.refetch();
-    void bookingsQuery.refetch();
+    void resourcesQuery.refetch({ cancelRefetch: false });
+    void bookingsQuery.refetch({ cancelRefetch: false });
   }, [resourcesQuery, bookingsQuery]);
 
   const liveState = useVenueLiveSync({

@@ -268,8 +268,8 @@ export default function ClientDetailScreen() {
       { table: 'guests', filter: venueFilter },
     ],
     onRefresh: useCallback(() => {
-      void detailQuery.refetch();
-      void timelineQuery.refetch();
+      void detailQuery.refetch({ cancelRefetch: false });
+      void timelineQuery.refetch({ cancelRefetch: false });
     }, [detailQuery, timelineQuery]),
     enabled: Boolean(venueId && guestId),
   });

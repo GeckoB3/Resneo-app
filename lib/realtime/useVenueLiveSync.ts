@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 
+import { createRefreshCoalescer } from '@/lib/realtime/refresh-coalescer';
 import { getSupabase } from '@/lib/supabase';
 
 export type LiveSyncState = 'live' | 'reconnecting' | 'idle';
@@ -24,7 +25,11 @@ let liveSyncInstanceCounter = 0;
 
 interface UseVenueLiveSyncOptions {
   venueId?: string | null;
-  /** Called for change events and during polling fallback. */
+  /**
+   * Called during polling fallback and, grouped, for change events. Screens should refetch with
+   * `cancelRefetch: false`: on a slow server, restarting a request leaves the server working on
+   * the one the phone gave up on as well as the new one.
+   */
   onRefresh: () => void;
   subscriptions: VenuePostgresSubscription[];
   pollMs?: number;
@@ -96,6 +101,7 @@ export function useVenueLiveSync({
       .map((s) => s.table)
       .join('-')}-${instanceId}`;
     let channel = supabase.channel(channelName);
+    const changes = createRefreshCoalescer(() => onRefreshRef.current());
 
     for (let index = 0; index < subscriptionsRef.current.length; index += 1) {
       const sub = subscriptionsRef.current[index]!;
@@ -108,7 +114,7 @@ export function useVenueLiveSync({
           ...(sub.filter ? { filter: sub.filter } : {}),
         },
         () => {
-          onRefreshRef.current();
+          changes.note();
         },
       );
     }
@@ -140,6 +146,7 @@ export function useVenueLiveSync({
     });
 
     return () => {
+      changes.cancel();
       hasSubscribedRef.current = false;
       if (pollRef.current) {
         clearInterval(pollRef.current);

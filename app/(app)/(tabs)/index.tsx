@@ -1048,8 +1048,8 @@ export default function CalendarScreen() {
   // (classes/events/resources) so every overlay stays in sync.
   const venueId = venue?.id ?? null;
   const onLiveRefresh = useCallback(() => {
-    void gridQuery.refetch();
-    void scheduleQuery.refetch();
+    void gridQuery.refetch({ cancelRefetch: false });
+    void scheduleQuery.refetch({ cancelRefetch: false });
   }, [gridQuery, scheduleQuery]);
 
   const liveState = useVenueLiveSync({
