@@ -37,6 +37,8 @@ let mockAnswerError: unknown = null;
 
 import { CombinedPageMemberSummary } from './CombinedPageMemberSummary';
 
+jest.mock('@/components/linked/MemberContactDetails', () => ({ MemberContactDetails: () => null }));
+
 function collective(serviceModel: string): CollectiveView {
   return {
     id: 'col-1',

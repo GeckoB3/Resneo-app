@@ -1,5 +1,6 @@
 import { StyleSheet, View } from 'react-native';
 
+import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Segmented } from '@/components/ui/Segmented';
 import { Text } from '@/components/ui/Text';
@@ -22,12 +23,15 @@ export function CombinedPageScopeSwitch({
   scope,
   onScopeChange,
   statusLine = null,
+  resting = false,
 }: {
   collective: SettingsCollectiveNote;
   scope: BookingPageScope;
   onScopeChange: (scope: BookingPageScope) => void;
   /** What this venue's own page does now (web `bp.status.*`), from `own_page` on GET /api/venue/collectives. */
   statusLine?: string | null;
+  /** No guest can reach anything the own page's settings shape, so they are put away until asked for. */
+  resting?: boolean;
 }) {
   const { colors } = useTheme();
   return (
@@ -52,6 +56,15 @@ export function CombinedPageScopeSwitch({
           see there.
         </Text>
       ) : null}
+      {resting && scope === 'combined' ? (
+        <Button
+          label="Open your own page settings"
+          size="sm"
+          variant="ghost"
+          testID="booking-page-open-own"
+          onPress={() => onScopeChange('own')}
+        />
+      ) : (
       <View style={styles.switch}>
         <Segmented<BookingPageScope>
           options={[
@@ -62,6 +75,7 @@ export function CombinedPageScopeSwitch({
           onChange={onScopeChange}
         />
       </View>
+      )}
     </Card>
   );
 }

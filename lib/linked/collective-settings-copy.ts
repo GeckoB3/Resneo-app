@@ -46,7 +46,19 @@ export const collectiveSettingsCopy = {
   hostHours: (p: CollectiveSettingsParams) =>
     `Also shown on the ${p.collective} page, for guests. Each venue's own hours decide when its calendars can be booked.`,
   hostProfile: (p: CollectiveSettingsParams) =>
-    `Your address, phone number and website are also shown on the ${p.collective} page.`,
+    `Your address, phone number and website can also show on the ${p.collective} page. You choose which on your Booking page.`,
+  contactHostBody: (host: string) =>
+    `The name guests see comes from Name on your booking page above. This page shows ${host}’s address, phone, email and website. Venue profile edits them, and your emails and receipts use them too.`,
+  contactHostEmailNote:
+    'Email is off until you switch it on. Guests who reply to a booking confirmation reach the venue they booked with, not this address.',
+  contactMemberTitle: 'Your venue’s details',
+  contactMemberBody:
+    'Guests see these under your team’s names and in “You are booking with”, and your emails and receipts use them too. Venue profile edits them.',
+  contactMemberPageNote: (host: string) =>
+    `The top of the page and its About tab show ${host}’s details, and ${host} chooses which.`,
+  contactMemberListTitle: 'What the Our locations list shows about you',
+  contactMemberListBody:
+    'The list is on the page’s About tab when the venues are at different addresses. Confirmations and emails still include your address, so guests know where to go.',
   appointmentsLocked: (venue: string) =>
     `You cannot switch appointments off while ${venue} is in a collective, because the collective page needs them.`,
   timezoneLocked: (p: CollectiveSettingsParams) =>
@@ -64,9 +76,12 @@ export const collectiveSettingsCopy = {
 
 /** The own page's status line (web `bp.status.*`, `bp.reason.*`), word for word. */
 export function ownPageStatusLine(
-  ownPage: { status: 'handing_over' | 'partial' | 'showing'; reason: string | null },
+  ownPage: { status: 'handing_over' | 'partial' | 'showing'; reason: string | null; resting?: boolean },
   names: { collective: string; host: string },
 ): string {
+  if (ownPage.resting) {
+    return `Your own booking page is resting while you are part of ${names.collective}. Guests who open it go to the ${names.collective} page, and your design comes back if you leave.`;
+  }
   if (ownPage.status !== 'showing') {
     return `Guests who visit your own booking page are sent to the ${names.collective} page.`;
   }

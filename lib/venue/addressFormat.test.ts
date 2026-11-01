@@ -4,7 +4,7 @@
  * town / postcode. The two must round-trip, and an address saved WITHOUT a
  * building name must reload with its street in the Street field.
  */
-import { buildAddress, parseAddress } from '@/lib/venue/addressFormat';
+import { buildAddress, buildingNameField, parseAddress } from '@/lib/venue/addressFormat';
 
 describe('buildAddress', () => {
   it('joins the non-empty parts in order', () => {
@@ -14,6 +14,31 @@ describe('buildAddress', () => {
     expect(buildAddress({ name: '  ', street: '12 Main Street', town: 'Belfast', postcode: 'BT1 1AA' })).toBe(
       '12 Main Street, Belfast, BT1 1AA',
     );
+  });
+});
+
+describe('county and partial addresses', () => {
+  it('passes over a county, so it is never taken for the town', () => {
+    expect(parseAddress('17 King St, Winterton, North Lincolnshire, DN15 9TP')).toEqual({
+      name: '',
+      street: '17 King St',
+      town: 'Winterton',
+      postcode: 'DN15 9TP',
+    });
+  });
+
+  it('reads a partial address without a postcode, leaving the town as the town', () => {
+    expect(parseAddress('The Old Mill, 12 Main Street, Belfast')).toEqual({
+      name: 'The Old Mill',
+      street: '12 Main Street',
+      town: 'Belfast',
+      postcode: '',
+    });
+  });
+
+  it('shows a building name that only repeats the business name as blank, so a rename moves on', () => {
+    expect(buildingNameField('Sharps, 12 Main Street, Belfast, BT1 1AA', 'sharps')).toBe('');
+    expect(buildingNameField('The Old Mill, 12 Main Street, Belfast, BT1 1AA', 'Sharps')).toBe('The Old Mill');
   });
 });
 

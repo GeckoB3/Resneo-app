@@ -31,7 +31,7 @@ import { ApiError } from '@/lib/api/client';
 import { getWebUrl } from '@/lib/env';
 import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { normalizePhone } from '@/lib/phone/normalize';
-import { buildAddress, parseAddress } from '@/lib/venue/addressFormat';
+import { buildAddress, buildingNameField, parseAddress } from '@/lib/venue/addressFormat';
 import { isValidWebsiteUrlInput } from '@/lib/validation/url';
 import { isAppointmentPlanTier } from '@/lib/venue/venue-experience';
 import { useUpdateVenue } from '@/lib/queries/useVenueSettings';
@@ -148,6 +148,12 @@ const PRICE_BANDS = [
 
 type PriceBand = (typeof PRICE_BANDS)[number]['value'];
 
+/** The separate email for guests, or blank when guests use the main one. */
+function separateGuestEmail(venue: { email?: string | null; reply_to_email?: string | null }): string {
+  const guest = (venue.reply_to_email ?? '').trim();
+  return guest && guest.toLowerCase() !== (venue.email ?? '').trim().toLowerCase() ? guest : '';
+}
+
 function buildPayloadFingerprint(fields: {
   name: string;
   addrName: string;
@@ -156,6 +162,7 @@ function buildPayloadFingerprint(fields: {
   addrPostcode: string;
   phone: string;
   email: string;
+  guestEmail: string;
   website: string;
   slug: string;
   timezone: string;
@@ -176,6 +183,7 @@ function buildPayloadFingerprint(fields: {
     // (already-E.164) value and the dirty check doesn't flag a phantom change.
     phone: normalizePhone(fields.phone),
     email: fields.email.trim(),
+    guest_email: fields.guestEmail.trim(),
     website_url: fields.website.trim(),
     slug: fields.slug.trim().toLowerCase(),
     timezone: fields.timezone.trim(),
@@ -212,6 +220,8 @@ export default function VenueProfileScreen() {
   const [addrPostcode, setAddrPostcode] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
+  const [guestEmail, setGuestEmail] = useState('');
+  const [guestEmailError, setGuestEmailError] = useState<string | null>(null);
   const [website, setWebsite] = useState('');
   const [slug, setSlug] = useState('');
   const [timezone, setTimezone] = useState('');
@@ -260,12 +270,13 @@ export default function VenueProfileScreen() {
   const currentFingerprint = venue
     ? buildPayloadFingerprint({
         name: venue.name ?? '',
-        addrName: parseAddress(venue.address).name,
+        addrName: buildingNameField(venue.address, venue.name),
         addrStreet: parseAddress(venue.address).street,
         addrTown: parseAddress(venue.address).town,
         addrPostcode: parseAddress(venue.address).postcode,
         phone: venue.phone ?? '',
         email: venue.email ?? '',
+        guestEmail: separateGuestEmail(venue),
         website: venue.website_url ?? '',
         slug: venue.slug ?? '',
         timezone: venue.timezone ?? '',
@@ -285,6 +296,7 @@ export default function VenueProfileScreen() {
         addrPostcode,
         phone,
         email,
+        guestEmail,
         website,
         slug,
         timezone,
@@ -309,7 +321,7 @@ export default function VenueProfileScreen() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setName(venue.name ?? '');
      
-    setAddrName(parsed.name);
+    setAddrName(buildingNameField(venue.address, venue.name));
      
     setAddrStreet(parsed.street);
      
@@ -320,6 +332,7 @@ export default function VenueProfileScreen() {
     setPhone(venue.phone ?? '');
      
     setEmail(venue.email ?? '');
+    setGuestEmail(separateGuestEmail(venue));
      
     setWebsite(venue.website_url ?? '');
      
@@ -409,6 +422,7 @@ export default function VenueProfileScreen() {
     let ok = true;
     setNameError(null);
     setEmailError(null);
+    setGuestEmailError(null);
     setWebsiteError(null);
     setNoShowError(null);
     setSlugFieldError(null);
@@ -439,6 +453,10 @@ export default function VenueProfileScreen() {
     }
     if (slugHint === 'taken') {
       setSlugFieldError('This booking page address is already taken.');
+      ok = false;
+    }
+    if (guestEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail.trim())) {
+      setGuestEmailError('Enter a valid email address.');
       ok = false;
     }
     if (kitchenEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(kitchenEmail.trim())) {
@@ -493,6 +511,7 @@ export default function VenueProfileScreen() {
     const normalisedPhone = normalizePhone(phone);
     if (normalisedPhone !== (venue.phone ?? '')) patch.phone = normalisedPhone;
     if (email.trim() !== (venue.email ?? '')) patch.email = email.trim();
+    if (guestEmail.trim() !== separateGuestEmail(venue)) patch.reply_to_email = guestEmail.trim();
     if (website.trim() !== (venue.website_url ?? '')) patch.website_url = website.trim();
 
     const slugNorm = slug.trim().toLowerCase();
@@ -740,8 +759,19 @@ export default function VenueProfileScreen() {
             autoCapitalize="none"
             autoCorrect={false}
             maxLength={255}
-            helper="Guest replies to booking confirmations are sent to this address."
+            helper={guestEmail.trim() ? 'Your booking alerts come to this address.' : 'Guest replies to your emails, and your booking alerts, come to this address.'}
             error={emailError ?? undefined}
+          />
+          <Input
+            label="Email for guests (optional)"
+            value={guestEmail}
+            onChangeText={(v) => { setGuestEmail(v); setGuestEmailError(null); }}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+            maxLength={255}
+            helper="Shown on your booking page if you switch it on, and guest replies come here too. Leave blank to use the email above."
+            error={guestEmailError ?? undefined}
           />
           <Input
             label="Business website"

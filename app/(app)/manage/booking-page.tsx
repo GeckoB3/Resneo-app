@@ -60,6 +60,8 @@ import {
   useUploadVenueCover,
   useUploadVenueLogo,
 } from '@/lib/queries/useVenueImageUpload';
+import { ContactDetailsSection } from '@/components/manage/ContactDetailsSection';
+import { resolveContactDisplay, venuePublicEmail, type ContactDisplay } from '@/lib/booking/contactDisplay';
 import { useUpdateVenue } from '@/lib/queries/useVenueSettings';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
@@ -94,6 +96,7 @@ function assembleConfig(raw: {
   coverFullWidth: boolean;
   logoCrop: BookingPageImageFraming | null;
   coverCropBox: BookingPageCoverCropBox | null;
+  contactDisplay: ContactDisplay;
 }): BookingPageConfig {
   return {
     brand_primary: normalizeHexColor(raw.primary),
@@ -120,6 +123,7 @@ function assembleConfig(raw: {
     cover_full_width: raw.coverFullWidth,
     logo_crop: raw.logoCrop,
     cover_crop_box: raw.coverCropBox,
+    contact_display: raw.contactDisplay,
   };
 }
 
@@ -143,6 +147,7 @@ function configJsonFromStored(cfg: BookingPageConfig): string {
       coverFullWidth: cfg.cover_full_width === true,
       logoCrop: cfg.logo_crop ?? null,
       coverCropBox: cfg.cover_crop_box ?? null,
+      contactDisplay: resolveContactDisplay(cfg),
     }),
   );
 }
@@ -221,6 +226,7 @@ export default function BookingPageScreen() {
   const [coverFullWidth, setCoverFullWidth] = useState(false);
   const [logoCrop, setLogoCrop] = useState<BookingPageImageFraming | null>(null);
   const [coverCropBox, setCoverCropBox] = useState<BookingPageCoverCropBox | null>(null);
+  const [contactDisplay, setContactDisplay] = useState<ContactDisplay>(() => resolveContactDisplay(null));
   const [openSheet, setOpenSheet] = useState<
     null | 'gallery' | 'service' | 'team' | 'logoFraming' | 'coverCrop'
   >(null);
@@ -272,6 +278,7 @@ export default function BookingPageScreen() {
     setShowServices(cfg.show_services_tab === true);
     setShowTeam(cfg.show_team_tab === true);
     setShowAbout(cfg.show_about_tab === true);
+    setContactDisplay(resolveContactDisplay(cfg));
     setServicesLayout(resolveServicesLayout(cfg));
     setCoverFullWidth(cfg.cover_full_width === true);
     setLogoCrop(cfg.logo_crop ?? null);
@@ -300,10 +307,10 @@ export default function BookingPageScreen() {
       assembleConfig({
         primary, brandEmails, fontPreset, announcement, about,
         instagram, facebook, tiktok, x,
-        showServices, showTeam, showAbout, servicesLayout, coverFullWidth, logoCrop, coverCropBox,
+        showServices, showTeam, showAbout, servicesLayout, coverFullWidth, logoCrop, coverCropBox, contactDisplay,
       }),
     [primary, brandEmails, fontPreset, announcement, about, instagram, facebook, tiktok, x,
-      showServices, showTeam, showAbout, servicesLayout, coverFullWidth, logoCrop, coverCropBox],
+      showServices, showTeam, showAbout, servicesLayout, coverFullWidth, logoCrop, coverCropBox, contactDisplay],
   );
   const editorConfigJson = useMemo(() => JSON.stringify(editorConfig), [editorConfig]);
 
@@ -564,6 +571,7 @@ export default function BookingPageScreen() {
           scope={scope}
           onScopeChange={setScope}
           statusLine={ownPageStatus}
+          resting={ownPage?.resting === true}
         />
         <CombinedPageScopeContent
           collectiveId={collectiveNote.id}
@@ -611,6 +619,7 @@ export default function BookingPageScreen() {
             scope={scope}
             onScopeChange={setScope}
             statusLine={ownPageStatus}
+            resting={ownPage?.resting === true}
           />
           <Text variant="bodySmall" tone="secondary" testID="own-page-scope-note">
             {ownScopeNote}
@@ -689,6 +698,23 @@ export default function BookingPageScreen() {
           <Text variant="caption" color={colors.brand}>Edit full venue profile →</Text>
         </Pressable>
       </Card>
+
+      <ContactDetailsSection
+        description="Your name, address, phone, email and website. Venue profile edits the same details, and your emails and receipts use them too."
+        values={{
+          name: venue?.name ?? null,
+          address: venue?.address ?? null,
+          phone: venue?.phone ?? null,
+          email: venuePublicEmail(venue),
+          website: venue?.website_url ?? null,
+        }}
+        onEdit={() => router.push('/manage/venue-profile' as Href)}
+        display={contactDisplay}
+        onDisplayChange={setContactDisplay}
+        aboutTabOff={!showAbout}
+        emailNote="Email is off until you switch it on. Guests who reply to your emails reach the address they see here."
+        guestEmail={{ address: venuePublicEmail(venue), loginEmails: venue?.login_emails ?? [] }}
+      />
 
       {/* Website embed (iframe snippet + accent colour) and the QR code. */}
       <EmbedAndQrSection

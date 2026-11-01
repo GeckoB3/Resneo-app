@@ -4,6 +4,7 @@
  * See Docs/LINKED_VENUES_IMPLEMENTATION_PLAN.md §2.6 / Appendix B.
  */
 
+import type { ContactDisplay, StoredContactDisplay } from '@/lib/booking/contactDisplay';
 import type {
   BookingPageCoverCropBox,
   BookingPageImageFraming,
@@ -54,6 +55,8 @@ export interface CombinedBookingPageConfig {
   show_team_tab?: boolean;
   show_about_tab?: boolean;
   team_profiles?: Record<string, BookingTeamProfile> | null;
+  /** Which of the host's contact details the page shows, and where (`lib/booking/contactDisplay`). */
+  contact_display?: StoredContactDisplay | ContactDisplay | null;
 }
 
 export interface CollectiveBranding {
@@ -108,6 +111,10 @@ export interface CollectiveView {
    */
   hostContact?: {
     phone: string | null;
+    /** The host's public email. Only the host itself is sent it. */
+    email?: string | null;
+    /** The host's sign-in addresses, for the host's own Booking page. */
+    loginEmails?: string[];
     websiteUrl: string | null;
     address: string | null;
     /** The host venue's `opening_hours` JSON, keyed "0" (Sun) to "6" (Sat). */
@@ -497,6 +504,8 @@ export interface CollectivesListResponse {
     reason: string | null;
     still_shows: string | null;
     own_path: string | null;
+    /** No guest can reach anything the own page's settings shape. Absent on older servers. */
+    resting?: boolean;
   } | null;
 }
 export interface CollectiveResponse {

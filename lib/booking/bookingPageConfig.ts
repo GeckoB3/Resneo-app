@@ -12,6 +12,7 @@
  * @see _reference/Resneo/src/lib/booking/booking-page-font-presets.ts
  */
 
+import type { ContactDisplay, StoredContactDisplay } from '@/lib/booking/contactDisplay';
 import type { ServicesLayout } from '@/lib/booking/service-categories';
 
 // ---------------------------------------------------------------------------
@@ -138,6 +139,8 @@ export interface BookingPageConfig {
   show_team_tab?: boolean;
   /** When true, show the About tab on the public booking page (off by default for new venues). */
   show_about_tab?: boolean;
+  /** Which contact details show at the top of the page and on its About tab (`contactDisplay.ts`). */
+  contact_display?: StoredContactDisplay | ContactDisplay | null;
   /**
    * How services are listed once the venue has categories: headed sections with a
    * category menu (default, stored as absent) or collapsible categories. See

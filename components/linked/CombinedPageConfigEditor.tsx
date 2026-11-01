@@ -13,6 +13,10 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { IconButton } from '@/components/ui/IconButton';
 import { Input } from '@/components/ui/Input';
+import { useRouter, type Href } from 'expo-router';
+import { ContactDetailsSection } from '@/components/manage/ContactDetailsSection';
+import { collectiveSettingsCopy } from '@/lib/linked/collective-settings-copy';
+import { resolveContactDisplay, type ContactDisplay } from '@/lib/booking/contactDisplay';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { Segmented } from '@/components/ui/Segmented';
 import { Text } from '@/components/ui/Text';
@@ -74,6 +78,7 @@ function assembleConfig(raw: {
   coverFullWidth: boolean;
   logoCrop: BookingPageImageFraming | null;
   coverCropBox: BookingPageCoverCropBox | null;
+  contactDisplay: ContactDisplay;
 }): CombinedBookingPageConfig {
   return {
     brand_primary: normalizeHexColor(raw.primary),
@@ -94,6 +99,7 @@ function assembleConfig(raw: {
     // framing helpers normalise a centred/full-frame selection back to null.
     logo_crop: raw.logoCrop,
     cover_crop_box: raw.coverCropBox,
+    contact_display: raw.contactDisplay,
   };
 }
 
@@ -129,6 +135,9 @@ export function CombinedPageConfigEditor({
   const upload = useUploadPageAsset();
 
   const cfg = collective.bookingPageConfig ?? {};
+  const router = useRouter();
+  const hostName =
+    collective.members.find((m) => m.venueId === collective.hostVenueId)?.venueName ?? 'the host venue';
 
   // Address strategy.
   const adopt = collective.slugStrategy === 'adopt_member';
@@ -162,6 +171,7 @@ export function CombinedPageConfigEditor({
   );
   // Which framing sheet is open (mirrors the single-venue editor's openSheet).
   const [openSheet, setOpenSheet] = useState<null | 'logoFraming' | 'coverCrop'>(null);
+  const [contactDisplay, setContactDisplay] = useState<ContactDisplay>(() => resolveContactDisplay(cfg));
 
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const lastSavedJsonRef = useRef<string | null>(null);
@@ -186,6 +196,7 @@ export function CombinedPageConfigEditor({
     setCoverUrl(c.cover_photo_url ?? null);
     setLogoCrop(c.logo_crop ?? null);
     setCoverCropBox(c.cover_crop_box ?? null);
+    setContactDisplay(resolveContactDisplay(c));
     setSaveStatus('idle');
     lastSavedJsonRef.current = JSON.stringify(
       assembleConfig({
@@ -203,6 +214,7 @@ export function CombinedPageConfigEditor({
         coverFullWidth: c.cover_full_width === true,
         logoCrop: c.logo_crop ?? null,
         coverCropBox: c.cover_crop_box ?? null,
+        contactDisplay: resolveContactDisplay(c),
       }),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -217,10 +229,10 @@ export function CombinedPageConfigEditor({
       assembleConfig({
         primary, fontPreset, announcement, about,
         instagram, facebook, tiktok, x, showServices, showTeam, showAbout, coverFullWidth,
-        logoCrop, coverCropBox,
+        logoCrop, coverCropBox, contactDisplay,
       }),
     [primary, fontPreset, announcement, about, instagram, facebook, tiktok, x,
-      showServices, showTeam, showAbout, coverFullWidth, logoCrop, coverCropBox],
+      showServices, showTeam, showAbout, coverFullWidth, logoCrop, coverCropBox, contactDisplay],
   );
   const editorConfigJson = useMemo(() => JSON.stringify(editorConfig), [editorConfig]);
 
@@ -360,6 +372,26 @@ export function CombinedPageConfigEditor({
       ) : null}
 
       {/* Booking-page address */}
+      <ContactDetailsSection
+        description={collectiveSettingsCopy.contactHostBody(hostName)}
+        values={{
+          name: collective.publicName ?? hostName,
+          address: collective.hostContact?.address ?? null,
+          phone: collective.hostContact?.phone ?? null,
+          email: collective.hostContact?.email ?? null,
+          website: collective.hostContact?.websiteUrl ?? null,
+        }}
+        onEdit={() => router.push('/manage/venue-profile' as Href)}
+        display={contactDisplay}
+        onDisplayChange={setContactDisplay}
+        aboutTabOff={!showAbout}
+        emailNote={collectiveSettingsCopy.contactHostEmailNote}
+        guestEmail={{
+          address: collective.hostContact?.email ?? null,
+          loginEmails: collective.hostContact?.loginEmails ?? [],
+        }}
+      />
+
       <SectionHeader title="Booking page address" />
       <Card style={styles.card}>
         <Text variant="caption" tone="muted">

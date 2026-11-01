@@ -4,6 +4,8 @@ import { collectiveSettingsCopy } from '@/lib/linked/collective-settings-copy';
 import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { MemberContactDetails } from '@/components/linked/MemberContactDetails';
+
 import { CombinedPageAboutSection } from '@/components/linked/CombinedPageAboutSection';
 import { CombinedPageAddressRow } from '@/components/linked/CombinedPageAddressRow';
 import { Button } from '@/components/ui/Button';
@@ -203,6 +205,8 @@ export function CombinedPageMemberSummary({
         )}
       </Card>
 
+      <MemberContactDetails hostName={host} />
+
       {/* Web collective booking settings plan §7.6: where the member's people on the page come from. */}
       <Card style={styles.card} testID="collective-your-people">
         <Text variant="label">{collectiveSettingsCopy.yourPeopleTitle}</Text>
@@ -210,7 +214,7 @@ export function CombinedPageMemberSummary({
           {collectiveSettingsCopy.yourPeopleBody(collective.name)}
         </Text>
         <Text variant="caption" tone="muted">
-          Switch to This venue&rsquo;s own page above, then open Meet the team.
+          Go to your own page&rsquo;s settings above, then open Meet the team.
         </Text>
       </Card>
 

@@ -200,6 +200,10 @@ export interface VenueBootstrap {
   plan_status?: string | null;
   /** Email the owner when a new booking comes in (Communications owner-alert). */
   owner_booking_notification_enabled?: boolean;
+  /** A separate email for guests: shown on the page, and where replies go. */
+  reply_to_email?: string | null;
+  /** The addresses people sign in to this venue with, lower case. Sent to admins. */
+  login_emails?: string[];
   /** Recipient for the owner booking alert; falls back to the venue email server-side. */
   owner_booking_notification_email?: string | null;
   /** Accent colour (hex) applied to the embeddable booking widget. */
