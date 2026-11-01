@@ -20,6 +20,14 @@ import { motion } from '@/theme/index';
  * The returned value already nets off the bottom safe-area inset (the caller's
  * base pad carries that), so callers add it straight onto a base pad.
  */
+export function keyboardLift(height: number, bottomInset: number, os: string = Platform.OS): number {
+  // Android's reported height already leaves out the navigation bar (ReactRootView:
+  // `imeInsets.bottom - barInsets.bottom`). Taking it off again left a sheet's pinned buttons
+  // behind the keyboard by exactly the height of the bar. iOS reports the keyboard's full height,
+  // which overlaps the home indicator's inset.
+  return os === 'android' ? Math.max(0, height) : Math.max(0, height - bottomInset);
+}
+
 export function useKeyboardInset(bottomInset: number): SharedValue<number> {
   const inset = useSharedValue(0);
 
@@ -30,7 +38,7 @@ export function useKeyboardInset(bottomInset: number): SharedValue<number> {
     const onShow = (event: KeyboardEvent) => {
       const height = event.endCoordinates?.height ?? 0;
       const duration = event.duration && event.duration > 0 ? event.duration : motion.normal;
-      inset.value = withTiming(Math.max(0, height - bottomInset), { duration });
+      inset.value = withTiming(keyboardLift(height, bottomInset), { duration });
     };
     const onHide = (event: KeyboardEvent) => {
       const duration = event?.duration && event.duration > 0 ? event.duration : motion.normal;

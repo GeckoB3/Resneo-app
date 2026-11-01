@@ -4,12 +4,20 @@ import {
   Modal,
   Platform,
   Pressable,
+  StatusBar,
   StyleSheet,
   View,
   type DimensionValue,
 } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+  type SharedValue,
+} from 'react-native-reanimated';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useKeyboardInset } from '@/components/ui/useKeyboardInset';
@@ -85,12 +93,32 @@ export function Sheet({
   // Counted while open, so an in-app prompt knows it cannot appear over this window.
   useOverlayOpen(visible);
 
+  // How the sheet yields to the keyboard. A `fill` sheet keeps its fixed height and shrinks its
+  // body (SheetContent). A content-sized sheet lifts whole: padding it instead counted the keyboard
+  // against its `maxHeight`, so a form taller than what was left ran out of the bottom, buttons
+  // first. Its cap becomes the room above the keyboard, so a body that can shrink still does.
+  const rootInsets = useSafeAreaInsets();
+  // The Modal's own measured height: `useWindowDimensions` read about 300 points short of it on a
+  // Samsung with the keyboard up, which squeezed the sheet and clipped its buttons.
+  const frameHeight = useSharedValue(0);
+  const keyboardInset = useKeyboardInset(rootInsets.bottom);
+  const liftsWhole = !fill && !takeover && keyboardAvoidance === 'reserve';
+  const topLimit = Math.max(StatusBar.currentHeight ?? 0, rootInsets.top);
+  const sheetLift = useAnimatedStyle(() => {
+    if (!liftsWhole) return {};
+    const inset = keyboardInset.value;
+    if (inset <= 0) return { marginBottom: 0, maxHeight };
+    return {
+      marginBottom: inset,
+      maxHeight: frameHeight.value > 0 ? frameHeight.value - topLimit - inset : maxHeight,
+    };
+  });
+
   // Drag-to-dismiss: a downward pan on the handle/header translates the whole
   // sheet down; releasing past a distance/velocity threshold closes it,
-  // otherwise it springs back. The translate lives on the OUTER sheet while the
-  // keyboard inset lives on the INNER padding, so the two never fight. The
-  // gesture is scoped to the handle region only, so scroll bodies in `fill`
-  // sheets keep working untouched.
+  // otherwise it springs back. The translate never fights the keyboard's margin
+  // or padding, being a transform. The gesture is scoped to the handle region
+  // only, so scroll bodies in `fill` sheets keep working untouched.
   const dragY = useSharedValue(0);
 
   // Reset the drag offset whenever the sheet (re)opens, so a sheet dismissed by
@@ -169,7 +197,9 @@ export function Sheet({
           gesture-handler gesture in a sheet (this drag handle, the signature pad,
           photo framing, the cover cropper) silently did nothing there until the
           sheet brought a root of its own. Harmless on iOS and web. */}
-      <GestureHandlerRootView style={[styles.root, { backgroundColor: colors.overlay }]}>
+      <GestureHandlerRootView
+        style={[styles.root, { backgroundColor: colors.overlay }]}
+        onLayout={(event) => frameHeight.set(event.nativeEvent.layout.height)}>
         <ModalWindowInsets>
           {takeover ? null : (
             <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Dismiss" />
@@ -188,10 +218,11 @@ export function Sheet({
                     sheetMaxWidth ? { maxWidth: sheetMaxWidth } : null,
                     fill ? { height: maxHeight } : { maxHeight },
                   ]),
+              sheetLift,
               sheetTransform,
               takeoverFade,
             ]}>
-            <SheetContent fill={fill} keyboardAvoidance={keyboardAvoidance} takeover={takeover}>
+            <SheetContent fill={fill} keyboardAvoidance={keyboardAvoidance} keyboardInset={keyboardInset} takeover={takeover}>
               {takeover ? null : (
                 <GestureDetector gesture={panGesture}>
                   <Pressable
@@ -247,27 +278,28 @@ function ModalWindowInsets({ children }: { children: ReactNode }) {
 
 /**
  * The padded column the handle and the caller's content sit in: the bottom
- * safe area plus the keyboard lift. A component of its own so the insets are
- * read from inside `ModalWindowInsets`.
+ * safe area, plus the keyboard lift in a `fill` sheet. A component of its own
+ * so the insets are read from inside `ModalWindowInsets`.
  */
 function SheetContent({
   fill,
   keyboardAvoidance,
+  keyboardInset,
   takeover,
   children,
 }: {
   fill: boolean;
   keyboardAvoidance: 'reserve' | 'overlay';
+  keyboardInset: SharedValue<number>;
   /** Client mode: the content fills the screen and draws its own safe areas, so no padding here. */
   takeover: boolean;
   children: ReactNode;
 }) {
   const insets = useSafeAreaInsets();
-  const keyboardInset = useKeyboardInset(insets.bottom);
 
   // Lift the content above the keyboard. `fill` sheets keep their fixed height
-  // and shrink the body from the bottom (no top clipping); content-sized sheets
-  // grow upward off the keyboard.
+  // and shrink the body from the bottom (no top clipping). Content-sized sheets
+  // lift whole instead (see `sheetLift`), so they take nothing here.
   //
   // `overlay` mode reserves NO keyboard space — the keyboard simply overlays the
   // body and the child scrolls its focused field above it. This avoids the
@@ -282,7 +314,7 @@ function SheetContent({
   // Content-sized sheets are unchanged: lg + inset, exactly as before.
   const basePad = takeover ? 0 : (fill ? spacing.md : spacing.lg) + insets.bottom;
   const animatedPad = useAnimatedStyle(() => ({
-    paddingBottom: basePad + (takeover || keyboardAvoidance === 'overlay' ? 0 : keyboardInset.value),
+    paddingBottom: basePad + (fill && !takeover && keyboardAvoidance === 'reserve' ? keyboardInset.value : 0),
   }));
 
   return (
