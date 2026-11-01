@@ -13,11 +13,13 @@ import * as WebBrowser from 'expo-web-browser';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Switch, View } from 'react-native';
 
+import { CoverThumb } from '@/components/bookingPage/CoverThumb';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { logoFramingTransform } from '@/lib/booking/bookingPageConfig';
 import { getWebUrl } from '@/lib/env';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
@@ -27,7 +29,9 @@ import {
   marketplaceCardHint,
   marketplaceCardView,
   marketplaceCategoryLabel,
+  MARKETPLACE_COVER_ASPECT,
   marketplaceCollectiveLine,
+  marketplaceCoverCropWidthPct,
   marketplaceFixTarget,
   marketplaceStatusLabel,
   toggleMarketplaceCategory,
@@ -42,6 +46,11 @@ import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
 const SAVE_FAILED = 'Could not save. Please try again.';
+
+const MARKETPLACE_BADGE_LOGO_SIZE = 64;
+const MARKETPLACE_MAIN_LOGO_SIZE = 120;
+const MARKETPLACE_LOGO_BORDER = 3;
+const MARKETPLACE_LOGO_SURFACE = '#FFFFFF';
 
 export function MarketplaceSection({ isAdmin }: { isAdmin: boolean }) {
   const { colors } = useTheme();
@@ -316,6 +325,62 @@ export function MarketplaceSection({ isAdmin }: { isAdmin: boolean }) {
   );
 }
 
+/**
+ * The cover in the card's fixed frame (web `CardCover`). The whole photo, or the region the owner
+ * chose, is fitted inside and the space around it is filled with a blurred copy, so nothing they
+ * uploaded is ever cut off.
+ */
+function MarketplaceCardCover({ url, cropBox }: { url: string; cropBox: MarketplaceCardData['cover_crop_box'] }) {
+  return (
+    <View style={styles.mCoverFill} testID="marketplace-preview-cover">
+      <Image
+        source={{ uri: url }}
+        style={styles.mCoverBackdrop}
+        contentFit="cover"
+        blurRadius={24}
+        testID="marketplace-preview-cover-backdrop"
+      />
+      {cropBox ? (
+        <CoverThumb coverUrl={url} cropBox={cropBox} style={{ width: `${marketplaceCoverCropWidthPct(cropBox)}%` }} />
+      ) : (
+        <Image source={{ uri: url }} style={StyleSheet.absoluteFill} contentFit="contain" testID="marketplace-preview-cover-photo" />
+      )}
+    </View>
+  );
+}
+
+/** The round logo, as on the booking page: the owner's framing, or the whole image if they set none. */
+function MarketplaceCardLogo({
+  url,
+  crop,
+  size,
+  badge = false,
+}: {
+  url: string;
+  crop: MarketplaceCardData['logo_crop'];
+  size: number;
+  badge?: boolean;
+}) {
+  const inner = size - MARKETPLACE_LOGO_BORDER * 2;
+  const { translateX, translateY, scale } = logoFramingTransform(crop, inner);
+  return (
+    <View
+      style={[styles.mLogo, badge && styles.mLogoBadge, { width: size, height: size, borderRadius: size / 2 }]}
+      testID="marketplace-preview-logo">
+      {crop ? (
+        <Image
+          source={{ uri: url }}
+          contentFit="cover"
+          style={{ width: inner, height: inner, transform: [{ translateX }, { translateY }, { scale }] }}
+          testID="marketplace-preview-logo-image"
+        />
+      ) : (
+        <Image source={{ uri: url }} style={styles.mLogoImage} contentFit="contain" testID="marketplace-preview-logo-image" />
+      )}
+    </View>
+  );
+}
+
 /** The card exactly as customers see it on the marketplace, without the link. */
 function MarketplaceCardPreview({ card }: { card: MarketplaceCardData }) {
   const { colors } = useTheme();
@@ -324,24 +389,30 @@ function MarketplaceCardPreview({ card }: { card: MarketplaceCardData }) {
     <View
       style={[styles.mCard, { borderColor: colors.border, backgroundColor: colors.surfaceRaised }]}
       testID="marketplace-preview">
-      <View style={[styles.mCover, { backgroundColor: colors.brandSubtle }]}>
-        {card.cover_photo_url ? (
-          <Image source={{ uri: card.cover_photo_url }} style={StyleSheet.absoluteFill} contentFit="cover" />
-        ) : null}
-        {card.logo_url ? (
-          <View style={[styles.mLogo, { borderColor: colors.background, backgroundColor: colors.background }]}>
-            <Image source={{ uri: card.logo_url }} style={styles.mLogoImage} contentFit="contain" />
-          </View>
-        ) : !card.cover_photo_url ? (
-          <View style={styles.mInitials}>
-            <Text variant="display" color={colors.brand} style={styles.mInitialsText}>
-              {view.initials}
-            </Text>
-          </View>
+      <View style={styles.mImages}>
+        <View style={[styles.mCover, { backgroundColor: colors.brandSubtle }]}>
+          {card.cover_photo_url ? (
+            <MarketplaceCardCover url={card.cover_photo_url} cropBox={card.cover_crop_box} />
+          ) : view.mainLogo ? (
+            <View style={styles.mCentred}>
+              <MarketplaceCardLogo url={view.mainLogo} crop={card.logo_crop} size={MARKETPLACE_MAIN_LOGO_SIZE} />
+            </View>
+          ) : (
+            <View style={styles.mCentred}>
+              <Text variant="display" color={colors.brand} style={styles.mInitialsText}>
+                {view.initials}
+              </Text>
+            </View>
+          )}
+        </View>
+        {view.badgeLogo ? (
+          <MarketplaceCardLogo url={view.badgeLogo} crop={card.logo_crop} size={MARKETPLACE_BADGE_LOGO_SIZE} badge />
         ) : null}
       </View>
       <View style={styles.mBody}>
-        <Text variant="subheading">{card.name}</Text>
+        <Text variant="subheading" style={view.badgeLogo ? styles.mNameBesideLogo : undefined}>
+          {card.name}
+        </Text>
         {view.where ? (
           <Text variant="bodySmall" tone="secondary">
             {view.where}
@@ -413,21 +484,25 @@ const styles = StyleSheet.create({
   mainPill: { borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 1 },
   preview: { gap: spacing.sm },
   mCard: { borderWidth: 1, borderRadius: 24, overflow: 'hidden', maxWidth: 380 },
-  mCover: { aspectRatio: 16 / 9, width: '100%', overflow: 'hidden' },
+  // Above the card's text, which the badge hangs over.
+  mImages: { zIndex: 1 },
+  mCover: { aspectRatio: MARKETPLACE_COVER_ASPECT, width: '100%', overflow: 'hidden' },
+  mCoverFill: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center' },
+  // Slightly oversized so the blur's soft edge stays outside the frame (web `scale-110`).
+  mCoverBackdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, transform: [{ scale: 1.1 }] },
+  // White in both themes: customers see a logo on white, and a dark logo would vanish on a dark one.
   mLogo: {
-    position: 'absolute',
-    left: spacing.base,
-    bottom: spacing.md,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    borderWidth: 3,
+    borderWidth: MARKETPLACE_LOGO_BORDER,
+    borderColor: MARKETPLACE_LOGO_SURFACE,
+    backgroundColor: MARKETPLACE_LOGO_SURFACE,
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
   },
+  mLogoBadge: { position: 'absolute', left: spacing.base, bottom: -MARKETPLACE_BADGE_LOGO_SIZE / 2 + 4 },
   mLogoImage: { width: '100%', height: '100%' },
-  mInitials: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center' },
+  mNameBesideLogo: { paddingLeft: MARKETPLACE_BADGE_LOGO_SIZE + spacing.md },
+  mCentred: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center' },
   mInitialsText: { opacity: 0.4 },
   mBody: { padding: spacing.base, gap: spacing.sm },
   mChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },

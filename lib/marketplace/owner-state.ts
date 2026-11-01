@@ -8,6 +8,11 @@
  *
  * Everything here is pure so the screen and its tests share one source of truth.
  */
+import {
+  coverDisplayAspect,
+  type BookingPageCoverCropBox,
+  type BookingPageImageFraming,
+} from '@/lib/booking/bookingPageConfig';
 
 export const MARKETPLACE_MAX_CATEGORIES = 3;
 
@@ -29,6 +34,9 @@ export interface MarketplaceCardData {
   has_bio: boolean;
   cover_photo_url: string | null;
   logo_url: string | null;
+  /** How the owner framed their images. Absent from a server older than 2026-11-01. */
+  logo_crop?: BookingPageImageFraming | null;
+  cover_crop_box?: BookingPageCoverCropBox | null;
   models: MarketplaceModel[];
   delivery: MarketplaceDelivery[];
   price_from_pence: number | null;
@@ -205,6 +213,14 @@ export function formatPriceFrom(pence: number | null | undefined, currency: stri
   }
 }
 
+/** The shape of the card's image frame (web `aspect-[16/9]`). */
+export const MARKETPLACE_COVER_ASPECT = 16 / 9;
+
+/** How wide the owner's cover crop sits in the frame, so all of it fits: as tall as it can be, at most full width. */
+export function marketplaceCoverCropWidthPct(box: BookingPageCoverCropBox): number {
+  return Math.min(100, (coverDisplayAspect(box) / MARKETPLACE_COVER_ASPECT) * 100);
+}
+
 /** Everything the card preview draws, worked out once. */
 export function marketplaceCardView(card: MarketplaceCardData): {
   about: string;
@@ -212,9 +228,15 @@ export function marketplaceCardView(card: MarketplaceCardData): {
   where: string;
   chips: string[];
   initials: string;
+  /** The round logo on the cover's edge. One file used as both cover and logo shows once, as the cover. */
+  badgeLogo: string | null;
+  /** With no cover, the logo is the card's main image. */
+  mainLogo: string | null;
 } {
   const words = card.primary_category ? CATEGORY_CARD_WORDS[card.primary_category] : undefined;
   return {
+    badgeLogo: card.cover_photo_url && card.logo_url !== card.cover_photo_url ? card.logo_url : null,
+    mainLogo: card.cover_photo_url ? null : card.logo_url,
     about: cardAbout(card.about) ?? generatedCardLine(card),
     price: formatPriceFrom(card.price_from_pence, card.currency),
     where: [words && card.primary_category !== 'other' ? words.singular : null, card.town]

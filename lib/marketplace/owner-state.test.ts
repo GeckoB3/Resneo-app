@@ -7,6 +7,7 @@ import {
   marketplaceCardHint,
   marketplaceCardView,
   marketplaceCollectiveLine,
+  marketplaceCoverCropWidthPct,
   marketplaceFixTarget,
   marketplaceStatusLabel,
   toggleMarketplaceCategory,
@@ -154,5 +155,24 @@ describe('marketplace card preview', () => {
       'This is how customers see you. Add an About text on this page to tell them about your business in your own words. A cover photo helps your card stand out.',
     );
     expect(marketplaceCardHint({ has_bio: true, cover_photo_url: 'x' })).toBe('This is how customers see you.');
+  });
+});
+
+describe('the card preview photos', () => {
+  it('puts the logo on the cover edge, or makes it the main image with no cover', () => {
+    expect(marketplaceCardView(card({ cover_photo_url: 'c', logo_url: 'l' }))).toMatchObject({ badgeLogo: 'l', mainLogo: null });
+    expect(marketplaceCardView(card({ cover_photo_url: null, logo_url: 'l' }))).toMatchObject({ badgeLogo: null, mainLogo: 'l' });
+    expect(marketplaceCardView(card({ cover_photo_url: 'c', logo_url: null }))).toMatchObject({ badgeLogo: null, mainLogo: null });
+  });
+
+  it('shows one file once when it is both the cover and the logo', () => {
+    expect(marketplaceCardView(card({ cover_photo_url: 'c', logo_url: 'c' }))).toMatchObject({ badgeLogo: null, mainLogo: null });
+  });
+
+  it('fits a cover crop inside the frame, matching the web card', () => {
+    // A square crop is as tall as the 16:9 frame, so 56.25% of its width.
+    expect(marketplaceCoverCropWidthPct({ x: 0.25, y: 0.25, w: 0.5, h: 0.5, ar: 1 })).toBeCloseTo(56.25);
+    // A crop wider than the frame stops at full width.
+    expect(marketplaceCoverCropWidthPct({ x: 0, y: 0.4, w: 1, h: 0.2, ar: 1 })).toBe(100);
   });
 });

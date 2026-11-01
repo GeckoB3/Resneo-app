@@ -104,6 +104,63 @@ describe('MarketplaceSection', () => {
     expect(screen.getByText('From £25')).toBeTruthy();
   });
 
+  describe('the card preview photos', () => {
+    const withCard = (over: Partial<NonNullable<MarketplaceOwnerState['card']>>) => {
+      const state = ownerState();
+      mockQuery = { data: { ...state, card: { ...state.card!, ...over } }, isError: false };
+    };
+    const COVER = 'https://img.test/cover.jpg';
+    const LOGO = 'https://img.test/logo.png';
+
+    it('fits the whole cover inside the frame, over a blurred copy, and never crops it', async () => {
+      withCard({ cover_photo_url: COVER });
+      await render(<MarketplaceSection isAdmin />);
+      expect(screen.getByTestId('marketplace-preview-cover-backdrop').props).toMatchObject({
+        contentFit: 'cover',
+        blurRadius: 24,
+      });
+      expect(screen.getByTestId('marketplace-preview-cover-photo').props.contentFit).toBe('contain');
+    });
+
+    it('shows only the region the owner chose', async () => {
+      withCard({ cover_photo_url: COVER, cover_crop_box: { x: 0.25, y: 0.25, w: 0.5, h: 0.5, ar: 1 } });
+      await render(<MarketplaceSection isAdmin />);
+      expect(screen.queryByTestId('marketplace-preview-cover-photo')).toBeNull();
+      expect(screen.getByTestId('marketplace-preview-cover-backdrop')).toBeTruthy();
+    });
+
+    it('uses the owner framing for the logo, and the whole image when there is none', async () => {
+      withCard({ cover_photo_url: COVER, logo_url: LOGO, logo_crop: { x: 60, y: 50, zoom: 1.5 } });
+      await render(<MarketplaceSection isAdmin />);
+      const framed = screen.getByTestId('marketplace-preview-logo-image');
+      expect(framed.props.contentFit).toBe('cover');
+      // 58px inside the 3px border: 10% of that across, scaled 1.5.
+      expect(framed.props.style.transform).toEqual([
+        { translateX: expect.closeTo(5.8) },
+        { translateY: 0 },
+        { scale: 1.5 },
+      ]);
+
+      withCard({ cover_photo_url: COVER, logo_url: LOGO });
+      await render(<MarketplaceSection isAdmin />);
+      expect(screen.getByTestId('marketplace-preview-logo-image').props.contentFit).toBe('contain');
+    });
+
+    it('makes the logo the main image when there is no cover', async () => {
+      withCard({ logo_url: LOGO });
+      await render(<MarketplaceSection isAdmin />);
+      expect(screen.queryByTestId('marketplace-preview-cover')).toBeNull();
+      expect(screen.getByTestId('marketplace-preview-logo')).toBeTruthy();
+    });
+
+    it('shows one image once when the cover and logo are the same file', async () => {
+      withCard({ cover_photo_url: COVER, logo_url: COVER });
+      await render(<MarketplaceSection isAdmin />);
+      expect(screen.getByTestId('marketplace-preview-cover')).toBeTruthy();
+      expect(screen.queryByTestId('marketplace-preview-logo')).toBeNull();
+    });
+  });
+
   it('switches the listing off and says so', async () => {
     await render(<MarketplaceSection isAdmin />);
     await act(async () => {
