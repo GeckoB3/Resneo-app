@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
+import { useStableCallback } from '@/lib/ui/useStableCallback';
 import { hapticTap } from '@/lib/haptics';
 import { useBookingLogEmailMutation } from '@/lib/queries/useBookingLogEmail';
 import { useToast } from '@/providers/ToastProvider';
@@ -60,6 +61,11 @@ function TimePickerField({
 }) {
   const { colors } = useTheme();
   const [open, setOpen] = useState(false);
+  const handleSet = useStableCallback((_event: unknown, date: Date) => {
+    setOpen(false);
+    onChange(dateToTime(date));
+  });
+  const handleDismiss = useStableCallback(() => setOpen(false));
 
   if (Platform.OS === 'ios') {
     return (
@@ -92,11 +98,8 @@ function TimePickerField({
           value={timeToDate(value)}
           mode="time"
           display="default"
-          onValueChange={(_event, date: Date) => {
-            setOpen(false);
-            onChange(dateToTime(date));
-          }}
-          onDismiss={() => setOpen(false)}
+          onValueChange={handleSet}
+          onDismiss={handleDismiss}
         />
       ) : null}
     </>

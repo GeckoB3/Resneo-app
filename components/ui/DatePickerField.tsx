@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Platform, Pressable, StyleSheet } from 'react-native';
 
 import { Text } from '@/components/ui/Text';
+import { useStableCallback } from '@/lib/ui/useStableCallback';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
@@ -48,6 +49,11 @@ export function DatePickerField({
 }: DatePickerFieldProps) {
   const { colors } = useTheme();
   const [open, setOpen] = useState(false);
+  const handleSet = useStableCallback((_event: unknown, date: Date) => {
+    setOpen(false);
+    onChange(dateToIso(date));
+  });
+  const handleDismiss = useStableCallback(() => setOpen(false));
 
   if (Platform.OS === 'ios') {
     return (
@@ -90,11 +96,8 @@ export function DatePickerField({
           display="default"
           minimumDate={minimumDate}
           maximumDate={maximumDate}
-          onValueChange={(_event, date: Date) => {
-            setOpen(false);
-            onChange(dateToIso(date));
-          }}
-          onDismiss={() => setOpen(false)}
+          onValueChange={handleSet}
+          onDismiss={handleDismiss}
         />
       ) : null}
     </>

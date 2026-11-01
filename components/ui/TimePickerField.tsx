@@ -4,6 +4,7 @@ import { Platform, Pressable, StyleSheet } from 'react-native';
 
 import { minutesToTime } from '@/components/calendar/grid-layout';
 import { Text } from '@/components/ui/Text';
+import { useStableCallback } from '@/lib/ui/useStableCallback';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
@@ -35,6 +36,11 @@ function dateToMinutes(date: Date): number {
 export function TimePickerField({ value, onChange, accessibilityLabel, disabled }: TimePickerFieldProps) {
   const { colors } = useTheme();
   const [open, setOpen] = useState(false);
+  const handleSet = useStableCallback((_event: unknown, date: Date) => {
+    setOpen(false);
+    onChange(dateToMinutes(date));
+  });
+  const handleDismiss = useStableCallback(() => setOpen(false));
 
   // iOS: the compact picker IS the tappable field (matches web's time input).
   if (Platform.OS === 'ios') {
@@ -76,11 +82,8 @@ export function TimePickerField({ value, onChange, accessibilityLabel, disabled 
           mode="time"
           is24Hour
           display="default"
-          onValueChange={(_event, date: Date) => {
-            setOpen(false);
-            onChange(dateToMinutes(date));
-          }}
-          onDismiss={() => setOpen(false)}
+          onValueChange={handleSet}
+          onDismiss={handleDismiss}
         />
       ) : null}
     </>
