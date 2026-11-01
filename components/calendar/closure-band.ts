@@ -80,6 +80,20 @@ const LOOKS: Record<string, Palette> = {
   break: BREAK,
 };
 
+/**
+ * A manual block: solid slate, one step darker than the web's slate-200, so it stands out from the
+ * pale closure bands and working hours around it. The dark look is a lighter slate than the
+ * calendar behind it, for the same reason.
+ */
+const MANUAL_BLOCK: Palette = {
+  light: { backgroundColor: '#CBD5E1', borderColor: '#94A3B8', labelColor: '#0F172A', accent: '#64748B' },
+  dark: { backgroundColor: '#475569', borderColor: '#64748B', labelColor: '#F1F5F9', accent: '#94A3B8' },
+};
+
+export function manualBlockLook(isDark = false): ClosureBandLook {
+  return isDark ? MANUAL_BLOCK.dark : MANUAL_BLOCK.light;
+}
+
 /** The band's look, or null when this block is not a closure band. */
 export function closureBandLook(
   blockType: string | null | undefined,

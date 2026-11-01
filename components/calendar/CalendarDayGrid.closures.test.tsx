@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 
@@ -14,6 +15,7 @@ jest.mock('react-native-gesture-handler', () => {
   };
 });
 
+import { manualBlockLook } from '@/components/calendar/closure-band';
 import { CalendarDayGrid, type CalendarTimeBlock } from '@/components/calendar/CalendarDayGrid';
 import { PX_PER_MINUTE, TIME_GUTTER_WIDTH } from '@/components/calendar/grid-layout';
 
@@ -134,6 +136,26 @@ describe('CalendarDayGrid — closure bands', () => {
     ]);
     // The web's heading for a hand-made block (2026-09-10).
     expect(screen.getByText(/Time blocked/)).toBeTruthy();
+    expect(screen.getByText('Tap to edit')).toBeTruthy();
+  });
+});
+
+describe('CalendarDayGrid — manual blocks', () => {
+  const block: CalendarTimeBlock = {
+    id: 'b1',
+    start: '12:00',
+    end: '13:00',
+    label: null,
+    isEditable: true,
+    blockType: 'manual',
+  };
+
+  it('fills a block with solid grey, darker than the pale bands around it', async () => {
+    await renderGrid([block]);
+    const style = StyleSheet.flatten(screen.getByLabelText(/^Blocked /).props.style);
+    // An undefined colour here once wiped the fill out, leaving only the calendar behind it.
+    expect(style.backgroundColor).toBe(manualBlockLook(false).backgroundColor);
+    expect(screen.getByText(/^Time blocked/)).toBeTruthy();
     expect(screen.getByText('Tap to edit')).toBeTruthy();
   });
 });

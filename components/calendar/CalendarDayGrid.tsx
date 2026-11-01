@@ -42,7 +42,7 @@ import {
   type CalendarBookingCluster,
 } from '@/lib/calendar/cluster-bookings';
 import { isNonWorkingBlock, isOccupyingBlock, narrowWorkingRanges } from '@/lib/calendar/occupying-blocks';
-import { closureBandLook } from '@/components/calendar/closure-band';
+import { closureBandLook, manualBlockLook } from '@/components/calendar/closure-band';
 import { IconButton } from '@/components/ui/IconButton';
 import { workingHoursLabel } from '@/lib/calendar/column-hours-label';
 import {
@@ -901,6 +901,7 @@ export function CalendarDayGrid({
             slot under a stripe can still be tapped to book anyway. */}
         {positionedBlocks.map((item) => {
           const look = closureBandLook(item.block.blockType, isDark);
+          const manual = manualBlockLook(isDark);
           return (
             <Pressable
               key={item.block.id}
@@ -919,25 +920,25 @@ export function CalendarDayGrid({
                 {
                   top: item.top,
                   height: item.height,
-                  backgroundColor: look?.backgroundColor,
-                  borderColor: look ? look.borderColor : colors.border,
+                  backgroundColor: (look ?? manual).backgroundColor,
+                  borderColor: (look ?? manual).borderColor,
                 },
+                !look && { borderLeftWidth: 3, borderLeftColor: manual.accent },
               ]}>
               {/* A short band has no room for a label; the tint alone still
                   says "not available". */}
               {!look || item.height >= 26 ? (
                 <Text
                   variant="caption"
-                  tone={look ? undefined : 'muted'}
                   numberOfLines={1}
-                  style={look ? { color: look.labelColor } : undefined}>
+                  style={look ? { color: look.labelColor } : [styles.blockLabel, { color: manual.labelColor }]}>
                   {look
                     ? item.block.label?.trim() || 'Closed'
                     : `${item.block.label?.trim() || 'Time blocked'} · ${item.timeLabel}`}
                 </Text>
               ) : null}
               {!look && item.block.isEditable && item.height >= 40 ? (
-                <Text variant="caption" tone="muted" numberOfLines={1} style={styles.editHint}>
+                <Text variant="caption" numberOfLines={1} style={[styles.editHint, { color: manual.labelColor }]}>
                   Tap to edit
                 </Text>
               ) : null}
@@ -1237,14 +1238,16 @@ const styles = StyleSheet.create({
     right: spacing.sm,
     borderRadius: 8,
     borderWidth: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(148, 163, 184, 0.22)',
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
     justifyContent: 'flex-start',
   },
+  blockLabel: {
+    fontWeight: '700',
+  },
   editHint: {
     marginTop: 1,
-    opacity: 0.6,
+    opacity: 0.75,
   },
   sessionBlock: {
     position: 'absolute',

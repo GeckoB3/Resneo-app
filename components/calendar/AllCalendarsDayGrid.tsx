@@ -92,7 +92,7 @@ import {
   type CalendarBookingCluster,
 } from '@/lib/calendar/cluster-bookings';
 import { isNonWorkingBlock, isOccupyingBlock, narrowWorkingRanges } from '@/lib/calendar/occupying-blocks';
-import { closureBandLook } from '@/components/calendar/closure-band';
+import { closureBandLook, manualBlockLook } from '@/components/calendar/closure-band';
 import { IconButton } from '@/components/ui/IconButton';
 import { workingHoursLabel } from '@/lib/calendar/column-hours-label';
 import {
@@ -265,6 +265,8 @@ type AllCalendarsDayGridProps = {
   onBlockPress: (bookingId: string) => void;
   /** Empty-slot tap → carries the column's practitioner id + the snapped time. */
   onEmptyPress: (practitionerId: string, time: string) => void;
+  /** Tap a manual block → carries the column's practitioner id + the block's id. */
+  onTimeBlockPress?: (practitionerId: string, blockId: string) => void;
   /** Quick-status tray action on an OWN booking (Confirm / Start / Complete …). */
   onStatusChange?: (bookingIds: string[], status: string) => void;
   /** Arrived toggle on an OWN booking. */
@@ -473,6 +475,7 @@ export function AllCalendarsDayGrid({
   nowMinutes,
   onBlockPress,
   onEmptyPress,
+  onTimeBlockPress,
   onStatusChange,
   onArrivalToggle,
   complianceFlags,
@@ -865,6 +868,7 @@ export function AllCalendarsDayGrid({
                     minBlockHeight={minBlockHeight}
                     onBlockPress={onBlockPress}
                     onEmptyPress={onEmptyPress}
+                    onTimeBlockPress={onTimeBlockPress}
                     onStatusChange={onStatusChange}
                     onArrivalToggle={onArrivalToggle}
                     complianceFlags={complianceFlags}
@@ -933,6 +937,7 @@ function DayColumn({
   closedRanges,
   onBlockPress,
   onEmptyPress,
+  onTimeBlockPress,
   onStatusChange,
   onArrivalToggle,
   complianceFlags,
@@ -975,6 +980,7 @@ function DayColumn({
   closedRanges: { start: number; end: number }[];
   onBlockPress: (bookingId: string) => void;
   onEmptyPress: (practitionerId: string, time: string) => void;
+  onTimeBlockPress?: (practitionerId: string, blockId: string) => void;
   onStatusChange?: (bookingIds: string[], status: string) => void;
   onArrivalToggle?: (bookingIds: string[], arrived: boolean) => void;
   complianceFlags?: Record<string, ComplianceBookingFlag>;
@@ -1233,33 +1239,47 @@ function DayColumn({
           labelled with its cause and minutes (web 2026-09-10). */}
       {overlays.map(({ block, start, end }) => {
         const look = closureBandLook(block.blockType, isDark);
+        const manual = manualBlockLook(isDark);
         const height = overlayHeights.get(block.id) ?? (end - start) * pxPerMinute;
+        // Only a block someone made takes the tap. A stripe lets it through to the slot beneath, so
+        // a closed time can still be booked anyway.
+        const editable = !look && block.isEditable === true && !!onTimeBlockPress;
         return (
-          <View
+          <Pressable
             key={block.id}
-            pointerEvents="none"
-            accessibilityLabel={look ? block.label?.trim() || undefined : undefined}
+            pointerEvents={editable ? 'auto' : 'none'}
+            accessibilityRole={editable ? 'button' : undefined}
+            accessibilityLabel={
+              editable
+                ? `${block.label?.trim() || 'Time blocked'}, tap to edit`
+                : look
+                  ? block.label?.trim() || undefined
+                  : undefined
+            }
+            onPress={() => {
+              if (editable) onTimeBlockPress?.(column.calendarId, block.id);
+            }}
             style={[
               look ? styles.closureBand : styles.overlay,
               {
                 top: (start - gridStartMin) * pxPerMinute,
                 height,
-                backgroundColor: look?.backgroundColor,
-                borderColor: look ? look.borderColor : colors.border,
+                backgroundColor: (look ?? manual).backgroundColor,
+                borderColor: (look ?? manual).borderColor,
               },
+              !look && { borderLeftWidth: 3, borderLeftColor: manual.accent },
             ]}>
             {/* A short band has no room for a label, and a clipped one reads as
                 a glitch — the tint alone still says "not available". */}
             {!look || height >= 26 ? (
               <Text
                 variant="caption"
-                tone={look ? undefined : 'muted'}
                 numberOfLines={1}
-                style={look ? { color: look.labelColor } : undefined}>
+                style={look ? { color: look.labelColor } : [styles.blockLabel, { color: manual.labelColor }]}>
                 {block.label?.trim() || 'Time blocked'}
               </Text>
             ) : null}
-          </View>
+          </Pressable>
         );
       })}
 
@@ -1569,10 +1589,12 @@ const styles = StyleSheet.create({
     right: spacing.xs,
     borderRadius: radius.sm,
     borderWidth: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(148, 163, 184, 0.22)',
     paddingHorizontal: spacing.xs,
     paddingVertical: 2,
     justifyContent: 'center',
+  },
+  blockLabel: {
+    fontWeight: '700',
   },
   session: {
     position: 'absolute',

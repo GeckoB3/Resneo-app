@@ -489,6 +489,9 @@ export const queryKeys = {
         // Likewise the full roster with paused columns (the Calendars manager).
         includeInactive ? 'with-inactive' : 'active',
       ] as const,
+    /** The calendars this person may block: for a staff member, fewer than the roster. */
+    blockable: (accessToken?: string | null) =>
+      [...queryKeys.practitioners.all(), 'blockable', keyScope(accessToken)] as const,
   },
 
   schedule: {

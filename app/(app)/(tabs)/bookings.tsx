@@ -18,6 +18,7 @@ import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useToast } from '@/providers/ToastProvider';
 
 import { useAcceptUnpaidGuard } from '@/components/bookings/AcceptUnpaidSheet';
+import { BlockEditSheet, type BlockTarget } from '@/components/calendar/BlockEditSheet';
 import { BookingDetailSheet } from '@/components/bookings/BookingDetailSheet';
 import { BookingSwipeRow } from '@/components/bookings/BookingSwipeRow';
 import { BookingBulkBar } from '@/components/bookings/BookingBulkBar';
@@ -66,6 +67,7 @@ import {
 } from '@/lib/queries/useCompliance';
 import { LiveDot } from '@/components/ui/LiveDot';
 import { useBookingsRange } from '@/lib/queries/useBookingsRange';
+import { useBlockableCalendars } from '@/lib/queries/useBlockableCalendars';
 import { usePractitioners } from '@/lib/queries/usePractitioners';
 import { isAppointmentFromVenue } from '@/lib/venue/venue-experience';
 import { useVenueContext } from '@/providers/VenueProvider';
@@ -446,6 +448,8 @@ export default function BookingsScreen() {
 
   // --- Add menu (New booking vs Walk-in) — mirrors the Calendar tab's FAB ---
   const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [blockTarget, setBlockTarget] = useState<BlockTarget | null>(null);
+  const blockableCalendars = useBlockableCalendars();
 
   // --- Bulk selection ---
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -1265,8 +1269,8 @@ export default function BookingsScreen() {
       )}
 
       {/* FAB — hidden during selection mode, and when the active linked venue
-          does not grant booking creation. Opens the add menu (New booking vs
-          Walk-in), matching the Calendar tab. */}
+          does not grant booking creation. Opens the add menu (New booking,
+          Walk-in or Block time), matching the Calendar tab. */}
       {!selectionMode && canCreateBooking ? (
         <Fab
           accessibilityLabel={newBookingActionLabel(terminology, isAppointment)}
@@ -1274,10 +1278,12 @@ export default function BookingsScreen() {
         />
       ) : null}
 
-      {/* Add menu — same choice the Calendar tab's FAB offers: a full booking or
-          a walk-in ("Start Appointment Now"). */}
+      {/* Add menu — same choice the Calendar tab's FAB offers: a full booking, a
+          walk-in ("Start Appointment Now") or blocked time. Blocks are on this
+          venue's own calendars, so not while a linked venue is the active one. */}
+      <BlockEditSheet target={blockTarget} onClose={() => setBlockTarget(null)} />
       <Sheet visible={addMenuOpen} onClose={closeAddMenu}>
-        <Text variant="subheading">{newBookingActionLabel(terminology, isAppointment)}</Text>
+        <Text variant="subheading">Add to calendar</Text>
         <View style={styles.addMenuActions}>
           <Button
             label={newBookingActionLabel(terminology, isAppointment)}
@@ -1291,6 +1297,17 @@ export default function BookingsScreen() {
             fullWidth
             onPress={() => goToNewBooking('walk-in')}
           />
+          {!activeLinkedVenue && blockableCalendars.length > 0 ? (
+            <Button
+              label="Block time"
+              variant="secondary"
+              fullWidth
+              onPress={() => {
+                closeAddMenu();
+                setBlockTarget({ mode: 'create', practitionerId: null, date: null, startTime: null });
+              }}
+            />
+          ) : null}
           <Button label="Cancel" variant="ghost" fullWidth onPress={closeAddMenu} />
         </View>
       </Sheet>

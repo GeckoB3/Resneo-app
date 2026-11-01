@@ -143,6 +143,7 @@ import { useResourcesManageList } from '@/lib/queries/useResourcesManage';
 import { useManagedServices } from '@/lib/queries/useServicesManage';
 import { useSchedule } from '@/lib/queries/useSchedule';
 import { useAvailabilityBlocks } from '@/lib/queries/useAvailabilityBlocks';
+import { useBlockableCalendars } from '@/lib/queries/useBlockableCalendars';
 import { usePractitionerLeave } from '@/lib/queries/useAvailabilityManage';
 import { useVenueLiveSync } from '@/lib/realtime/useVenueLiveSync';
 import { useToast } from '@/providers/ToastProvider';
@@ -463,6 +464,7 @@ export default function CalendarScreen() {
    */
   const [detailLinked, setDetailLinked] = useState<LinkedBookingContext | null>(null);
   const [blockTarget, setBlockTarget] = useState<BlockTarget | null>(null);
+  const blockableCalendars = useBlockableCalendars();
   const [addSheetTarget, setAddSheetTarget] = useState<AddSheetTarget | null>(null);
   // Month-picker sheet (date jump) — opened by tapping the header date label.
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
@@ -2317,23 +2319,44 @@ export default function CalendarScreen() {
     [commitTimeMove, diary, toast],
   );
 
-  const handleBlockTimeBlockPress = useCallback(
-    (blockId: string) => {
-      // One-off blocks come from the grid payload (`day.blocks`); practitioner +
-      // date are the current view context (no separate blocks fetch needed).
-      const block = day?.blocks.find((b) => b.id === blockId);
-      if (!block || !effectiveId) return;
+  /** Open a block from any grid: one-off blocks come from the grid payload, so no separate fetch. */
+  const openBlockForEdit = useCallback(
+    (calendarId: string, date: string, blockId: string) => {
+      const block = gridQuery.data?.calendars
+        .find((c) => c.calendarId === calendarId)
+        ?.dates.find((d) => d.date === date)
+        ?.blocks.find((b) => b.id === blockId);
+      if (!block) return;
       setBlockTarget({
         mode: 'edit',
         blockId: block.id,
-        practitionerId: effectiveId,
-        date: anchor,
+        practitionerId: calendarId,
+        date,
         startTime: block.startTime,
         endTime: block.endTime,
         reason: block.reason,
       });
     },
-    [day, effectiveId, anchor],
+    [gridQuery.data],
+  );
+
+  const handleBlockTimeBlockPress = useCallback(
+    (blockId: string) => {
+      if (effectiveId) openBlockForEdit(effectiveId, anchor, blockId);
+    },
+    [openBlockForEdit, effectiveId, anchor],
+  );
+
+  const handleWeekManualBlockPress = useCallback(
+    (date: string, blockId: string) => {
+      if (effectiveId) openBlockForEdit(effectiveId, date, blockId);
+    },
+    [openBlockForEdit, effectiveId],
+  );
+
+  const handleAllTimeBlockPress = useCallback(
+    (calendarId: string, blockId: string) => openBlockForEdit(calendarId, anchor, blockId),
+    [openBlockForEdit, anchor],
   );
 
   // ---- Inline quick-status actions ----
@@ -2713,11 +2736,13 @@ export default function CalendarScreen() {
         // Venue open/closed state for this day → "Closed" shading, widened to
         // the calendar's amended hours on an amended day.
         venueHours: column.venueHours,
+        // Time blocked by hand, so a day that looks free in this view really is (web parity).
+        manualBlocks: effectiveId ? getDayBlocks(effectiveId, date, data).filter((b) => b.isEditable) : [],
         /**
-         * Closure bands only — not breaks or manual blocks, which stay a Day-view
-         * detail. "Who is off this week?" is the question the week view exists to
-         * answer, and a column that renders the same whether the person is working
-         * or on leave cannot answer it.
+         * Closure bands only — not breaks, which stay a Day-view detail. "Who is off
+         * this week?" is the question the week view exists to answer, and a column
+         * that renders the same whether the person is working or on leave cannot
+         * answer it.
          */
         timeBlocks: effectiveId
           ? buildCalendarClosureOverlays({
@@ -2729,7 +2754,7 @@ export default function CalendarScreen() {
           : [],
       };
     });
-  }, [scope, gridQuery.data, effectiveId, week.days, today, scheduleByCalendarDate, openingHours, venueWideBlocks, practitioners, leavePeriods]);
+  }, [getDayBlocks, scope, gridQuery.data, effectiveId, week.days, today, scheduleByCalendarDate, openingHours, venueWideBlocks, practitioners, leavePeriods]);
 
   // ---- Whole-team week matrix data (week-scope "All") ----
   // Practitioner rows + 7 day-column headers. The cell counts are derived inside
@@ -2962,6 +2987,9 @@ export default function CalendarScreen() {
    * the column hosts a resource (see `refusedOnOthersColumn`), and then offers just those.
    */
   const addSheetLookOnly = addSheetSlot != null && !diary.allows(addSheetSlot.practitionerId || null);
+  const addSheetCanBlock = addSheetSlot
+    ? blockableCalendars.some((c) => c.id === addSheetSlot.practitionerId)
+    : !linkedContextActive && blockableCalendars.length > 0;
   // The collective this sheet's New and Walk-in book for, when one takes the
   // booking (the same rule `collectiveParamsFor` applies), so the sheet can say
   // so: from a partner's linked view the FAB is the only way to it.
@@ -3477,6 +3505,7 @@ export default function CalendarScreen() {
                   nowMinutes={nowMinutes}
                   onBlockPress={openDetail}
                   onEmptyPress={createAtForDate}
+                  onManualBlockPress={handleWeekManualBlockPress}
                   onDayPress={(date) => {
                     hapticSelect();
                     setAnchor(date);
@@ -3505,6 +3534,7 @@ export default function CalendarScreen() {
                 nowMinutes={nowMinutes}
                 onBlockPress={handleAllBlockPress}
                 onEmptyPress={handleAllEmptyPress}
+                onTimeBlockPress={handleAllTimeBlockPress}
                 onStatusChange={handleStatusChange}
                 onArrivalToggle={handleArrivalToggle}
                 complianceFlags={complianceFlags}
@@ -3624,8 +3654,10 @@ export default function CalendarScreen() {
                   });
                 }}
               />
-              {/* Block time — slot only (the FAB has no target column/time). */}
-              {addSheetSlot ? (
+              {/* Block time — on a slot, fills in its column and time; from the FAB,
+                  the sheet asks. Only where this person may block (the route refuses
+                  a calendar they do not manage), never on another venue's diary. */}
+              {addSheetCanBlock ? (
                 <Button
                   label="Block time"
                   variant="secondary"
@@ -3635,9 +3667,9 @@ export default function CalendarScreen() {
                     closeAddSheet();
                     setBlockTarget({
                       mode: 'create',
-                      practitionerId: slot.practitionerId,
+                      practitionerId: slot?.practitionerId ?? effectiveId,
                       date: anchor,
-                      startTime: slot.time,
+                      startTime: slot?.time ?? null,
                     });
                   }}
                 />

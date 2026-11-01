@@ -18,6 +18,9 @@ export function useUpdateBlock() {
   return useMutation({
     mutationFn: async (input: {
       id: string;
+      /** Move the block to another calendar or day; the server re-checks it for clashes. */
+      practitioner_id?: string;
+      block_date?: string;
       start_time?: string;
       end_time?: string;
       reason?: string | null;

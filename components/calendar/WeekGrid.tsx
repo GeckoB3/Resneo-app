@@ -37,7 +37,7 @@ import {
   type CalendarBookingCluster,
 } from '@/lib/calendar/cluster-bookings';
 import { venueClosedRanges, type VenueDayHours } from '@/lib/calendar/venue-closures';
-import { closureBandLook } from '@/components/calendar/closure-band';
+import { closureBandLook, manualBlockLook } from '@/components/calendar/closure-band';
 import {
   clampClosureBlocksToWindow,
   isScheduleClosureBlockType,
@@ -85,6 +85,8 @@ export type WeekDayColumn = {
    * the primary venue's week omits it (breaks/blocks live in the Day view).
    */
   timeBlocks?: CalendarTimeBlock[];
+  /** Time someone blocked by hand on this day (web parity: the Week view shows them too). */
+  manualBlocks?: CalendarTimeBlock[];
   /** Venue open/closed state for this day → "Closed" shading. */
   venueHours: VenueDayHours;
   /**
@@ -108,6 +110,8 @@ type WeekGridProps = {
   onBlockPress: (bookingId: string) => void;
   /** Empty-slot tap — carries the column's date and the snapped time. */
   onEmptyPress: (date: string, time: string) => void;
+  /** Tap a manual block — carries the column's date and the block's id. */
+  onManualBlockPress?: (date: string, blockId: string) => void;
   /** Tap a day header to open that day in the Day view. */
   onDayPress: (date: string) => void;
   /** The calendar whose week this is; names its "unavailable" stripes. */
@@ -178,6 +182,7 @@ export function WeekGrid({
   nowMinutes,
   onBlockPress,
   onEmptyPress,
+  onManualBlockPress,
   onDayPress,
   calendarName,
   onAmendHours,
@@ -218,6 +223,11 @@ export function WeekGrid({
         if (isScheduleClosureBlockType(tb.blockType)) continue;
         const start = timeToMinutes(tb.start);
         const end = timeToMinutes(tb.end);
+        if (end > start) ranges.push({ start, end });
+      }
+      for (const mb of day.manualBlocks ?? []) {
+        const start = timeToMinutes(mb.start);
+        const end = timeToMinutes(mb.end);
         if (end > start) ranges.push({ start, end });
       }
     }
@@ -347,6 +357,7 @@ export function WeekGrid({
                 calendarName={calendarName}
                 onBlockPress={onBlockPress}
                 onEmptyPress={onEmptyPress}
+                onManualBlockPress={onManualBlockPress}
               />
             ))}
           </View>
@@ -367,6 +378,7 @@ function WeekDayCol({
   calendarName,
   onBlockPress,
   onEmptyPress,
+  onManualBlockPress,
 }: {
   day: WeekDayColumn;
   gridStartMin: number;
@@ -376,6 +388,7 @@ function WeekDayCol({
   calendarName?: string;
   onBlockPress: (bookingId: string) => void;
   onEmptyPress: (date: string, time: string) => void;
+  onManualBlockPress?: (date: string, blockId: string) => void;
 }) {
   const { colors, isDark } = useTheme();
 
@@ -460,6 +473,23 @@ function WeekDayCol({
     }));
   }, [day.timeBlocks, day.venueHours, day.date, day.linkedClosures, calendarName, gridStartMin, startHour, endHour]);
 
+  const manualBlocks = useMemo(() => {
+    const raw = (day.manualBlocks ?? [])
+      .map((block) => ({ block, start: timeToMinutes(block.start), end: timeToMinutes(block.end) }))
+      .filter(({ start, end }) => end > start);
+    const heights = computeRangeHeights(
+      raw.map(({ block, start, end }) => ({ id: block.id, start, end })),
+      gridStartMin,
+      PX_PER_MINUTE,
+      WEEK_MIN_BLOCK_HEIGHT,
+    );
+    return raw.map(({ block, start, end }) => ({
+      block,
+      top: (start - gridStartMin) * PX_PER_MINUTE,
+      height: heights.get(block.id) ?? (end - start) * PX_PER_MINUTE,
+    }));
+  }, [day.manualBlocks, gridStartMin]);
+
   // Clamp to the visible window so an out-of-hours "now" doesn't draw a stray
   // dot/bar above or below the grid (the column has no overflow clip).
   const nowTop =
@@ -520,6 +550,36 @@ function WeekDayCol({
               </Text>
             ) : null}
           </View>
+        );
+      })}
+
+      {/* Time blocked by hand: the same solid grey as the day grid, and a tap edits it. */}
+      {manualBlocks.map(({ block, top, height }) => {
+        const look = manualBlockLook(isDark);
+        const label = block.label?.trim() || 'Blocked';
+        return (
+          <Pressable
+            key={block.id}
+            accessibilityRole="button"
+            accessibilityLabel={`${label} ${block.start} to ${block.end}, tap to edit`}
+            onPress={() => onManualBlockPress?.(day.date, block.id)}
+            style={[
+              styles.busy,
+              {
+                top,
+                height,
+                backgroundColor: look.backgroundColor,
+                borderColor: look.borderColor,
+                borderLeftWidth: 2,
+                borderLeftColor: look.accent,
+              },
+            ]}>
+            {height >= WEEK_MIN_BLOCK_HEIGHT ? (
+              <Text variant="caption" numberOfLines={1} style={[styles.busyLabel, { color: look.labelColor }]}>
+                {label}
+              </Text>
+            ) : null}
+          </Pressable>
         );
       })}
 

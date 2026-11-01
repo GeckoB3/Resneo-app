@@ -4,6 +4,9 @@
  * carries next to its name, plus the venue caption under it.
  */
 import { fireEvent, render, screen } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
+
+import { manualBlockLook } from '@/components/calendar/closure-band';
 
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 
@@ -290,5 +293,27 @@ describe('AllCalendarsDayGrid — an editable linked column', () => {
       />,
     );
     expect(screen.getByLabelText(RESIZE_HANDLE)).toBeTruthy();
+  });
+});
+
+describe('AllCalendarsDayGrid — manual blocks', () => {
+  const manual = { id: 'b1', start: '12:00', end: '13:00', label: 'Lunch', isEditable: true, blockType: 'manual' };
+
+  it('fills a block with solid grey, and a tap reports its column and id', async () => {
+    const onTimeBlockPress = jest.fn();
+    await render(
+      <AllCalendarsDayGrid
+        embedded
+        calendars={[column({ calendarId: 'own-1', calendarName: 'Sam', timeBlocks: [manual] })]}
+        nowMinutes={null}
+        onBlockPress={jest.fn()}
+        onEmptyPress={jest.fn()}
+        onTimeBlockPress={onTimeBlockPress}
+      />,
+    );
+    const pressable = screen.getByLabelText('Lunch, tap to edit');
+    expect(StyleSheet.flatten(pressable.props.style).backgroundColor).toBe(manualBlockLook(false).backgroundColor);
+    fireEvent.press(pressable);
+    expect(onTimeBlockPress).toHaveBeenCalledWith('own-1', 'b1');
   });
 });
