@@ -15,9 +15,9 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ---
 
-## Unreleased OTA, iOS 1.3.0 / Android 1.3.0: block time with calendar and date
+## OTA on iOS 1.3.0 / Android 1.3.0, 2026-11-02: block time with calendar and date
 
-From `b97850a`, after the web merge of 2026-11-02 (`9176b995`, PR #245). JS only. Checks in the 2026-11-02 run in `Docs/GO_LIVE_CHECK.md`.
+Published by the owner after the web merge of 2026-11-02 (`9176b995`, PR #245): iOS group `1a74d5ca-908d-417e-8737-cd0a1e18ce52` and Android group `82a9e30c-bc53-4f83-a459-735f4231c68e`, from `9473e6b` (the code is `b97850a`). JS only. Checks in the 2026-11-02 run in `Docs/GO_LIVE_CHECK.md`.
 
 - **Block time:** the sheet has Calendar and Date with native time pickers, for new blocks and when editing, and the plus button on Calendar and Appointments offers Block time. Only calendars you may block are offered.
 - **Blocks on the calendar:** a solid grey that stands out, shown in Week view, and tappable to edit in Week and All calendars.
