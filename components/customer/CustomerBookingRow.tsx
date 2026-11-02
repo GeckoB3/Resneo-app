@@ -2,6 +2,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
+import { customerBookingState } from '@/lib/booking/customer-booking-state';
 import { formatDayHeading } from '@/lib/dates/venue-dates';
 import { balancePenceFor, venueNameFor, type CustomerBooking, type CustomerHome } from '@/lib/queries/useCustomerHome';
 import { formatPence } from '@/lib/format';
@@ -54,9 +55,10 @@ export function CustomerBookingRow({ booking, home, onPress }: Props) {
   );
 }
 
-/** Cancelled statuses, as the booking rows spell them. */
+/** Cancelled or missed: the row is struck through and owes nothing. */
 function isCancelled(status: string): boolean {
-  return status === 'cancelled' || status === 'canceled' || status === 'no_show';
+  const state = customerBookingState(status);
+  return state === 'cancelled' || state === 'missed';
 }
 
 const styles = StyleSheet.create({

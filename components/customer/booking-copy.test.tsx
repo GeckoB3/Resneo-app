@@ -79,6 +79,25 @@ describe('the forms section has three states, not two', () => {
   });
 });
 
+describe('the status line reads the value the API sends', () => {
+  // G19: the API sends "Cancelled" and "No-Show", not lower-case keys. A
+  // cancelled booking used to read BOOKED.
+  it('says CANCELLED for a cancelled booking', async () => {
+    const { getByText } = await renderBody({ status: 'Cancelled' });
+    expect(getByText('CANCELLED')).toBeTruthy();
+  });
+
+  it('says MISSED for a no-show', async () => {
+    const { getByText } = await renderBody({ status: 'No-Show' });
+    expect(getByText('MISSED')).toBeTruthy();
+  });
+
+  it('says BOOKED for a booked appointment', async () => {
+    const { getByText } = await renderBody({ status: 'Booked' });
+    expect(getByText('BOOKED')).toBeTruthy();
+  });
+});
+
 describe('where it happens', () => {
   it('names the venue for an ordinary booking', async () => {
     const { getByText } = await renderBody();

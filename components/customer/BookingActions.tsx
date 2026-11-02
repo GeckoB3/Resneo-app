@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/Card';
 import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
 import { Text } from '@/components/ui/Text';
 import { useToast } from '@/providers/ToastProvider';
+import { customerBookingState } from '@/lib/booking/customer-booking-state';
 import {
   useCancelBooking,
   useConfirmAttendance,
@@ -150,7 +151,7 @@ export function cancelConsequence(booking: CustomerBookingDetail): string {
 
 /** Whether there is anything left to manage. */
 function isLive(status: string): boolean {
-  return status !== 'cancelled' && status !== 'canceled' && status !== 'completed' && status !== 'no_show';
+  return customerBookingState(status) === 'live';
 }
 
 const styles = StyleSheet.create({

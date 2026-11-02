@@ -3,6 +3,7 @@ import { Linking, StyleSheet, View } from 'react-native';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
+import { customerBookingState } from '@/lib/booking/customer-booking-state';
 import { formatDayHeading } from '@/lib/dates/venue-dates';
 import { formatPence } from '@/lib/format';
 import type { CustomerBookingDetail } from '@/lib/queries/useCustomerBookings';
@@ -172,9 +173,10 @@ function whereLine(booking: CustomerBookingDetail): string {
 }
 
 function statusLabel(status: string): string {
-  if (status === 'cancelled' || status === 'canceled') return 'CANCELLED';
-  if (status === 'completed') return 'COMPLETED';
-  if (status === 'no_show') return 'MISSED';
+  const state = customerBookingState(status);
+  if (state === 'cancelled') return 'CANCELLED';
+  if (state === 'completed') return 'COMPLETED';
+  if (state === 'missed') return 'MISSED';
   return 'BOOKED';
 }
 
