@@ -1,5 +1,68 @@
 # Go-live check — Resneo app
 
+## Run 2026-11-02 (second): cancelled bookings in the customer area (G19), iOS 1.3.0 and Android 1.3.0, from `bed7c6f`
+
+**Scope:** `79e4335..bed7c6f`, one commit:
+- `bed7c6f`: the customer area reads booking status as the server sends it ("Cancelled", "No-Show", "Completed"), so cancelled bookings no longer show as booked with live actions. Split-visit plan gap G19, released on its own under the owner's decision D18.
+
+`9473e6b` is what production runs (the first 2026-11-02 update, now recorded as published in `CHANGELOG.md`; its code is `b97850a`). This update is under "Unreleased OTA" at the top of `CHANGELOG.md`.
+
+**Verdict: clear to publish, one update per platform (see Publish). The web is live.** Nothing native moved.
+
+### 1. Version and reach
+
+| Check | Result |
+|---|---|
+| Published tip | iOS `1a74d5ca` and Android `82a9e30c`, runtime 1.3.0, "Block time with calendar and date, steadier Android keyboard and pickers", from `9473e6b` (`update:list`) |
+| Store binaries | `build:list --profile production`: iOS 1.3.0 build 27 and Android 1.3.0 versionCode 19, from `7a5de9a` (2026-10-18). No newer store build |
+| Runtime | `app.json` root `version` and `android.version` 1.3.0, `appVersion` policy: the update reaches the 1.3.0 installs |
+
+### 2. Nothing native moved
+
+`git diff 9473e6b bed7c6f` over `package.json`, `package-lock.json`, `app.json`, `app.config.js`, `eas.json`, `metro.config.js`, `babel.config.js`, `modules`, `patches`, `plugins`, `ios` and `android`: empty. The whole diff is seven files under `components/customer` and `lib/booking`.
+
+### 3. Verified on this machine
+
+- At `bed7c6f`: `tsc --noEmit` clean. `jest`: **643 suites / 6,132 tests pass** (one suite and 12 tests more than the last run: the new G19 tests). `expo lint`: 0 errors, 680 warnings (unchanged).
+- Cleared-cache export under `eas env:exec production` (`npx expo export --clear --platform all`), both Hermes bundles. Counts:
+
+| Marker | iOS | Android |
+|---|---|---|
+| live Supabase URL / `www.resneo.com` / `pk_live_` | 1 / 1 / 1 | 1 / 1 / 1 |
+| `zkppmyyvkjvbsvemakbb` / `pk_test_` | none | none |
+| `192.168.` / `10.0.2.2` | none / none | none / none |
+| `reserve-ni.vercel.app` | once: the `getWebUrl()` fallbacks | same |
+| `localhost:3000` | once: expo-router's `head/url.js` fallback | none |
+| `localhost:8081` | once: React Native's `getDevServer` fallback | same |
+| `TERMINAL_SIMULATED` / `ALLOW_SCREENSHOTS` | none / none | none / none |
+| New code: `'noshow'` (not in `9473e6b`) | present | present |
+
+### 4. Web
+
+**Live.** Web PR #246 merged 2026-11-02 23:08 UTC as `32cd03cc` and deployed to production at 23:11 UTC (deployment status success). No migration. The app change needs no web change: the server already sends these statuses. Staging is reset after this update.
+
+### 5. Device testing
+
+Android, Expo Go, 2026-11-02, signed in as light3 with a test client record linked for the test, against staging: the customer list marked a cancelled booking "Cancelled"; its page read CANCELLED with no Cancel, Change or "Confirm I am coming"; a live booking read BOOKED with all three. The test data was removed afterwards.
+
+**Not tested:** an iPhone; the store binaries.
+
+### 6. Publish
+
+Run from `C:\Resneo-app` on a clean `main` at this record's commit (`eas.json` requires a commit):
+
+```
+npx eas-cli update --channel production --platform ios --environment production --clear-cache --message "Cancelled bookings show as cancelled in My bookings"
+npx eas-cli update --channel production --platform android --environment production --clear-cache --message "Cancelled bookings show as cancelled in My bookings"
+```
+
+To roll back, republish the first 2026-11-02 groups:
+`npx eas-cli update:republish --group 1a74d5ca-908d-417e-8737-cd0a1e18ce52 --message "Roll back"` (iOS) and `npx eas-cli update:republish --group 82a9e30c-bc53-4f83-a459-735f4231c68e --message "Roll back"` (Android).
+
+After publishing, retitle the changelog entry as published with the two groups, and watch Sentry for new crashes over the next day.
+
+---
+
 ## Run 2026-11-02: block time with calendar and date, Android keyboard and pickers, marketplace preview, iOS 1.3.0 and Android 1.3.0, from `b97850a`
 
 **Scope:** `e97fdbc..b97850a`, four commits:

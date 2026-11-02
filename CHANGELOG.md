@@ -15,6 +15,14 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ---
 
+## Unreleased OTA, iOS 1.3.0 / Android 1.3.0: cancelled bookings show as cancelled for clients
+
+From `bed7c6f`, after the web merge of 2026-11-02 (`32cd03cc`, PR #246). JS only. Checks in the second 2026-11-02 run in `Docs/GO_LIVE_CHECK.md`.
+
+- **My bookings:** a cancelled booking, or one marked as a no-show, is marked "Cancelled" in the list with no amount to pay, and its page reads CANCELLED or MISSED (COMPLETED for a finished one) and no longer offers Cancel, Change or "Confirm I am coming". The screens had compared the status in lower case while the server sends "Cancelled", so such bookings read as booked with live actions.
+
+---
+
 ## OTA on iOS 1.3.0 / Android 1.3.0, 2026-11-02: block time with calendar and date
 
 Published by the owner after the web merge of 2026-11-02 (`9176b995`, PR #245): iOS group `1a74d5ca-908d-417e-8737-cd0a1e18ce52` and Android group `82a9e30c-bc53-4f83-a459-735f4231c68e`, from `9473e6b` (the code is `b97850a`). JS only. Checks in the 2026-11-02 run in `Docs/GO_LIVE_CHECK.md`.
