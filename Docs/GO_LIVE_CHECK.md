@@ -1,5 +1,71 @@
 # Go-live check — Resneo app
 
+## Run 2026-11-02: block time with calendar and date, Android keyboard and pickers, marketplace preview, iOS 1.3.0 and Android 1.3.0, from `b97850a`
+
+**Scope:** `e97fdbc..b97850a`, four commits:
+- `bc3ab5c`: the marketplace card preview shows every photo whole, in the owner's framing.
+- `6a6641b`: sheets keep their buttons above the Android keyboard.
+- `a811795`: date and time pickers stop losing the choice on Android.
+- `b97850a`: Block time with Calendar and Date, from the plus menus too; solid grey blocks, shown in Week view.
+
+`e97fdbc` is what production runs: the 2026-11-01 update, which had no run here; it is now recorded in `CHANGELOG.md`. This update is under "Unreleased OTA" at the top of `CHANGELOG.md`.
+
+**Verdict: clear to publish, one update per platform (see Publish). The web is live.** Nothing native moved.
+
+### 1. Version and reach
+
+| Check | Result |
+|---|---|
+| Published tip | iOS `dbb0784e` and Android `b1c0e4a9`, runtime 1.3.0, "Booking page contact details and guest email, steadier live refresh", from `e97fdbc` (`update:list`, `update:view`) |
+| Store binaries | `build:list --profile production`: iOS 1.3.0 build 27 and Android 1.3.0 build 19, from `7a5de9a` (2026-10-18). No newer store build |
+| Runtime | `app.json` root `version` and `android.version` 1.3.0, `appVersion` policy: the update reaches the 1.3.0 installs |
+
+### 2. Nothing native moved
+
+`git diff e97fdbc b97850a` over `package.json`, `package-lock.json`, `app.json`, `app.config.js`, `eas.json`, `metro.config.js`, `babel.config.js`, `modules`, `patches`, `plugins`, `ios` and `android`: empty.
+
+### 3. Verified on this machine
+
+- At `b97850a`: `tsc --noEmit` clean. `jest`: **642 suites / 6,120 tests pass**. `expo lint`: 0 errors, 680 warnings (672 at the 2026-10-31 run).
+- Cleared-cache export under `eas env:exec production` (`npx expo export --clear --platform all`), both Hermes bundles. Counts:
+
+| Marker | iOS | Android |
+|---|---|---|
+| live Supabase URL / `www.resneo.com` / `pk_live_` | 1 / 1 / 1 | 1 / 1 / 1 |
+| `zkppmyyvkjvbsvemakbb` / `pk_test_` | none | none |
+| `192.168.` / `10.0.2.2` | none / none | none / none |
+| `reserve-ni.vercel.app` | once: the `getWebUrl()` fallbacks | same |
+| `localhost:3000` | once: expo-router's `head/url.js` fallback | none |
+| `localhost:8081` | once: React Native's `getDevServer` fallback | same |
+| `TERMINAL_SIMULATED` / `ALLOW_SCREENSHOTS` | none / none | none / none |
+| New code: "Block updated", "Block start time" (neither in `e97fdbc`) | each present | each present |
+
+### 4. Web
+
+**Live.** Web PR #245 merged 2026-11-02 20:08 UTC as `9176b995` and deployed to production at 20:11 UTC; staging was reset onto it. No migration.
+
+### 5. Device testing
+
+Android, Expo Go, 2026-11-01 to 02, as light3: the block time sheet (calendar, date, the native pickers, editing), grey blocks on the day and Week views, sheet buttons above the keyboard, and pickers keeping their value.
+
+**Not tested:** an iPhone; the store binaries; the marketplace card preview on a device.
+
+### 6. Publish
+
+Run from `C:\Resneo-app` on a clean `main` at this record's commit (`eas.json` requires a commit):
+
+```
+npx eas-cli update --channel production --platform ios --environment production --clear-cache --message "Block time with calendar and date, steadier Android keyboard and pickers"
+npx eas-cli update --channel production --platform android --environment production --clear-cache --message "Block time with calendar and date, steadier Android keyboard and pickers"
+```
+
+To roll back, republish the 2026-11-01 groups:
+`npx eas-cli update:republish --group dbb0784e-fdb2-420c-865e-8b880598f490 --message "Roll back"` (iOS) and `npx eas-cli update:republish --group b1c0e4a9-ebbe-4c22-b037-09de79e11a6b --message "Roll back"` (Android).
+
+After publishing, retitle the changelog entry as published with the two groups, and watch Sentry for new crashes over the next day.
+
+---
+
 ## Run 2026-10-31: link wizard friction (CQ-17), iOS 1.3.0 and Android 1.3.0, from `dea046b`
 
 **Scope:** `2a67fb0..dea046b`: `dea046b` is the code; `29989c3` and `e7e6f54` are this file and the changelog. `CHANGELOG.md` has it under "Unreleased OTA" at the top.

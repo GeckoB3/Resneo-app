@@ -15,6 +15,27 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ---
 
+## Unreleased OTA, iOS 1.3.0 / Android 1.3.0: block time with calendar and date
+
+From `b97850a`, after the web merge of 2026-11-02 (`9176b995`, PR #245). JS only. Checks in the 2026-11-02 run in `Docs/GO_LIVE_CHECK.md`.
+
+- **Block time:** the sheet has Calendar and Date with native time pickers, for new blocks and when editing, and the plus button on Calendar and Appointments offers Block time. Only calendars you may block are offered.
+- **Blocks on the calendar:** a solid grey that stands out, shown in Week view, and tappable to edit in Week and All calendars.
+- **Android keyboard:** sheet buttons stay above the keyboard.
+- **Android pickers:** a date or time you choose is no longer lost when the screen refreshes behind the picker.
+- **Marketplace preview:** the card preview on Booking page shows every photo whole, in your framing, as customers see it.
+
+---
+
+## OTA on iOS 1.3.0 / Android 1.3.0, 2026-11-01: booking page contact details, steadier live refresh
+
+Published by the owner on 2026-11-01 at 20:10 UTC: iOS group `dbb0784e-fdb2-420c-865e-8b880598f490` and Android group `b1c0e4a9-ebbe-4c22-b037-09de79e11a6b`. From `e97fdbc`. JS only. Recorded afterwards from `update:list`; it had no go-live run.
+
+- **Booking page:** contact details, display choices and guest email (`5068ca5`).
+- **Live sync:** bursts of changes are grouped and requests no longer restart (`e97fdbc`).
+
+---
+
 ## OTA on iOS 1.3.0 / Android 1.3.0, 2026-10-31: link wizard friction
 
 Published by the owner after the web merge of 2026-10-31 (`58245b75`, PR #242, the same tree as staging `6a816a4c`): iOS group `10913c22-76d4-4d93-a194-1a85162d6c22` and Android group `ddeff9c0-2f85-4e32-b188-c74df2aaca1b`. From `dea046b`. JS only. Checks in the 2026-10-31 run in `Docs/GO_LIVE_CHECK.md`.
