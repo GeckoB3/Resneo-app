@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
+import { servicesCountLabel } from '@/lib/booking/customer-visit-list';
 import { formatDayHeading } from '@/lib/dates/venue-dates';
 import { venueNameFor, type CustomerHome } from '@/lib/queries/useCustomerHome';
 import { spacing } from '@/theme/index';
@@ -37,6 +38,14 @@ export function NextBookingCard({ home }: Props) {
 
   const { service, practitioner } = home.next_booking_appointment;
   const venue = venueNameFor(home, booking.venue_id);
+  /*
+    The next VISIT (web split-visit plan 6.8, 8.9): the server sends its
+    earliest service, and opening it shows the whole visit. The service and
+    person named are the first one's, so with more than one service the card
+    says how many and names only the venue, since each service can be with
+    someone different.
+  */
+  const visitServices = booking.visit_key ? (booking.visit_service_count ?? 1) : 1;
 
   return (
     <Card onPress={() => router.push(`/booking/${booking.id}`)}>
@@ -48,9 +57,10 @@ export function NextBookingCard({ home }: Props) {
       </Text>
       <Text variant="body" tone="secondary">
         {formatDayHeading(booking.booking_date)} at {shortTime(booking.booking_time)}
+        {visitServices > 1 ? ` · ${servicesCountLabel(visitServices)}` : ''}
       </Text>
       <Text variant="bodySmall" tone="secondary">
-        {practitioner ? `${practitioner} at ${venue}` : venue}
+        {practitioner && visitServices <= 1 ? `${practitioner} at ${venue}` : venue}
       </Text>
 
       {formsLine(home) ? (

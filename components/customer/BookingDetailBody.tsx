@@ -1,5 +1,6 @@
 import { Linking, StyleSheet, View } from 'react-native';
 
+import { VisitContactsCard, VisitSummaryCard } from '@/components/customer/CustomerVisitCards';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
@@ -7,9 +8,18 @@ import { customerBookingState } from '@/lib/booking/customer-booking-state';
 import { formatDayHeading } from '@/lib/dates/venue-dates';
 import { formatPence } from '@/lib/format';
 import type { CustomerBookingDetail } from '@/lib/queries/useCustomerBookings';
+import type { CustomerVisit } from '@/lib/queries/useCustomerVisit';
 import { spacing } from '@/theme/index';
 
-type Props = { booking: CustomerBookingDetail };
+type Props = {
+  booking: CustomerBookingDetail;
+  /**
+   * The whole visit, when `booking` is one service of a multi-service visit (web split-visit plan
+   * 6.5). The top card then shows every service instead of this one, and the contact card names
+   * each business in place of "Call the venue".
+   */
+  visit?: CustomerVisit | null;
+};
 
 /**
  * What the booking is, when, and where.
@@ -18,37 +28,10 @@ type Props = { booking: CustomerBookingDetail };
  * CUSTOMER's address or online, and a screen that always printed the venue's
  * address would send a mobile practitioner's client to the wrong place.
  */
-export function BookingDetailBody({ booking }: Props) {
+export function BookingDetailBody({ booking, visit }: Props) {
   return (
     <View style={styles.stack}>
-      <Card>
-        <Text variant="overline" tone="secondary">
-          {statusLabel(booking.status)}
-        </Text>
-        <Text variant="subheading" style={styles.gap}>
-          {titleFor(booking)}
-        </Text>
-        <Text variant="body" tone="secondary">
-          {formatDayHeading(booking.booking_date)} at {booking.booking_time.slice(0, 5)}
-          {booking.booking_end_time ? ` to ${booking.booking_end_time.slice(0, 5)}` : ''}
-        </Text>
-        {booking.practitioner_name ? (
-          <Text variant="bodySmall" tone="secondary">
-            With {booking.practitioner_name}
-          </Text>
-        ) : null}
-        {booking.part_of_course ? (
-          /*
-            Said before any action is offered. A course is many bookings sharing
-            a group, and changing this one changes this one; somebody who read
-            "change booking" as "move my course" would find the other sessions
-            still where they were.
-          */
-          <Text variant="bodySmall" tone="secondary" style={styles.gap}>
-            This is one session of a course. Changing it affects this session only.
-          </Text>
-        ) : null}
-      </Card>
+      {visit ? <VisitSummaryCard visit={visit} /> : <BookingSummaryCard booking={booking} />}
 
       <Card>
         <Text variant="overline" tone="secondary">
@@ -70,7 +53,7 @@ export function BookingDetailBody({ booking }: Props) {
             style={styles.gap}
           />
         ) : null}
-        {booking.venue_phone ? (
+        {booking.venue_phone && !visit ? (
           <Button
             label="Call the venue"
             variant="secondary"
@@ -79,6 +62,8 @@ export function BookingDetailBody({ booking }: Props) {
           />
         ) : null}
       </Card>
+
+      {visit ? <VisitContactsCard visit={visit} /> : null}
 
       {formsCard(booking)}
 
@@ -110,6 +95,40 @@ export function BookingDetailBody({ booking }: Props) {
         </Card>
       ) : null}
     </View>
+  );
+}
+
+/** One booking on its own: its status, what it is, when and with whom. */
+function BookingSummaryCard({ booking }: { booking: CustomerBookingDetail }) {
+  return (
+    <Card>
+      <Text variant="overline" tone="secondary">
+        {statusLabel(booking.status)}
+      </Text>
+      <Text variant="subheading" style={styles.gap}>
+        {titleFor(booking)}
+      </Text>
+      <Text variant="body" tone="secondary">
+        {formatDayHeading(booking.booking_date)} at {booking.booking_time.slice(0, 5)}
+        {booking.booking_end_time ? ` to ${booking.booking_end_time.slice(0, 5)}` : ''}
+      </Text>
+      {booking.practitioner_name ? (
+        <Text variant="bodySmall" tone="secondary">
+          With {booking.practitioner_name}
+        </Text>
+      ) : null}
+      {booking.part_of_course ? (
+        /*
+          Said before any action is offered. A course is many bookings sharing
+          a group, and changing this one changes this one; somebody who read
+          "change booking" as "move my course" would find the other sessions
+          still where they were.
+        */
+        <Text variant="bodySmall" tone="secondary" style={styles.gap}>
+          This is one session of a course. Changing it affects this session only.
+        </Text>
+      ) : null}
+    </Card>
   );
 }
 

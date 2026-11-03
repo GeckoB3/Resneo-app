@@ -67,7 +67,10 @@ export function CustomerHomeHeader({ home }: Props) {
  * customers will see.
  */
 function summaryLine(home: CustomerHome): string | null {
-  if (home.upcoming_count === 0) {
+  // Visits, not rows: a two-service visit is one thing coming up (web split-visit plan 6.8, G4).
+  // Seen live, a two-service visit and one other booking read "3 bookings coming up".
+  const count = home.upcoming_visit_count ?? home.upcoming_count;
+  if (count === 0) {
     /*
       Says nothing rather than repeating the card below it. The next-booking
       card already reads "Nothing booked", and stacking a second sentence
@@ -76,10 +79,10 @@ function summaryLine(home: CustomerHome): string | null {
     */
     return null;
   }
-  if (home.upcoming_count === 1) {
+  if (count === 1) {
     return 'One booking coming up.';
   }
-  return `${home.upcoming_count} bookings coming up.`;
+  return `${count} bookings coming up.`;
 }
 
 const styles = StyleSheet.create({

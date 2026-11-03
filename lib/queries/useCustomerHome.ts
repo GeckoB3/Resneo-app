@@ -25,6 +25,19 @@ export interface CustomerBooking {
   payment_state?: string | null;
   booking_total_price_pence?: number | null;
   amount_paid_pence?: number | null;
+  /** "HH:MM:SS", when the booking has an end. */
+  booking_end_time?: string | null;
+  /**
+   * The multi-service visit this row is one service of, or null for a booking on its own, a
+   * group, a class or an event (web split-visit plan 6.8, G4). Rows sharing it are one visit and
+   * are listed as one card.
+   */
+  visit_key?: string | null;
+  /** How many of the listed rows share `visit_key` (1 when it is null). */
+  visit_service_count?: number;
+  /** An appointment's service, and who it is with, for a visit card. */
+  service_name?: string | null;
+  person_name?: string | null;
 }
 
 export interface CustomerVenue {
@@ -71,7 +84,14 @@ export interface CustomerHome {
   /** How many of the OTHER listed bookings still need a form. */
   later_bookings_needing_forms: number;
   next_booking_appointment: { service: string | null; practitioner: string | null };
+  /** Upcoming booking ROWS: a two-service visit counts twice. Kept for older servers. */
   upcoming_count: number;
+  /**
+   * Upcoming VISITS: a multi-service visit counts once (web split-visit plan 6.8, G4). The hub's
+   * count reads this, falling back to `upcoming_count` when a server does not send it.
+   */
+  upcoming_visit_count?: number;
+  /** The bookings after `next_booking`, already one row per visit on the server. */
   upcoming_after_next: CustomerBooking[];
   outstanding_payments: CustomerBooking[];
   venues: CustomerVenue[];

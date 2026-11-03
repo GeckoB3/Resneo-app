@@ -15,7 +15,7 @@ import type { CustomerHome } from '@/lib/queries/useCustomerHome';
 import CustomerHomeScreen from './index';
 
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
-jest.mock('expo-router', () => ({ useRouter: () => ({ push: jest.fn() }) }));
+jest.mock('expo-router', () => ({ useRouter: () => ({ push: jest.fn() }), useFocusEffect: () => undefined }));
 jest.mock('@/components/ui/Screen', () => {
   const React = jest.requireActual<typeof import('react')>('react');
   const { View } = jest.requireActual<typeof import('react-native')>('react-native');

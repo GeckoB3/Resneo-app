@@ -75,6 +75,17 @@ export const queryKeys = {
         bookingId,
         keyScope(accessToken),
       ] as const,
+    /**
+     * The whole visit a booking row belongs to (`GET /api/v1/me/visits/[id]`), its change options
+     * for one day, and its cancel preview (web split-visit plan 6.5 to 6.7). Under `customer.all()`,
+     * so every customer action that invalidates the area refreshes them too.
+     */
+    visit: (bookingId: string | null, accessToken?: string | null) =>
+      [...queryKeys.customer.all(), 'visit', bookingId, keyScope(accessToken)] as const,
+    visitChangeOptions: (bookingId: string | null, date: string | null, accessToken?: string | null) =>
+      [...queryKeys.customer.all(), 'visitChangeOptions', bookingId, date, keyScope(accessToken)] as const,
+    visitCancelPreview: (bookingId: string | null, accessToken?: string | null) =>
+      [...queryKeys.customer.all(), 'visitCancelPreview', bookingId, keyScope(accessToken)] as const,
     waitlist: (accessToken?: string | null) =>
       [...queryKeys.customer.all(), 'waitlist', keyScope(accessToken)] as const,
     payments: (bookingId: string | null, accessToken?: string | null) =>

@@ -79,6 +79,13 @@ export interface CustomerBookingDetail {
    * the old slot has been misled by the button.
    */
   part_of_course: boolean;
+  /**
+   * One service of a multi-service appointment visit (web split-visit plan 6.5; G2, G5). The
+   * screen then loads the whole visit and acts on it whole: the server refuses a single-service
+   * change for a visit's service (409 `part_of_visit`). True for a cancelled service too, so a
+   * link to it still opens the visit. Absent on older servers.
+   */
+  in_visit?: boolean;
   location: BookingLocation;
   notes: { label: string; value: string }[];
   compliance_forms: { name: string; url: string }[];

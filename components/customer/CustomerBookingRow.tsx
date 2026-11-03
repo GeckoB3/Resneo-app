@@ -3,6 +3,12 @@ import { StyleSheet, View } from 'react-native';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { customerBookingState } from '@/lib/booking/customer-booking-state';
+import {
+  customerVisitServiceLine,
+  customerVisitSpan,
+  isCustomerRowLive,
+  servicesCountLabel,
+} from '@/lib/booking/customer-visit-list';
 import { formatDayHeading } from '@/lib/dates/venue-dates';
 import { balancePenceFor, venueNameFor, type CustomerBooking, type CustomerHome } from '@/lib/queries/useCustomerHome';
 import { formatPence } from '@/lib/format';
@@ -12,6 +18,12 @@ type Props = {
   booking: CustomerBooking;
   home: CustomerHome | undefined;
   onPress: () => void;
+  /**
+   * Every listed service of the visit `booking` opens, when it is one (web split-visit plan 6.8,
+   * G4). The row then stands for the whole visit: its span, how many services, and each service
+   * with its person, so a two-service visit is one card rather than two identical lines.
+   */
+  visitRows?: CustomerBooking[];
 };
 
 /**
@@ -21,7 +33,11 @@ type Props = {
  * rows and the service name lives on the detail payload. Naming the venue is
  * both true and the thing a customer scanning a list is actually looking for.
  */
-export function CustomerBookingRow({ booking, home, onPress }: Props) {
+export function CustomerBookingRow({ booking, home, onPress, visitRows }: Props) {
+  if (visitRows && visitRows.length > 1) {
+    return <VisitRow rows={visitRows} home={home} onPress={onPress} />;
+  }
+
   const owed = balancePenceFor(booking);
   const cancelled = isCancelled(booking.status);
 
@@ -55,6 +71,60 @@ export function CustomerBookingRow({ booking, home, onPress }: Props) {
   );
 }
 
+/**
+ * A multi-service visit as one card: the day, start to end, "· 2 services", and each service
+ * with its time and person. A service the business cancelled stays listed, marked as such, so the
+ * card matches the visit the client opens.
+ */
+function VisitRow({
+  rows,
+  home,
+  onPress,
+}: {
+  rows: CustomerBooking[];
+  home: CustomerHome | undefined;
+  onPress: () => void;
+}) {
+  const span = customerVisitSpan(rows);
+  const live = rows.filter(isCustomerRowLive);
+  const allCancelled = live.length === 0;
+  const owed = live.reduce((sum, row) => sum + (balancePenceFor(row) ?? 0), 0);
+  const when = span.end
+    ? `${formatDayHeading(span.date)}, ${span.start} to ${span.end}`
+    : `${formatDayHeading(span.date)} at ${span.start}`;
+
+  return (
+    <Card onPress={onPress}>
+      <View style={styles.row}>
+        <View style={styles.main}>
+          <Text variant="bodyMedium">{venueNameFor(home, rows[0]!.venue_id)}</Text>
+          <Text variant="bodySmall" tone="secondary">
+            {when} · {servicesCountLabel(rows.length)}
+          </Text>
+          <View style={styles.services}>
+            {rows.map((row) => (
+              <Text key={row.id} variant="caption" tone={isCustomerRowLive(row) ? 'secondary' : 'muted'}>
+                {customerVisitServiceLine(row)}
+              </Text>
+            ))}
+          </View>
+        </View>
+        <View style={styles.meta}>
+          {allCancelled ? (
+            <Text variant="caption" tone="muted">
+              Cancelled
+            </Text>
+          ) : owed > 0 ? (
+            <Text variant="caption" tone="secondary">
+              {formatPence(owed)} to pay
+            </Text>
+          ) : null}
+        </View>
+      </View>
+    </Card>
+  );
+}
+
 /** Cancelled or missed: the row is struck through and owes nothing. */
 function isCancelled(status: string): boolean {
   const state = customerBookingState(status);
@@ -65,4 +135,5 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   main: { flex: 1, gap: 2 },
   meta: { alignItems: 'flex-end' },
+  services: { marginTop: spacing.xs, gap: 2 },
 });

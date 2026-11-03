@@ -2,6 +2,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
+import { servicesCountLabel } from '@/lib/booking/customer-visit-list';
 import { formatShortDayLabel } from '@/lib/dates/venue-dates';
 import { venueNameFor, type CustomerHome } from '@/lib/queries/useCustomerHome';
 import { spacing } from '@/theme/index';
@@ -31,6 +32,10 @@ export function UpcomingList({ home }: Props) {
           </Text>
           <Text variant="body" tone="secondary" style={styles.venue}>
             {venueNameFor(home, booking.venue_id)}
+            {/* One line per visit, already deduped on the server (G4); say how many services. */}
+            {booking.visit_key && (booking.visit_service_count ?? 1) > 1
+              ? ` · ${servicesCountLabel(booking.visit_service_count ?? 1)}`
+              : ''}
           </Text>
           <Text variant="bodySmall" tone="secondary">
             {booking.booking_time.slice(0, 5)}
