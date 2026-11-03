@@ -1404,6 +1404,172 @@ describe('ModifyBookingSheet', () => {
       }
     });
 
+    describe('with more than one person (split-visit plan G11, G12)', () => {
+      /** A cut with Sam, a blow dry with Kim, and a toner with Sam. */
+      function twoPeoplePlan(over: Record<string, unknown> = {}) {
+        return visitPlan({
+          services: [
+            { id: 'bk-lead', service_id: 'svc-1', service_variant_id: null, booking_date: '2026-08-10', booking_time: '14:00:00', duration_minutes: 45, calendar_id: 'prac-1' },
+            { id: 'bk-1', service_id: 'svc-2', service_variant_id: null, booking_date: '2026-08-10', booking_time: '14:45:00', duration_minutes: 60, calendar_id: 'prac-2' },
+            { id: 'bk-3', service_id: 'svc-1', service_variant_id: null, booking_date: '2026-08-10', booking_time: '16:00:00', duration_minutes: 15, calendar_id: 'prac-1' },
+          ],
+          ...over,
+        });
+      }
+
+      beforeEach(() => {
+        mockExtraPractitioners = [
+          { id: 'prac-2', name: 'Kim', services: [{ id: 'svc-2', name: 'Blow Dry', duration_minutes: 45 }] },
+        ];
+        mockVisitSchedule.mockResolvedValue(twoPeoplePlan());
+      });
+
+      it('offers no whole-visit calendar, and says each service keeps its own', async () => {
+        jest.useFakeTimers();
+        try {
+          await renderVisit();
+          expect(
+            screen.getByText(
+              'The services of this visit are with different people, so each keeps its own calendar. Change who does a service above.',
+            ),
+          ).toBeTruthy();
+          expect(screen.queryByText('Staff')).toBeNull();
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+
+      it('moves the visit without naming one calendar for every service', async () => {
+        jest.useFakeTimers();
+        try {
+          await renderVisit();
+          await press('TIME_PICKER');
+          await settleAvailability();
+          await press('Save whole visit');
+
+          expect(visitWrite()!.shift).toEqual({ booking_date: '2026-08-10', booking_time: '09:30:00' });
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+
+      it('undoes each service back onto its own calendar', async () => {
+        jest.useFakeTimers();
+        try {
+          await renderVisit();
+          await press('TIME_PICKER');
+          await settleAvailability();
+          await press('Save whole visit');
+          mockVisitSchedule.mockClear();
+          await press('Undo change');
+
+          // A shift naming the opened service's calendar would put every service
+          // on Sam's; each row goes back where it was instead.
+          const write = visitWrite()!;
+          expect(write.shift).toBeUndefined();
+          const restored = write.services as { booking_id: string; practitioner_id: string }[];
+          expect(restored.map((s) => [s.booking_id, s.practitioner_id])).toEqual([
+            ['bk-lead', 'prac-1'],
+            ['bk-1', 'prac-2'],
+            ['bk-3', 'prac-1'],
+          ]);
+          expect(write.acknowledge_visit_overlap).toBe(true);
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+
+      it('keeps each service with its own person when the service list changes', async () => {
+        jest.useFakeTimers();
+        try {
+          await renderVisit();
+          await pressLabel('Remove Cut & Finish');
+          await settleAvailability();
+          await press('Save whole visit');
+
+          const body = mockVisitServices.mock.calls.at(-1)![0] as {
+            services: { booking_id?: string; calendar_id?: string }[];
+            practitioner_id?: string;
+          };
+          expect(body.services.map((s) => [s.booking_id, s.calendar_id])).toEqual([
+            ['bk-1', 'prac-2'],
+            ['bk-3', 'prac-1'],
+          ]);
+          expect(body.practitioner_id).toBeUndefined();
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+    });
+
+    describe('one client in two places (split-visit plan G13)', () => {
+      const OVERLAP = {
+        booking_id: 'bk-lead',
+        other_id: 'bk-1',
+        other_name: 'Blow Dry with Kim',
+        venue_name: null,
+        start: '09:30',
+      };
+
+      it('says so before saving, and the save keeps it', async () => {
+        jest.useFakeTimers();
+        try {
+          mockVisitSchedule.mockResolvedValue(visitPlan({ visit_overlaps: [OVERLAP] } as never));
+          await renderVisit();
+          await press('TIME_PICKER');
+          await settleAvailability();
+
+          expect(
+            screen.getByText('Blow Dry with Kim is at 09:30, so the client would be in two places. Save to keep it.'),
+          ).toBeTruthy();
+          await press('Save whole visit');
+          expect(visitWrite()!.acknowledge_visit_overlap).toBe(true);
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+
+      it('asks nothing when nothing overlaps', async () => {
+        jest.useFakeTimers();
+        try {
+          await renderVisit();
+          await press('TIME_PICKER');
+          await settleAvailability();
+          await press('Save whole visit');
+          expect(visitWrite()!.acknowledge_visit_overlap).toBeUndefined();
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+
+      it('keeps the overlap on the second save after a 409 visit_overlap', async () => {
+        jest.useFakeTimers();
+        try {
+          const { ApiError } = require('@/lib/api/client');
+          const message =
+            'This overlaps another service in the same visit, so the client would be in two places. Save again to keep it.';
+          await renderVisit();
+          await press('TIME_PICKER');
+          await settleAvailability();
+          // The visit changed since the check: the save is refused.
+          mockVisitSchedule.mockRejectedValueOnce(
+            new ApiError(message, 409, { error: message, code: 'visit_overlap', visit_overlaps: [OVERLAP] }),
+          );
+          await press('Save whole visit');
+          expect(screen.getByText(message)).toBeTruthy();
+          expect(onClose).not.toHaveBeenCalled();
+
+          await press('Save whole visit');
+          const writes = visitBodies().filter((b) => b.dry_run !== true);
+          expect(writes).toHaveLength(2);
+          expect(writes[0]!.acknowledge_visit_overlap).toBeUndefined();
+          expect(writes[1]!.acknowledge_visit_overlap).toBe(true);
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+    });
+
     it('opens with an empty shift dry run and adopts the length the endpoint plans', async () => {
       // An empty shift describes the visit as it stands (web #187): the form
       // learns the layout from it, and adopts the planned total without arming
@@ -1620,13 +1786,15 @@ describe('ModifyBookingSheet', () => {
           await settleAvailability();
           await press('Save whole visit');
 
+          // Every line names who does it (split-visit plan G11): on a one-person
+          // visit, the visit's calendar.
           expect(mockVisitServices).toHaveBeenCalledWith(
             expect.objectContaining({
               services: [
-                { booking_id: 'bk-lead', service_id: 'svc-1', service_variant_id: null },
-                { booking_id: 'bk-1', service_id: 'svc-2', service_variant_id: null },
-                { booking_id: 'bk-3', service_id: 'svc-1', service_variant_id: null },
-                { service_id: 'svc-2', service_variant_id: null },
+                { booking_id: 'bk-lead', service_id: 'svc-1', service_variant_id: null, calendar_id: 'prac-1' },
+                { booking_id: 'bk-1', service_id: 'svc-2', service_variant_id: null, calendar_id: 'prac-1' },
+                { booking_id: 'bk-3', service_id: 'svc-1', service_variant_id: null, calendar_id: 'prac-1' },
+                { service_id: 'svc-2', service_variant_id: null, calendar_id: 'prac-1' },
               ],
               known_booking_ids: ['bk-lead', 'bk-1', 'bk-3'],
             }),
@@ -1652,7 +1820,7 @@ describe('ModifyBookingSheet', () => {
           expect(mockVisitServices).toHaveBeenCalledWith(
             expect.objectContaining({
               services: expect.arrayContaining([
-                { booking_id: 'bk-lead', service_id: 'svc-2', service_variant_id: null },
+                { booking_id: 'bk-lead', service_id: 'svc-2', service_variant_id: null, calendar_id: 'prac-1' },
               ]),
             }),
           );

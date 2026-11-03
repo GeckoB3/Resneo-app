@@ -30,7 +30,12 @@ import { Badge } from '@/components/ui/Badge';
 import { Text } from '@/components/ui/Text';
 
 import { arrivalToggleTargets, statusChangeTargets } from '@/lib/calendar/bar-actions';
-import { visitChipLabel, visitTouchingEdges } from '@/lib/calendar/visit-siblings';
+import {
+  siblingVisitKey,
+  visitChipLabel,
+  visitTouchingEdges,
+  type VisitPosition,
+} from '@/lib/calendar/visit-siblings';
 import {
   hostRegionsAroundNested,
   layoutOverlapClusters,
@@ -259,6 +264,13 @@ type CalendarDayGridProps = {
    */
   embedded?: boolean;
   /**
+   * Where each booking stands in its visit, counted over every row the diary
+   * holds for the day rather than this one column (split-visit plan G15): a
+   * service whose siblings are with someone else still wears "1/2". Omitted,
+   * the chips count this column alone.
+   */
+  visitPositions?: Map<string, VisitPosition>;
+  /**
    * Compact day rows (web parity: the toolbar "Compact" toggle) — shrink the
    * vertical scale so the whole day fits the measured viewport (floored at the
    * web's 16px/15min legibility scale), for an at-a-glance busy-ness read.
@@ -321,6 +333,7 @@ export function CalendarDayGrid({
   embedded = false,
   compact = false,
   processingPatternFor,
+  visitPositions,
 }: CalendarDayGridProps) {
   const { colors, isDark } = useTheme();
   const scrollRef = useRef<ScrollViewType | null>(null);
@@ -379,6 +392,7 @@ export function CalendarDayGrid({
           }
           return { booking, start, end };
         }),
+        visitPositions,
       );
       for (const { start, end } of blocks) {
         ranges.push({ start, end });
@@ -447,7 +461,7 @@ export function CalendarDayGrid({
         rawScheduleBlocks: schedBlocks,
         workingRanges: narrowWorkingRanges(working, nonWorking),
       };
-    }, [bookings, workingHours, timeBlocks, sessions, scheduleBlocks, windowOverride, venueHours, boundsRanges]);
+    }, [bookings, workingHours, timeBlocks, sessions, scheduleBlocks, windowOverride, venueHours, boundsRanges, visitPositions]);
 
   // Vertical scale: comfortable 2px/min, or compact fit-the-day-to-the-viewport
   // (web parity: measured slot height, floored at 16px/15min). The fit subtracts
@@ -572,7 +586,7 @@ export function CalendarDayGrid({
           ? bookings
               .filter(
                 (b) =>
-                  b.group_booking_id?.trim() === cluster.visit!.groupId &&
+                  siblingVisitKey(b) === cluster.visit!.groupId &&
                   !CONFLICT_IGNORED_STATUSES.has(b.status),
               )
               .map((b) => b.id)

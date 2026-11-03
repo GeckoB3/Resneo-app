@@ -239,5 +239,50 @@ describe('RescheduleSheet', () => {
       ).toBeTruthy();
       expect(onClose).not.toHaveBeenCalled();
     });
+
+    it('keeps the client in two places only when the same move is saved again (split-visit plan G13)', async () => {
+      const { ApiError } = require('@/lib/api/client');
+      const message =
+        'This overlaps another service in the same visit, so the client would be in two places. Save again to keep it.';
+      mockVisitSchedule.mockRejectedValueOnce(
+        new ApiError(message, 409, {
+          error: message,
+          code: 'visit_overlap',
+          visit_overlaps: [
+            { booking_id: 'bk-3', other_id: 'mani', other_name: 'Gel Manicure with Steph', venue_name: null, start: '16:05' },
+          ],
+        }),
+      );
+      await render(<RescheduleSheet target={VISIT_TARGET} onClose={onClose} />);
+      await step('Visit length', 'increment');
+      await press('Move whole visit');
+
+      // The first save is refused: nothing acknowledged, and staff are told where the client would be.
+      expect(mockVisitSchedule.mock.calls[0][0].acknowledge_visit_overlap).toBeUndefined();
+      expect(
+        screen.getByText('Gel Manicure with Steph is at 16:05, so the client would be in two places.'),
+      ).toBeTruthy();
+      expect(screen.getByText(message)).toBeTruthy();
+      expect(onClose).not.toHaveBeenCalled();
+
+      // The second save of the same move keeps it.
+      await press('Move whole visit');
+      expect(mockVisitSchedule.mock.calls[1][0].acknowledge_visit_overlap).toBe(true);
+      expect(onClose).toHaveBeenCalled();
+    });
+
+    it('asks again when the move changes after the overlap was shown', async () => {
+      const { ApiError } = require('@/lib/api/client');
+      mockVisitSchedule.mockRejectedValueOnce(
+        new ApiError('Overlap', 409, { error: 'Overlap', code: 'visit_overlap' }),
+      );
+      await render(<RescheduleSheet target={VISIT_TARGET} onClose={onClose} />);
+      await step('Visit length', 'increment');
+      await press('Move whole visit');
+      await step('Visit length', 'increment');
+      await press('Move whole visit');
+
+      expect(mockVisitSchedule.mock.calls[1][0].acknowledge_visit_overlap).toBeUndefined();
+    });
   });
 });

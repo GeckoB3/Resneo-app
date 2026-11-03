@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react-native';
 
 import { CalendarDayGrid } from '@/components/calendar/CalendarDayGrid';
 import { PX_PER_MINUTE } from '@/components/calendar/grid-layout';
+import { visitSiblingIndex } from '@/lib/calendar/visit-siblings';
 import type { CalendarGridBooking } from '@/types/calendar-grid';
 
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
@@ -230,5 +231,20 @@ describe('CalendarDayGrid — quick actions on a service of a visit', () => {
     fireEvent.press(screen.getByLabelText('Start'));
 
     expect(onStatusChange.mock.calls).toEqual([[['solo'], 'Seated']]);
+  });
+});
+
+describe('CalendarDayGrid: the chip counts the whole visit the diary holds (split-visit plan G15)', () => {
+  it("chips a service whose sibling is on someone else's calendar", async () => {
+    const mine = booking('cut', '10:00', '10:45', { group_booking_id: 'g1' });
+    // The manicure is with Steph: not on this column, but the diary holds it.
+    const steph = { id: 'mani', group_booking_id: 'g1', startTime: '10:45', status: 'Booked' };
+    await renderGrid([mine], { visitPositions: visitSiblingIndex([mine, steph]) });
+    expect(screen.getByLabelText('Service 1 of 2 in this visit')).toBeTruthy();
+  });
+
+  it('counts this column alone when the diary hands in nothing', async () => {
+    await renderGrid([booking('cut', '10:00', '10:45', { group_booking_id: 'g1' })]);
+    expect(screen.queryAllByTestId('visit-chip')).toHaveLength(0);
   });
 });

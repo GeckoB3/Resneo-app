@@ -191,7 +191,7 @@ export function pickBlockLayout(params: {
  * from web #189). The bare fraction is for the eye; a screen reader gets the
  * sentence.
  */
-function VisitChip({ label, color }: { label: string; color: string }) {
+export function VisitChip({ label, color }: { label: string; color: string }) {
   const [index, count] = label.split('/');
   const accessibilityLabel =
     index && count ? `Service ${index} of ${count} in this visit` : label;

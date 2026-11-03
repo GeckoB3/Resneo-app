@@ -11,55 +11,75 @@
  * form a visit, their order, and whether a moved service lands on one of its
  * own siblings.
  *
- * The grid holds one day, so rows carry no date here; a service of the visit
- * on another day is simply not counted, which is the honest answer for a chip
- * drawn from what is on screen.
+ * Rows are grouped by visit key (`visitKeyOf`, split-visit plan 8.2), so a
+ * party's rows, a class cart and resource rows never chip. A row may carry its
+ * date: the week view counts a visit's services across the days it shows, and
+ * orders them by date, then start. The day grids hand in one day, where a
+ * service of the visit on another day is simply not counted, which is the
+ * honest answer for a chip drawn from what is on screen.
  */
+
+import { visitKeyOf } from '@/lib/booking/visit-key';
+import type { CalendarGridCalendar, CalendarGridBooking } from '@/types/calendar-grid';
 
 export interface VisitSiblingRow {
   id: string;
   group_booking_id?: string | null;
+  linked_visit_id?: string | null;
   /** Set on a multi-PERSON party, which shares a group id but is not a visit. */
   person_label?: string | null;
+  /** Set on a class cart row, which shares a group id but is not a visit. */
+  class_instance_id?: string | null;
+  /** YYYY-MM-DD, when the rows handed in cover more than one day. */
+  date?: string | null;
   /** HH:mm */
   startTime: string;
   status: string;
 }
 
 export interface VisitPosition {
+  /** The visit's key (`visitKeyOf`): the group id, or the link across businesses. */
   groupId: string;
-  /** 0-based place among the visit's live services on this grid, by start. */
+  /** 0-based place among the visit's live services on this grid, by date then start. */
   index: number;
   count: number;
-  /** The earliest live service: the one whose colour the whole visit takes. */
+  /** The earliest live service. */
   anchorId: string;
 }
 
 const TERMINAL = new Set(['Cancelled', 'No-Show']);
 
-function isVisitRow(row: VisitSiblingRow): boolean {
-  return Boolean(row.group_booking_id?.trim()) && !row.person_label?.trim();
+/** The row's visit key, or null for a row that is not one service of a visit. */
+export function siblingVisitKey(row: VisitSiblingRow): string | null {
+  return visitKeyOf(row)?.trim() || null;
 }
 
 function startKey(row: VisitSiblingRow): string {
-  return `${row.startTime.slice(0, 5)}#${row.id}`;
+  return `${row.date ?? ''}T${row.startTime.slice(0, 5)}#${row.id}`;
 }
 
 /**
  * Where each row stands in its visit, for every row that is one live service
  * of a visit with at least two live services in `rows`.
+ *
+ * Pass every row the grid holds, not only the columns on screen (split-visit
+ * plan G15): a visit's services can sit on columns the filter hides, and the
+ * chip on the one that is shown still says "1/2".
  */
 export function visitSiblingIndex(rows: readonly VisitSiblingRow[]): Map<string, VisitPosition> {
-  const byGroup = new Map<string, VisitSiblingRow[]>();
+  const byVisit = new Map<string, VisitSiblingRow[]>();
+  const seen = new Set<string>();
   for (const row of rows) {
-    if (!isVisitRow(row) || TERMINAL.has(row.status)) continue;
-    const gid = row.group_booking_id!.trim();
-    const list = byGroup.get(gid) ?? [];
+    if (TERMINAL.has(row.status) || seen.has(row.id)) continue;
+    const key = siblingVisitKey(row);
+    if (!key) continue;
+    seen.add(row.id);
+    const list = byVisit.get(key) ?? [];
     list.push(row);
-    byGroup.set(gid, list);
+    byVisit.set(key, list);
   }
   const out = new Map<string, VisitPosition>();
-  for (const [groupId, list] of byGroup) {
+  for (const [groupId, list] of byVisit) {
     if (list.length < 2) continue;
     const ordered = [...list].sort((a, b) => startKey(a).localeCompare(startKey(b)));
     ordered.forEach((row, index) => {
@@ -73,6 +93,39 @@ export function visitChipLabel(position: VisitPosition): string {
   // "1/2", not "Visit 1/2" (web #189): the bar already shows the service name
   // and the word said nothing the spine and the hover do not.
   return `${position.index + 1}/${position.count}`;
+}
+
+/**
+ * The rows a grid's chips count (split-visit plan G15): every booking the
+ * calendar grid holds on `dates`, on every calendar, whether or not its column
+ * is drawn, plus any rows from elsewhere (a partner's bars on linked columns).
+ */
+export function gridVisitSiblingRows(
+  calendars: readonly CalendarGridCalendar[],
+  dates: readonly string[],
+  extra: readonly VisitSiblingRow[] = [],
+): VisitSiblingRow[] {
+  const wanted = new Set(dates);
+  const rows: VisitSiblingRow[] = [];
+  for (const calendar of calendars) {
+    for (const day of calendar.dates) {
+      if (!wanted.has(day.date)) continue;
+      for (const booking of day.bookings) rows.push(siblingRowOf(booking, day.date));
+    }
+  }
+  return [...rows, ...extra];
+}
+
+/** A grid booking as a sibling row on `date`. */
+export function siblingRowOf(booking: CalendarGridBooking, date: string | null): VisitSiblingRow {
+  return {
+    id: booking.id,
+    group_booking_id: booking.group_booking_id ?? null,
+    person_label: booking.person_label ?? null,
+    date,
+    startTime: booking.startTime,
+    status: booking.status,
+  };
 }
 
 /**
@@ -91,15 +144,16 @@ export function visitTouchingEdges(params: {
   spanMinutesOf: (row: VisitSiblingRow) => number;
   toMinutes: (hhmm: string) => number;
 }): { top: boolean; bottom: boolean } {
-  const gid = params.row.group_booking_id?.trim();
+  const key = siblingVisitKey(params.row);
   const out = { top: false, bottom: false };
-  if (!gid || !isVisitRow(params.row) || TERMINAL.has(params.row.status)) return out;
+  if (!key || TERMINAL.has(params.row.status)) return out;
   const column = params.columnIdOf(params.row);
   const start = params.toMinutes(params.row.startTime.slice(0, 5));
   const end = start + params.spanMinutesOf(params.row);
   for (const other of params.rows) {
     if (other.id === params.row.id) continue;
-    if (other.group_booking_id?.trim() !== gid || TERMINAL.has(other.status)) continue;
+    if (siblingVisitKey(other) !== key || TERMINAL.has(other.status)) continue;
+    if ((other.date ?? null) !== (params.row.date ?? null)) continue;
     if (params.columnIdOf(other) !== column) continue;
     const s = params.toMinutes(other.startTime.slice(0, 5));
     const e = s + params.spanMinutesOf(other);
@@ -110,30 +164,37 @@ export function visitTouchingEdges(params: {
 }
 
 /**
- * How many of a service's own siblings the window `[startMin, endMin)` on
- * `columnId` would overlap. A visit's services may overlap each other, and
- * staff may do it on purpose, but it is never silent.
+ * The siblings of a service that the window `[startMin, endMin)` on `columnId`
+ * would overlap (web `ownSiblingOverlaps`, split-visit plan G13 and G16): on the
+ * same column (one person doing two services at once), and on other columns,
+ * where the client would be in two places. A visit's services may overlap each
+ * other, and staff may do it on purpose, but it is never silent.
+ *
+ * `rows` is one day, every column the grid holds. Siblings the grid does not
+ * hold (a hidden calendar) are not seen here.
  */
-export function ownSiblingOverlapCount(params: {
-  moved: Pick<VisitSiblingRow, 'id' | 'group_booking_id'>;
+export function ownSiblingOverlaps<T extends VisitSiblingRow>(params: {
+  moved: Pick<VisitSiblingRow, 'id' | 'group_booking_id' | 'linked_visit_id' | 'person_label'>;
   startMin: number;
   endMin: number;
   columnId: string | null;
-  rows: readonly VisitSiblingRow[];
-  columnIdOf: (row: VisitSiblingRow) => string | null;
-  spanMinutesOf: (row: VisitSiblingRow) => number;
+  rows: readonly T[];
+  columnIdOf: (row: T) => string | null;
+  /** Minutes the row occupies on the grid, from its start. */
+  spanMinutesOf: (row: T) => number;
   toMinutes: (hhmm: string) => number;
-}): number {
-  const gid = params.moved.group_booking_id?.trim();
-  if (!gid) return 0;
-  let count = 0;
+}): { sameColumn: T[]; otherColumns: T[] } {
+  const out = { sameColumn: [] as T[], otherColumns: [] as T[] };
+  const key = siblingVisitKey({ ...params.moved, startTime: '', status: '' });
+  if (!key) return out;
   for (const row of params.rows) {
     if (row.id === params.moved.id) continue;
-    if (row.group_booking_id?.trim() !== gid || TERMINAL.has(row.status)) continue;
-    if (params.columnIdOf(row) !== params.columnId) continue;
+    if (siblingVisitKey(row) !== key || TERMINAL.has(row.status)) continue;
     const s = params.toMinutes(row.startTime.slice(0, 5));
     const e = s + params.spanMinutesOf(row);
-    if (params.startMin < e && s < params.endMin) count += 1;
+    if (!(params.startMin < e && s < params.endMin)) continue;
+    if (params.columnIdOf(row) === params.columnId) out.sameColumn.push(row);
+    else out.otherColumns.push(row);
   }
-  return count;
+  return out;
 }

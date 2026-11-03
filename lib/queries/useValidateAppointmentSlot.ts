@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
-import type { OverrideDryRunBody } from '@/lib/booking/availability-override';
+import type { ChainCheckBody } from '@/lib/booking/availability-override';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { invalidateCatalogueIfCollectiveRefusal } from '@/lib/queries/invalidateAvailability';
 
@@ -20,13 +20,16 @@ export type ValidateAppointmentSlotResult =
  * can show the server's own reasons ("Outside working hours", "Conflicts with
  * another booking", "Ann does not usually offer Colour") before anything is
  * written. Sent with the Bearer: the route needs a staff session for the flag.
+ *
+ * Without the flag it is the plain check the review step re-runs when its
+ * services change (split-visit plan G22): does the visit still fit at its start.
  */
 export function useValidateAppointmentSlot() {
   const accessToken = useAccessToken();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (body: OverrideDryRunBody): Promise<ValidateAppointmentSlotResult> => {
+    mutationFn: async (body: ChainCheckBody): Promise<ValidateAppointmentSlotResult> => {
       if (!accessToken) throw new Error('Missing access token');
       return apiFetch<ValidateAppointmentSlotResult>('/api/booking/validate-appointment-slot', {
         accessToken,

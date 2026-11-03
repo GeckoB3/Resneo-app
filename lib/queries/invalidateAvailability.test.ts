@@ -180,7 +180,7 @@ describe('collective catalogue refusals (web D33, parking)', () => {
       code,
     });
 
-  it.each(['COLLECTIVE_SERVICE_UPDATING', 'COLLECTIVE_SERVICE_PARKED'])(
+  it.each(['COLLECTIVE_SERVICE_UPDATING', 'COLLECTIVE_SERVICE_PARKED', 'COLLECTIVE_MEMBER_SUSPENDED'])(
     'refetches the catalogue and the times on %s',
     (code) => {
       const client = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000 } } });

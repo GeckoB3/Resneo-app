@@ -79,11 +79,15 @@ export interface VisitServiceRow {
   booking_date?: string | null;
   calendar_id?: string | null;
   practitioner_id?: string | null;
+  /** Who does it (the calendar's name), so each service can say "with Aisha" (G14). */
+  calendar_name?: string | null;
 }
 
 export interface VisitService {
   id: string;
   name: string | null;
+  /** Who does it, when the row said (web `personName`, split-visit plan G14). */
+  personName: string | null;
   /** YYYY-MM-DD, when the row carried one. */
   date: string | null;
   calendarId: string | null;
@@ -112,14 +116,20 @@ export interface AppointmentVisit {
   services: VisitService[];
   startHm: string;
   endHm: string;
-  /** The first service's day and the last one's, when the rows carried dates. */
+  /**
+   * The first service's day, and the day of the service that ENDS last, when the rows carried
+   * dates.
+   */
   startDate: string | null;
   endDate: string | null;
   /** The services sit on more than one day; `totalMinutes` then counts across them. */
   spansDays: boolean;
   /** The services sit on more than one calendar. */
   spansCalendars: boolean;
-  /** Wall-clock span from the first service's start to the last one's end. */
+  /**
+   * Wall-clock span from the first service's start to the LATEST end of any service (G14): a
+   * short service inside a long colour ends before the colour does.
+   */
   totalMinutes: number;
   /** Sum of the services themselves, excluding the gaps between them. */
   serviceMinutes: number;
@@ -269,6 +279,7 @@ export function resolveAppointmentVisit(
     return {
       id: row.id,
       name: row.booking_item_name ?? null,
+      personName: row.calendar_name?.trim() || null,
       date: row.booking_date ?? null,
       calendarId: row.calendar_id ?? row.practitioner_id ?? null,
       startHm,
@@ -281,21 +292,30 @@ export function resolveAppointmentVisit(
   });
 
   const first = services[0]!;
-  const last = services[services.length - 1]!;
   const dates = new Set(services.map((s) => s.date ?? ''));
   const calendars = new Set(services.map((s) => s.calendarId ?? ''));
-  const totalMinutes =
-    dates.size > 1
-      ? absolute(ordered[ordered.length - 1]!, last.startHm) + last.durationMinutes - timeToMinutes(first.startHm)
-      : spanMinutes(first.startHm, last.endHm);
+  /**
+   * The visit ends when its LATEST service ends, not when the one that starts last does (G14,
+   * web `appointment-visit.ts`): a short service done inside a long colour finishes first, and
+   * with two people a later start can still end earlier. Measured in minutes from the first
+   * service's midnight, so a service on another day, or one running past midnight, still counts.
+   */
+  const absoluteEnd = (index: number) =>
+    absolute(ordered[index]!, services[index]!.startHm) + services[index]!.durationMinutes;
+  let latest = 0;
+  for (let i = 1; i < services.length; i += 1) {
+    if (absoluteEnd(i) > absoluteEnd(latest)) latest = i;
+  }
+  const finishing = services[latest]!;
+  const totalMinutes = absoluteEnd(latest) - timeToMinutes(first.startHm);
 
   return {
     groupBookingId,
     services,
     startHm: first.startHm,
-    endHm: last.endHm,
+    endHm: finishing.endHm,
     startDate: first.date,
-    endDate: last.date,
+    endDate: finishing.date,
     spansDays: dates.size > 1,
     spansCalendars: calendars.size > 1,
     totalMinutes,

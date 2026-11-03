@@ -47,8 +47,8 @@ export interface OverridePhantom {
   processing_time_blocks: { start_minute: number; duration_minutes: number }[];
 }
 
-/** The body for one segment's dry run on `validate-appointment-slot`. */
-export interface OverrideDryRunBody {
+/** The body for one segment's check on `validate-appointment-slot`. */
+export interface ChainCheckBody {
   venue_id: string;
   booking_date: string;
   practitioner_id: string;
@@ -58,27 +58,37 @@ export interface OverrideDryRunBody {
   start_time: string;
   phantoms: OverridePhantom[];
   staff: true;
-  override_availability: true;
+  /** Set only under the override: the route then answers `{ ok, warnings }` rather than refusing. */
+  override_availability?: true;
   duration_minutes?: number;
 }
 
+/** The body for one segment's dry run under the override. */
+export type OverrideDryRunBody = ChainCheckBody & { override_availability: true };
+
 /**
- * The dry-run bodies for a chain, one per segment in visit order, each told
+ * The check bodies for a chain, one per segment in visit order, each told
  * about the segments before it as phantoms (web `validateMultiServiceChain`):
  * so an earlier segment's gaps, and any wait after it, count as free while the
  * next is checked, the way the create route treats them.
+ *
+ * Without the override this is the plain check the review step re-runs when
+ * its services change (split-visit plan G22): the same engine as the create,
+ * answering whether the visit still fits at its start. As on the web, a staff
+ * length travels only with the override.
  */
-export function overrideDryRunBodies(args: {
+export function chainCheckBodies(args: {
   venueId: string;
   bookingDate: string;
   chain: readonly MultiServiceSegment[];
+  override: boolean;
   /** The staff core override per segment (null = catalogue length). */
   customDurationOf: (segment: MultiServiceSegment) => number | null;
-}): OverrideDryRunBody[] {
+}): ChainCheckBody[] {
   const phantoms: OverridePhantom[] = [];
-  const bodies: OverrideDryRunBody[] = [];
+  const bodies: ChainCheckBody[] = [];
   for (const seg of args.chain) {
-    const custom = args.customDurationOf(seg);
+    const custom = args.override ? args.customDurationOf(seg) : null;
     bodies.push({
       venue_id: args.venueId,
       booking_date: args.bookingDate,
@@ -91,7 +101,7 @@ export function overrideDryRunBodies(args: {
       start_time: seg.startTime,
       phantoms: [...phantoms],
       staff: true,
-      override_availability: true,
+      ...(args.override ? { override_availability: true as const } : {}),
       ...(custom != null ? { duration_minutes: custom } : {}),
     });
     phantoms.push({
@@ -106,6 +116,26 @@ export function overrideDryRunBodies(args: {
     });
   }
   return bodies;
+}
+
+/** The dry-run bodies for a chain under the override; see {@link chainCheckBodies}. */
+export function overrideDryRunBodies(args: {
+  venueId: string;
+  bookingDate: string;
+  chain: readonly MultiServiceSegment[];
+  /** The staff core override per segment (null = catalogue length). */
+  customDurationOf: (segment: MultiServiceSegment) => number | null;
+}): OverrideDryRunBody[] {
+  return chainCheckBodies({ ...args, override: true }) as OverrideDryRunBody[];
+}
+
+/**
+ * What the review step says when its services, as changed, no longer fit at
+ * the visit's start, and the times are shown again (split-visit plan G22, web
+ * `showTimesAgainFor`).
+ */
+export function chainNoLongerFitsMessage(startTime: string): string {
+  return `These services no longer fit at ${startTime.slice(0, 5)}. Choose another time below.`;
 }
 
 /** The warnings of a visit, each prefixed with its service so staff know which one. */

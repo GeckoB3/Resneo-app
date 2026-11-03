@@ -203,3 +203,54 @@ describe('a visit over several days and calendars (web #187)', () => {
     expect(visit.startDate).toBeNull();
   });
 });
+
+describe('the true span of a visit (split-visit plan G14)', () => {
+  it('ends with the service that ends last, not the one that starts last', () => {
+    // A long colour with Aisha, and a short manicure with Steph inside it.
+    const visit = resolveAppointmentVisit([
+      row({ id: 'colour', booking_time: '13:00', booking_end_time: '15:00', calendar_id: 'aisha' }),
+      row({ id: 'mani', booking_time: '13:45', booking_end_time: '14:15', calendar_id: 'steph' }),
+    ])!;
+    expect(visit.startHm).toBe('13:00');
+    expect(visit.endHm).toBe('15:00');
+    expect(visit.totalMinutes).toBe(120);
+    expect(visit.services.map((s) => s.id)).toEqual(['colour', 'mani']);
+  });
+
+  it('still measures two services at once from the first start', () => {
+    const visit = resolveAppointmentVisit([
+      row({ id: 'a', booking_time: '13:45', booking_end_time: '14:15', calendar_id: 'aisha' }),
+      row({ id: 'b', booking_time: '13:45', booking_end_time: '14:15', calendar_id: 'steph' }),
+    ])!;
+    expect(`${visit.startHm} to ${visit.endHm}`).toBe('13:45 to 14:15');
+    expect(visit.totalMinutes).toBe(30);
+  });
+
+  it('lets a cancelled service stretch nothing, even when it ended last', () => {
+    const visit = resolveAppointmentVisit([
+      row({ id: 'a', booking_time: '10:00', booking_end_time: '11:00' }),
+      row({ id: 'b', booking_time: '11:00', booking_end_time: '11:30' }),
+      row({ id: 'c', booking_time: '10:30', booking_end_time: '13:00', status: 'Cancelled' }),
+    ])!;
+    expect(visit.endHm).toBe('11:30');
+    expect(visit.totalMinutes).toBe(90);
+  });
+
+  it('takes the end day from the service that ends last', () => {
+    const visit = resolveAppointmentVisit([
+      row({ id: 'a', booking_date: '2026-09-10', booking_time: '09:00', booking_end_time: '10:00' }),
+      row({ id: 'b', booking_date: '2026-09-11', booking_time: '09:00', booking_end_time: '09:30' }),
+    ])!;
+    expect(visit.endDate).toBe('2026-09-11');
+    expect(visit.endHm).toBe('09:30');
+    expect(visit.totalMinutes).toBe(24 * 60 + 30);
+  });
+
+  it('names who does each service', () => {
+    const visit = resolveAppointmentVisit([
+      row({ id: 'a', booking_time: '10:00', booking_end_time: '11:00', calendar_name: 'Aisha' }),
+      row({ id: 'b', booking_time: '11:00', booking_end_time: '11:30', calendar_name: ' ' }),
+    ])!;
+    expect(visit.services.map((s) => s.personName)).toEqual(['Aisha', null]);
+  });
+});

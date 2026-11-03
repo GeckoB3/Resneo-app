@@ -1,5 +1,11 @@
 import type { VisitEditService } from '@/lib/booking/appointment-visit';
-import { visitRestoreRequest, visitScheduleRequest } from '@/lib/booking/visit-schedule-request';
+import {
+  defaultAddedServiceCalendar,
+  isMultiCalendarVisit,
+  visitRestoreRequest,
+  visitScheduleRequest,
+  visitServiceLinesRequest,
+} from '@/lib/booking/visit-schedule-request';
 
 /** Cut 14:00–14:45, colour 14:45–15:45, toner 16:00–16:15 (a 15-minute wait before it). */
 const ROWS: VisitEditService[] = [
@@ -153,6 +159,25 @@ describe('visitRestoreRequest', () => {
       known_booking_ids: ['bk-lead', 'bk-1', 'bk-3'],
     });
   });
+
+  it('puts each row back on its own calendar (split-visit plan G12)', () => {
+    // A cut with Aisha and a manicure with Steph: an Undo opened from the cut
+    // must not move the manicure onto Aisha's calendar.
+    const twoPeople: VisitEditService[] = [
+      { bookingId: 'cut', date: '2026-08-10', calendarId: 'aisha', startHm: '10:00', durationMinutes: 45 },
+      { bookingId: 'mani', date: '2026-08-10', calendarId: 'steph', startHm: '10:15', durationMinutes: 30 },
+    ];
+    const body = visitRestoreRequest({ services: twoPeople, date: '2026-08-10', practitionerId: 'aisha' });
+    expect(body.services!.map((s) => [s.booking_id, s.practitioner_id])).toEqual([
+      ['cut', 'aisha'],
+      ['mani', 'steph'],
+    ]);
+  });
+
+  it('names no calendar for a row with none and no fallback', () => {
+    const body = visitRestoreRequest({ services: [ROWS[0]!], date: '2026-08-10' });
+    expect(body.services![0]).not.toHaveProperty('practitioner_id');
+  });
 });
 
 describe('visitServiceEditsRequest', () => {
@@ -189,5 +214,75 @@ describe('visitServiceEditsRequest', () => {
     expect(
       visitServiceEditsRequest({ rowIds: ['bk-lead', 'bk-1'], edits: baseline, baseline }).services,
     ).toEqual([]);
+  });
+});
+
+describe('a visit with more than one person (split-visit plan G11, G12)', () => {
+  const rowCalendars: Record<string, string> = { cut: 'aisha', mani: 'steph' };
+  const rowCalendarId = (id: string) => rowCalendars[id] ?? null;
+
+  it('knows a visit with more than one person', () => {
+    expect(
+      isMultiCalendarVisit(
+        [
+          { calendarId: 'aisha' },
+          { calendarId: 'steph' },
+        ],
+        'aisha',
+      ),
+    ).toBe(true);
+    expect(isMultiCalendarVisit([{ calendarId: 'aisha' }, { calendarId: null }], 'aisha')).toBe(false);
+    expect(isMultiCalendarVisit([{ calendarId: 'steph' }], 'aisha')).toBe(false);
+  });
+
+  it('names each kept service with its own calendar, and an added one with its own', () => {
+    const lines = visitServiceLinesRequest({
+      lines: [
+        { bookingId: 'cut', serviceId: 's-cut', variantId: null },
+        { bookingId: 'mani', serviceId: 's-mani', variantId: 'v-1' },
+        { bookingId: null, serviceId: 's-brow', variantId: null, calendarId: 'bea' },
+      ],
+      multiCalendar: true,
+      rowCalendarId,
+      visitCalendarId: 'aisha',
+    });
+    expect(lines).toEqual([
+      { booking_id: 'cut', service_id: 's-cut', service_variant_id: null, calendar_id: 'aisha' },
+      { booking_id: 'mani', service_id: 's-mani', service_variant_id: 'v-1', calendar_id: 'steph' },
+      { service_id: 's-brow', service_variant_id: null, calendar_id: 'bea' },
+    ]);
+  });
+
+  it('keeps a one-person visit on the visit calendar', () => {
+    const lines = visitServiceLinesRequest({
+      lines: [
+        { bookingId: 'cut', serviceId: 's-cut', variantId: null },
+        { bookingId: null, serviceId: 's-brow', variantId: null },
+      ],
+      multiCalendar: false,
+      rowCalendarId,
+      visitCalendarId: 'carla',
+    });
+    expect(lines.map((l) => l.calendar_id)).toEqual(['carla', 'carla']);
+  });
+
+  it('starts an added service with the person before it, when they offer it', () => {
+    const offers = (cal: string, svc: string) =>
+      (cal === 'steph' && svc === 's-brow') || (cal === 'bea' && svc === 's-wax');
+    const args = {
+      lines: [
+        { bookingId: 'cut', serviceId: 's-cut', variantId: null },
+        { bookingId: 'mani', serviceId: 's-mani', variantId: null },
+      ],
+      rowCalendarId,
+      visitCalendarId: 'aisha',
+      offers,
+      offeringCalendars: (svc: string) => (svc === 's-wax' ? ['bea'] : []),
+    };
+    expect(defaultAddedServiceCalendar({ ...args, serviceId: 's-brow' })).toBe('steph');
+    // Nobody before offers it: the first person who does.
+    expect(defaultAddedServiceCalendar({ ...args, serviceId: 's-wax' })).toBe('bea');
+    // Nobody offers it at all: the person before, and the server says why not.
+    expect(defaultAddedServiceCalendar({ ...args, serviceId: 's-none' })).toBe('steph');
   });
 });

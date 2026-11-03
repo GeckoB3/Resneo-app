@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
+import type { VisitOverlap } from '@/lib/booking/visit-overlaps';
 import { invalidateBookingCaches } from '@/lib/queries/useBookingMutations';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 
@@ -44,6 +45,14 @@ export interface VisitSchedulePatchInput {
    */
   known_booking_ids?: string[];
   allow_manual_overlap?: boolean;
+  /**
+   * Staff saw that the change puts the client in two places (a service of the
+   * visit overlapping another on a different calendar) and keep it (split-visit
+   * plan G13). Without it such a save is refused with 409 `visit_overlap`; the
+   * dry run lists the overlaps as `visit_overlaps`. Never implied by
+   * `allow_manual_overlap`. See `lib/booking/visit-overlaps.ts`.
+   */
+  acknowledge_visit_overlap?: boolean;
   allow_outside_hours?: boolean;
   /**
    * Staff placement over a break. A DISTINCT gate from `allow_outside_hours`,
@@ -119,6 +128,8 @@ export interface VisitSchedulePlan {
   changed: boolean;
   dry_run: boolean;
   services: VisitPlannedService[];
+  /** Services the change would put at the same time as another of the visit, on another calendar (G13). */
+  visit_overlaps?: VisitOverlap[];
 }
 
 /**
@@ -170,6 +181,18 @@ export interface VisitServiceLineInput {
   booking_id?: string | null;
   service_id: string;
   service_variant_id?: string | null;
+  /**
+   * Who does this service (split-visit plan 8.8, G11). A visit with services on
+   * more than one calendar must name it on EVERY line, or the save is refused
+   * with 409 `calendar_per_service_required`: a kept service then stays with its
+   * own person, and an added one goes on the calendar named. Without it the
+   * visit is one calendar's, laid back to back. Build it with
+   * `visitServiceLinesRequest`.
+   */
+  calendar_id?: string | null;
+  /** An added service's day and start; without them it goes after the services before it. */
+  booking_date?: string | null;
+  booking_time?: string | null;
 }
 
 export interface VisitServicesPatchInput {
@@ -194,6 +217,8 @@ export interface VisitServicesPatchInput {
   booking_time?: string;
   practitioner_id?: string;
   allow_manual_overlap?: boolean;
+  /** See the schedule payload above (G13). */
+  acknowledge_visit_overlap?: boolean;
   allow_outside_hours?: boolean;
   /** See the schedule payload above — a separate gate from out-of-hours (R17-3). */
   allow_during_breaks?: boolean;
@@ -213,6 +238,8 @@ export interface VisitPlannedServiceLine {
   booking_time: string;
   booking_end_time: string;
   duration_minutes: number;
+  /** Who does it (split-visit plan G11). */
+  calendar_id?: string | null;
 }
 
 export interface VisitServicesPlan {
@@ -229,6 +256,8 @@ export interface VisitServicesPlan {
   /** Rows this edit will cancel. Cancelled, not deleted — they keep their history. */
   removed_booking_ids: string[];
   services: VisitPlannedServiceLine[];
+  /** See the schedule plan above (G13). */
+  visit_overlaps?: VisitOverlap[];
 }
 
 /**

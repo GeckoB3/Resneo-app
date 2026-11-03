@@ -25,11 +25,15 @@ import { bookingModificationNotifyOutcome } from '@/lib/booking/modification-not
 import { explainModificationRefusal } from '@/lib/booking/modification-refusal';
 import { accessRefusalMessage } from '@/lib/roles/roles';
 import {
+  defaultAddedServiceCalendar,
+  isMultiCalendarVisit,
   visitRestoreRequest,
   visitScheduleRequest,
   visitServiceEditsRequest,
+  visitServiceLinesRequest,
   type VisitServiceEdit,
 } from '@/lib/booking/visit-schedule-request';
+import { visitOverlapNote, visitOverlapRefusal } from '@/lib/booking/visit-overlaps';
 import {
   describeProcessingChange,
   describeProcessingGaps,
@@ -152,6 +156,11 @@ type VisitServiceLine = {
   bookingId: string | null;
   serviceId: string;
   variantId: string | null;
+  /**
+   * Who does a service being added (split-visit plan 8.8, G11). A kept line
+   * stays with its own person; see `visitServiceLinesRequest`.
+   */
+  calendarId?: string | null;
 };
 
 let visitLineSeq = 0;
@@ -325,6 +334,20 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   const [plannedRows, setPlannedRows] = useState<VisitEditService[] | null>(null);
   const editRows = useMemo(() => plannedRows ?? visit?.services ?? [], [plannedRows, visit]);
   /**
+   * The visit's services are with more than one person (split-visit plan 8.8,
+   * G12, web `multiCalendarVisit`). It has no single calendar: each service keeps
+   * its own, the whole-visit calendar picker is not offered, and no request names
+   * one calendar for every row, so nothing is moved onto the opened service's.
+   */
+  const multiCalendarVisit = isVisit && isMultiCalendarVisit(editRows, target?.practitionerId);
+  /**
+   * "Gel Manicure with Steph is at 10:45, so the client would be in two places."
+   * (split-visit plan G13): from the dry run, or from a save refused with 409
+   * `visit_overlap`. Shown before saving, and while it shows the save keeps the
+   * overlap (`acknowledge_visit_overlap`), as staff saw it.
+   */
+  const [visitOverlapWarning, setVisitOverlapWarning] = useState<string | null>(null);
+  /**
    * The per-service editors (web #187, R29-14): each service of the visit as
    * the staff member wants it, and as it stood when the sheet opened. Editing
    * one names only the changed rows (`services` mode); the visit's own start
@@ -410,6 +433,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     setExpandedEditId(null);
     setPickerLineIndex(null);
     setPickerServiceId(null);
+    setVisitOverlapWarning(null);
     setMode('form');
     setMonthAnchor(target.date);
   }, [target?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1052,9 +1076,14 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
    */
   const canEditVisitServices = isVisit && serviceLines != null && knownBookingIds.length > 0;
 
-  /** A line's identity for change detection: which row, which service, which option. */
+  /**
+   * A line's identity for change detection: which row, which service, which
+   * option, and who does an added one (G11), so choosing someone else re-checks.
+   */
   const serviceLinesKey = (lines: VisitServiceLine[] | null) =>
-    (lines ?? []).map((l) => `${l.bookingId ?? 'new'}:${l.serviceId}:${l.variantId ?? ''}`).join('|');
+    (lines ?? [])
+      .map((l) => `${l.bookingId ?? 'new'}:${l.serviceId}:${l.variantId ?? ''}:${l.bookingId ? '' : (l.calendarId ?? '')}`)
+      .join('|');
 
   const servicesChanged =
     canEditVisitServices && serviceLinesKey(serviceLines) !== serviceLinesKey(baselineServiceLines);
@@ -1087,9 +1116,32 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
         onVisit.has(s.id) ||
         !practitionerId ||
         !offeredBy.has(s.id) ||
-        offeredBy.get(s.id)!.has(practitionerId),
+        // A visit with more than one person has no one calendar to ask: anything
+        // someone you may book for offers can join, and the line names its person
+        // (web `addableServiceOptions`, split-visit plan G11).
+        (multiCalendarVisit
+          ? [...offeredBy.get(s.id)!].some((c) => diary.allows(c))
+          : offeredBy.get(s.id)!.has(practitionerId)),
     );
-  }, [canEditVisitServices, serviceLines, services, offeredBy, practitionerId]);
+  }, [canEditVisitServices, serviceLines, services, offeredBy, practitionerId, multiCalendarVisit, diary]);
+
+  /** The calendar a kept service is on: its own editor's choice, else where it is now. */
+  const rowCalendarId = useCallback(
+    (bookingId: string): string | null =>
+      serviceEdits[bookingId]?.calendarId ??
+      editRows.find((r) => r.bookingId === bookingId)?.calendarId ??
+      null,
+    [serviceEdits, editRows],
+  );
+
+  /** The people who could do an added service: those offering it whom this person may book for. */
+  const calendarsOfferingService = useCallback(
+    (serviceId: string) =>
+      practitioners.filter(
+        (p) => (offeredBy.get(serviceId)?.has(p.id) ?? false) && diary.allows(p.id),
+      ),
+    [practitioners, offeredBy, diary],
+  );
 
   /** "Cut & Finish – Long" for a line, from the catalogue rather than a snapshot. */
   const visitLineLabel = useCallback(
@@ -1113,17 +1165,28 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   const commitServicePick = (serviceId: string, variantId: string | null) => {
     setServiceLines((current) => {
       if (!current) return current;
+      const replacing = pickerLineIndex != null && pickerLineIndex >= 0 ? current[pickerLineIndex]! : null;
       const line: VisitServiceLine = {
-        key: pickerLineIndex != null && pickerLineIndex >= 0 ? current[pickerLineIndex]!.key : nextVisitLineKey(),
+        key: replacing ? replacing.key : nextVisitLineKey(),
         // Swapping keeps the ROW, so the endpoint re-services it rather than
         // cancelling one booking and inserting another (which would lose its
         // history, and its price snapshot with it).
-        bookingId:
-          pickerLineIndex != null && pickerLineIndex >= 0
-            ? current[pickerLineIndex]!.bookingId
-            : null,
+        bookingId: replacing ? replacing.bookingId : null,
         serviceId,
         variantId,
+        // Who does a service being added (G11): the person before it when they
+        // offer it, as on the web; staff can choose someone else on the line.
+        calendarId:
+          replacing && replacing.bookingId
+            ? null
+            : defaultAddedServiceCalendar({
+                lines: replacing ? current.filter((l) => l.key !== replacing.key) : current,
+                serviceId,
+                rowCalendarId,
+                visitCalendarId: practitionerId ?? target?.practitionerId,
+                offers: (calendarId, id) => offeredBy.get(id)?.has(calendarId) ?? false,
+                offeringCalendars: (id) => calendarsOfferingService(id).map((p) => p.id),
+              }),
       };
       if (pickerLineIndex == null || pickerLineIndex < 0) return [...current, line];
       return current.map((l, i) => (i === pickerLineIndex ? line : l));
@@ -1206,7 +1269,9 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
         fromTime: target?.time ?? '00:00',
         toDate: date,
         toTime: minutesToTime(minutes),
-        practitionerId: reassignedPractitionerId,
+        // Never one calendar for every service of a visit with more than one
+        // person (G12); its picker is not offered either.
+        practitionerId: multiCalendarVisit ? undefined : reassignedPractitionerId,
         fromTotalMinutes: baselineDuration,
         toTotalMinutes: durationEdited ? effectiveDuration : baselineDuration,
       }),
@@ -1220,6 +1285,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
       date,
       minutes,
       reassignedPractitionerId,
+      multiCalendarVisit,
       baselineDuration,
       durationEdited,
       effectiveDuration,
@@ -1229,25 +1295,41 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   /** What the services endpoint is asked for: the list, plus the schedule. */
   const visitServicesRequestBody = useCallback(
     () => ({
-      services: (serviceLines ?? []).map((l) => ({
-        ...(l.bookingId ? { booking_id: l.bookingId } : {}),
-        service_id: l.serviceId,
-        service_variant_id: l.variantId,
-      })),
+      // Every line names who does it (split-visit plan G11): on a visit with more
+      // than one person each kept service stays with its own, and the server
+      // refuses a list that does not say.
+      services: visitServiceLinesRequest({
+        lines: serviceLines ?? [],
+        multiCalendar: multiCalendarVisit,
+        rowCalendarId,
+        visitCalendarId: practitionerId ?? target?.practitionerId,
+      }),
       // The visit this form was opened on. Leaving a service out is how it is
       // removed, so the endpoint refuses the whole request if the visit has
       // gained or lost one since.
       known_booking_ids: knownBookingIds,
       booking_date: date,
       booking_time: `${minutesToTime(minutes)}:00`,
-      ...(reassignedPractitionerId ? { practitioner_id: reassignedPractitionerId } : {}),
+      ...(reassignedPractitionerId && !multiCalendarVisit
+        ? { practitioner_id: reassignedPractitionerId }
+        : {}),
       allow_outside_hours: true,
       // The dry run has to be asked the same question the PATCH will be, or the
       // two disagree and the visit is refused before it is ever attempted — the
       // exact failure web hit threading this through (R17-3).
       allow_during_breaks: true,
     }),
-    [serviceLines, knownBookingIds, date, minutes, reassignedPractitionerId],
+    [
+      serviceLines,
+      knownBookingIds,
+      date,
+      minutes,
+      reassignedPractitionerId,
+      multiCalendarVisit,
+      rowCalendarId,
+      practitionerId,
+      target?.practitionerId,
+    ],
   );
   useEffect(() => {
     if (!target || !practitionerId || !date || !signature) return;
@@ -1277,6 +1359,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
                 sig: signature,
                 result: { state: 'valid', outsideHours: plan.outside_hours === true },
               });
+              setVisitOverlapWarning(visitOverlapNote(plan.visit_overlaps));
               if (typeof plan.total_minutes === 'number') {
                 setVisitPlannedMinutes(plan.total_minutes);
               }
@@ -1295,8 +1378,11 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
               sig: signature,
               result: { state: 'valid', outsideHours: plan.outside_hours === true },
             });
+            // One client in two places (G13): said before saving; the save then keeps it.
+            setVisitOverlapWarning(visitOverlapNote(plan.visit_overlaps));
           } catch (e) {
             if (checkSeq.current !== seq) return;
+            setVisitOverlapWarning(null);
             // A refusal (409), a rejected shape (400) or a stale visit (412) all
             // carry a sentence naming what blocked it. Anything else — auth, a
             // dropped connection, a 500 — is not something to report as "this
@@ -1496,10 +1582,13 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
        * before any is written, and a write that fails part-way puts back the rows
        * that already landed — the visit either moves whole or not at all.
        */
+      // Staff were shown that this puts the client in two places, and saved (G13).
+      const acknowledgeOverlap = visitOverlapWarning ? { acknowledge_visit_overlap: true } : {};
       try {
         if (servicesChanged) {
           await visitServices.mutateAsync({
             ...visitServicesRequestBody(),
+            ...acknowledgeOverlap,
             ...(visitScheduleTouched ? { defer_modification_guest_notification: true } : {}),
           });
           hapticSuccess();
@@ -1513,6 +1602,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
         }
         await visitSchedule.mutateAsync({
           ...visitScheduleRequestBody(),
+          ...acknowledgeOverlap,
           // Staff editing a visit by hand have decided where it goes.
           allow_outside_hours: true,
           allow_during_breaks: true,
@@ -1529,6 +1619,14 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
         onClose();
       } catch (e) {
         hapticWarning();
+        // The visit changed since the check and now puts the client in two
+        // places: say where, and the next Save keeps it, as the message says.
+        const overlap = visitOverlapRefusal(e);
+        if (overlap) {
+          setVisitOverlapWarning(overlap.note);
+          setError(overlap.message);
+          return;
+        }
         const message = e instanceof ApiError ? e.message : null;
         setError(accessRefusalMessage(e) ?? explainRefusal(message) ?? message ?? 'Could not save changes. Try again.');
       }
@@ -1627,7 +1725,10 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
       setUndoing(true);
       try {
         await visitSchedule.mutateAsync({
-          ...(durationEdited || serviceEditsChanged
+          // A visit with more than one person goes back row by row, each to its
+          // OWN calendar (G12): a shift naming the opened service's calendar
+          // would put every service on it.
+          ...(durationEdited || serviceEditsChanged || multiCalendarVisit
             ? visitRestoreRequest({
                 services: editRows,
                 date: target.date,
@@ -1641,6 +1742,8 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
                 },
               }),
           allow_manual_overlap: true,
+          // Back to where they were: an overlap they had then is not news (G13).
+          acknowledge_visit_overlap: true,
           allow_outside_hours: true,
           // An undo must be able to put the booking back exactly where it was,
           // including onto a break it was already sitting over.
@@ -2010,7 +2113,11 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
                         {visitLineLabel(line)}
                       </Text>
                       <Text variant="caption" tone="muted">
-                        {line.bookingId ? 'Tap to change' : 'New service'}
+                        {line.bookingId
+                          ? 'Tap to change'
+                          : line.calendarId
+                            ? `New service with ${practitioners.find((p) => p.id === line.calendarId)?.name ?? 'someone else'}`
+                            : 'New service'}
                       </Text>
                     </Pressable>
                     {(serviceLines?.length ?? 0) > 1 ? (
@@ -2025,6 +2132,26 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
                       </Pressable>
                     ) : null}
                   </View>
+                  {/* Who does a service being added (split-visit plan G11, web
+                      "Calendar for {service}"). */}
+                  {!line.bookingId && calendarsOfferingService(line.serviceId).length > 1 ? (
+                    <View style={styles.chipWrap}>
+                      {calendarsOfferingService(line.serviceId).map((p) => (
+                        <Chip
+                          key={p.id}
+                          label={p.name}
+                          selected={p.id === line.calendarId}
+                          onPress={() => {
+                            hapticSelect();
+                            setServiceLines((current) =>
+                              current?.map((l) => (l.key === line.key ? { ...l, calendarId: p.id } : l)) ??
+                              current,
+                            );
+                          }}
+                        />
+                      ))}
+                    </View>
+                  ) : null}
                   {/* This service's own day, start, calendar and length (web
                       #187, R29-14). Collapsed to one line until asked for; stands
                       aside while the visit is moved as one or its list rewritten. */}
@@ -2176,7 +2303,14 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
               </View>
             ) : null}
 
-            {eligibleStaff.length > 0 ? (
+            {multiCalendarVisit ? (
+              // No whole-visit calendar on a visit with more than one person
+              // (split-visit plan G12, web parity): each service keeps its own.
+              <Text variant="caption" tone="muted">
+                The services of this visit are with different people, so each keeps its own
+                calendar. Change who does a service above.
+              </Text>
+            ) : eligibleStaff.length > 0 ? (
               <View style={styles.fieldBlock}>
                 <Text variant="label" tone="secondary">
                   Staff
@@ -2460,6 +2594,11 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
                 <Text variant="caption" color={colors.warning}>
                   This time is outside the working hours for this calendar. You can still save
                   it.
+                </Text>
+              ) : null}
+              {visitOverlapWarning ? (
+                <Text variant="caption" color={colors.warning} testID="visit-overlap-warning">
+                  {visitOverlapWarning} Save to keep it.
                 </Text>
               ) : null}
             </>

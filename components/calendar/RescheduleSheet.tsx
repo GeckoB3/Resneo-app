@@ -14,6 +14,7 @@ import {
   type VisitEditTarget,
 } from '@/lib/booking/appointment-visit';
 import { MIN_CORE_DURATION_MINUTES } from '@/lib/booking/booking-core-duration';
+import { visitOverlapRefusal } from '@/lib/booking/visit-overlaps';
 import { visitScheduleRequest } from '@/lib/booking/visit-schedule-request';
 import { formatDayHeading } from '@/lib/dates/venue-dates';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
@@ -90,6 +91,13 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
   const [error, setError] = useState<string | null>(null);
   const [complianceError, setComplianceError] = useState<string | null>(null);
   const [seededId, setSeededId] = useState<string | null>(null);
+  /**
+   * A visit move refused because it puts the client in two places (split-visit
+   * plan G13, 409 `visit_overlap`): the note says where, and saving the SAME
+   * move again keeps it. Keyed by the move it was refused for, so changing the
+   * date, start or length asks again rather than keeping an overlap unseen.
+   */
+  const [visitOverlap, setVisitOverlap] = useState<{ sig: string; note: string } | null>(null);
 
   // Seed editable state when the target booking changes (open/swap).
   // useEffect avoids setState-during-render in Fabric/concurrent mode —
@@ -107,6 +115,7 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
     setDuration(target.durationMinutes ?? null);
     setError(null);
     setComplianceError(null);
+    setVisitOverlap(null);
   }, [target?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const durationChanged =
@@ -122,6 +131,10 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
     duration != null
       ? `${minutesToTime((minutes + duration) % (24 * 60))}${crossesMidnight ? ' (next day)' : ''}`
       : null;
+
+  /** The move as it stands, for the overlap acknowledgement above. */
+  const moveSig = `${date}|${minutes}|${duration ?? ''}`;
+  const overlapNote = visitOverlap?.sig === moveSig ? visitOverlap.note : null;
 
   async function handleConfirm() {
     if (!target) return;
@@ -154,6 +167,8 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
           // posture as the single-booking path above.
           allow_outside_hours: true,
           allow_during_breaks: true,
+          // Staff were told this puts the client in two places and saved again (G13).
+          ...(overlapNote ? { acknowledge_visit_overlap: true } : {}),
         });
       } else {
         await mutation.mutateAsync({
@@ -175,6 +190,13 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
       onClose();
     } catch (e) {
       hapticWarning();
+      // One client in two places: say where; the same move saved again keeps it.
+      const overlap = visit ? visitOverlapRefusal(e) : null;
+      if (overlap) {
+        setVisitOverlap({ sig: moveSig, note: overlap.note });
+        setError(overlap.message);
+        return;
+      }
       // A compliance refusal is shown as a plain refusal on both paths: staff
       // are never blocked by compliance, so there is nothing to override.
       const compMsg = visit ? null : complianceBlockMessage(e);
@@ -264,7 +286,13 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
                 </View>
               ) : null}
 
-              {error ? (
+              {overlapNote ? (
+                <Text variant="caption" color={colors.warning} testID="visit-overlap-warning">
+                  {overlapNote}
+                </Text>
+              ) : null}
+
+              {error && !(overlapNote && error === visitOverlap?.note) ? (
                 <Text variant="bodySmall" tone="danger">
                   {error}
                 </Text>

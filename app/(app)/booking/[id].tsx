@@ -8,6 +8,7 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { Screen } from '@/components/ui/Screen';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { ApiError } from '@/lib/api/client';
+import { bookingStatusChange, type CancelScope } from '@/lib/booking/cancel-scope';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import type { LinkedBookingContext } from '@/lib/linked/linked-detail-policy';
 import { useUpdateBookingStatus } from '@/lib/queries/useBookingMutations';
@@ -83,12 +84,13 @@ export default function BookingDetailScreen() {
         false,
       );
 
-  const handleStatusChange = (status: BookingStatus) => {
+  const handleStatusChange = (status: BookingStatus, options?: { cancelScope?: CancelScope }) => {
     if (!bookingId) {
       return;
     }
     const run = (acceptUnpaid: boolean) => {
-      updateStatus.mutate(acceptUnpaid ? { status, accept_unpaid: true } : status, {
+      // Cancel just this service of a visit when asked (split-visit plan G17).
+      updateStatus.mutate(bookingStatusChange(status, { acceptUnpaid, cancelScope: options?.cancelScope }), {
         onSuccess: () => {
           // Warning buzz for the destructive states; success for forward progress.
           if (status === 'Cancelled' || status === 'No-Show') {

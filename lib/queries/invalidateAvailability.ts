@@ -61,8 +61,16 @@ export function invalidateAvailabilityIfSlotTaken(
  *   Staff read "This service is being updated at {venue}. Please try again in a moment."
  * - `COLLECTIVE_SERVICE_PARKED` (409): the venue's own service is parked while it is in a
  *   collective, so it cannot take new bookings.
+ * - `COLLECTIVE_MEMBER_SUSPENDED` (409, split-visit plan G29): that member's subscription has
+ *   lapsed, so it takes no bookings through the collective. Staff availability already leaves its
+ *   calendars out, so a form that still offers one was built before the suspension. Staff read
+ *   "{venue} cannot take bookings through the collective until its subscription is put right."
  */
-export const COLLECTIVE_CATALOGUE_REFUSALS = ['COLLECTIVE_SERVICE_UPDATING', 'COLLECTIVE_SERVICE_PARKED'] as const;
+export const COLLECTIVE_CATALOGUE_REFUSALS = [
+  'COLLECTIVE_SERVICE_UPDATING',
+  'COLLECTIVE_SERVICE_PARKED',
+  'COLLECTIVE_MEMBER_SUSPENDED',
+] as const;
 
 export function invalidateCatalogueIfCollectiveRefusal(queryClient: QueryClient, error: unknown): boolean {
   const code = apiErrorCode(error);

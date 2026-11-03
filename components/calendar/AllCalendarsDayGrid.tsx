@@ -82,6 +82,7 @@ import { Text } from '@/components/ui/Text';
 
 import { arrivalToggleTargets, statusChangeTargets } from '@/lib/calendar/bar-actions';
 import {
+  siblingVisitKey,
   visitChipLabel,
   visitSiblingIndex,
   visitTouchingEdges,
@@ -304,6 +305,12 @@ type AllCalendarsDayGridProps = {
   refreshing?: boolean;
   onRefresh?: () => void;
   /**
+   * Where each booking stands in its visit, counted over every row the diary
+   * holds for the day (split-visit plan G15), including columns the filter
+   * leaves out. Omitted, the chips count the columns drawn here.
+   */
+  visitPositions?: Map<string, VisitPosition>;
+  /**
    * Compact day rows (web parity: the toolbar "Compact" toggle) — shrink the
    * shared vertical scale so the whole day fits the measured viewport (floored
    * at the web's 16px/15min legibility scale). Blocks shrink with the scale
@@ -423,7 +430,7 @@ function positionColumn(
         ? bookings
             .filter(
               (b) =>
-                b.group_booking_id?.trim() === cluster.visit!.groupId &&
+                siblingVisitKey(b) === cluster.visit!.groupId &&
                 !CONFLICT_IGNORED_STATUSES.has(b.status),
             )
             .map((b) => b.id)
@@ -491,6 +498,7 @@ export function AllCalendarsDayGrid({
   compact = false,
   embedded = false,
   showColumnHeaders = true,
+  visitPositions: visitPositionsFromDiary,
 }: AllCalendarsDayGridProps) {
   const { colors } = useTheme();
 
@@ -531,9 +539,13 @@ export function AllCalendarsDayGrid({
   // Columns that refuse a dropped bar wherever it came from (a paused calendar).
   const blockedDropIndexes = useMemo(() => columnsRefusingDrops(calendars), [calendars]);
   // A visit's services may sit on different columns (web #187): the chip
-  // counts every service on the day. Each bar wears its own status colour.
+  // counts every service on the day, the columns the filter hides included
+  // when the diary hands them in (G15). Each bar wears its own status colour.
   const allBookings = useMemo(() => calendars.flatMap((c) => c.bookings), [calendars]);
-  const visitPositions = useMemo(() => visitSiblingIndex(allBookings), [allBookings]);
+  const visitPositions = useMemo(
+    () => visitPositionsFromDiary ?? visitSiblingIndex(allBookings),
+    [visitPositionsFromDiary, allBookings],
+  );
 
   // ── Edge auto-scroll during a cross-column drag ───────────────────────────
   // The columns ScrollView is frozen while a drag is armed (the pan owns the

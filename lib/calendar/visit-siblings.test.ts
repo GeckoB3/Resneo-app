@@ -1,5 +1,6 @@
 import {
-  ownSiblingOverlapCount,
+  gridVisitSiblingRows,
+  ownSiblingOverlaps,
   visitChipLabel,
   visitSiblingIndex,
   visitTouchingEdges,
@@ -59,20 +60,97 @@ describe('visitTouchingEdges', () => {
   });
 });
 
-describe('ownSiblingOverlapCount', () => {
-  it('counts the siblings a window would land on, in the same column only', () => {
+describe('ownSiblingOverlaps (split-visit plan G13, G16)', () => {
+  it('finds the siblings a window would land on in the same column', () => {
     const rows = [row('a', '10:00'), row('b', '10:30'), row('c', '11:00')];
-    expect(
-      ownSiblingOverlapCount({
-        moved: rows[0]!,
-        startMin: toMinutes('10:45'),
-        endMin: toMinutes('11:15'),
-        columnId: 'cal-1',
-        rows,
-        columnIdOf,
-        spanMinutesOf,
-        toMinutes,
-      }),
-    ).toBe(2);
+    const found = ownSiblingOverlaps({
+      moved: rows[0]!,
+      startMin: toMinutes('10:45'),
+      endMin: toMinutes('11:15'),
+      columnId: 'cal-1',
+      rows,
+      columnIdOf,
+      spanMinutesOf,
+      toMinutes,
+    });
+    expect(found.sameColumn.map((r) => r.id)).toEqual(['b', 'c']);
+    expect(found.otherColumns).toEqual([]);
+  });
+
+  it('puts a sibling on another column apart: the client would be in two places', () => {
+    // A cut with Aisha at 10:00, a manicure with Steph at 10:45: the cut moved to
+    // 10:30 now runs into the manicure.
+    const rows = [row('cut', '10:00'), row('mani', '10:45'), row('other', '10:30', { group_booking_id: 'g9' })];
+    const found = ownSiblingOverlaps({
+      moved: rows[0]!,
+      startMin: toMinutes('10:30'),
+      endMin: toMinutes('11:00'),
+      columnId: 'aisha',
+      rows,
+      columnIdOf: (r) => (r.id === 'mani' ? 'steph' : 'aisha'),
+      spanMinutesOf,
+      toMinutes,
+    });
+    expect(found.sameColumn).toEqual([]);
+    expect(found.otherColumns.map((r) => r.id)).toEqual(['mani']);
+  });
+
+  it('ignores a cancelled sibling and a party', () => {
+    const rows = [
+      row('a', '10:00'),
+      row('b', '10:00', { status: 'Cancelled' }),
+      row('p', '10:00', { group_booking_id: 'g1', person_label: 'Ana' }),
+    ];
+    const found = ownSiblingOverlaps({
+      moved: rows[0]!,
+      startMin: toMinutes('10:00'),
+      endMin: toMinutes('10:30'),
+      columnId: 'cal-1',
+      rows,
+      columnIdOf,
+      spanMinutesOf,
+      toMinutes,
+    });
+    expect([...found.sameColumn, ...found.otherColumns]).toEqual([]);
+  });
+});
+
+describe('chips count the whole visit the grid holds (split-visit plan G15)', () => {
+  const booking = (id: string, startTime: string, group: string | null = 'g1') => ({
+    id,
+    guestName: 'Sam',
+    serviceName: 'Cut',
+    startTime,
+    endTime: '',
+    status: 'Booked',
+    group_booking_id: group,
+  });
+  const calendars = [
+    { calendarId: 'shown', calendarName: 'Aisha', dates: [{ date: '2026-11-03', workingHours: [], bookings: [booking('cut', '10:00')], blocks: [], sessions: [] }] },
+    // A calendar the column filter hides still holds the visit's other service.
+    { calendarId: 'hidden', calendarName: 'Steph', dates: [{ date: '2026-11-03', workingHours: [], bookings: [booking('mani', '10:45')], blocks: [], sessions: [] }] },
+  ];
+
+  it('counts a sibling on a column that is not drawn', () => {
+    const positions = visitSiblingIndex(gridVisitSiblingRows(calendars, ['2026-11-03']));
+    expect(visitChipLabel(positions.get('cut')!)).toBe('1/2');
+    expect(visitChipLabel(positions.get('mani')!)).toBe('2/2');
+  });
+
+  it('counts a partner row handed in beside the grid, once', () => {
+    const extra = [{ id: 'brow', group_booking_id: 'g1', startTime: '11:30', status: 'Booked', date: '2026-11-03' }];
+    const positions = visitSiblingIndex(gridVisitSiblingRows(calendars, ['2026-11-03'], [...extra, ...extra]));
+    expect(positions.get('brow')).toEqual({ groupId: 'g1', index: 2, count: 3, anchorId: 'cut' });
+  });
+
+  it('leaves out other days, and orders a week by date then start', () => {
+    const week = [
+      ...calendars,
+      { calendarId: 'shown', calendarName: 'Aisha', dates: [{ date: '2026-11-02', workingHours: [], bookings: [booking('wash', '16:00')], blocks: [], sessions: [] }] },
+    ];
+    expect(visitSiblingIndex(gridVisitSiblingRows(week, ['2026-11-03'])).get('cut')?.count).toBe(2);
+    const positions = visitSiblingIndex(gridVisitSiblingRows(week, ['2026-11-02', '2026-11-03']));
+    expect(positions.get('wash')).toEqual({ groupId: 'g1', index: 0, count: 3, anchorId: 'wash' });
+    expect(positions.get('cut')?.index).toBe(1);
   });
 });

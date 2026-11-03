@@ -11,6 +11,7 @@ import { Sheet } from '@/components/ui/Sheet';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { bookingStatusChange, type CancelScope } from '@/lib/booking/cancel-scope';
 import { useToast } from '@/providers/ToastProvider';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useBookingDetail } from '@/lib/queries/useBookingDetail';
@@ -89,10 +90,11 @@ export function BookingDetailSheet({
       )
     : isAppointmentExperience(venue?.pricing_tier, venue?.booking_model, venue?.enabled_models, false);
 
-  const handleStatusChange = (status: BookingStatus) => {
+  const handleStatusChange = (status: BookingStatus, options?: { cancelScope?: CancelScope }) => {
     if (!bookingId) return;
     const run = (acceptUnpaid: boolean) => {
-      updateStatus.mutate(acceptUnpaid ? { status, accept_unpaid: true } : status, {
+      // Cancel just this service of a visit when asked (split-visit plan G17).
+      updateStatus.mutate(bookingStatusChange(status, { acceptUnpaid, cancelScope: options?.cancelScope }), {
         onSuccess: () => {
           if (status === 'Cancelled' || status === 'No-Show') {
             hapticWarning();

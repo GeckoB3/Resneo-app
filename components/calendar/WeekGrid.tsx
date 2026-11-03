@@ -29,6 +29,7 @@ import {
   type LaneInput,
 } from '@/components/calendar/grid-layout';
 import type { CalendarTimeBlock } from '@/components/calendar/CalendarDayGrid';
+import { VisitChip } from '@/components/calendar/AppointmentBlock';
 import { IconButton } from '@/components/ui/IconButton';
 import { Text } from '@/components/ui/Text';
 import { bookingCalendarBlockPalette } from '@/lib/booking/booking-status-visual';
@@ -37,6 +38,7 @@ import {
   type CalendarBookingCluster,
 } from '@/lib/calendar/cluster-bookings';
 import { venueClosedRanges, type VenueDayHours } from '@/lib/calendar/venue-closures';
+import { visitChipLabel, type VisitPosition } from '@/lib/calendar/visit-siblings';
 import { closureBandLook, manualBlockLook } from '@/components/calendar/closure-band';
 import {
   clampClosureBlocksToWindow,
@@ -125,6 +127,13 @@ type WeekGridProps = {
   boundsRanges?: { start: number; end: number }[];
   refreshing?: boolean;
   onRefresh?: () => void;
+  /**
+   * Where each booking stands in its visit, counted over every row the diary
+   * holds for the week (split-visit plan G15): the week view wears the same
+   * "1/2" chip as the day view, including for a service whose siblings are on
+   * another calendar.
+   */
+  visitPositions?: Map<string, VisitPosition>;
 };
 
 type PositionedBooking = {
@@ -144,6 +153,7 @@ type PositionedBooking = {
 function positionBookings(
   bookings: CalendarGridBooking[],
   gridStartMin: number,
+  visitPositions?: Map<string, VisitPosition>,
 ): PositionedBooking[] {
   const raw = clusterCalendarBookings(
     bookings.map((booking) => {
@@ -152,6 +162,7 @@ function positionBookings(
       if (end <= start) end = start + DEFAULT_DURATION_MINUTES;
       return { booking, start, end };
     }),
+    visitPositions,
   );
   const laneInputs: LaneInput[] = raw.map(({ lead, start, end }) => ({
     id: lead.id,
@@ -189,6 +200,7 @@ export function WeekGrid({
   boundsRanges,
   refreshing = false,
   onRefresh,
+  visitPositions,
 }: WeekGridProps) {
   const { colors } = useTheme();
 
@@ -358,6 +370,7 @@ export function WeekGrid({
                 onBlockPress={onBlockPress}
                 onEmptyPress={onEmptyPress}
                 onManualBlockPress={onManualBlockPress}
+                visitPositions={visitPositions}
               />
             ))}
           </View>
@@ -379,6 +392,7 @@ function WeekDayCol({
   onBlockPress,
   onEmptyPress,
   onManualBlockPress,
+  visitPositions,
 }: {
   day: WeekDayColumn;
   gridStartMin: number;
@@ -389,12 +403,13 @@ function WeekDayCol({
   onBlockPress: (bookingId: string) => void;
   onEmptyPress: (date: string, time: string) => void;
   onManualBlockPress?: (date: string, blockId: string) => void;
+  visitPositions?: Map<string, VisitPosition>;
 }) {
   const { colors, isDark } = useTheme();
 
   const positioned = useMemo(
-    () => positionBookings(day.bookings, gridStartMin),
-    [day.bookings, gridStartMin],
+    () => positionBookings(day.bookings, gridStartMin, visitPositions),
+    [day.bookings, gridStartMin, visitPositions],
   );
 
   const sessions = useMemo(() => {
@@ -638,7 +653,11 @@ function WeekDayCol({
                 width: `${widthPct}%`,
               },
             ]}>
-            <WeekBlock booking={item.cluster.lead} height={item.height} />
+            <WeekBlock
+              booking={item.cluster.lead}
+              height={item.height}
+              visitChip={item.cluster.visit ? visitChipLabel(item.cluster.visit) : null}
+            />
           </Pressable>
         );
       })}
@@ -655,7 +674,16 @@ function WeekDayCol({
 }
 
 /** Compact, read-only booking block for the dense week column. */
-function WeekBlock({ booking, height }: { booking: CalendarGridBooking; height: number }) {
+function WeekBlock({
+  booking,
+  height,
+  visitChip,
+}: {
+  booking: CalendarGridBooking;
+  height: number;
+  /** "1/2" on one service of a visit (G15), as the day view shows it. */
+  visitChip?: string | null;
+}) {
   const palette = bookingCalendarBlockPalette({
     status: booking.status,
     client_arrived_at: booking.client_arrived_at,
@@ -668,9 +696,12 @@ function WeekBlock({ booking, height }: { booking: CalendarGridBooking; height: 
       {/* Always label the bar (down to the 18px floor) so short bookings aren't blank. */}
       {height >= WEEK_MIN_BLOCK_HEIGHT ? (
         <View style={styles.blockBody}>
-          <Text numberOfLines={1} style={[styles.blockName, { color: palette.text }]}>
-            {booking.guestName}
-          </Text>
+          <View style={styles.blockNameRow}>
+            {visitChip ? <VisitChip label={visitChip} color={palette.text} /> : null}
+            <Text numberOfLines={1} style={[styles.blockName, styles.blockNameText, { color: palette.text }]}>
+              {booking.guestName}
+            </Text>
+          </View>
           {height >= 40 ? (
             <Text numberOfLines={1} style={[styles.blockTime, { color: hexToRgba(palette.text, 0.8) }]}>
               {booking.startTime.slice(0, 5)}
@@ -803,6 +834,14 @@ const styles = StyleSheet.create({
     minWidth: 0,
     paddingHorizontal: 3,
     paddingVertical: 1,
+  },
+  blockNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  blockNameText: {
+    flexShrink: 1,
   },
   blockName: {
     fontFamily: fonts.semibold,

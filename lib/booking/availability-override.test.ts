@@ -1,9 +1,14 @@
 import {
+  chainCheckBodies,
+  chainNoLongerFitsMessage,
   notUsuallyOfferedBy,
   overrideDryRunBodies,
   prefixOverrideWarnings,
 } from '@/lib/booking/availability-override';
-import type { MultiServiceSegment } from '@/lib/booking/multi-service-chain';
+import {
+  recomputeMultiServiceChain,
+  type MultiServiceSegment,
+} from '@/lib/booking/multi-service-chain';
 
 function segment(over: Partial<MultiServiceSegment>): MultiServiceSegment {
   return {
@@ -68,6 +73,59 @@ describe('overrideDryRunBodies', () => {
           },
         ],
       }),
+    );
+  });
+});
+
+describe('the review re-check after a change (split-visit plan G22)', () => {
+  const visit = [
+    segment({ serviceId: 'cut', serviceName: 'Cut', startTime: '10:00', durationMinutes: 45, bufferMinutes: 0 }),
+    segment({ serviceId: 'colour', serviceName: 'Colour', startTime: '10:45', durationMinutes: 60, bufferMinutes: 0 }),
+    segment({ serviceId: 'toner', serviceName: 'Toner', startTime: '11:45', durationMinutes: 15, bufferMinutes: 0 }),
+  ];
+
+  it('asks the server about the visit as it now is, from its start, without the override', () => {
+    // The colour is removed: the toner now follows the cut at 10:45.
+    const next = recomputeMultiServiceChain(
+      visit.filter((s) => s.serviceId !== 'colour'),
+      visit[0]!.startTime,
+    );
+    const bodies = chainCheckBodies({
+      venueId: 'venue-1',
+      bookingDate: '2026-11-03',
+      chain: next,
+      override: false,
+      customDurationOf: () => 90,
+    });
+    expect(bodies.map((b) => [b.service_id, b.start_time])).toEqual([
+      ['cut', '10:00'],
+      ['toner', '10:45'],
+    ]);
+    // A plain check: no override flag, and a staff length travels only with the override (web parity).
+    for (const body of bodies) {
+      expect(body).not.toHaveProperty('override_availability');
+      expect(body).not.toHaveProperty('duration_minutes');
+      expect(body.staff).toBe(true);
+    }
+    expect(bodies[1]!.phantoms).toEqual([
+      expect.objectContaining({ practitioner_id: 'prac-1', start_time: '10:00', duration_minutes: 45 }),
+    ]);
+  });
+
+  it('keeps the override when it is on', () => {
+    const bodies = chainCheckBodies({
+      venueId: 'venue-1',
+      bookingDate: '2026-11-03',
+      chain: visit,
+      override: true,
+      customDurationOf: () => null,
+    });
+    expect(bodies.every((b) => b.override_availability === true)).toBe(true);
+  });
+
+  it('says the services no longer fit at the visit start', () => {
+    expect(chainNoLongerFitsMessage('10:00:00')).toBe(
+      'These services no longer fit at 10:00. Choose another time below.',
     );
   });
 });

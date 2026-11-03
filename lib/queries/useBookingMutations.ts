@@ -2,6 +2,7 @@ import { useMutation, useQueryClient, type QueryKey } from '@tanstack/react-quer
 
 import { apiFetch } from '@/lib/api/client';
 import { invalidateAppointmentAvailability } from '@/lib/queries/invalidateAvailability';
+import { bookingStatusPatchBody, type CancelScope } from '@/lib/booking/cancel-scope';
 import type { BookingModificationNotifyResult } from '@/lib/booking/modification-notify-result';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
@@ -142,15 +143,26 @@ function seedDetailFromRow(
  * (see `lib/booking/accept-unpaid.ts`). It is never sent speculatively — only
  * as the deliberate replay after staff answer the guard sheet.
  */
-export type BookingStatusChange = BookingStatus | { status: BookingStatus; accept_unpaid: true };
+export type BookingStatusChange =
+  | BookingStatus
+  | { status: BookingStatus; accept_unpaid: true }
+  /**
+   * Cancel this ONE service of a visit (split-visit plan G17): the rest of the
+   * visit stays. See `lib/booking/cancel-scope.ts`.
+   */
+  | { status: 'Cancelled'; cancel_scope: 'service' };
 
 function statusChangeParts(input: BookingStatusChange): {
   status: BookingStatus;
   acceptUnpaid: boolean;
+  cancelScope: CancelScope | null;
 } {
-  return typeof input === 'string'
-    ? { status: input, acceptUnpaid: false }
-    : { status: input.status, acceptUnpaid: input.accept_unpaid === true };
+  if (typeof input === 'string') return { status: input, acceptUnpaid: false, cancelScope: null };
+  return {
+    status: input.status,
+    acceptUnpaid: 'accept_unpaid' in input && input.accept_unpaid === true,
+    cancelScope: 'cancel_scope' in input && input.cancel_scope === 'service' ? 'service' : null,
+  };
 }
 
 /**
@@ -167,11 +179,10 @@ export function useUpdateBookingStatus(bookingId: string) {
       if (!accessToken) {
         throw new Error('Missing access token');
       }
-      const { status, acceptUnpaid } = statusChangeParts(input);
       return apiFetch<BookingDetail>(`/api/venue/bookings/${bookingId}`, {
         accessToken,
         method: 'PATCH',
-        body: JSON.stringify({ status, ...(acceptUnpaid ? { accept_unpaid: true } : {}) }),
+        body: JSON.stringify(bookingStatusPatchBody(statusChangeParts(input))),
       });
     },
     onMutate: (input) =>

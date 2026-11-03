@@ -67,6 +67,13 @@ import {
 } from '@/lib/booking/appointment-visit';
 import { resolveBookingCoreDurationMinutes } from '@/lib/booking/booking-core-duration';
 import { bookingDetailActions } from '@/lib/booking/booking-status-actions';
+import {
+  CANCEL_ALL_WITH_US_LABEL,
+  CANCEL_THIS_SERVICE_LABEL,
+  cancelScopeQuestion,
+  liveVisitServiceCount,
+  type CancelScope,
+} from '@/lib/booking/cancel-scope';
 import { isServiceLevelStatus, visitLifecycleStatus } from '@/lib/booking/visit-status';
 import { bookingStatusVisualForKey } from '@/lib/booking/booking-status-visual';
 import {
@@ -130,7 +137,13 @@ type BookingDetailContentProps = {
   isAppointmentVenue?: boolean;
   /** Gates admin-only actions (e.g. deposit refunds). */
   isAdmin?: boolean;
-  onStatusChange: (status: BookingStatus) => void;
+  /**
+   * A status change. A cancel of one service of a visit may carry
+   * `cancelScope: 'service'` (split-visit plan G17): only that service is
+   * cancelled, and the rest of the visit stays. Without it the server cancels
+   * every live service of the visit at this business, as before.
+   */
+  onStatusChange: (status: BookingStatus, options?: { cancelScope?: CancelScope }) => void;
   actionLoading?: boolean;
   /** Called after a permanent delete so the host can dismiss/navigate away. */
   onDeleted?: () => void;
@@ -609,6 +622,13 @@ export function BookingDetailContent({
   // no-op on react-native-web, so we arm the button (label flips to "Tap to
   // confirm") and disarm after a few seconds if the user doesn't follow through.
   const [pendingConfirm, setPendingConfirm] = useState<BookingStatus | null>(null);
+  /**
+   * Cancel on one service of a visit with more than one live service asks which
+   * (split-visit plan 7.7, G17): just this service, or every service the client
+   * has with this business on the visit. Each answer is its own button, so the
+   * choice is the confirmation.
+   */
+  const [cancelChoiceOpen, setCancelChoiceOpen] = useState(false);
   const [resendArmed, setResendArmed] = useState(false);
   const [deleteArmed, setDeleteArmed] = useState(false);
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1191,6 +1211,19 @@ export function BookingDetailContent({
     !!booking.dietary_notes?.trim() ||
     (isTable && !!booking.occasion?.trim());
 
+  /**
+   * Cancel on a service of a visit that has more than one live service with this
+   * business asks which to cancel (split-visit plan 7.7, G17, web parity).
+   */
+  const cancelNeedsChoice =
+    !!visit && liveVisitServiceCount(groupVisitQuery.data ?? []) > 1;
+
+  const chooseCancel = (scope: CancelScope) => {
+    setCancelChoiceOpen(false);
+    track(ANALYTICS_EVENTS.bookingStatusChanged, { to: 'Cancelled' });
+    onStatusChange('Cancelled', scope === 'service' ? { cancelScope: 'service' } : undefined);
+  };
+
   const handleActionPress = (target: BookingStatus, _label: string, destructive?: boolean) => {
     // Web parity: no-show is rejected before the grace window lapses. Mirror the
     // guard here so an armed button can't fire early (the backend also enforces).
@@ -1198,6 +1231,14 @@ export function BookingDetailContent({
       toast.error(
         `No-show can only be marked ${noShowGraceMinutes} minutes after the booking start time.`,
       );
+      return;
+    }
+    if (target === 'Cancelled' && cancelNeedsChoice) {
+      // The two answers below are the confirmation; no arm step on top of them.
+      if (confirmTimer.current) clearTimeout(confirmTimer.current);
+      setPendingConfirm(null);
+      hapticWarning();
+      setCancelChoiceOpen((open) => !open);
       return;
     }
     if (destructive) {
@@ -1717,6 +1758,42 @@ export function BookingDetailContent({
                   );
                 })}
               </View>
+              {cancelChoiceOpen &&
+              cancelNeedsChoice &&
+              destructiveActions.some((a) => a.target === 'Cancelled') ? (
+                <View style={styles.cancelChoice} testID="cancel-scope-choice">
+                  <Text variant="bodySmall">{cancelScopeQuestion(serviceName, guestName)}</Text>
+                  <View style={styles.toolbarGrid}>
+                    <View style={styles.toolbarCell}>
+                      <Button
+                        label={CANCEL_THIS_SERVICE_LABEL}
+                        variant="danger"
+                        size="sm"
+                        fullWidth
+                        loading={actionLoading}
+                        onPress={() => chooseCancel('service')}
+                      />
+                    </View>
+                    <View style={styles.toolbarCell}>
+                      <Button
+                        label={CANCEL_ALL_WITH_US_LABEL}
+                        variant="danger"
+                        size="sm"
+                        fullWidth
+                        loading={actionLoading}
+                        onPress={() => chooseCancel('part')}
+                      />
+                    </View>
+                  </View>
+                  <Button
+                    label="Keep the booking"
+                    variant="ghost"
+                    size="sm"
+                    fullWidth
+                    onPress={() => setCancelChoiceOpen(false)}
+                  />
+                </View>
+              ) : null}
               {destructiveActions.some((a) => a.target === 'No-Show') && !noShowAllowed ? (
                 <Text variant="caption" tone="muted" style={styles.noShowHint}>
                   No-show can be marked {noShowGraceMinutes} minutes after the start time.
@@ -2277,6 +2354,10 @@ const styles = StyleSheet.create({
     marginVertical: spacing.sm,
   },
   noShowHint: {
+    marginTop: spacing.sm,
+  },
+  cancelChoice: {
+    gap: spacing.sm,
     marginTop: spacing.sm,
   },
   details: {

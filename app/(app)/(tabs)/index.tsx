@@ -20,7 +20,7 @@ import { useAcceptUnpaidGuard } from '@/components/bookings/AcceptUnpaidSheet';
 import { BookingDetailSheet } from '@/components/bookings/BookingDetailSheet';
 import { AllCalendarsDayGrid, type AllCalendarColumn } from '@/components/calendar/AllCalendarsDayGrid';
 import { BlockEditSheet, type BlockTarget } from '@/components/calendar/BlockEditSheet';
-import { CalendarDayGrid } from '@/components/calendar/CalendarDayGrid';
+import { CalendarDayGrid, CONFLICT_IGNORED_STATUSES } from '@/components/calendar/CalendarDayGrid';
 import { minutesToTime, timeToMinutes, type GridWindowOverride } from '@/components/calendar/grid-layout';
 import { resolveDayLoadState } from '@/lib/calendar/day-load-state';
 import { resolveGridErrorState } from '@/lib/calendar/grid-error-state';
@@ -79,8 +79,20 @@ import {
 } from '@/lib/booking/appointment-visit';
 import { guestNotifyPlanForChange } from '@/lib/booking/modification-notify';
 import { explainModificationRefusal } from '@/lib/booking/modification-refusal';
+import { visitOverlapNote, visitTwoPlacesNote } from '@/lib/booking/visit-overlaps';
 import { visitRestoreRequest, visitScheduleRequest } from '@/lib/booking/visit-schedule-request';
-import { ownSiblingOverlapCount } from '@/lib/calendar/visit-siblings';
+import {
+  joinsPendingMoveNotice,
+  mergeMoveNotice,
+  type MoveNotice,
+  type MoveNoticeInput,
+} from '@/lib/calendar/move-notice';
+import {
+  gridVisitSiblingRows,
+  ownSiblingOverlaps,
+  siblingRowOf,
+  visitSiblingIndex,
+} from '@/lib/calendar/visit-siblings';
 import {
   cancelOriginalCopy,
   collectiveMoveCopy,
@@ -530,26 +542,22 @@ export default function CalendarScreen() {
 
   // After a drag move/resize, prompt to notify the guest (or undo) — the server
   // notification is deferred so the staff member chooses. Null when not showing.
-  const [moveNotice, setMoveNotice] = useState<{
-    bookingId: string;
-    guestName: string;
-    previous: RescheduleTarget;
-    /**
-     * Whether the booking's START moved. False for a pure resize AND for a
-     * cross-column reassign at the same time: in both the guest is still due
-     * when they were, so the notify offer is withheld (the email was skipped
-     * outright at commit) and only Undo is offered.
-     */
-    startMoved: boolean;
-    /** Moved to another practitioner's column. A move for the heading's purposes. */
-    reassigned: boolean;
-    /**
-     * The commit changed the length, so Undo has to put it back. A pure move did
-     * not, and on a visit re-asserting a length is not free — see
-     * `undoReschedule`.
-     */
-    lengthChanged: boolean;
-  } | null>(null);
+  //
+  // `startMoved` is false for a pure resize AND for a cross-column reassign at
+  // the same time: in both the guest is still due when they were, so the notify
+  // offer is withheld (the email was skipped outright at commit) and only Undo
+  // is offered. `lengthChanged` says Undo has to put a length back; on a visit
+  // re-asserting one is not free (see `undoReschedule`).
+  //
+  // Keyed by VISIT (split-visit plan G7): a change to another service of the
+  // visit the open prompt stands for joins it, so the client gets one notice and
+  // Undo puts back every service it covers. See `lib/calendar/move-notice.ts`.
+  const [moveNotice, setMoveNotice] = useState<MoveNotice<RescheduleTarget> | null>(null);
+  /** The prompt as it stands, for a commit that lands after the render that started it. */
+  const moveNoticeRef = useRef<MoveNotice<RescheduleTarget> | null>(null);
+  useEffect(() => {
+    moveNoticeRef.current = moveNotice;
+  }, [moveNotice]);
 
   // Restore a booking to its previous slot AND length. Sends the original end so
   // the revert validates the true span, and SKIPS the email: an undone change is
@@ -583,6 +591,8 @@ export default function CalendarScreen() {
           // the grid permits comes back 409 "Conflicts with a break" (R17-3).
           allow_during_breaks: true,
           allow_manual_overlap: true,
+          // Going back to where it was: an overlap it had then is not news (G13).
+          acknowledge_visit_overlap: true,
           skip_booking_modification_guest_notification: true,
         });
         return;
@@ -606,7 +616,10 @@ export default function CalendarScreen() {
     [rescheduleById, visitScheduleById],
   );
 
-  const closeMoveNotice = useCallback(() => setMoveNotice(null), []);
+  const closeMoveNotice = useCallback(() => {
+    moveNoticeRef.current = null;
+    setMoveNotice(null);
+  }, []);
 
   /**
    * Announce a committed drag. A move (or a reassign) opens the notify sheet,
@@ -616,9 +629,14 @@ export default function CalendarScreen() {
    * keeping Undo as its action.
    */
   const raiseChangeNotice = useCallback(
-    (notice: NonNullable<typeof moveNotice>) => {
-      if (notice.startMoved || notice.reassigned) {
-        setMoveNotice(notice);
+    (notice: MoveNoticeInput<RescheduleTarget>) => {
+      const pending = moveNoticeRef.current;
+      // A change to the visit the open prompt stands for joins it, a resize too,
+      // so Undo there covers it and the client hears once (G7).
+      if (notice.startMoved || notice.reassigned || joinsPendingMoveNotice(pending, notice)) {
+        const next = mergeMoveNotice(pending, notice);
+        moveNoticeRef.current = next;
+        setMoveNotice(next);
         return;
       }
       toast.success(notice.previous.visit ? 'Service length updated' : 'Duration updated', {
@@ -645,12 +663,36 @@ export default function CalendarScreen() {
         onError: () => toast.error('Could not notify the guest.'),
       },
     );
+    moveNoticeRef.current = null;
     setMoveNotice(null);
   }, [moveNotice, notifyModification, toast]);
 
   const handleUndoMove = useCallback(() => {
     if (!moveNotice) return;
-    undoReschedule(moveNotice.previous, { restoreLength: moveNotice.lengthChanged });
+    // Every service the prompt stands for goes back to where it was before its
+    // first change (G7). Services of one visit go back in ONE request, so the
+    // undo is as all-or-nothing as each move was.
+    const { changes } = moveNotice;
+    const head = changes[0]!.previous;
+    const oneVisit =
+      head.visit != null &&
+      changes.every((c) => c.previous.visit?.groupBookingId === head.visit!.groupBookingId);
+    if (changes.length > 1 && oneVisit) {
+      undoReschedule(
+        {
+          ...head,
+          // Each row carries its own calendar, so no one calendar is named for all.
+          practitionerId: null,
+          visit: { ...head.visit!, services: changes.flatMap((c) => c.previous.visit!.services) },
+        },
+        { restoreLength: changes.some((c) => c.lengthChanged) },
+      );
+    } else {
+      for (const change of changes) {
+        undoReschedule(change.previous, { restoreLength: change.lengthChanged });
+      }
+    }
+    moveNoticeRef.current = null;
     setMoveNotice(null);
   }, [moveNotice, undoReschedule]);
 
@@ -1639,48 +1681,162 @@ export default function CalendarScreen() {
   );
 
   /**
-   * The whole multi-service visit a bar stands for, or null when it is an
-   * ordinary booking (or a party, which the resolver refuses).
+   * Every live booking on the anchor day as the diary holds it, own and partner,
+   * each with the raw calendar it sits on and that calendar's name. One day of
+   * one visit can be spread over several of these columns.
+   */
+  const anchorDayRows = useMemo(() => {
+    const rows: { booking: CalendarGridBooking; calendarId: string | null; calendarName: string | null }[] = [];
+    for (const cal of gridQuery.data?.calendars ?? []) {
+      const dateData = cal.dates.find((d) => d.date === anchor);
+      for (const booking of dateData?.bookings ?? []) {
+        rows.push({ booking, calendarId: cal.calendarId, calendarName: cal.calendarName });
+      }
+    }
+    for (const v of linkedVenues) {
+      for (const b of v.bookings) {
+        if (b.bookingDate !== anchor) continue;
+        rows.push({
+          booking: linkedGridBooking(b, v.practitioners, { practitionerInLabel: false }),
+          calendarId: b.practitionerId ?? null,
+          calendarName: v.practitioners.find((p) => p.id === b.practitionerId)?.name ?? null,
+        });
+      }
+    }
+    return rows;
+  }, [gridQuery.data, anchor, linkedVenues]);
+
+  /**
+   * Where each booking stands in its visit, over every row the diary holds for
+   * the day, own and partner, drawn or filtered out (split-visit plan G15): the
+   * chip on a service whose siblings are with someone else, or on a column the
+   * filter hides, still says "1/2". Every day grid takes this one count.
+   */
+  const dayVisitPositions = useMemo(
+    () => visitSiblingIndex(anchorDayRows.map((r) => siblingRowOf(r.booking, anchor))),
+    [anchorDayRows, anchor],
+  );
+
+  /** The same over the week the week view shows, ordered by date then start. */
+  const weekVisitPositions = useMemo(() => {
+    if (scope !== 'week') return undefined;
+    const days = new Set(week.days);
+    const partnerRows = linkedVenues.flatMap((v) =>
+      v.bookings
+        .filter((b) => days.has(b.bookingDate))
+        .map((b) =>
+          siblingRowOf(linkedGridBooking(b, v.practitioners, { practitionerInLabel: false }), b.bookingDate),
+        ),
+    );
+    return visitSiblingIndex(gridVisitSiblingRows(gridQuery.data?.calendars ?? [], week.days, partnerRows));
+  }, [scope, week.days, linkedVenues, gridQuery.data]);
+
+  /**
+   * The whole multi-service visit a bar stands for, on the anchor day, or null
+   * when it is an ordinary booking (or a party, which the resolver refuses).
    *
    * Read back from the grid rather than threaded through the gesture, so the
-   * commit path has one source. Safe to resolve from one calendar's one day: a
-   * visit is always on a single calendar, and the diary tab has no status filter
-   * to hide a segment from it (see [[calendar-no-status-filter]]). A MOVE is
-   * safe regardless — it sends no length, and the endpoint loads the visit's real
-   * rows itself.
+   * commit path has one source. Every calendar of the day is read, editable
+   * linked columns included (split-visit plan 8.8, G16): a visit's services can
+   * be with different people, and a service alone on its own column is still
+   * one service of a visit. Reading only its own column made it an ordinary
+   * booking, moved by a single-booking PATCH. The diary tab has no status
+   * filter to hide a service from it (see [[calendar-no-status-filter]]), and a
+   * MOVE sends no length, so the endpoint's own reading of the rows decides.
    */
   const findVisitOnAnchor = useCallback(
     (bookingId: string) => {
-      for (const cal of gridQuery.data?.calendars ?? []) {
-        const dateData = cal.dates.find((d) => d.date === anchor);
-        const booking = dateData?.bookings.find((b) => b.id === bookingId);
-        if (!dateData || !booking) continue;
-        const groupBookingId = booking.group_booking_id?.trim();
-        if (!groupBookingId) return null;
-        const rows: VisitServiceRow[] = dateData.bookings
-          .filter((b) => b.group_booking_id?.trim() === groupBookingId)
-          .map((b) => ({
-            id: b.id,
-            booking_time: b.startTime,
-            // The grid sends "" for a row with no end; the resolver reads that as
-            // absent and falls back rather than treating it as midnight.
-            booking_end_time: b.endTime || null,
-            status: b.status,
-            group_booking_id: b.group_booking_id,
-            person_label: b.person_label,
-            booking_item_name: b.serviceName,
-            // The grid holds one day of one calendar: every row here is on the
-            // anchor, so the visit the bar stands for is that day's part of it.
-            booking_date: anchor,
-          }));
-        // Only what the schedule endpoint re-lays: a completed service stays
-        // where it is when the visit bar is dragged.
-        const visit = resolveAppointmentVisit(scheduledVisitRows(rows));
-        return visit ? { groupBookingId, visit } : null;
-      }
-      return null;
+      const hit = anchorDayRows.find((r) => r.booking.id === bookingId);
+      if (!hit) return null;
+      const groupBookingId = hit.booking.group_booking_id?.trim();
+      if (!groupBookingId) return null;
+      const rows: VisitServiceRow[] = anchorDayRows
+        .filter((r) => r.booking.group_booking_id?.trim() === groupBookingId)
+        .map(({ booking: b, calendarId, calendarName }) => ({
+          id: b.id,
+          booking_time: b.startTime,
+          // The grid sends "" for a row with no end; the resolver reads that as
+          // absent and falls back rather than treating it as midnight.
+          booking_end_time: b.endTime || null,
+          status: b.status,
+          group_booking_id: b.group_booking_id,
+          person_label: b.person_label,
+          booking_item_name: b.serviceName,
+          // Every row here is on the anchor, so the visit the bar stands for is
+          // that day's part of it.
+          booking_date: anchor,
+          // Each service's own calendar, so an Undo puts it back there (G12).
+          calendar_id: calendarId,
+          calendar_name: calendarName,
+        }));
+      // Only what the schedule endpoint re-lays: a completed service stays
+      // where it is when the visit bar is dragged.
+      const visit = resolveAppointmentVisit(scheduledVisitRows(rows));
+      return visit ? { groupBookingId, visit } : null;
     },
-    [gridQuery.data, anchor],
+    [anchorDayRows, anchor],
+  );
+
+  /**
+   * Where a service of a visit now overlaps its own siblings (split-visit plan
+   * G13, G16), across every column of the day: `twoPlaces` is the note when one
+   * is with someone else ("Gel Manicure with Steph is at 10:45, so the client
+   * would be in two places."), `sameColumn` counts those on its own column.
+   */
+  const visitSiblingOverlap = useCallback(
+    (params: {
+      bookingId: string;
+      groupBookingId: string;
+      startMin: number;
+      endMin: number;
+      /** The raw calendar it lands on. */
+      calendarId: string | null;
+    }): { twoPlaces: string | null; sameColumn: number; otherColumns: number } => {
+      const calendarOf = new Map(anchorDayRows.map((r) => [r.booking.id, r]));
+      const { sameColumn, otherColumns } = ownSiblingOverlaps({
+        moved: { id: params.bookingId, group_booking_id: params.groupBookingId },
+        startMin: params.startMin,
+        endMin: params.endMin,
+        columnId: params.calendarId,
+        rows: anchorDayRows.map((r) => r.booking),
+        columnIdOf: (row) => calendarOf.get(row.id)?.calendarId ?? null,
+        spanMinutesOf: (row) => {
+          const { endTime, startTime } = row;
+          return endTime && timeToMinutes(endTime) > timeToMinutes(startTime)
+            ? timeToMinutes(endTime) - timeToMinutes(startTime)
+            : DEFAULT_SERVICE_MINUTES;
+        },
+        toMinutes: timeToMinutes,
+      });
+      const elsewhere = otherColumns[0];
+      const twoPlaces = elsewhere
+        ? visitTwoPlacesNote({
+            serviceName: elsewhere.serviceName,
+            personName: calendarOf.get(elsewhere.id)?.calendarName ?? null,
+            start: elsewhere.startTime,
+          })
+        : null;
+      return { twoPlaces, sameColumn: sameColumn.length, otherColumns: otherColumns.length };
+    },
+    [anchorDayRows],
+  );
+
+  /**
+   * Whether the window `[startMin, endMin)` on `calendarId` lands on some OTHER
+   * client's booking there, as opposed to only on the visit's own services.
+   */
+  const landsOnAnotherBooking = useCallback(
+    (params: { bookingId: string; groupBookingId: string; startMin: number; endMin: number; calendarId: string }) =>
+      anchorDayRows.some(({ booking: b, calendarId }) => {
+        if (calendarId !== params.calendarId || b.id === params.bookingId) return false;
+        if (CONFLICT_IGNORED_STATUSES.has(b.status)) return false;
+        if (b.group_booking_id?.trim() === params.groupBookingId && !b.person_label?.trim()) return false;
+        const s = timeToMinutes(b.startTime);
+        const e =
+          b.endTime && timeToMinutes(b.endTime) > s ? timeToMinutes(b.endTime) : s + DEFAULT_SERVICE_MINUTES;
+        return params.startMin < e && s < params.endMin;
+      }),
+    [anchorDayRows],
   );
 
   // ---- Hold-drag move / resize commits ----
@@ -1712,6 +1868,38 @@ export default function CalendarScreen() {
         previousTime: input.previousTarget.time,
         nextTime: input.time,
       });
+      /**
+       * The visit's own services where it lands (split-visit plan G13, G16),
+       * read from the day as it stands at the drop, across every column. A
+       * service may land on its own siblings, on purpose or not, but never
+       * silently: the note follows the save.
+       */
+      const movedStart = timeToMinutes(input.time);
+      const movedSpan =
+        input.durationMinutes ?? input.previousTarget.durationMinutes ?? DEFAULT_SERVICE_MINUTES;
+      const landingCalendarId =
+        input.practitionerId ??
+        anchorDayRows.find((r) => r.booking.id === input.bookingId)?.calendarId ??
+        null;
+      const movedWindow = {
+        bookingId: input.bookingId,
+        groupBookingId: input.groupBookingId,
+        startMin: movedStart,
+        endMin: movedStart + movedSpan,
+      };
+      const siblingOverlap = visitSiblingOverlap({ ...movedWindow, calendarId: landingCalendarId });
+      /**
+       * A drop on another column where one of the visit's own services sits:
+       * allowed with the note, as the web allows it (G16). The server checks a
+       * cross-column move against that column's bookings, siblings included, so
+       * the overlap is waved through only when nothing but the visit's own
+       * services is there; another client's booking still gets the server's
+       * refusal.
+       */
+      const ontoOwnSibling =
+        input.practitionerId !== undefined &&
+        siblingOverlap.sameColumn > 0 &&
+        !landsOnAnotherBooking({ ...movedWindow, calendarId: input.practitionerId });
       setPendingActionIds((prev) => new Set([...prev, input.bookingId]));
       void (async () => {
         // Same optimistic row patch as `commitDrag` (see the note there): the
@@ -1729,7 +1917,7 @@ export default function CalendarScreen() {
           ? await applyOptimisticGridPatch(queryClient, [input.bookingId], optimistic)
           : null;
         try {
-          await visitScheduleById.mutateAsync({
+          const plan = await visitScheduleById.mutateAsync({
             groupBookingId: input.groupBookingId,
             // One service of a visit (web #187): the request names this row
             // alone, so its siblings stay where they are; a resize is this
@@ -1752,42 +1940,24 @@ export default function CalendarScreen() {
             allow_during_breaks: true,
             // Same rule as the single-booking path: a same-column drag has already
             // been conflict-checked against the grid (now excluding the visit's own
-            // services), a cross-column move has not, so let the server 409 there.
-            allow_manual_overlap: input.practitionerId === undefined,
+            // services), a cross-column move has not, so let the server 409 there,
+            // unless all it lands on is the visit's own services (G16).
+            allow_manual_overlap: input.practitionerId === undefined || ontoOwnSibling,
+            // A drag saves and then says where the client would be (G13), as the
+            // web's does; Modify is where staff are asked first.
+            acknowledge_visit_overlap: true,
             ...(notifyPlan.skip
               ? { skip_booking_modification_guest_notification: true }
               : { defer_modification_guest_notification: true }),
           });
           // Landing on a sibling of the same visit is allowed, as any overlap
-          // is, but never silent (web #187).
-          const calendars = gridQuery.data?.calendars ?? [];
-          const bookingsOf = (calendarId: string | undefined) =>
-            calendars.find((c) => c.calendarId === calendarId)?.dates.find((d) => d.date === anchor)
-              ?.bookings ?? [];
-          const homeCalendarId = calendars.find((c) =>
-            c.dates.find((d) => d.date === anchor)?.bookings.some((b) => b.id === input.bookingId),
-          )?.calendarId;
-          // The column the service landed on: the chosen one, else its own.
-          const dayRows = bookingsOf(input.practitionerId ?? homeCalendarId);
-          const movedStart = timeToMinutes(input.time);
-          const movedSpan =
-            input.durationMinutes ?? input.previousTarget.durationMinutes ?? DEFAULT_SERVICE_MINUTES;
-          const clash = ownSiblingOverlapCount({
-            moved: { id: input.bookingId, group_booking_id: input.groupBookingId },
-            startMin: movedStart,
-            endMin: movedStart + movedSpan,
-            columnId: 'column',
-            rows: dayRows,
-            columnIdOf: () => 'column',
-            spanMinutesOf: (row) => {
-              const { endTime, startTime } = row as CalendarGridBooking;
-              return endTime && timeToMinutes(endTime) > timeToMinutes(startTime)
-                ? timeToMinutes(endTime) - timeToMinutes(startTime)
-                : DEFAULT_SERVICE_MINUTES;
-            },
-            toMinutes: timeToMinutes,
-          });
-          if (clash > 0) {
+          // is, but never silent (web #187). With someone else, the client would
+          // be in two places, and the note says where (G13, G16); the server's
+          // own reading covers a sibling on a calendar this diary does not hold.
+          const twoPlaces = siblingOverlap.twoPlaces ?? visitOverlapNote(plan.visit_overlaps);
+          if (twoPlaces) {
+            toast.info(twoPlaces);
+          } else if (siblingOverlap.sameColumn > 0) {
             toast.info('This now overlaps another service of the same visit.');
           }
           raiseChangeNotice({
@@ -1797,6 +1967,7 @@ export default function CalendarScreen() {
             startMoved: notifyPlan.prompt,
             reassigned: input.practitionerId != null,
             lengthChanged: input.durationMinutes != null,
+            visitKey: input.groupBookingId,
           });
         } catch (error) {
           if (snapshot) revertCalendarGridBookings(queryClient, snapshot);
@@ -1819,7 +1990,18 @@ export default function CalendarScreen() {
         }
       })();
     },
-    [anchor, visitScheduleById, removePending, toast, raiseChangeNotice, queryClient, pausedHomeNameOf],
+    [
+      anchor,
+      anchorDayRows,
+      visitSiblingOverlap,
+      landsOnAnotherBooking,
+      visitScheduleById,
+      removePending,
+      toast,
+      raiseChangeNotice,
+      queryClient,
+      pausedHomeNameOf,
+    ],
   );
 
   const commitDrag = useCallback(
@@ -1902,6 +2084,7 @@ export default function CalendarScreen() {
             startMoved: notifyPlan.prompt,
             reassigned: input.practitionerId != null,
             lengthChanged: input.durationChanged,
+            visitKey: null,
           });
         } catch (error) {
           if (snapshot) revertCalendarGridBookings(queryClient, snapshot);
@@ -2290,6 +2473,8 @@ export default function CalendarScreen() {
     };
     const failed = (e: unknown) =>
       toast.error(e instanceof ApiError ? e.message : 'Could not cancel the original booking.');
+    // Just this one service: the rest of a visit stays (split-visit plan 7.6,
+    // G17). The linked route already cancels only the row it names.
     if (prompt.originalOwnerVenueId) {
       cancelLinkedOriginal.mutate(
         { bookingId: prompt.originalBookingId, changes: { status: 'Cancelled' } },
@@ -2297,7 +2482,10 @@ export default function CalendarScreen() {
       );
       return;
     }
-    cancelOwnOriginal.mutate('Cancelled', { onSuccess: done, onError: failed });
+    cancelOwnOriginal.mutate(
+      { status: 'Cancelled', cancel_scope: 'service' },
+      { onSuccess: done, onError: failed },
+    );
   }, [cancelOriginalPrompt, cancelLinkedOriginal, cancelOwnOriginal, toast]);
 
   // Cross-column drag (multi-calendar grid): drop a booking onto a DIFFERENT own
@@ -2969,6 +3157,7 @@ export default function CalendarScreen() {
       refreshing={refreshing}
       onRefresh={onRefresh}
       compact={compactDay}
+      visitPositions={dayVisitPositions}
     />
   );
 
@@ -3513,6 +3702,7 @@ export default function CalendarScreen() {
                   }}
                   refreshing={refreshing}
                   onRefresh={onRefresh}
+                  visitPositions={weekVisitPositions}
                 />
               </View>
             </GestureDetector>
@@ -3550,6 +3740,7 @@ export default function CalendarScreen() {
                   void linkedQuery.refetch();
                 }}
                 compact={compactDay}
+                visitPositions={dayVisitPositions}
               />
             </View>
           ) : (

@@ -6,6 +6,7 @@ import { AddonsStep } from '@/components/booking-wizard/AddonsStep';
 import { ConfirmStep } from '@/components/booking-wizard/ConfirmStep';
 import { BookingWizardHeader } from '@/components/booking-wizard/BookingWizardHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { Text } from '@/components/ui/Text';
 import { GroupBookingFlow } from '@/components/booking-wizard/GroupBookingFlow';
 import type { GuestDetails } from '@/components/booking-wizard/GuestDetailsStep';
 import { GuestDetailsStep } from '@/components/booking-wizard/GuestDetailsStep';
@@ -19,6 +20,8 @@ import { AvailabilityOverrideToggle } from '@/components/booking-wizard/Availabi
 import { OverrideTimeStep } from '@/components/booking-wizard/OverrideTimeStep';
 import {
   AVAILABILITY_OVERRIDE_PAST_DATE_ERROR,
+  chainCheckBodies,
+  chainNoLongerFitsMessage,
   overrideDryRunBodies,
   prefixOverrideWarnings,
 } from '@/lib/booking/availability-override';
@@ -735,15 +738,130 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     goToStep('service');
   }, [goToStep]);
 
-  const removeServiceFromChain = useCallback((index: number) => {
-    setMultiServiceError(null);
-    setMultiServiceSegments((prev) => {
-      if (!prev || prev.length <= 1) return prev;
+  /**
+   * Take the service at `index` of the visit out of what is chosen, so the
+   * selection (`selectedService` then `chainExtras`, in visit order) stays the
+   * visit the review shows: the times step, "Change services" and a one-service
+   * booking all read it. The first service out makes the next one first, with
+   * the same person.
+   */
+  const dropServiceFromSelection = useCallback(
+    (index: number) => {
+      const removedId =
+        index === 0 ? selectedService?.serviceId : chainExtras[index - 1]?.option.serviceId;
+      if (index === 0) {
+        const [head, ...rest] = chainExtras;
+        if (!head || !selectedService) return;
+        setSelectedService({
+          ...head.option,
+          practitionerId: selectedService.practitionerId,
+          practitionerName: selectedService.practitionerName,
+          candidatePractitionerIds: selectedService.candidatePractitionerIds,
+        });
+        setSelectedVariant(head.variant);
+        setSelectedAddonIds(head.addonIds);
+        setDurationOverride(head.durationOverride);
+        setChainExtras(rest);
+      } else {
+        setChainExtras((prev) => prev.filter((_, i) => i !== index - 1));
+      }
+      setPendingServiceIds((prev) =>
+        prev[index] === removedId ? prev.filter((_, i) => i !== index) : prev,
+      );
+    },
+    [selectedService, chainExtras],
+  );
+
+  /**
+   * Re-check a changed visit with the server at its start (web
+   * `validateMultiServiceChain`, split-visit plan G22): the same check the
+   * override's Continue makes, each service told about the ones before it.
+   * Under the override it answers with what it overrides instead of refusing.
+   */
+  const recheckChain = useCallback(
+    async (
+      chain: MultiServiceSegment[],
+    ): Promise<{ ok: true; warnings: string[] } | { ok: false; error: string }> => {
+      const bodies = chainCheckBodies({
+        venueId: venueId ?? '',
+        bookingDate: selectedDate ?? '',
+        chain,
+        override: availabilityOverride,
+        customDurationOf: segmentCustomDurationMinutes,
+      });
+      const warnings: string[] = [];
+      for (let i = 0; i < bodies.length; i += 1) {
+        const res = await validateSlot.mutateAsync(bodies[i]!);
+        if (!res.ok) return { ok: false, error: res.error ?? 'This time cannot be booked.' };
+        warnings.push(...prefixOverrideWarnings(chain[i]!, res.warnings));
+      }
+      return { ok: true, warnings };
+    },
+    [venueId, selectedDate, availabilityOverride, validateSlot],
+  );
+
+  const removingRef = useRef(false);
+
+  /**
+   * Remove a service on the review step (split-visit plan G22). The rest is
+   * laid out again from the visit's start and asked of the server; when it no
+   * longer fits there, the times are shown again for the services as they now
+   * are (web `showTimesAgainFor`), rather than leaving the review on a visit
+   * that cannot be booked.
+   */
+  const removeServiceFromChain = useCallback(
+    async (index: number) => {
+      const prev = multiServiceSegments;
+      if (!prev || prev.length <= 1 || index < 0 || index >= prev.length) return;
+      // One change at a time: a second tap while the first is being checked waits.
+      if (removingRef.current) return;
+      removingRef.current = true;
       const firstStart = prev[0]!.startTime;
-      const next = prev.filter((_, i) => i !== index);
-      return recomputeMultiServiceChain(next, firstStart);
-    });
-  }, []);
+      const next = recomputeMultiServiceChain(
+        prev.filter((_, i) => i !== index),
+        firstStart,
+      );
+      setMultiServiceError(null);
+      let checked: Awaited<ReturnType<typeof recheckChain>>;
+      try {
+        checked = await recheckChain(next);
+      } catch (e) {
+        setMultiServiceError(
+          e instanceof ApiError ? e.message : 'Could not check this change. Try again.',
+        );
+        return;
+      } finally {
+        removingRef.current = false;
+      }
+      dropServiceFromSelection(index);
+      if (!checked.ok) {
+        setSelectedSlot(null);
+        setMultiServiceSegments(null);
+        setOverrideWarnings(null);
+        setMultiServiceError(chainNoLongerFitsMessage(firstStart));
+        goToStep('time');
+        return;
+      }
+      setMultiServiceSegments(next);
+      if (availabilityOverride) setOverrideWarnings(checked.warnings);
+      // A visit left with one service is booked as one, from the slot: it names
+      // that service. So does a slot whose first service just went.
+      const first = next[0]!;
+      if (index === 0 || next.length === 1) {
+        setSelectedSlot((slot) =>
+          slot
+            ? {
+                ...slot,
+                service_id: first.serviceId,
+                service_name: first.serviceName,
+                duration_minutes: first.durationMinutes,
+              }
+            : slot,
+        );
+      }
+    },
+    [multiServiceSegments, recheckChain, dropServiceFromSelection, availabilityOverride, goToStep],
+  );
 
   // Apply rebook bootstrap on mount (after catalog loads).
   const rebookApplyRef = useRef(false);
@@ -1438,38 +1556,47 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           errorMessage={multiServiceError}
         />
       ) : activeKey === 'time' && selectedService && selectedDate ? (
-        <TimeSlotStep
-          addonIds={selectedAddonIds}
-          candidatePractitionerIds={selectedService.candidatePractitionerIds}
-          date={selectedDate}
-          durationMinutes={durationOverride}
-          onContinue={() => {
-            // Seed a 1-segment chain and route through the multi-service review,
-            // so staff can append back-to-back services before guest details.
-            const chain = seedMultiServiceChain();
-            if (chain) {
-              setMultiServiceSegments(chain);
-              setMultiServiceError(null);
-              goToStep('multi_service');
-            } else {
-              advanceFrom('time');
-            }
-          }}
-          onSelectSlot={setSelectedSlot}
-          ownerVenueId={ownerVenueId}
-          practitionerId={selectedService.practitionerId}
-          preferredTime={selectedDate === prefilledDate ? prefilledTime : null}
-          selectedSlot={selectedSlot}
-          serviceId={selectedService.serviceId}
-          variantId={selectedVariant?.id ?? null}
-          venueId={venueId}
-          chain={serviceChainParam}
-          startNow={source === 'walk-in' && selectedDate === today}
-          onStartNow={startWalkInNow}
-          timeZone={timeZone}
-          minBookingNoticeHours={bookingWindow.minNoticeHours}
-          allowSameDayBooking={bookingWindow.allowSameDay}
-        />
+        <>
+          {/* The review's services changed and no longer fit at the visit's
+              start (G22): say so above the times. */}
+          {multiServiceError ? (
+            <Text variant="bodySmall" tone="danger" testID="chain-times-again">
+              {multiServiceError}
+            </Text>
+          ) : null}
+          <TimeSlotStep
+            addonIds={selectedAddonIds}
+            candidatePractitionerIds={selectedService.candidatePractitionerIds}
+            date={selectedDate}
+            durationMinutes={durationOverride}
+            onContinue={() => {
+              // Seed a 1-segment chain and route through the multi-service review,
+              // so staff can append back-to-back services before guest details.
+              const chain = seedMultiServiceChain();
+              if (chain) {
+                setMultiServiceSegments(chain);
+                setMultiServiceError(null);
+                goToStep('multi_service');
+              } else {
+                advanceFrom('time');
+              }
+            }}
+            onSelectSlot={setSelectedSlot}
+            ownerVenueId={ownerVenueId}
+            practitionerId={selectedService.practitionerId}
+            preferredTime={selectedDate === prefilledDate ? prefilledTime : null}
+            selectedSlot={selectedSlot}
+            serviceId={selectedService.serviceId}
+            variantId={selectedVariant?.id ?? null}
+            venueId={venueId}
+            chain={serviceChainParam}
+            startNow={source === 'walk-in' && selectedDate === today}
+            onStartNow={startWalkInNow}
+            timeZone={timeZone}
+            minBookingNoticeHours={bookingWindow.minNoticeHours}
+            allowSameDayBooking={bookingWindow.allowSameDay}
+          />
+        </>
       ) : null}
 
       {activeKey === 'multi_service' && multiServiceSegments && multiServiceSegments.length > 0 ? (
@@ -1478,7 +1605,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           date={selectedDate}
           visitPractitioner={visitPractitioner}
           onChangeServices={changeServices}
-          onRemoveSegment={removeServiceFromChain}
+          onRemoveSegment={(index) => void removeServiceFromChain(index)}
           onContinue={() => advanceFrom('multi_service')}
           errorMessage={multiServiceError}
           overrideWarnings={availabilityOverride ? (overrideWarnings ?? []) : null}

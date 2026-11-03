@@ -25,9 +25,98 @@ import { MIN_CORE_DURATION_MINUTES } from '@/lib/booking/booking-core-duration';
 import type {
   VisitScheduleServiceInput,
   VisitSchedulePatchInput,
+  VisitServiceLineInput,
 } from '@/lib/queries/useVisitMutations';
 
 const DAY_MINUTES = 24 * 60;
+
+/**
+ * Whether a visit's services are with more than one person (split-visit plan
+ * 8.8, G12). Such a visit has no single calendar: each service keeps its own,
+ * the whole-visit calendar picker is not offered, and no request names one
+ * calendar for every row. A row with no calendar counts as `fallbackCalendarId`.
+ */
+export function isMultiCalendarVisit(
+  services: readonly Pick<VisitEditService, 'calendarId'>[],
+  fallbackCalendarId: string | null | undefined,
+): boolean {
+  if (services.length < 2) return false;
+  return new Set(services.map((s) => s.calendarId || fallbackCalendarId || '')).size > 1;
+}
+
+/** One line of a visit's service list, as an editor holds it. */
+export interface VisitServiceLineDraft {
+  /** The row this line keeps, or null for a service being added. */
+  bookingId: string | null;
+  serviceId: string;
+  variantId: string | null;
+  /** Who does an ADDED service. A kept line's calendar comes from `rowCalendarId`. */
+  calendarId?: string | null;
+}
+
+/**
+ * The `services` lines for `PATCH /api/venue/visits/{id}/services` (split-visit
+ * plan 8.8, G11), mirroring web `StaffAppointmentModifyForm`'s request.
+ *
+ * Every line names who does it. On a visit with more than one person a kept
+ * service stays with its own (the server refuses 409
+ * `calendar_per_service_required` when a line of such a visit names none); on a
+ * one-person visit every kept service follows the visit's calendar, as before.
+ * An added service goes on the calendar chosen for it.
+ */
+export function visitServiceLinesRequest(args: {
+  lines: readonly VisitServiceLineDraft[];
+  multiCalendar: boolean;
+  /** The calendar a kept row is on (or has been given by its own editor). */
+  rowCalendarId: (bookingId: string) => string | null | undefined;
+  /** The visit's calendar: the one chosen for a one-person visit, else the opened row's. */
+  visitCalendarId: string | null | undefined;
+}): VisitServiceLineInput[] {
+  return args.lines.map((line) => {
+    const calendarId =
+      line.bookingId == null
+        ? line.calendarId || args.visitCalendarId
+        : args.multiCalendar
+          ? args.rowCalendarId(line.bookingId) || args.visitCalendarId
+          : args.visitCalendarId;
+    return {
+      ...(line.bookingId ? { booking_id: line.bookingId } : {}),
+      service_id: line.serviceId,
+      service_variant_id: line.variantId,
+      ...(calendarId ? { calendar_id: calendarId } : {}),
+    };
+  });
+}
+
+/**
+ * Who does a service being added, to start with (web `addServiceLine`): the
+ * person of the service before it, else the visit's calendar, else the first
+ * person who offers it, else the person before it anyway (the server then says
+ * why not).
+ */
+export function defaultAddedServiceCalendar(args: {
+  lines: readonly VisitServiceLineDraft[];
+  serviceId: string;
+  rowCalendarId: (bookingId: string) => string | null | undefined;
+  visitCalendarId: string | null | undefined;
+  /** Whether a calendar offers the service. */
+  offers: (calendarId: string, serviceId: string) => boolean;
+  /** The calendars this person may book on that offer the service, in order. */
+  offeringCalendars: (serviceId: string) => readonly string[];
+}): string | null {
+  const last = args.lines[args.lines.length - 1];
+  const lastCalendar =
+    (last
+      ? last.calendarId || (last.bookingId ? args.rowCalendarId(last.bookingId) : null)
+      : null) ||
+    args.visitCalendarId ||
+    null;
+  if (lastCalendar && args.offers(lastCalendar, args.serviceId)) return lastCalendar;
+  if (args.visitCalendarId && args.offers(args.visitCalendarId, args.serviceId)) {
+    return args.visitCalendarId;
+  }
+  return args.offeringCalendars(args.serviceId)[0] ?? lastCalendar;
+}
 
 /** HH:mm or HH:mm:ss → HH:mm:ss */
 function toHms(time: string): string {
@@ -116,22 +205,31 @@ export function visitScheduleRequest(
  * The body that puts a visit back exactly as an editor found it: every row
  * named with the date, start, calendar and length it had. Used for Undo, where
  * a shift back would be right for a move but cannot restore a length.
+ *
+ * Each row goes back to its OWN calendar (split-visit plan G12). A visit's
+ * services can be with different people, and naming one calendar for every row
+ * moved them all onto it. `practitionerId` is only the fallback for a row that
+ * did not say which calendar it was on.
  */
 export function visitRestoreRequest(args: {
   services: readonly VisitEditService[];
   /** The day for a row that carried none. */
   date: string;
+  /** The calendar for a row that carried none. */
   practitionerId?: string | null;
   guardKnownRows?: boolean;
 }): Pick<VisitSchedulePatchInput, 'services' | 'known_booking_ids'> {
   return {
-    services: args.services.map((row) => ({
-      booking_id: row.bookingId,
-      booking_date: row.date ?? args.date,
-      booking_time: toHms(row.startHm),
-      ...(args.practitionerId ? { practitioner_id: args.practitionerId } : {}),
-      duration_minutes: row.durationMinutes,
-    })),
+    services: args.services.map((row) => {
+      const calendarId = row.calendarId || args.practitionerId || null;
+      return {
+        booking_id: row.bookingId,
+        booking_date: row.date ?? args.date,
+        booking_time: toHms(row.startHm),
+        ...(calendarId ? { practitioner_id: calendarId } : {}),
+        duration_minutes: row.durationMinutes,
+      };
+    }),
     ...(args.guardKnownRows === false
       ? {}
       : { known_booking_ids: args.services.map((row) => row.bookingId) }),
