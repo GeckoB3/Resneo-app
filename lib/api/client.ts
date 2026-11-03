@@ -1,4 +1,5 @@
 import { getApiUrl } from '@/lib/env';
+import { clientBuild } from '@/lib/pos/client-build';
 import {
   chosenSitePending,
   getChosenSiteId,
@@ -235,6 +236,9 @@ export function withApiSiteHeader(url: string, headers: Record<string, string> =
 
 type RawFetchInit = Omit<RequestInit, 'headers'> & { headers?: Record<string, string> };
 
+/** The build header every request to the API carries (`ios; store=1.3.0; update=...; pos=5`). */
+const CLIENT_HEADER = 'X-ResNeo-Client';
+
 /**
  * `fetch` for the few requests to the API that need the raw response rather than parsed JSON:
  * multipart uploads, CSV text, the Ask ResNeo stream (pass `expo/fetch` as `fetchImpl`). It adds the
@@ -250,7 +254,10 @@ export async function apiRawFetch<R = Response>(
   const pending = chosenSitePending();
   if (pending) await pending;
   const url = apiUrl(path);
-  const request: RawFetchInit = { ...init, headers: { ...(init.headers ?? {}), ...siteHeaders() } };
+  const request: RawFetchInit = {
+    ...init,
+    headers: { [CLIENT_HEADER]: clientBuild(), ...(init.headers ?? {}), ...siteHeaders() },
+  };
   if (fetchImpl) return fetchImpl(url, request);
   return fetch(url, request as RequestInit) as unknown as Promise<R>;
 }
@@ -435,6 +442,9 @@ export async function apiFetch<T>(
             ? { 'Content-Type': 'application/json' }
             : {}),
           ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
+          // This build (web split-visit plan 8.10): store version and update id, so the server can
+          // tell builds apart. POS calls have sent it since POS step 1; every call sends it now.
+          [CLIENT_HEADER]: clientBuild(),
           // Which site this acts on (web roles plan §6.2c). Absent when none is
           // chosen, so the server answers for the home site, as for an old build.
           ...site,

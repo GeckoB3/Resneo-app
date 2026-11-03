@@ -10,12 +10,12 @@ import type { PosSale } from '@/types/pos';
  * `pos_enabled` is on (`lib/pos/pos-enabled.ts`), so venues without POS send exactly the requests
  * they sent before.
  *
- * Two headers ride on POS calls only:
+ * Two headers ride on POS calls:
  * - `X-ResNeo-Client`: the platform, the store version, the over-the-air update id (plan §4.22) and,
- *   from app step 2, the POS app step (`pos=2`). Only POS requests carry it, so no request a venue
- *   without POS makes changes.
+ *   from app step 2, the POS app step (`pos=2`). Every request carries it now (`lib/api/client.ts`,
+ *   web split-visit plan 8.10); it is set here as well so a POS call never depends on that.
  * - `x-pos-device`: a short name for this phone, which the web records when a sale is parked
- *   ("Parked by Sam on iPhone at 14:20", PQ19).
+ *   ("Parked by Sam on iPhone at 14:20", PQ19). POS calls only.
  */
 
 const CLIENT_HEADER = 'X-ResNeo-Client';

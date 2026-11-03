@@ -124,6 +124,16 @@ describe('apiFetch — 401 refresh-and-retry-once', () => {
   });
 });
 
+describe('apiFetch — the build header (web split-visit plan 8.10)', () => {
+  it('sends X-ResNeo-Client on every request, not only POS ones', async () => {
+    const fetchMock = jest.fn().mockResolvedValue(jsonResponse(200, { ok: true }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    await apiFetch('/api/v1/me/bookings', { accessToken: 'tok' });
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect((init.headers as Record<string, string>)['X-ResNeo-Client']).toMatch(/^(ios|android|web)/);
+  });
+});
+
 describe('isStaleResource / apiErrorCode', () => {
   const { ApiError, isStaleResource, apiErrorCode } = jest.requireActual<typeof import('@/lib/api/client')>(
     '@/lib/api/client',

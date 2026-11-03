@@ -142,7 +142,12 @@ describe('requests that cannot go through apiFetch', () => {
     fetchMock.mockResolvedValueOnce({ ok: true, status: 200 });
     await apiRawFetch('/api/venue/export?format=csv', { headers: { Authorization: 'Bearer t', Accept: 'text/csv' } });
     expect(fetchMock.mock.calls[0][0]).toBe('https://api.test/api/venue/export?format=csv');
-    expect(sentHeaders(0)).toEqual({ Authorization: 'Bearer t', Accept: 'text/csv', 'X-ResNeo-Venue': SITE_A });
+    expect(sentHeaders(0)).toEqual({
+      Authorization: 'Bearer t',
+      Accept: 'text/csv',
+      'X-ResNeo-Venue': SITE_A,
+      'X-ResNeo-Client': expect.stringMatching(/^(ios|android|web)/),
+    });
   });
 
   it('apiRawFetch hands the request to a streaming fetch when given one', async () => {
@@ -152,7 +157,7 @@ describe('requests that cannot go through apiFetch', () => {
     expect(result).toBe('stream');
     expect(streaming).toHaveBeenCalledWith('https://api.test/api/venue/assistant', {
       method: 'POST',
-      headers: { 'X-ResNeo-Venue': SITE_A },
+      headers: { 'X-ResNeo-Venue': SITE_A, 'X-ResNeo-Client': expect.stringMatching(/^(ios|android|web)/) },
     });
   });
 
