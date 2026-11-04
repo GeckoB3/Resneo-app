@@ -212,6 +212,8 @@ export interface VenueRow {
   status: 'active' | 'invited';
   is_host: boolean;
   also_runs: string | null;
+  /** Its subscription has lapsed, so the page leaves its calendars out until it is put right (web 2026-11-04). */
+  lapsed?: boolean;
 }
 
 type Ask = { venue: VenueRow; kind: 'remove' | 'cancel' | 'host' | 'cancel_move' } | null;
@@ -359,6 +361,7 @@ export function VenuesPanel({
                   label={row.is_host ? areaCopy('ov.venues.host') : areaCopy('ov.venues.member')}
                   tone={row.is_host ? 'brand' : 'neutral'}
                 />
+                {row.status === 'active' && row.lapsed ? <Badge label={areaCopy('ov.venues.lapsed')} tone="warning" /> : null}
                 {row.status === 'active' && group ? <SyncBadge status={groupStatus(group)} /> : null}
               </View>
               {row.status === 'invited' ? (

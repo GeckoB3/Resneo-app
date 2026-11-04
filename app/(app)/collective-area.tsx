@@ -35,6 +35,7 @@ import {
   HostingRequestBanner,
   LeaveCollectiveCard,
   PausedHostingBanner,
+  LapsedVenuesNotice,
   TodoStrip,
   VenueHealthCards,
 } from '@/components/collective-area/AreaPieces';
@@ -255,6 +256,7 @@ function AreaBody({
           status: m.status as 'active' | 'invited',
           is_host: m.venueId === entry?.hostVenueId,
           also_runs: m.alsoRuns ?? null,
+          lapsed: m.lapsed === true,
         })),
     [entry],
   );
@@ -326,6 +328,10 @@ function AreaBody({
               collectiveName={collective.name}
               formerHostName={collective.hostVenueName}
             />
+          ) : null}
+          {/* A paused page has its own banner; otherwise say whose calendars a lapsed plan took off it. */}
+          {entry && !entry.pausedAt ? (
+            <LapsedVenuesNotice collectiveName={collective.name} myVenueId={entry.myVenueId} members={entry.members} />
           ) : null}
           {/* The host asked whether to use this venue's same-named service (web plan L13). */}
           {!collective.isHost ? <AdoptionRequestsCard collectiveId={collective.id} /> : null}

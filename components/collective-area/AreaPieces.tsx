@@ -304,6 +304,40 @@ export function HostingRequestBanner({
   );
 }
 
+/**
+ * Venues whose subscription has lapsed, so the page leaves their calendars out (web
+ * `CollectiveLapsedNotice`, 2026-11-04): the page checks each plan on every load, so without this the
+ * area still said a lapsed venue's services were on the page. One line per venue; the viewer's own
+ * reads "Your subscription".
+ */
+export function LapsedVenuesNotice({
+  collectiveName,
+  myVenueId,
+  members,
+}: {
+  collectiveName: string;
+  myVenueId: string;
+  members: { venueId: string; venueName: string; status: string; lapsed?: boolean }[];
+}) {
+  const { colors } = useTheme();
+  const lapsed = members.filter((m) => m.status === 'active' && m.lapsed);
+  if (lapsed.length === 0) return null;
+  return (
+    <View
+      testID="collective-lapsed-notice"
+      style={[styles.banner, { backgroundColor: colors.warningSurface, borderColor: colors.warning }]}
+    >
+      {lapsed.map((m) => (
+        <Text key={m.venueId} variant="bodySmall">
+          {m.venueId === myVenueId
+            ? areaCopy('ov.lapsed.you', { collective: collectiveName })
+            : areaCopy('ov.lapsed.venue', { venue: m.venueName, collective: collectiveName })}
+        </Text>
+      ))}
+    </View>
+  );
+}
+
 export function PausedHostingBanner({
   collectiveId,
   collectiveName,

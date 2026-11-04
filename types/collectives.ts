@@ -79,6 +79,11 @@ export interface CollectiveMemberView {
   soloPageBehavior: SoloPageBehavior;
   /** Classes, events or rooms the venue also runs, which stay on its own page (web W20). */
   alsoRuns?: string | null;
+  /**
+   * Its subscription has lapsed, so the page leaves its calendars out until it is put right (web
+   * 2026-11-04): from the daily check or straight from its plan. Absent from older servers.
+   */
+  lapsed?: boolean;
 }
 
 export interface CollectiveView {
