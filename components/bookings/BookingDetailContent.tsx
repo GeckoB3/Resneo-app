@@ -1770,7 +1770,7 @@ export function BookingDetailContent({
               </View>
               {otherPartLines.length > 0 &&
               (pendingConfirm === 'Cancelled' || (cancelChoiceOpen && cancelNeedsChoice)) ? (
-                <Text variant="bodySmall" testID="cancel-keeps-other-parts">
+                <Text variant="bodySmall" testID="cancel-keeps-other-parts" style={styles.cancelKeeps}>
                   {`${guestName} keeps ${otherPartLines
                     .map((l) => `${l.service_name}${l.person_name ? ` with ${l.person_name}` : ''} at ${l.venue_name}`)
                     .join(', ')}. They will be told what is cancelled and what stays.`}
@@ -2273,6 +2273,9 @@ export function BookingDetailContent({
 }
 
 const styles = StyleSheet.create({
+  cancelKeeps: {
+    marginTop: spacing.sm,
+  },
   container: {
     gap: spacing.base,
   },

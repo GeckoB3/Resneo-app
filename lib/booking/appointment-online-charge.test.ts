@@ -175,6 +175,15 @@ describe('resolveVisitChargeTotal', () => {
     ).toBe('deposit');
   });
 
+  it('reads as a payment when the only charge is pay-in-full beside a free service', () => {
+    expect(
+      resolveVisitChargeTotal([
+        { chargePence: null, chargeLabel: null },
+        { chargePence: 3000, chargeLabel: 'full_payment' },
+      ]),
+    ).toEqual({ amountPence: 3000, chargeLabel: 'full_payment' });
+  });
+
   it('charges nothing for a visit of free services', () => {
     expect(
       resolveVisitChargeTotal([

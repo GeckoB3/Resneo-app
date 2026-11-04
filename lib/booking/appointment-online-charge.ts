@@ -128,7 +128,9 @@ export function resolveVisitChargeTotal(segments: SegmentCharge[]): {
   amountPence: number;
   chargeLabel: 'deposit' | 'full_payment';
 } {
-  const chargeable = segments.filter((s) => s.chargeLabel !== 'card_hold');
+  // Only services that take money now decide the word: a free service beside a pay-in-full one
+  // read "deposit" (seen on a visit across businesses, 2026-11-04).
+  const chargeable = segments.filter((s) => s.chargeLabel !== 'card_hold' && (s.chargePence ?? 0) > 0);
   const amountPence = chargeable.reduce((sum, s) => sum + (s.chargePence ?? 0), 0);
   const allFullPayment =
     chargeable.length > 0 && chargeable.every((s) => s.chargeLabel === 'full_payment');
