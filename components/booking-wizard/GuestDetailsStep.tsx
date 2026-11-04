@@ -45,6 +45,12 @@ type GuestDetailsStepProps = {
   onContinue: () => void;
   /** Walk-in bookings have NO mandatory fields (web parity). */
   isWalkIn?: boolean;
+  /**
+   * The phone is needed unless an existing client was picked: a staff group booking's organiser
+   * (create-group refuses one without, "Phone number is required"). The field then says so before
+   * Continue, rather than reading "optional" and the create failing (found 2026-11-04).
+   */
+  phoneRequired?: boolean;
   /** When true, pre-fill fields are read-only (rebook flow). */
   readOnlyContact?: boolean;
   /** Fired when an existing/known contact is picked — flags the booking as returning. */
@@ -103,6 +109,7 @@ export function GuestDetailsStep({
   onChange,
   onContinue,
   isWalkIn = false,
+  phoneRequired = false,
   readOnlyContact = false,
   onPickExistingContact,
   onClearExistingContact,
@@ -187,6 +194,10 @@ export function GuestDetailsStep({
       ok = false;
     } else {
       setFieldErrors({});
+    }
+    if (phoneRequired && !value.guest_id && !value.phone.trim()) {
+      setFieldErrors((prev) => ({ ...prev, phone: 'Enter a phone number for the organiser.' }));
+      ok = false;
     }
 
     // At-home services need an address. Staff walk-ins keep it optional so an
@@ -360,7 +371,7 @@ export function GuestDetailsStep({
               editable={!readOnlyContact}
               error={fieldErrors.phone}
               label="Phone"
-              optional
+              optional={!phoneRequired}
               onChange={(phone) => editContact({ phone })}
               value={value.phone}
             />

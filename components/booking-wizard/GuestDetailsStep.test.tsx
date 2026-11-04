@@ -88,3 +88,27 @@ describe('GuestDetailsStep client-address fieldset', () => {
     expect(onContinue).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('GuestDetailsStep phone for a group organiser (found 2026-11-04)', () => {
+  it('asks for the phone before Continue when it is required and no client was picked', async () => {
+    const onContinue = jest.fn();
+    await renderStep({ phoneRequired: true, value: { ...filledGuest, phone: '' }, onContinue });
+    await press(() => screen.getByText('Continue'));
+    expect(onContinue).not.toHaveBeenCalled();
+    expect(screen.getByText('Enter a phone number for the organiser.')).toBeTruthy();
+  });
+
+  it('goes on with a picked client, who brings their own phone', async () => {
+    const onContinue = jest.fn();
+    await renderStep({ phoneRequired: true, value: { ...filledGuest, phone: '', guest_id: 'g-1' }, onContinue });
+    await press(() => screen.getByText('Continue'));
+    expect(onContinue).toHaveBeenCalled();
+  });
+
+  it('leaves the phone optional otherwise', async () => {
+    const onContinue = jest.fn();
+    await renderStep({ value: { ...filledGuest, phone: '' }, onContinue });
+    await press(() => screen.getByText('Continue'));
+    expect(onContinue).toHaveBeenCalled();
+  });
+});

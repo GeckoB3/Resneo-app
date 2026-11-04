@@ -793,6 +793,7 @@ export function GroupBookingFlow({
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         <GuestDetailsStep
           isWalkIn={source === 'walk-in'}
+          phoneRequired={source === 'phone'}
           value={organiser}
           onChange={setOrganiser}
           onContinue={() => setStep('confirm')}
