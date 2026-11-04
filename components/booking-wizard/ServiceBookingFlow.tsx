@@ -12,7 +12,26 @@ import type { GuestDetails } from '@/components/booking-wizard/GuestDetailsStep'
 import { GuestDetailsStep } from '@/components/booking-wizard/GuestDetailsStep';
 import { MonthDatePicker } from '@/components/booking-wizard/MonthDatePicker';
 import { MultiServiceReviewStep } from '@/components/booking-wizard/MultiServiceReviewStep';
-import { PractitionerStep } from '@/components/booking-wizard/PractitionerStep';
+import { optionForPractitioner, PractitionerStep } from '@/components/booking-wizard/PractitionerStep';
+import { VisitPeopleStep } from '@/components/booking-wizard/VisitPeopleStep';
+import {
+  addressExclusionLine,
+  choicesAsPersonChoices,
+  leadingSamePersonCount,
+  offersService,
+  personFitsBusinesses,
+  pruneLaterChoices,
+  visitPersonMode,
+  type StoredPersonChoice,
+} from '@/lib/booking/visit-people';
+import {
+  layVisitSegments,
+  segmentsFromVisitPlan,
+  visitBusinessParts,
+  type VisitPlanAsk,
+} from '@/lib/booking/visit-plan';
+import { chainAvailabilityPath } from '@/lib/queries/useChainAvailability';
+import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { ServicePickerStep } from '@/components/booking-wizard/ServicePickerStep';
 import { StaffPickerStep } from '@/components/booking-wizard/StaffPickerStep';
 import { TimeSlotStep, venueLocalTime } from '@/components/booking-wizard/TimeSlotStep';
@@ -31,7 +50,7 @@ import { VariantStep } from '@/components/booking-wizard/VariantStep';
 import { WizardStepIndicator } from '@/components/booking-wizard/WizardStepIndicator';
 import { Button } from '@/components/ui/Button';
 import { ANALYTICS_EVENTS, track } from '@/lib/analytics';
-import { ApiError } from '@/lib/api/client';
+import { ApiError, apiFetch } from '@/lib/api/client';
 import {
   resolveAppointmentFlowOrdering,
   type AppointmentFlowOrdering,
@@ -42,8 +61,8 @@ import {
   recomputeMultiServiceChain,
   segmentProcessing,
 } from '@/lib/booking/multi-service-chain';
-import { chainSpanMinutes, type ServiceChainSegmentParam } from '@/lib/booking/service-chain';
-import { NO_STAFF_CALENDAR_NOTICE, staffCalendarNotice } from '@/lib/booking/staff-calendar-notice';
+import { chainSpanMinutes, MAX_SERVICES_PER_VISIT, type ServiceChainSegmentParam } from '@/lib/booking/service-chain';
+import { NO_STAFF_CALENDAR_NOTICE, staffCalendarNotice, staffVisitNotice } from '@/lib/booking/staff-calendar-notice';
 import {
   APPOINTMENT_WIZARD_PHASES,
   appointmentWizardPhase,
@@ -63,7 +82,7 @@ import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
 import { useDiaryScope } from '@/providers/ViewerAccessProvider';
 import { catalogForDiary, ROLES_COPY } from '@/lib/roles/roles';
 import { spacing } from '@/theme/index';
-import type { AppointmentSlot } from '@/types/appointment-availability';
+import type { AppointmentAvailabilityResponse, AppointmentSlot } from '@/types/appointment-availability';
 import {
   ANY_AVAILABLE_PRACTITIONER_ID,
   type AppointmentCatalogPractitioner,
@@ -75,6 +94,7 @@ type StepKey =
   | 'staff_pick'
   | 'service'
   | 'practitioner'
+  | 'visit_people'
   | 'variant'
   | 'addons'
   | 'chain_options'
@@ -88,6 +108,15 @@ type StepKey =
 type StaffPick =
   | { kind: 'any' }
   | { kind: 'practitioner'; practitioner: AppointmentCatalogPractitioner };
+
+/** One service ticked on the picker, at its staff length. */
+type ServicePick = { option: AppointmentServiceOption; durationOverride: number | null };
+
+/**
+ * Staff-first, a visit of several people (web split-visit plan 6.2, "Add a service with someone
+ * else"): a person chosen before the one on screen, with the services ticked for them.
+ */
+type StaffFirstGroup = { pick: StaffPick; picks: ServicePick[] };
 
 /**
  * A service after the first in a multi-service visit (web 2026-09-02's
@@ -290,6 +319,15 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   const [pendingOverrides, setPendingOverrides] = useState<Record<string, number>>({});
   const [chainExtras, setChainExtras] = useState<ChainExtra[]>([]);
   const [chainCursor, setChainCursor] = useState<ChainCursor | null>(null);
+  /**
+   * A person per service (web split-visit plan 6.1): one entry per service of the visit, the first
+   * then each extra, holding a calendar id, the "any available" id, or null until chosen. Null while
+   * one person takes the whole visit, which is today's flow, unchanged.
+   */
+  const [visitPeople, setVisitPeople] = useState<StoredPersonChoice[] | null>(null);
+  /** Staff-first: the people chosen before the one on screen, each with their services, in order (6.2). */
+  const [staffFirstGroups, setStaffFirstGroups] = useState<StaffFirstGroup[]>([]);
+  const accessToken = useAccessToken();
 
   // Practitioners able to perform the selected service — and, for a multi-service
   // visit, EVERY service in it: the whole visit is with one person.
@@ -301,6 +339,47 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     );
   }, [selectedService, chainExtras, bookableCatalog]);
 
+  /** The visit's services in order: the first, then each extra. */
+  const visitServiceIds = useMemo(
+    () => (selectedService ? [selectedService.serviceId, ...chainExtras.map((e) => e.option.serviceId)] : []),
+    [selectedService, chainExtras],
+  );
+  /**
+   * What the person step offers for these services (6.1). Staff-first chooses its people as it goes,
+   * and a column tapped on the calendar keeps that person, so both stay one person.
+   */
+  const visitMode = useMemo(
+    () =>
+      isStaffFirst || prefilledPractitionerId
+        ? ('single_service' as const)
+        : visitPersonMode(bookableCatalog?.practitioners ?? [], visitServiceIds),
+    [isStaffFirst, prefilledPractitionerId, bookableCatalog, visitServiceIds],
+  );
+  /** Several services with a person each: the server plans the times across people (8.3). */
+  const perServiceActive = visitServiceIds.length > 1 && visitPeople != null;
+  /** What the flow asked for each service of the visit, in order: its option, choices and length. */
+  const visitAsks: VisitPlanAsk[] = useMemo(
+    () =>
+      selectedService
+        ? [
+            { option: selectedService, variant: selectedVariant, addonIds: selectedAddonIds, durationOverride },
+            ...chainExtras.map((e) => ({
+              option: e.option,
+              variant: e.variant,
+              addonIds: e.addonIds,
+              durationOverride: e.durationOverride,
+            })),
+          ]
+        : [],
+    [selectedService, selectedVariant, selectedAddonIds, durationOverride, chainExtras],
+  );
+  /** A member business's name on a collective, for the review's headings and the money per business. */
+  const businessNameOf = useCallback(
+    (venueId: string) =>
+      catalogQuery.data?.practitioners.find((p) => p.owning_venue_id === venueId)?.owning_venue_name ?? 'Another business',
+    [catalogQuery.data],
+  );
+
   /**
    * A collective booking on a calendar guests cannot book (web `staffCalendarNotice`, 2026-10-28):
    * the notes staff are told for the chosen calendar and service(s), and whether its venue can take
@@ -310,13 +389,13 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   const calendarNotice = useMemo(() => {
     if (!selectedService || !selectedSlot) return NO_STAFF_CALENDAR_NOTICE;
     const segments = multiServiceSegments && multiServiceSegments.length > 1 ? multiServiceSegments : null;
+    // Each service's own calendar (8.9): a visit with a person per service has a calendar each.
+    if (segments) return staffVisitNotice(catalogQuery.data, segments);
     const calendarId =
-      segments?.[0]?.practitionerId ??
-      (selectedService.practitionerId === ANY_AVAILABLE_PRACTITIONER_ID
+      selectedService.practitionerId === ANY_AVAILABLE_PRACTITIONER_ID
         ? selectedSlot.practitioner_id
-        : selectedService.practitionerId);
-    const serviceIds = segments ? segments.map((s) => s.serviceId) : [selectedService.serviceId];
-    return staffCalendarNotice(catalogQuery.data, calendarId, serviceIds);
+        : selectedService.practitionerId;
+    return staffCalendarNotice(catalogQuery.data, calendarId, [selectedService.serviceId]);
   }, [selectedService, selectedSlot, multiServiceSegments, catalogQuery.data]);
 
   // Booking-window settings for the selected service (min notice / same-day).
@@ -370,7 +449,9 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   const steps: StepKey[] = useMemo(() => {
     // Staff-first asked who FIRST, so the person is already settled and the
     // practitioner step (which sits after the service) has nothing left to ask.
-    const includePractitioner = !isStaffFirst && !!selectedService && needsPractitionerStep;
+    const includePractitioner = !isStaffFirst && !!selectedService && needsPractitionerStep && !visitPeople;
+    // A person per service (6.1) takes the person step's place.
+    const includeVisitPeople = !isStaffFirst && !!selectedService && !!visitPeople;
     // The multi-service review sits between Time and Guest. It only exists once a
     // slot has been chosen (segments seeded), so a single-service booking never
     // sees it unless the user chooses to add more.
@@ -382,6 +463,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
       ...(isStaffFirst ? (['staff_pick'] as StepKey[]) : []),
       'service',
       ...(includePractitioner ? (['practitioner'] as StepKey[]) : []),
+      ...(includeVisitPeople ? (['visit_people'] as StepKey[]) : []),
       ...(hasVariants ? (['variant'] as StepKey[]) : []),
       ...(hasAddons ? (['addons'] as StepKey[]) : []),
       ...(includeChainOptions ? (['chain_options'] as StepKey[]) : []),
@@ -395,6 +477,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     isStaffFirst,
     selectedService,
     needsPractitionerStep,
+    visitPeople,
     hasVariants,
     hasAddons,
     chainExtras,
@@ -462,13 +545,28 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
       setChainExtras(extras);
       const cursor = nextChainCursor(extras, 0);
       setChainCursor(cursor);
+      // Who does each service (web split-visit plan 6.1). Nobody offers every service: straight to
+      // a person for each. Someone does, and someone else offers some: the one-person list, with
+      // "Choose someone different for each service" under it. Staff-first and a tapped column keep
+      // one person.
+      const mode =
+        isStaffFirst || prefilledPractitionerId
+          ? 'single_service'
+          : visitPersonMode(bookableCatalog?.practitioners ?? [], wanted);
+      const perService = mode === 'per_service' || mode === 'unavailable';
+      setVisitPeople(perService ? wanted.map(() => null) : null);
       // Decide whether this flow runs the practitioner-choice step:
       // only when 2+ staff offer every service and it wasn't pre-scoped.
       // Staff-first never does — the person came first.
       const needsPractitioner =
-        !isStaffFirst && !prefilledPractitionerId && practitioners.length >= 2;
+        !isStaffFirst &&
+        !prefilledPractitionerId &&
+        !perService &&
+        (practitioners.length >= 2 || mode === 'choose');
       setNeedsPractitionerStep(needsPractitioner);
-      if (needsPractitioner) {
+      if (perService) {
+        goToStep('visit_people');
+      } else if (needsPractitioner) {
         goToStep('practitioner');
       } else if ((resolved.variants ?? []).length > 0) {
         goToStep('variant');
@@ -500,6 +598,25 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
    */
   const buildChainFromSlot = useCallback((selectedSlot: AppointmentSlot): MultiServiceSegment[] | null => {
     if (!selectedService) return null;
+    // A person per service: the visit exactly as the server planned this start (8.3).
+    if (perServiceActive && selectedSlot.segments) {
+      return segmentsFromVisitPlan(selectedSlot.segments, visitAsks);
+    }
+    /**
+     * A person per service laid by hand (Start Now, Override; 7.1): service `index`'s person, "any
+     * available" taking the first who offers it. Null with one person for the visit.
+     */
+    const personAt = (index: number, option: AppointmentServiceOption) => {
+      if (!perServiceActive) return null;
+      const choice = visitPeople?.[index] ?? null;
+      const id =
+        choice && choice !== ANY_AVAILABLE_PRACTITIONER_ID ? choice : option.candidatePractitionerIds?.[0] ?? null;
+      const person = id ? bookableCatalog?.practitioners.find((p) => p.id === id) ?? null : null;
+      return person
+        ? { id: person.id, name: person.name, venueId: person.owning_venue_id ?? null }
+        : null;
+    };
+    const firstPerson = personAt(0, selectedService);
     // Two lengths, because they genuinely differ.
     //
     // `naturalDuration` is what the SERVER re-derives — catalogue (or variant)
@@ -533,8 +650,10 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
       serviceId: selectedService.serviceId,
       serviceName: selectedService.serviceName,
       serviceVariantId: selectedVariant?.id ?? null,
-      practitionerId: selectedSlot.practitioner_id,
-      practitionerName: selectedSlot.practitioner_name ?? selectedService.practitionerName ?? '',
+      practitionerId: firstPerson?.id ?? selectedSlot.practitioner_id,
+      practitionerName:
+        firstPerson?.name ?? selectedSlot.practitioner_name ?? selectedService.practitionerName ?? '',
+      ...(firstPerson?.venueId ? { venueId: firstPerson.venueId } : {}),
       startTime: selectedSlot.start_time.slice(0, 5),
       durationMinutes: baseDuration + addonMinutes,
       naturalDurationMinutes: naturalBaseDuration + addonMinutes,
@@ -568,8 +687,9 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
         addonPence,
       ),
     };
-    const extras: MultiServiceSegment[] = chainExtras.map((extra) => {
+    const extras: MultiServiceSegment[] = chainExtras.map((extra, extraIndex) => {
       const { option, variant } = extra;
+      const person = personAt(extraIndex + 1, option);
       const naturalBase = variant?.duration_minutes ?? option.durationMinutes;
       const base = extra.durationOverride ?? naturalBase;
       const chosen = (option.addonGroups ?? [])
@@ -582,8 +702,9 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
         serviceId: option.serviceId,
         serviceName: option.serviceName,
         serviceVariantId: variant?.id ?? null,
-        practitionerId: seg.practitionerId,
-        practitionerName: seg.practitionerName,
+        practitionerId: person?.id ?? seg.practitionerId,
+        practitionerName: person?.name ?? seg.practitionerName,
+        ...(person?.venueId ? { venueId: person.venueId } : {}),
         startTime: '00:00',
         durationMinutes: base + extraAddonMinutes,
         naturalDurationMinutes: naturalBase + extraAddonMinutes,
@@ -611,8 +732,23 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
         ),
       };
     });
-    return recomputeMultiServiceChain([seg, ...extras], seg.startTime);
-  }, [selectedService, selectedVariant, addonGroups, selectedAddonIds, durationOverride, chainExtras]);
+    // Several people: each service starts once the client is free, and after its person's buffer
+    // when that person already had one (7.1). One person: back to back, as always.
+    return perServiceActive
+      ? layVisitSegments([seg, ...extras], seg.startTime)
+      : recomputeMultiServiceChain([seg, ...extras], seg.startTime);
+  }, [
+    selectedService,
+    selectedVariant,
+    addonGroups,
+    selectedAddonIds,
+    durationOverride,
+    chainExtras,
+    perServiceActive,
+    visitPeople,
+    visitAsks,
+    bookableCatalog,
+  ]);
 
   /** Build the chain from the picked slot. */
   const seedMultiServiceChain = useCallback(
@@ -654,29 +790,44 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
    */
   const serviceChainParam: ServiceChainSegmentParam[] | null = useMemo(() => {
     if (!selectedService || chainExtras.length === 0) return null;
+    // A person per service: each service names its own person (or "any"), so the server plans the
+    // visit across people and says who and when for every service (8.3).
+    const people = perServiceActive ? visitPeople : null;
     return [
       {
         service_id: selectedService.serviceId,
+        ...(people?.[0] ? { practitioner_id: people[0] } : {}),
         variant_id: selectedVariant?.id ?? null,
         addon_ids: selectedAddonIds,
         duration_minutes: durationOverride,
       },
-      ...chainExtras.map((e) => ({
+      ...chainExtras.map((e, i) => ({
         service_id: e.option.serviceId,
+        ...(people?.[i + 1] ? { practitioner_id: people[i + 1] } : {}),
         variant_id: e.variant?.id ?? null,
         addon_ids: e.addonIds,
         duration_minutes: e.durationOverride,
       })),
     ];
-  }, [selectedService, chainExtras, selectedVariant, selectedAddonIds, durationOverride]);
+  }, [selectedService, chainExtras, selectedVariant, selectedAddonIds, durationOverride, perServiceActive, visitPeople]);
 
   // The month route only knows one length: the visit as one block (web parity;
   // a green day can still show no times when breaks split it — the day view is exact).
+  //
+  // A person per service: the month stays approximate (8.3). It asks about the first person's first
+  // service and the services after it with the same person, not the whole visit, which would grey
+  // out days where the first person has time only for their own part.
+  const monthLead =
+    perServiceActive && visitPeople
+      ? leadingSamePersonCount(choicesAsPersonChoices(visitPeople, ANY_AVAILABLE_PRACTITIONER_ID))
+      : null;
   const chainSpanForMonth: number | null =
-    serviceChainParam && selectedService
+    serviceChainParam && selectedService && (monthLead == null || monthLead > 1)
       ? chainSpanMinutes([
           segmentLength(selectedService, selectedVariant, selectedAddonIds, durationOverride),
-          ...chainExtras.map((e) => segmentLength(e.option, e.variant, e.addonIds, e.durationOverride)),
+          ...chainExtras
+            .slice(0, monthLead == null ? undefined : monthLead - 1)
+            .map((e) => segmentLength(e.option, e.variant, e.addonIds, e.durationOverride)),
         ])
       : null;
 
@@ -752,12 +903,17 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
       if (index === 0) {
         const [head, ...rest] = chainExtras;
         if (!head || !selectedService) return;
-        setSelectedService({
-          ...head.option,
-          practitionerId: selectedService.practitionerId,
-          practitionerName: selectedService.practitionerName,
-          candidatePractitionerIds: selectedService.candidatePractitionerIds,
-        });
+        // A person per service: the next service is already its own person's option.
+        setSelectedService(
+          visitPeople
+            ? head.option
+            : {
+                ...head.option,
+                practitionerId: selectedService.practitionerId,
+                practitionerName: selectedService.practitionerName,
+                candidatePractitionerIds: selectedService.candidatePractitionerIds,
+              },
+        );
         setSelectedVariant(head.variant);
         setSelectedAddonIds(head.addonIds);
         setDurationOverride(head.durationOverride);
@@ -768,8 +924,46 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
       setPendingServiceIds((prev) =>
         prev[index] === removedId ? prev.filter((_, i) => i !== index) : prev,
       );
+      setVisitPeople((prev) => (prev ? prev.filter((_, i) => i !== index) : prev));
     },
-    [selectedService, chainExtras],
+    [selectedService, chainExtras, visitPeople],
+  );
+
+  /**
+   * A person per service: the review's services changed (one removed), so the server is asked again
+   * for the visit at the same start rather than the app re-laying the times (web
+   * `replanVisitAtStart`, 6.1, G22). Each service keeps the person the review showed. Null when the
+   * start no longer fits; 'unreachable' when the question could not be asked.
+   */
+  const replanVisitAtStart = useCallback(
+    async (
+      segments: MultiServiceSegment[],
+      asks: VisitPlanAsk[],
+    ): Promise<MultiServiceSegment[] | null | 'unreachable'> => {
+      if (!venueId || !selectedDate || !accessToken) return 'unreachable';
+      const start = segments[0]!.startTime.slice(0, 5);
+      const chain: ServiceChainSegmentParam[] = segments.map((seg) => ({
+        service_id: seg.serviceId,
+        practitioner_id: seg.practitionerId,
+        variant_id: seg.serviceVariantId ?? null,
+        addon_ids: seg.addonIds ?? [],
+        duration_minutes: segmentCustomDurationMinutes(seg),
+      }));
+      try {
+        const data = await apiFetch<AppointmentAvailabilityResponse>(
+          chainAvailabilityPath({ venueId, date: selectedDate, practitionerId: segments[0]!.practitionerId, chain }),
+          { accessToken },
+        );
+        const slot = (data.practitioners ?? [])
+          .flatMap((p) => p.slots)
+          .find((sl) => sl.start_time.slice(0, 5) === start && Array.isArray(sl.segments));
+        if (!slot?.segments) return null;
+        return segmentsFromVisitPlan(slot.segments, asks);
+      } catch {
+        return 'unreachable';
+      }
+    },
+    [venueId, selectedDate, accessToken],
   );
 
   /**
@@ -817,10 +1011,38 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
       if (removingRef.current) return;
       removingRef.current = true;
       const firstStart = prev[0]!.startTime;
-      const next = recomputeMultiServiceChain(
-        prev.filter((_, i) => i !== index),
-        firstStart,
-      );
+      const kept = prev.filter((_, i) => i !== index);
+      // A person per service with two or more left: the server plans them again at the start.
+      if (perServiceActive && kept.length > 1 && !availabilityOverride) {
+        setMultiServiceError(null);
+        const asks = visitAsks.filter((_, i) => i !== index);
+        let planned: Awaited<ReturnType<typeof replanVisitAtStart>>;
+        try {
+          planned = await replanVisitAtStart(
+            kept.map((seg, i) => (i === 0 ? { ...seg, startTime: firstStart } : seg)),
+            asks,
+          );
+        } finally {
+          removingRef.current = false;
+        }
+        if (planned === 'unreachable') {
+          setMultiServiceError('Could not check this change. Try again.');
+          return;
+        }
+        dropServiceFromSelection(index);
+        if (!planned) {
+          setSelectedSlot(null);
+          setMultiServiceSegments(null);
+          setMultiServiceError(chainNoLongerFitsMessage(firstStart));
+          goToStep('time');
+          return;
+        }
+        setMultiServiceSegments(planned);
+        return;
+      }
+      const next = perServiceActive
+        ? layVisitSegments(kept, firstStart)
+        : recomputeMultiServiceChain(kept, firstStart);
       setMultiServiceError(null);
       let checked: Awaited<ReturnType<typeof recheckChain>>;
       try {
@@ -855,12 +1077,215 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
                 service_id: first.serviceId,
                 service_name: first.serviceName,
                 duration_minutes: first.durationMinutes,
+                // A person per service: the service left is with its own person.
+                practitioner_id: first.practitionerId,
+                practitioner_name: first.practitionerName,
               }
             : slot,
         );
       }
     },
-    [multiServiceSegments, recheckChain, dropServiceFromSelection, availabilityOverride, goToStep],
+    [
+      multiServiceSegments,
+      recheckChain,
+      dropServiceFromSelection,
+      availabilityOverride,
+      goToStep,
+      perServiceActive,
+      visitAsks,
+      replanVisitAtStart,
+    ],
+  );
+
+  /**
+   * A person for one service of the visit (6.1). Later choices that no longer fit (their business
+   * does not share an address with the one just chosen) are cleared.
+   */
+  const chooseVisitPerson = useCallback(
+    (index: number, choice: string) => {
+      const next = visitServiceIds.map((_, i) => (i === index ? choice : visitPeople?.[i] ?? null));
+      setVisitPeople(
+        pruneLaterChoices({
+          people: bookableCatalog?.practitioners ?? [],
+          serviceIds: visitServiceIds,
+          choices: next,
+          changedIndex: index,
+          isCollective,
+          anyId: ANY_AVAILABLE_PRACTITIONER_ID,
+        }),
+      );
+    },
+    [visitServiceIds, visitPeople, bookableCatalog, isCollective],
+  );
+
+  /**
+   * Every service has its person: each service's options now come off its own person (an option
+   * belongs to one business's service on a collective), so they are asked in turn, then the times.
+   */
+  const applyVisitPeople = useCallback(
+    (firstBase: AppointmentServiceOption, extrasBase: ChainExtra[], chosen: string[]) => {
+    const people = bookableCatalog?.practitioners ?? [];
+    const optionFor = (base: AppointmentServiceOption, choice: string): AppointmentServiceOption => {
+      if (choice === ANY_AVAILABLE_PRACTITIONER_ID) {
+        const offering = people.filter((p) => offersService(p, base.serviceId));
+        const seeded = (offering[0] && optionForPractitioner(base, offering[0])) || base;
+        return {
+          ...seeded,
+          practitionerId: ANY_AVAILABLE_PRACTITIONER_ID,
+          practitionerName: 'Any available',
+          candidatePractitionerIds: offering.map((p) => p.id),
+        };
+      }
+      const person = people.find((p) => p.id === choice);
+      return (person && optionForPractitioner(base, person)) || base;
+    };
+    const first = optionFor(firstBase, chosen[0]!);
+    const extras = extrasBase.map((e, i) => ({
+      ...e,
+      option: optionFor(e.option, chosen[i + 1]!),
+      variant: null,
+      addonIds: [],
+    }));
+    setVisitPeople(chosen);
+    setSelectedService(first);
+    setSelectedVariant(null);
+    setSelectedAddonIds([]);
+    setSelectedSlot(null);
+    setMultiServiceSegments(null);
+    setMultiServiceError(null);
+    setChainExtras(extras);
+    const cursor = nextChainCursor(extras, 0);
+    setChainCursor(cursor);
+    if ((first.variants ?? []).length > 0) {
+      goToStep('variant');
+    } else if ((first.addonGroups ?? []).length > 0) {
+      goToStep('addons');
+    } else if (cursor) {
+      goToStep('chain_options');
+    } else {
+      goToStep('date');
+    }
+    },
+    [bookableCatalog, goToStep],
+  );
+
+  const continueFromVisitPeople = useCallback(() => {
+    if (!selectedService || !visitPeople || visitPeople.length !== visitServiceIds.length) return;
+    if (visitPeople.some((c) => !c)) return;
+    applyVisitPeople(selectedService, chainExtras, visitPeople as string[]);
+  }, [selectedService, visitPeople, visitServiceIds, chainExtras, applyVisitPeople]);
+
+  /** Services already with an earlier person of a staff-first visit (6.2). */
+  const earlierVisitServiceIds = useMemo(
+    () => staffFirstGroups.flatMap((g) => g.picks.map((p) => p.option.serviceId)),
+    [staffFirstGroups],
+  );
+  const staffPickId = (pick: StaffPick) =>
+    pick.kind === 'practitioner' ? pick.practitioner.id : ANY_AVAILABLE_PRACTITIONER_ID;
+
+  /**
+   * Staff-first, adding someone else (6.2): people who still offer something not in the visit and,
+   * on a collective, whose business shares an address with every business already in it.
+   */
+  const staffForNextPerson = useMemo(() => {
+    if (staffFirstGroups.length === 0) return null;
+    const all = bookableCatalog?.practitioners ?? [];
+    const inVisit = new Set(earlierVisitServiceIds);
+    const venues = [
+      ...new Set(
+        staffFirstGroups
+          .map((g) => (g.pick.kind === 'practitioner' ? g.pick.practitioner.owning_venue_id ?? null : null))
+          .filter((v): v is string => Boolean(v)),
+      ),
+    ];
+    const offering = all.filter((p) => p.services.some((s) => !inVisit.has(s.id)));
+    const people = isCollective ? offering.filter((p) => personFitsBusinesses(p, venues)) : offering;
+    const excluded = isCollective ? offering.filter((p) => !personFitsBusinesses(p, venues)) : [];
+    const visitLines = staffFirstGroups.flatMap((g) =>
+      g.picks.map(
+        (p) => `${p.option.serviceName} with ${g.pick.kind === 'practitioner' ? g.pick.practitioner.name : 'Any available'}`,
+      ),
+    );
+    return { people, visitLines, exclusionLine: addressExclusionLine(excluded.map((p) => p.name)) };
+  }, [staffFirstGroups, earlierVisitServiceIds, bookableCatalog, isCollective]);
+
+  /**
+   * "Add a service with someone else" is offered once something is ticked for this person, while the
+   * visit has room, and while someone else could still add a service to it (6.2).
+   */
+  const canAddSomeoneElse = (() => {
+    if (!isStaffFirst || !staffPick || pendingServiceIds.length === 0) return false;
+    if (pendingServiceIds.length + earlierVisitServiceIds.length >= MAX_SERVICES_PER_VISIT) return false;
+    const inVisit = new Set([...earlierVisitServiceIds, ...pendingServiceIds]);
+    const current = staffPickId(staffPick);
+    return (bookableCatalog?.practitioners ?? []).some(
+      (p) => p.id !== current && p.services.some((s) => !inVisit.has(s.id)),
+    );
+  })();
+
+  /** The services ticked for this person join the visit, and the picker opens for the next person. */
+  const addServiceWithSomeoneElse = useCallback(
+    (picks: ServicePick[]) => {
+      if (!staffPick || picks.length === 0) return;
+      setStaffFirstGroups((prev) => [...prev, { pick: staffPick, picks }]);
+      setPendingServiceIds([]);
+      setPendingOverrides({});
+      setStaffPick(null);
+      setSelectedService(null);
+      setChainExtras([]);
+      setVisitPeople(null);
+      goToStep('staff_pick');
+    },
+    [staffPick, goToStep],
+  );
+
+  /** Back from the picker part-way through a visit: the previous person's services, still ticked. */
+  const backToPreviousPerson = useCallback(() => {
+    const last = staffFirstGroups[staffFirstGroups.length - 1];
+    if (!last) return;
+    setStaffFirstGroups((prev) => prev.slice(0, -1));
+    setStaffPick(last.pick);
+    setPendingServiceIds(last.picks.map((p) => p.option.serviceId));
+    const overrides: Record<string, number> = {};
+    for (const p of last.picks) if (p.durationOverride != null) overrides[p.option.serviceId] = p.durationOverride;
+    setPendingOverrides(overrides);
+    goToStep('service');
+  }, [staffFirstGroups, goToStep]);
+
+  /**
+   * Continue a staff-first visit of several people: services run in the order added, each person's
+   * together (6.2). From here the path is service first's with a person per service: options per
+   * service from its own person, then the times showing the whole plan.
+   */
+  const continueStaffFirstVisit = useCallback(
+    (currentPicks: ServicePick[]) => {
+      if (!staffPick) return;
+      const groups = [...staffFirstGroups, { pick: staffPick, picks: currentPicks }];
+      const all = groups.flatMap((g) => g.picks.map((p) => ({ ...p, person: staffPickId(g.pick) })));
+      const [head, ...rest] = all;
+      if (!head) return;
+      setSelectedSlot(null);
+      setMultiServiceSegments(null);
+      setMultiServiceError(null);
+      setDurationOverride(head.durationOverride);
+      setRequireDeposit(false);
+      setNeedsPractitionerStep(false);
+      applyVisitPeople(
+        head.option,
+        rest.map((p) => ({ option: p.option, variant: null, addonIds: [], durationOverride: p.durationOverride })),
+        all.map((p) => p.person),
+      );
+    },
+    [staffPick, staffFirstGroups, applyVisitPeople],
+  );
+
+  /** A visit across businesses (only a collective's services span businesses): each with its money (7.1). */
+  const visitParts = useMemo(
+    () =>
+      isCollective && multiServiceSegments && multiServiceSegments.length > 1
+        ? visitBusinessParts(multiServiceSegments, businessNameOf)
+        : null,
+    [isCollective, multiServiceSegments, businessNameOf],
   );
 
   // Apply rebook bootstrap on mount (after catalog loads).
@@ -998,6 +1423,17 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
       goToStep('time');
       return;
     }
+    // Staff-first, choosing the next person: back to the previous person's services (6.2).
+    if (currentStepKey === 'staff_pick' && staffFirstGroups.length > 0) {
+      backToPreviousPerson();
+      return;
+    }
+    // A person per service: back to the one-person list it was opened from, or to the services.
+    if (currentStepKey === 'visit_people') {
+      setVisitPeople(null);
+      goToStep(needsPractitionerStep ? 'practitioner' : 'service');
+      return;
+    }
     const index = steps.indexOf(currentStepKey);
     if (index <= 0) {
       router.back();
@@ -1035,6 +1471,8 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
       setPendingOverrides({});
       setChainExtras([]);
       setChainCursor(null);
+      setVisitPeople(null);
+      setStaffFirstGroups([]);
       setStaffPick(null);
       setCurrentStepKey(isStaffFirst ? 'staff_pick' : 'service');
     },
@@ -1140,6 +1578,8 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     setPendingOverrides({});
     setChainExtras([]);
     setChainCursor(null);
+    setVisitPeople(null);
+    setStaffFirstGroups([]);
     setSelectedDate(calendarDateInTimeZone(new Date(), timeZone));
     setMonthAnchor(calendarDateInTimeZone(new Date(), timeZone));
     setSource(isWalkInIntent ? 'walk-in' : 'phone');
@@ -1193,7 +1633,8 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   // hidden so only the ✕ leaves the form.
   // Not once the booking exists: back would reopen its filled-in details, one tap from a duplicate.
   // "Book another" starts afresh instead.
-  const canGoBack = stepNumber > 0 && createdBookingId === null;
+  const canGoBack =
+    (stepNumber > 0 || (activeKey === 'staff_pick' && staffFirstGroups.length > 0)) && createdBookingId === null;
   const selectedAddons = addonGroups
     .flatMap((group) => group.addons)
     .filter((addon) => selectedAddonIds.includes(addon.id));
@@ -1313,6 +1754,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           onRetry={() => void catalogQuery.refetch()}
           // No engine to pick for you while the override is on (web #187).
           allowAnyAvailable={anyAvailableEnabled && !availabilityOverride}
+          nextPerson={staffForNextPerson}
           overrideToggle={
             <AvailabilityOverrideToggle
               checked={availabilityOverride}
@@ -1335,6 +1777,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
             setPendingOverrides({});
             setChainExtras([]);
             setChainCursor(null);
+            setVisitPeople(null);
             setNeedsPractitionerStep(false);
             setSelectedVariant(null);
             setSelectedAddonIds([]);
@@ -1377,6 +1820,11 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           selectionMode="multi"
           selectedServiceIds={pendingServiceIds}
           initialDurationOverrides={pendingOverrides}
+          // Staff-first, a visit of several people (6.2): what earlier people have is not listed
+          // again, and the visit's cap counts it.
+          excludedServiceIds={earlierVisitServiceIds}
+          maxPicks={MAX_SERVICES_PER_VISIT - earlierVisitServiceIds.length}
+          onAddSomeoneElse={canAddSomeoneElse ? addServiceWithSomeoneElse : undefined}
           onToggleService={(option) =>
             setPendingServiceIds((prev) =>
               prev.includes(option.serviceId)
@@ -1391,6 +1839,10 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           onContinueSelection={(picks) => {
             const [first, ...rest] = picks;
             if (!first) return;
+            if (staffFirstGroups.length > 0) {
+              continueStaffFirstVisit(picks);
+              return;
+            }
             // Remember the pills so "Change services" brings them back.
             const overrides: Record<string, number> = {};
             for (const p of picks) {
@@ -1426,7 +1878,17 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           allowAnyAvailable={anyAvailableEnabled && !availabilityOverride}
           overrideAvailability={availabilityOverride}
           durationOverride={durationOverride}
+          // Someone else offers some of the services: a different person for each (6.1).
+          onChooseEach={
+            visitMode === 'choose'
+              ? () => {
+                  setVisitPeople(visitServiceIds.map(() => null));
+                  goToStep('visit_people');
+                }
+              : undefined
+          }
           onSelect={(option) => {
+            setVisitPeople(null);
             setSelectedService(option);
             // The practitioner-specific option can carry different variants
             // and add-on groups — clear dependent picks so stale selections
@@ -1443,6 +1905,26 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
             } else {
               goToStep('date');
             }
+          }}
+        />
+      ) : null}
+
+      {activeKey === 'visit_people' && selectedService && visitPeople ? (
+        <VisitPeopleStep
+          services={[
+            { serviceId: selectedService.serviceId, serviceName: selectedService.serviceName },
+            ...chainExtras.map((e) => ({ serviceId: e.option.serviceId, serviceName: e.option.serviceName })),
+          ]}
+          people={bookableCatalog?.practitioners ?? []}
+          choices={visitServiceIds.map((_, i) => visitPeople[i] ?? null)}
+          isCollective={isCollective}
+          // No engine to pick for you while the override is on (web #187).
+          allowAnyAvailable={anyAvailableEnabled && !availabilityOverride}
+          onChoose={chooseVisitPerson}
+          onContinue={continueFromVisitPeople}
+          onChangeServices={() => {
+            setVisitPeople(null);
+            changeServices();
           }}
         />
       ) : null}
@@ -1609,6 +2091,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           onContinue={() => advanceFrom('multi_service')}
           errorMessage={multiServiceError}
           overrideWarnings={availabilityOverride ? (overrideWarnings ?? []) : null}
+          businessNameOf={isCollective ? businessNameOf : undefined}
         />
       ) : null}
 
@@ -1643,6 +2126,8 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           onChangeRequireDeposit={setRequireDeposit}
           staffNotes={calendarNotice.notes}
           noCardPayments={calendarNotice.noCards}
+          businessParts={visitParts}
+          noCardVenueIds={calendarNotice.noCardVenueIds}
           returningGuest={returningGuest}
           phoneDefaultCountry={phoneDefaultCountry}
           venueId={venueId}

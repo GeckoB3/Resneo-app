@@ -32,6 +32,8 @@ export interface CustomerVisitService {
   /** The database value ("Booked", "Cancelled", "No-Show"); read through `customerBookingState`. */
   status: string;
   venue_id: string;
+  /** The business it is with (web split-visit plan 6.5); absent from older servers. */
+  business_name?: string | null;
   confirmed: boolean;
 }
 
@@ -41,6 +43,8 @@ export interface CustomerVisitBusiness {
   phone: string | null;
   email: string | null;
   address: string | null;
+  /** What this business took for its own services, and refunded (6.5); absent from older servers. */
+  payments?: { paid_pence: number; refunded_pence: number };
 }
 
 export interface CustomerVisitActionState {

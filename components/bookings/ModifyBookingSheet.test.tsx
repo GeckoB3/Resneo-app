@@ -20,6 +20,16 @@ import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { ModifyBookingSheet, type ModifyBookingTarget } from './ModifyBookingSheet';
 import { ViewerAccessProvider } from '@/providers/ViewerAccessProvider';
 
+/** A visit across businesses (web split-visit plan 7.5): the other businesses' services, by link. */
+let mockPartnerLines: Map<string, unknown[]> = new Map();
+jest.mock('@/lib/queries/useVisitPartnerLines', () => ({ useVisitPartnerLines: () => mockPartnerLines }));
+/** Whether this person may move every business's services together. */
+let mockMoveAllOption: { can_move_all: boolean; message: string | null; expected: unknown[] } | undefined;
+const mockMoveWholeVisit = jest.fn();
+jest.mock('@/lib/queries/useMoveWholeVisit', () => ({
+  useMoveWholeVisitOption: () => ({ data: mockMoveAllOption, refetch: jest.fn() }),
+  useMoveWholeVisit: () => ({ mutateAsync: mockMoveWholeVisit, isPending: false }),
+}));
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 
 /**
@@ -196,9 +206,15 @@ let mockDetailAddons: { addon_id: string }[] = [];
  * case, which must never be sent as `[]` (that would clear a real gap).
  */
 let mockDetailProcessingBlocks: unknown;
+/** The visit across businesses the booking belongs to, if any. */
+let mockLinkedVisitId: string | null = null;
 jest.mock('@/lib/queries/useBookingDetail', () => ({
   useBookingDetail: () => ({
-    data: { addons: mockDetailAddons, processing_time_blocks: mockDetailProcessingBlocks },
+    data: {
+      addons: mockDetailAddons,
+      processing_time_blocks: mockDetailProcessingBlocks,
+      linked_visit_id: mockLinkedVisitId,
+    },
   }),
 }));
 
@@ -317,6 +333,11 @@ beforeEach(() => {
   onClose.mockClear();
   mockAddonGroups = [];
   mockDetailAddons = [];
+  mockLinkedVisitId = null;
+  mockPartnerLines = new Map();
+  mockMoveAllOption = undefined;
+  mockMoveWholeVisit.mockReset();
+  mockMoveWholeVisit.mockResolvedValue({ ok: true });
   mockDetailProcessingBlocks = undefined;
   mockServiceProcessingBlocks = [];
   mockOtherServiceProcessingBlocks = [];
@@ -2183,3 +2204,98 @@ describe('ModifyBookingSheet — archived service keeps its variant (R21-3)', ()
     }
   });
 });
+
+describe('ModifyBookingSheet: a visit across businesses (web split-visit plan 7.5, S28)', () => {
+  const NAILS_LINE = {
+    booking_id: 'bk-gel',
+    linked_visit_id: 'lv-1',
+    venue_id: 'v-nails',
+    venue_name: 'SV Nails',
+    booking_date: '2026-08-10',
+    start_time: '15:00',
+    end_time: '15:30',
+    service_name: 'Gel Manicure',
+    person_name: 'Bea',
+    status: 'Booked',
+  };
+  const EXPECTED = [
+    { booking_id: 'bk-1', updated_at: '2026-08-01T10:00:00Z' },
+    { booking_id: 'bk-gel', updated_at: '2026-08-01T10:00:00Z' },
+  ];
+
+  beforeEach(() => {
+    mockLinkedVisitId = 'lv-1';
+    mockPartnerLines = new Map([['lv-1', [NAILS_LINE, { ...NAILS_LINE, booking_id: 'bk-x', status: 'Cancelled' }]]]);
+  });
+
+  it("names the other business's service and moves only this business's part when not allowed", async () => {
+    jest.useFakeTimers();
+    try {
+      mockMoveAllOption = { can_move_all: false, message: 'You can move only your own services.', expected: EXPECTED };
+      await render(<ModifyBookingSheet target={TARGET} onClose={onClose} />);
+      expect(screen.getByText('Alex Rivera also has Gel Manicure with Bea at SV Nails at 15:00.')).toBeTruthy();
+      expect(screen.getByText('This moves your services only.')).toBeTruthy();
+      expect(screen.queryByTestId('move-all-switch')).toBeNull();
+      await moveAndSave();
+      expect(mockModify).toHaveBeenCalled();
+      expect(mockMoveWholeVisit).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("moves every business's services together when chosen, and undoes the same way", async () => {
+    jest.useFakeTimers();
+    try {
+      mockMoveAllOption = { can_move_all: true, message: null, expected: EXPECTED };
+      await render(<ModifyBookingSheet target={TARGET} onClose={onClose} />);
+      await act(async () => {
+        fireEvent(screen.getByTestId('move-all-switch'), 'valueChange', true);
+      });
+      await moveAndSave();
+
+      expect(mockModify).not.toHaveBeenCalled();
+      expect(mockMoveWholeVisit).toHaveBeenCalledWith({
+        anchor_booking_id: 'bk-1',
+        booking_date: '2026-08-10',
+        booking_time: '09:30',
+        expected: EXPECTED,
+        defer_modification_guest_notification: true,
+      });
+      expect(screen.getByText('Notify Alex Rivera')).toBeTruthy();
+
+      await press('Undo change');
+      expect(mockMoveWholeVisit).toHaveBeenLastCalledWith({
+        anchor_booking_id: 'bk-1',
+        booking_date: '2026-08-10',
+        booking_time: '14:00',
+        defer_modification_guest_notification: true,
+      });
+      expect(mockModify).not.toHaveBeenCalled();
+      expect(onClose).toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("anchors a visit's move on its first service with this business", async () => {
+    mockMoveAllOption = { can_move_all: true, message: null, expected: EXPECTED };
+    jest.useFakeTimers();
+    try {
+      await renderVisit();
+      await act(async () => {
+        fireEvent(screen.getByTestId('move-all-switch'), 'valueChange', true);
+      });
+      await press('TIME_PICKER');
+      await settleAvailability();
+      await press('Save whole visit');
+      expect(mockMoveWholeVisit).toHaveBeenCalledWith(
+        expect.objectContaining({ anchor_booking_id: 'bk-lead', booking_time: '09:30' }),
+      );
+      expect(visitWrite()).toBeUndefined();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
+

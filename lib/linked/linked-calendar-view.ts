@@ -94,6 +94,7 @@ export function linkedGridBooking(
     // is what chips them "Visit 1/2" and colours them alike; a party's rows
     // carry a person label and are left as plain bars.
     group_booking_id: b.groupBookingId ?? null,
+    linked_visit_id: b.linkedVisitId ?? null,
     person_label: b.personLabel ?? null,
   };
 }

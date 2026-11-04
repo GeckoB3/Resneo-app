@@ -225,6 +225,10 @@ export interface BookingDetail extends ContactsHiddenFlag {
   online_meeting_info?: string | null;
   /** Multi-service visit / group booking link (full GET spreads the row). */
   group_booking_id?: string | null;
+  /** A visit across businesses (web split-visit plan 8.2); the visit card reads its other parts by it. */
+  linked_visit_id?: string | null;
+  /** The booking's own business (the full GET spreads the row). */
+  venue_id?: string;
   /** Per-person label on group people visits ("Person 1", a name…). */
   person_label?: string | null;
   /**

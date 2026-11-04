@@ -37,6 +37,8 @@ export interface CalendarGridBooking {
    * PATCHing whichever row the bar is keyed on.
    */
   group_booking_id?: string | null;
+  /** A visit across businesses (web split-visit plan 8.8): each business's part shares this link. */
+  linked_visit_id?: string | null;
   /**
    * Per-person label on a group booking ("Person 1", a name…). Tells a
    * multi-service visit by ONE guest (no label) from a group booking of several

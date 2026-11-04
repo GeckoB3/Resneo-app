@@ -9,6 +9,9 @@
  */
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
+/** The other businesses' services of a visit across businesses (web split-visit plan 7.7). */
+let mockPartnerLines: Map<string, unknown[]> = new Map();
+jest.mock('@/lib/queries/useVisitPartnerLines', () => ({ useVisitPartnerLines: () => mockPartnerLines }));
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn() }));
 jest.mock('expo-secure-store', () => ({
@@ -113,8 +116,10 @@ function visitRow(id: string, time: string, end: string, status = 'Booked', name
   };
 }
 
-async function renderDetail(onStatusChange = jest.fn()) {
-  await render(<BookingDetailContent booking={makeBooking()} isAppointmentVenue onStatusChange={onStatusChange} />);
+async function renderDetail(onStatusChange = jest.fn(), overrides: Partial<BookingDetail> = {}) {
+  await render(
+    <BookingDetailContent booking={makeBooking(overrides)} isAppointmentVenue onStatusChange={onStatusChange} />,
+  );
   return onStatusChange;
 }
 
@@ -173,5 +178,67 @@ describe('BookingDetailContent: cancelling one service of a visit (G17)', () => 
     // The ordinary two-tap confirm.
     await press('Tap to confirm');
     expect(onStatusChange).toHaveBeenCalledWith('Cancelled');
+  });
+});
+
+describe('BookingDetailContent: cancelling your part of a visit across businesses (7.7, D9)', () => {
+  const KEEPS = 'Ada Lovelace keeps Gel Manicure with Bea at SV Nails. They will be told what is cancelled and what stays.';
+  const line = (over: Record<string, unknown>) => ({
+    booking_id: 'bk_gel',
+    linked_visit_id: 'lv_1',
+    venue_id: 'v_nails',
+    venue_name: 'SV Nails',
+    booking_date: '2030-01-10',
+    start_time: '11:00',
+    end_time: '11:30',
+    service_name: 'Gel Manicure',
+    person_name: 'Bea',
+    status: 'Booked',
+    ...over,
+  });
+
+  beforeEach(() => {
+    mockVisitRows = [
+      visitRow('bk_cut', '10:00', '10:45', 'Booked', 'Cut'),
+      visitRow('bk_brow', '10:45', '11:00', 'Booked', 'Brow Wax'),
+    ];
+    mockPartnerLines = new Map([
+      [
+        'lv_1',
+        [
+          line({}),
+          // Already cancelled at SV Nails, and this business's own row: neither is "kept".
+          line({ booking_id: 'bk_pedi', service_name: 'Pedicure', status: 'Cancelled' }),
+          line({ booking_id: 'bk_cut', venue_id: 'v_studio', venue_name: 'SV Studio', service_name: 'Cut' }),
+        ],
+      ],
+    ]);
+  });
+
+  afterEach(() => {
+    mockPartnerLines = new Map();
+  });
+
+  it("says what the client keeps at the other businesses beside the choice", async () => {
+    await renderDetail(jest.fn(), { linked_visit_id: 'lv_1', venue_id: 'v_studio' });
+    expect(screen.queryByText(KEEPS)).toBeNull();
+    await press('Cancel booking');
+    expect(screen.getByText(QUESTION)).toBeTruthy();
+    expect(screen.getByText(KEEPS)).toBeTruthy();
+  });
+
+  it('says it on the two-tap confirm too, when this business has one service', async () => {
+    mockVisitRows = [visitRow('bk_brow', '10:45', '11:00', 'Booked', 'Brow Wax')];
+    const onStatusChange = await renderDetail(jest.fn(), { linked_visit_id: 'lv_1', venue_id: 'v_studio' });
+    await press('Cancel booking');
+    expect(screen.getByText(KEEPS)).toBeTruthy();
+    await press('Tap to confirm');
+    expect(onStatusChange).toHaveBeenCalledWith('Cancelled');
+  });
+
+  it('says nothing for a visit within one business', async () => {
+    await renderDetail(jest.fn(), { linked_visit_id: null, venue_id: 'v_studio' });
+    await press('Cancel booking');
+    expect(screen.queryByTestId('cancel-keeps-other-parts')).toBeNull();
   });
 });

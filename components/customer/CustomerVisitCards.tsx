@@ -107,18 +107,29 @@ function visitStatusLabel(visit: CustomerVisit): string {
  * business first, so the client knows whom to ring about a particular service.
  */
 export function VisitContactsCard({ visit }: { visit: CustomerVisit }) {
-  const reachable = visit.businesses.filter((b) => b.phone || b.email);
-  if (reachable.length === 0) return null;
   const many = visit.businesses.length > 1;
+  // A visit across businesses lists every business, with what each took (web split-visit plan 6.5).
+  const listed = many ? visit.businesses : visit.businesses.filter((b) => b.phone || b.email);
+  if (listed.length === 0) return null;
 
   return (
-    <Card>
+    <Card testID="visit-businesses">
       <Text variant="overline" tone="secondary">
-        CONTACT
+        {many ? 'YOUR BUSINESSES' : 'CONTACT'}
       </Text>
-      {reachable.map((business) => (
+      {many ? (
+        <Text variant="bodySmall" tone="secondary" style={styles.gap}>
+          Your visit is with {visit.businesses.length} businesses. Each provides, charges for and refunds its own services.
+        </Text>
+      ) : null}
+      {listed.map((business) => (
         <View key={business.id} style={styles.business}>
           <Text variant="bodyMedium">{business.name}</Text>
+          {many && business.payments ? (
+            <Text variant="bodySmall" tone="secondary" testID={`visit-business-payments-${business.id}`}>
+              {paymentsLine(business.payments)}
+            </Text>
+          ) : null}
           {many && business.address ? (
             <Text variant="bodySmall" tone="secondary">
               {business.address}
@@ -144,6 +155,16 @@ export function VisitContactsCard({ visit }: { visit: CustomerVisit }) {
       ))}
     </Card>
   );
+}
+
+/** "Paid £10.00.", "Paid £10.00. Refunded £10.00." or "Nothing paid online." */
+export function paymentsLine(payments: { paid_pence: number; refunded_pence: number }): string {
+  const pounds = (pence: number) => `£${(pence / 100).toFixed(2)}`;
+  const parts = [
+    payments.paid_pence > 0 ? `Paid ${pounds(payments.paid_pence)}.` : null,
+    payments.refunded_pence > 0 ? `Refunded ${pounds(payments.refunded_pence)}.` : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(' ') : 'Nothing paid online.';
 }
 
 const styles = StyleSheet.create({

@@ -19,6 +19,13 @@ export const MAX_SERVICES_PER_VISIT = 4;
 
 export interface ServiceChainSegmentParam {
   service_id: string;
+  /**
+   * Who does this service (web split-visit plan 8.3): a calendar id, or the flow's "any available"
+   * id, which the server reads as `any`. When no segment names one, the request is today's visit
+   * with one person. When any does, every service is placed on its own person, and each slot comes
+   * back with the server's plan in `segments`.
+   */
+  practitioner_id?: string | null;
   variant_id?: string | null;
   addon_ids?: string[];
   /**
@@ -33,11 +40,17 @@ export function serialiseServiceChainParam(chain: readonly ServiceChainSegmentPa
   return JSON.stringify(
     chain.map((s) => ({
       service_id: s.service_id,
+      ...(s.practitioner_id ? { practitioner_id: s.practitioner_id } : {}),
       ...(s.variant_id ? { variant_id: s.variant_id } : {}),
       ...(s.addon_ids && s.addon_ids.length > 0 ? { addon_ids: s.addon_ids } : {}),
       ...(s.duration_minutes != null ? { duration_minutes: s.duration_minutes } : {}),
     })),
   );
+}
+
+/** True when some service of the visit names its own person, which asks the server to plan across people. */
+export function chainNamesPeople(chain: readonly Pick<ServiceChainSegmentParam, 'practitioner_id'>[]): boolean {
+  return chain.some((s) => typeof s.practitioner_id === 'string' && s.practitioner_id.length > 0);
 }
 
 /**

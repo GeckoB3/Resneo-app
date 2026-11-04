@@ -76,6 +76,20 @@ type ServicePickerStepProps = {
   ) => void;
   /** Multi: existing overrides by service id, so a return to the picker keeps the pills. */
   initialDurationOverrides?: Record<string, number>;
+  /**
+   * Staff-first, part-way through a visit of several people (web split-visit plan 6.2): services
+   * already with an earlier person, which are not listed again.
+   */
+  excludedServiceIds?: readonly string[];
+  /** Multi: how many more services the visit can hold (earlier people's services counted). */
+  maxPicks?: number;
+  /**
+   * Staff-first (6.2): "Add a service with someone else" under the bar, with the services ticked for
+   * this person. Omitted when nobody else could add one or the visit is full.
+   */
+  onAddSomeoneElse?: (
+    picks: { option: AppointmentServiceOption; durationOverride: number | null }[],
+  ) => void;
 };
 
 /** One line of the picker bar: what is ticked, at the length it will be booked. */
@@ -302,6 +316,9 @@ export function ServicePickerStep({
   initialDurationOverrides,
   overrideToggle,
   overrideAvailability = false,
+  excludedServiceIds,
+  maxPicks = MAX_SERVICES_PER_VISIT,
+  onAddSomeoneElse,
 }: ServicePickerStepProps) {
   const { colors } = useTheme();
   const isMulti = selectionMode === 'multi';
@@ -311,10 +328,12 @@ export function ServicePickerStep({
       ? defaultPractitionerId
       : null;
 
-  const rows = useMemo(
-    () => dedupeCatalogServices(catalog, effectivePractitioner),
-    [catalog, effectivePractitioner],
-  );
+  const excludedKey = (excludedServiceIds ?? []).join(',');
+  const rows = useMemo(() => {
+    const all = dedupeCatalogServices(catalog, effectivePractitioner);
+    const excluded = new Set(excludedKey ? excludedKey.split(',') : []);
+    return excluded.size > 0 ? all.filter((r) => !excluded.has(r.option.serviceId)) : all;
+  }, [catalog, effectivePractitioner, excludedKey]);
 
   // Per-service staff duration overrides (minutes). Seeded from the active
   // selection so going BACK to this step keeps a custom duration visible.
@@ -374,7 +393,7 @@ export function ServicePickerStep({
         : [],
     [isMulti, selectedServiceIds, rows, overrides],
   );
-  const pickerFull = picks.length >= MAX_SERVICES_PER_VISIT;
+  const pickerFull = picks.length >= maxPicks;
   const bar = pickerBarSummary(picks);
 
   if (isLoading) {
@@ -573,6 +592,19 @@ export function ServicePickerStep({
               }
             />
           </View>
+          {onAddSomeoneElse ? (
+            <Button
+              label="Add a service with someone else"
+              variant="secondary"
+              size="sm"
+              fullWidth
+              testID="add-someone-else"
+              onPress={() => {
+                hapticSelect();
+                onAddSomeoneElse(picks.map((p) => ({ option: p.row.option, durationOverride: p.durationOverride })));
+              }}
+            />
+          ) : null}
         </Card>
       ) : null}
     </View>

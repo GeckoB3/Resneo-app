@@ -18,6 +18,7 @@ import { formatPence } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { buildPriceSummary, type DepositBadgeTone } from '@/lib/payments/payment-display';
 import { useUpdateBookingStatus } from '@/lib/queries/useBookingMutations';
+import { partnerLineText, useVisitPartnerLines } from '@/lib/queries/useVisitPartnerLines';
 import type { GroupVisitBookingRow } from '@/lib/queries/useGroupVisit';
 import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
@@ -201,6 +202,14 @@ export function VisitSummary({
   detailHydrating,
 }: VisitSummaryProps) {
   const { colors } = useTheme();
+  /**
+   * Another business's services of a visit across businesses: read-only lines, never acted on or
+   * priced here (web split-visit plan 7.3). Never the opened booking's own business.
+   */
+  const partnerLinesByVisit = useVisitPartnerLines([booking.linked_visit_id]);
+  const otherPartLines = (partnerLinesByVisit.get(booking.linked_visit_id ?? '') ?? []).filter(
+    (l) => l.status !== 'Cancelled' && l.booking_id !== booking.id && l.venue_id !== booking.venue_id,
+  );
   const isServiceVisit = !!visit && visitRows.length > 1;
   const isAppointment = !!(
     booking.appointment_service_id ||
@@ -397,6 +406,16 @@ export function VisitSummary({
         </View>
       ) : null}
 
+      {otherPartLines.length > 0 ? (
+        <View style={[styles.rows, { borderTopColor: colors.border }]} testID="visit-partner-lines">
+          {otherPartLines.map((line) => (
+            <Text key={line.booking_id} variant="bodySmall" tone="secondary" style={styles.partnerLine}>
+              {partnerLineText(line)}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+
       {/* Money: the total, then what has been paid and what is owed */}
       {showMoney ? (
         <View style={[styles.money, { borderTopColor: colors.border, backgroundColor: colors.surface }]}>
@@ -443,6 +462,7 @@ export function VisitSummary({
 }
 
 const styles = StyleSheet.create({
+  partnerLine: { paddingVertical: spacing.xs, paddingHorizontal: spacing.sm },
   block: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radius.lg,

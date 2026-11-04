@@ -61,6 +61,16 @@ jest.mock('@/lib/queries/useVisitMutations', () => ({
   useVisitSchedule: () => ({ mutateAsync: mockVisitSchedule, isPending: false }),
 }));
 
+/** A visit across businesses (web split-visit plan 7.5): the other businesses' services, by link. */
+let mockPartnerLines: Map<string, unknown[]> = new Map();
+jest.mock('@/lib/queries/useVisitPartnerLines', () => ({ useVisitPartnerLines: () => mockPartnerLines }));
+let mockMoveAllOption: { can_move_all: boolean; message: string | null; expected: unknown[] } | undefined;
+const mockMoveWholeVisit = jest.fn();
+jest.mock('@/lib/queries/useMoveWholeVisit', () => ({
+  useMoveWholeVisitOption: () => ({ data: mockMoveAllOption, refetch: jest.fn() }),
+  useMoveWholeVisit: () => ({ mutateAsync: mockMoveWholeVisit, isPending: false }),
+}));
+
 jest.mock('@/lib/queries/useStaffMe', () => ({
   useStaffMe: () => ({ data: { staff: { role: 'admin' } } }),
 }));
@@ -286,3 +296,70 @@ describe('RescheduleSheet', () => {
     });
   });
 });
+
+describe('RescheduleSheet: a visit across businesses (web split-visit plan 7.5)', () => {
+  const LINE = {
+    booking_id: 'bk-gel',
+    linked_visit_id: 'lv-1',
+    venue_id: 'v-nails',
+    venue_name: 'SV Nails',
+    booking_date: '2026-08-10',
+    start_time: '15:00',
+    end_time: '15:30',
+    service_name: 'Gel Manicure',
+    person_name: 'Bea',
+    status: 'Booked',
+  };
+  const LINKED: RescheduleTarget = { ...TARGET, linkedVisitId: 'lv-1' };
+
+  beforeEach(() => {
+    mockPartnerLines = new Map([['lv-1', [LINE]]]);
+    mockMoveWholeVisit.mockReset();
+    mockMoveWholeVisit.mockResolvedValue({ ok: true });
+    mockReschedule.mockReset();
+    mockReschedule.mockResolvedValue({});
+  });
+
+  afterEach(() => {
+    mockPartnerLines = new Map();
+    mockMoveAllOption = undefined;
+  });
+
+  it('moves only this business when the person may not move every part', async () => {
+    mockMoveAllOption = { can_move_all: false, message: null, expected: [] };
+    await render(<RescheduleSheet target={LINKED} onClose={jest.fn()} />);
+    expect(screen.getByText('Alex Rivera also has Gel Manicure with Bea at SV Nails at 15:00.')).toBeTruthy();
+    expect(screen.getByText('This moves your services only.')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByText('TIME_PICKER'));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByText('Confirm move'));
+    });
+    expect(mockReschedule).toHaveBeenCalled();
+    expect(mockMoveWholeVisit).not.toHaveBeenCalled();
+  });
+
+  it("moves every business's services together when chosen", async () => {
+    const expected = [{ booking_id: 'bk-1', updated_at: 't' }];
+    mockMoveAllOption = { can_move_all: true, message: null, expected };
+    await render(<RescheduleSheet target={LINKED} onClose={jest.fn()} />);
+    await act(async () => {
+      fireEvent(screen.getByTestId('move-all-switch'), 'valueChange', true);
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByText('TIME_PICKER'));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByText('Confirm move'));
+    });
+    expect(mockMoveWholeVisit).toHaveBeenCalledWith({
+      anchor_booking_id: 'bk-1',
+      booking_date: '2026-08-10',
+      booking_time: '09:30',
+      expected,
+    });
+    expect(mockReschedule).not.toHaveBeenCalled();
+  });
+});
+

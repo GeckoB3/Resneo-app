@@ -1,3 +1,4 @@
+import * as Clipboard from 'expo-clipboard';
 import { useEffect, useState } from 'react';
 
 import { findJustCreatedBooking } from '@/lib/booking/find-just-created-booking';
@@ -37,6 +38,7 @@ import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { normalizePhone } from '@/lib/phone/normalize';
 import { useCreateBooking, type ComplianceBookingWarning } from '@/lib/queries/useCreateBooking';
 import { useCreateMultiServiceBooking } from '@/lib/queries/useCreateMultiServiceBooking';
+import { chainSpansPeople, type VisitBusinessPart } from '@/lib/booking/visit-plan';
 import { accessRefusalMessage } from '@/lib/roles/roles';
 import { useViewerAccess } from '@/providers/ViewerAccessProvider';
 import { spacing } from '@/theme/index';
@@ -98,11 +100,26 @@ type ConfirmStepProps = {
    * the confirmation repeats what it overrode.
    */
   overrideAvailability?: boolean;
+  /**
+   * A visit across businesses (web split-visit plan 7.1): each business with what it asks for
+   * online. Two or more: each gets its own deposit and card-hold choice, and any money is asked for
+   * through one visit pay link.
+   */
+  businessParts?: VisitBusinessPart[] | null;
+  /** Businesses of the visit that cannot take card payments (collective staff notes). */
+  noCardVenueIds?: readonly string[];
 };
 
 interface BookingConfirmation {
   booking_id: string;
   payment_url?: string;
+  /**
+   * A visit across businesses that asks for money (web 6.9, 8.5): the one link that pays each
+   * business. The lead business sends it to the client when they have an email or phone.
+   */
+  linked_payment_url?: string;
+  /** The client gave an email or phone, so the link was sent to them. */
+  linked_link_sent?: boolean;
   requires_deposit?: boolean;
   deposit_amount_pence?: number;
   /** Card hold requested at create (§7.6): the confirmation shows the card-request line. */
@@ -182,6 +199,8 @@ function BookingConfirmationView({
   // until they use it. Saying "confirmed" here was not true (web QA B-9).
   const awaitingPayment = Boolean(confirmation.payment_url);
   const cardHold = Boolean(confirmation.card_hold_requested);
+  const linkedUrl = confirmation.linked_payment_url ?? null;
+  const [copied, setCopied] = useState(false);
 
   return (
     <ScrollView
@@ -190,14 +209,18 @@ function BookingConfirmationView({
       showsVerticalScrollIndicator={false}>
       <View style={styles.confirmationHeader}>
         <Text variant="heading">
-          {awaitingPayment
-            ? cardHold
-              ? 'Waiting for card details'
-              : 'Waiting for the deposit'
-            : 'Booking confirmed'}
+          {linkedUrl
+            ? 'Waiting for payment'
+            : awaitingPayment
+              ? cardHold
+                ? 'Waiting for card details'
+                : 'Waiting for the deposit'
+              : 'Booking confirmed'}
         </Text>
         <Text variant="bodyMedium" tone="muted">
-          {awaitingPayment
+          {linkedUrl
+            ? 'The visit stays pending until the client uses the link below.'
+            : awaitingPayment
             ? `The booking stays pending until ${cardHold ? 'the card is added' : 'the deposit is paid'}.${
                 confirmation.guest_contact
                   ? ` Then a confirmation will be sent to ${confirmation.guest_contact}.`
@@ -218,7 +241,28 @@ function BookingConfirmationView({
         <SummaryRow label="Date" value={confirmation.date_label} />
         <SummaryRow label="Time" value={confirmation.time_label} />
 
-        {confirmation.card_hold_requested ? (
+        {linkedUrl ? (
+          <View
+            style={[styles.depositNotice, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            testID="linked-pay-link">
+            {/* The lead business sends it when the client has an email or phone (web split-visit plan 6.9). */}
+            <Text variant="caption" tone="muted">
+              {confirmation.linked_link_sent
+                ? 'We sent the client this link to pay each business for the visit in one go. It works for 24 hours. You can copy it here too.'
+                : 'Send the client this link to pay each business for the visit in one go. It works for 24 hours.'}
+            </Text>
+            <Text variant="bodySmall" selectable>
+              {linkedUrl}
+            </Text>
+            <Button
+              label={copied ? 'Copied' : 'Copy link'}
+              variant="secondary"
+              onPress={() => {
+                void Clipboard.setStringAsync(linkedUrl).then(() => setCopied(true));
+              }}
+            />
+          </View>
+        ) : confirmation.card_hold_requested ? (
           <View style={[styles.depositNotice, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Text variant="bodySmall" tone="brand">
               Card hold
@@ -305,6 +349,8 @@ export function ConfirmStep({
   collectClientAddress = false,
   multiServiceSegments = null,
   overrideAvailability = false,
+  businessParts = null,
+  noCardVenueIds = [],
 }: ConfirmStepProps) {
   const { colors } = useTheme();
   // A picked client's phone and email read "Hidden" for someone whose contact switch is off; the
@@ -409,6 +455,18 @@ export function ConfirmStep({
   const staffCardHold = noCardPayments ? null : entityCardHold;
   const [requireCardHold, setRequireCardHold] = useState(false);
   const cardHoldDecision = entityCardHold ? Boolean(staffCardHold) && requireCardHold : null;
+  /**
+   * A visit across businesses (web 7.1): each business's own deposit and card-hold choice, off until
+   * ticked, as the single choices are. A business that cannot take cards is offered neither.
+   */
+  const byBusiness = isMultiService && (businessParts?.length ?? 0) >= 2 ? businessParts! : null;
+  const [depositByVenue, setDepositByVenue] = useState<Record<string, boolean>>({});
+  const [holdByVenue, setHoldByVenue] = useState<Record<string, boolean>>({});
+  const partTakesCards = (part: VisitBusinessPart) => !noCardVenueIds.includes(part.venueId);
+  const spansPeople = isMultiService && chainSpansPeople(multiServiceSegments!);
+  const peopleLabel = spansPeople
+    ? joinNames([...new Set(multiServiceSegments!.map((s) => s.practitionerName).filter(Boolean))])
+    : null;
 
   // A deposit ticked for a calendar that can take one is turned off here (web resets it), so going
   // back to that calendar does not quietly ask for it again.
@@ -487,7 +545,19 @@ export function ConfirmStep({
       // no-op on every chain. The hold is sent explicitly for a card-hold
       // entity: since web #187 an omitted `require_card_hold` means NO hold,
       // and the toggle defaults off to match.
-      charges: { requireDeposit, ...(cardHoldDecision !== null ? { requireCardHold: cardHoldDecision } : {}) },
+      charges: byBusiness
+        ? {
+            // Every business says its own choice; nothing falls back to a single one.
+            requireDeposit: false,
+            requireCardHold: false,
+            requireDepositByVenue: Object.fromEntries(
+              byBusiness.map((p) => [p.venueId, partTakesCards(p) && p.depositPence > 0 && Boolean(depositByVenue[p.venueId])]),
+            ),
+            requireCardHoldByVenue: Object.fromEntries(
+              byBusiness.map((p) => [p.venueId, partTakesCards(p) && p.holdPence > 0 && Boolean(holdByVenue[p.venueId])]),
+            ),
+          }
+        : { requireDeposit, ...(cardHoldDecision !== null ? { requireCardHold: cardHoldDecision } : {}) },
       overrideAvailability,
       address: collectClientAddress
         ? {
@@ -596,6 +666,25 @@ export function ConfirmStep({
             setSubmitError('Could not create booking. Please try again.');
             return;
           }
+          // A visit across businesses that asks for money: one pay link for every business (8.5).
+          const linkedUrl =
+            res.payment_mode === 'linked' ? res.payment_url ?? res.linked_checkout?.payment_url ?? null : null;
+          if (linkedUrl) {
+            setConfirmation({
+              booking_id: primary,
+              linked_payment_url: linkedUrl,
+              linked_link_sent: Boolean(guest.email.trim() || guest.phone.trim() || guest.guest_id),
+              cancellation_notice_hours: res.cancellation_notice_hours,
+              compliance_warnings: res.compliance_warnings,
+              availability_override_warnings: res.availability_override_warnings,
+              service_name: `${multiServiceSegments!.length} services`,
+              guest_name: fullName,
+              date_label: formatSummaryDate(date),
+              time_label: formatSummaryTime(multiServiceSegments![0]!.startTime),
+              practitioner_name: peopleLabel ?? multiServiceSegments![0]!.practitionerName ?? '',
+            });
+            return;
+          }
           setConfirmation({
             booking_id: primary,
             requires_deposit: res.requires_deposit,
@@ -613,7 +702,7 @@ export function ConfirmStep({
             guest_name: fullName,
             date_label: formatSummaryDate(date),
             time_label: formatSummaryTime(multiServiceSegments![0]!.startTime),
-            practitioner_name: multiServiceSegments![0]!.practitionerName ?? '',
+            practitioner_name: peopleLabel ?? multiServiceSegments![0]!.practitionerName ?? '',
           });
         },
         onError: (error) =>
@@ -706,15 +795,16 @@ export function ConfirmStep({
               : `${service.serviceName}${variant ? ` · ${variant.name}` : ''}`}
           </Text>
           <Text variant="bodySmall" tone="muted">
-            {totalDuration} min · {practitionerName}
+            {totalDuration} min · {peopleLabel ?? practitionerName}
           </Text>
         </View>
         {isMultiService ? (
           <View style={[styles.addonsBlock, { borderTopColor: 'transparent', paddingTop: 0 }]}>
             {multiServiceSegments!.map((seg, i) => (
               <View key={`${seg.serviceId}-${i}`} style={styles.addonLine}>
-                <Text variant="bodySmall">
+                <Text variant="bodySmall" style={styles.segmentName}>
                   {formatSummaryTime(seg.startTime)} · {seg.serviceName}
+                  {spansPeople && seg.practitionerName ? ` with ${seg.practitionerName}` : ''}
                 </Text>
                 {seg.pricePence != null ? (
                   <Text variant="bodySmall" tone="muted">
@@ -801,7 +891,35 @@ export function ConfirmStep({
         </View>
       ) : null}
 
-      {staffCardHold ? (
+      {byBusiness ? (
+        // Each business's own deposit and card hold (web split-visit plan 7.1).
+        <View style={styles.businessCharges} testID="staff-charges-by-business">
+          {byBusiness
+            .filter((p) => partTakesCards(p) && ((p.depositPence > 0 && source !== 'walk-in') || p.holdPence > 0))
+            .map((p) => (
+              <View key={p.venueId} style={[styles.businessCharge, { borderColor: colors.border }]}>
+                <Text variant="label">{p.name}</Text>
+                {p.holdPence > 0 ? (
+                  <StaffCardHoldToggle
+                    checked={Boolean(holdByVenue[p.venueId])}
+                    onChange={(next) => setHoldByVenue((prev) => ({ ...prev, [p.venueId]: next }))}
+                    feePence={p.holdPence}
+                  />
+                ) : null}
+                {p.depositPence > 0 && source !== 'walk-in' ? (
+                  <StaffRequireChargeCheckbox
+                    checked={Boolean(depositByVenue[p.venueId])}
+                    onChange={(next) => setDepositByVenue((prev) => ({ ...prev, [p.venueId]: next }))}
+                    chargeLabel={p.chargeLabel}
+                    amountPence={p.depositPence}
+                  />
+                ) : null}
+              </View>
+            ))}
+        </View>
+      ) : null}
+
+      {staffCardHold && !byBusiness ? (
         <StaffCardHoldToggle
           checked={requireCardHold}
           onChange={setRequireCardHold}
@@ -809,7 +927,7 @@ export function ConfirmStep({
         />
       ) : null}
 
-      {hasDeposit && source !== 'walk-in' && onChangeRequireDeposit ? (
+      {hasDeposit && source !== 'walk-in' && onChangeRequireDeposit && !byBusiness ? (
         <StaffRequireChargeCheckbox
           checked={requireDeposit}
           onChange={onChangeRequireDeposit}
@@ -845,9 +963,27 @@ export function ConfirmStep({
   );
 }
 
+/** "Steph and Amy" / "Steph, Amy and Bea". */
+function joinNames(names: readonly string[]): string {
+  if (names.length <= 1) return names[0] ?? '';
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
+  },
+  segmentName: {
+    flex: 1,
+  },
+  businessCharges: {
+    gap: spacing.sm,
+  },
+  businessCharge: {
+    gap: spacing.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12,
+    padding: spacing.md,
   },
   scrollContainer: {
     gap: spacing.md,

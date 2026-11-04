@@ -9,6 +9,11 @@ jest.mock('@/providers/ToastProvider', () => ({
   useToast: () => ({ error: mockToastError, success: jest.fn(), info: jest.fn() }),
 }));
 jest.mock('@/lib/haptics', () => ({ hapticSuccess: jest.fn(), hapticWarning: jest.fn(), hapticTap: jest.fn(), hapticSelect: jest.fn() }));
+const mockPartnerLines = new Map<string, unknown[]>();
+jest.mock('@/lib/queries/useVisitPartnerLines', () => {
+  const actual = jest.requireActual<typeof import('@/lib/queries/useVisitPartnerLines')>('@/lib/queries/useVisitPartnerLines');
+  return { ...actual, useVisitPartnerLines: () => mockPartnerLines };
+});
 
 import { VisitSummary } from '@/components/bookings/VisitSummary';
 import { ApiError } from '@/lib/api/client';
@@ -316,5 +321,30 @@ describe('VisitSummary', () => {
     expect(screen.getByText('19:00 – 21:00')).toBeTruthy();
     expect(screen.queryByText('Price not set')).toBeNull();
     expect(screen.queryByText('Total')).toBeNull();
+  });
+
+  /** A visit across businesses (web split-visit plan 7.3): the other business's services, read-only. */
+  it("lists another business's services read-only, never this business's own", async () => {
+    mockPartnerLines.set('lv-1', [
+      { booking_id: 'p1', linked_visit_id: 'lv-1', venue_id: 'v-nails', venue_name: 'SV Nails', booking_date: '2026-09-10', start_time: '10:45', end_time: '11:30', service_name: 'Gel Manicure', person_name: 'Bea', status: 'Booked' },
+      { booking_id: 'p2', linked_visit_id: 'lv-1', venue_id: 'v-nails', venue_name: 'SV Nails', booking_date: '2026-09-10', start_time: '11:30', end_time: '12:00', service_name: 'Nail Art', person_name: null, status: 'Cancelled' },
+      { booking_id: 'own', linked_visit_id: 'lv-1', venue_id: 'v-studio', venue_name: 'SV Studio', booking_date: '2026-09-10', start_time: '09:00', end_time: '10:00', service_name: 'Colour', person_name: 'Amy', status: 'Booked' },
+    ]);
+    await render(
+      <VisitSummary
+        {...common}
+        booking={base({ linked_visit_id: 'lv-1', venue_id: 'v-studio' })}
+        visit={null}
+        visitRows={[]}
+        headerStatus="Confirmed"
+        timeLabel="10:00 – 11:00"
+        durationMinutes={60}
+        serviceName="Cut"
+      />,
+    );
+    expect(screen.getByText('10:45 Gel Manicure with Bea, SV Nails, Booked')).toBeTruthy();
+    expect(screen.queryByText(/Nail Art/)).toBeNull();
+    expect(screen.queryByText(/Colour with Amy/)).toBeNull();
+    mockPartnerLines.clear();
   });
 });

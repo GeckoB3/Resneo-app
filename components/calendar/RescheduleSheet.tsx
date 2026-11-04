@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, Switch, View } from 'react-native';
 
 import { minutesToTime, timeToMinutes } from '@/components/calendar/grid-layout';
 import { Button } from '@/components/ui/Button';
@@ -20,6 +20,8 @@ import { formatDayHeading } from '@/lib/dates/venue-dates';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useRescheduleBooking } from '@/lib/queries/useBookingMutations';
 import { useVisitSchedule } from '@/lib/queries/useVisitMutations';
+import { useMoveWholeVisit, useMoveWholeVisitOption } from '@/lib/queries/useMoveWholeVisit';
+import { useVisitPartnerLines } from '@/lib/queries/useVisitPartnerLines';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
@@ -47,6 +49,11 @@ export type RescheduleTarget = {
    * this row alone took the visit's head away and left its tail behind.
    */
   visit?: VisitEditTarget | null;
+  /**
+   * A visit across businesses (web split-visit plan 7.5): the other businesses' services are named,
+   * and staff who may write every part can move them all together.
+   */
+  linkedVisitId?: string | null;
 };
 
 type RescheduleSheetProps = {
@@ -75,7 +82,15 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
   const mutation = useRescheduleBooking(target?.id ?? '');
   const visitMutation = useVisitSchedule(target?.visit?.groupBookingId);
   const visit = target?.visit ?? null;
-  const pending = visit ? visitMutation.isPending : mutation.isPending;
+  const linkedVisitId = target?.linkedVisitId ?? null;
+  const partnerLinesByVisit = useVisitPartnerLines([linkedVisitId]);
+  const otherBusinessLines = (linkedVisitId ? partnerLinesByVisit.get(linkedVisitId) ?? [] : []).filter(
+    (l) => l.status !== 'Cancelled',
+  );
+  const moveAllOption = useMoveWholeVisitOption(target?.id, Boolean(linkedVisitId));
+  const moveWholeVisit = useMoveWholeVisit(target?.id);
+  const [moveAllBusinesses, setMoveAllBusinesses] = useState(false);
+  const pending = moveWholeVisit.isPending || (visit ? visitMutation.isPending : mutation.isPending);
   /**
    * A visit's length change is its LAST service's (web #187), so the floor is
    * the visit less what that service can give up. An earlier service is changed
@@ -116,6 +131,7 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
     setError(null);
     setComplianceError(null);
     setVisitOverlap(null);
+    setMoveAllBusinesses(false);
   }, [target?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const durationChanged =
@@ -136,12 +152,22 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
   const moveSig = `${date}|${minutes}|${duration ?? ''}`;
   const overlapNote = visitOverlap?.sig === moveSig ? visitOverlap.note : null;
 
+  /** Every business's services move by the amount this start moved (7.5); a length change stays ours. */
+  const movesAllBusinesses = moveAllBusinesses && moveAllOption.data?.can_move_all === true && !durationChanged;
+
   async function handleConfirm() {
     if (!target) return;
     setError(null);
     setComplianceError(null);
     try {
-      if (visit) {
+      if (movesAllBusinesses) {
+        await moveWholeVisit.mutateAsync({
+          anchor_booking_id: visit?.leadBookingId ?? target.id,
+          booking_date: date,
+          booking_time: minutesToTime(minutes),
+          expected: moveAllOption.data?.expected,
+        });
+      } else if (visit) {
         /**
          * One write for every service. The endpoint plans them all, checks each
          * against the availability engine and rolls back anything it already
@@ -199,7 +225,9 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
       }
       // A compliance refusal is shown as a plain refusal on both paths: staff
       // are never blocked by compliance, so there is nothing to override.
-      const compMsg = visit ? null : complianceBlockMessage(e);
+      // The visit changed since the sheet opened: read its versions again for the next try.
+      if (movesAllBusinesses && e instanceof ApiError && e.status === 409) void moveAllOption.refetch();
+      const compMsg = visit || movesAllBusinesses ? null : complianceBlockMessage(e);
       if (compMsg) {
         setComplianceError(compMsg);
       } else {
@@ -271,6 +299,38 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
                 </Text>
               ) : null}
 
+              {linkedVisitId && otherBusinessLines.length > 0 ? (
+                <View style={[styles.complianceBlock, { borderColor: colors.border }]} testID="move-all-businesses">
+                  <Text variant="caption">
+                    {`${target.guestName || 'The client'} also has ${otherBusinessLines
+                      .map((l) => `${l.service_name}${l.person_name ? ` with ${l.person_name}` : ''} at ${l.venue_name} at ${l.start_time}`)
+                      .join(', ')}.`}
+                  </Text>
+                  {moveAllOption.data?.can_move_all ? (
+                    <View style={styles.pickerRow}>
+                      <Text variant="bodySmall" style={styles.moveAllLabel}>
+                        Move every business&rsquo;s services together
+                      </Text>
+                      <Switch
+                        value={moveAllBusinesses}
+                        onValueChange={setMoveAllBusinesses}
+                        accessibilityLabel="Move every business's services together"
+                        testID="move-all-switch"
+                      />
+                    </View>
+                  ) : (
+                    <Text variant="caption" tone="muted">
+                      This moves your services only.
+                    </Text>
+                  )}
+                  {moveAllBusinesses && durationChanged ? (
+                    <Text variant="caption" color={colors.warning}>
+                      Changing the length here moves your services only.
+                    </Text>
+                  ) : null}
+                </View>
+              ) : null}
+
               {complianceError ? (
                 <View
                   style={[
@@ -340,6 +400,9 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   actionButton: {
+    flex: 1,
+  },
+  moveAllLabel: {
     flex: 1,
   },
 });

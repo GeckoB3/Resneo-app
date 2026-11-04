@@ -21,7 +21,7 @@
 export const APPOINTMENT_WIZARD_PHASES = ['Choose', 'Schedule', 'Confirm'] as const;
 
 /** Steps that settle WHAT is being booked. */
-const CHOOSE = new Set(['staff_pick', 'service', 'practitioner', 'variant', 'addons', 'chain_options']);
+const CHOOSE = new Set(['staff_pick', 'service', 'practitioner', 'visit_people', 'variant', 'addons', 'chain_options']);
 /** Steps that settle WHEN. `multi_service` reviews the visit's times. */
 const SCHEDULE = new Set(['date', 'time', 'multi_service']);
 

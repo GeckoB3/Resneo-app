@@ -81,6 +81,7 @@ import { guestNotifyPlanForChange } from '@/lib/booking/modification-notify';
 import { explainModificationRefusal } from '@/lib/booking/modification-refusal';
 import { visitOverlapNote, visitTwoPlacesNote } from '@/lib/booking/visit-overlaps';
 import { visitRestoreRequest, visitScheduleRequest } from '@/lib/booking/visit-schedule-request';
+import { crossBusinessMoveRefusal } from '@/lib/calendar/visit-cross-business-move';
 import {
   joinsPendingMoveNotice,
   lengthChangeToastMessage,
@@ -95,6 +96,7 @@ import {
   siblingRowOf,
   visitSiblingIndex,
 } from '@/lib/calendar/visit-siblings';
+import { useVisitPartnerLines } from '@/lib/queries/useVisitPartnerLines';
 import {
   cancelOriginalCopy,
   collectiveMoveCopy,
@@ -1717,9 +1719,25 @@ export default function CalendarScreen() {
    * chip on a service whose siblings are with someone else, or on a column the
    * filter hides, still says "1/2". Every day grid takes this one count.
    */
+  /**
+   * The other businesses' services of visits across businesses on screen, where this person may see
+   * them (web split-visit plan 7.2): they count in each own service's chip.
+   */
+  const partnerLines = useVisitPartnerLines(
+    useMemo(() => {
+      const ids = new Set<string>();
+      for (const r of anchorDayRows) if (r.booking.linked_visit_id) ids.add(r.booking.linked_visit_id);
+      if (scope === 'week') {
+        for (const calendar of gridQuery.data?.calendars ?? []) {
+          for (const day of calendar.dates) for (const b of day.bookings) if (b.linked_visit_id) ids.add(b.linked_visit_id);
+        }
+      }
+      return [...ids];
+    }, [anchorDayRows, scope, gridQuery.data]),
+  );
   const dayVisitPositions = useMemo(
-    () => visitSiblingIndex(anchorDayRows.map((r) => siblingRowOf(r.booking, anchor))),
-    [anchorDayRows, anchor],
+    () => visitSiblingIndex(anchorDayRows.map((r) => siblingRowOf(r.booking, anchor)), partnerLines),
+    [anchorDayRows, anchor, partnerLines],
   );
 
   /** The same over the week the week view shows, ordered by date then start. */
@@ -1733,8 +1751,8 @@ export default function CalendarScreen() {
           siblingRowOf(linkedGridBooking(b, v.practitioners, { practitionerInLabel: false }), b.bookingDate),
         ),
     );
-    return visitSiblingIndex(gridVisitSiblingRows(gridQuery.data?.calendars ?? [], week.days, partnerRows));
-  }, [scope, week.days, linkedVenues, gridQuery.data]);
+    return visitSiblingIndex(gridVisitSiblingRows(gridQuery.data?.calendars ?? [], week.days, partnerRows), partnerLines);
+  }, [scope, week.days, linkedVenues, gridQuery.data, partnerLines]);
 
   /**
    * The whole multi-service visit a bar stands for, on the anchor day, or null
@@ -2322,6 +2340,13 @@ export default function CalendarScreen() {
       const targetCalendarId = targetHit
         ? targetHit.practitionerId
         : linkedColumnPractitionerIdForPatch(targetColumnId);
+      // A service of a visit, or a person of a group, never moves to another business (split-visit
+      // plan 7.6, S24): say so before any sheet opens, rather than offer a move the server refuses.
+      const crossBusinessRefusal = crossBusinessMoveRefusal(booking, sourceVenueId, targetVenueId);
+      if (crossBusinessRefusal) {
+        toast.error(crossBusinessRefusal);
+        return;
+      }
       const inCollective = (id: string | null) =>
         Boolean(id && staffCollective?.member_venue_ids.includes(id));
       const collectiveMove =

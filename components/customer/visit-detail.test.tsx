@@ -314,6 +314,28 @@ describe('a cancelled service of a visit opens the whole visit', () => {
   });
 });
 
+describe('a visit across businesses (web split-visit plan 6.5)', () => {
+  it("names each service's business and lists each business with what it took", async () => {
+    mockVisit = visitWith({
+      services: [
+        { ...visitWith().services[1]!, venue_id: 'v-1', business_name: 'SV Studio' },
+        { ...visitWith().services[2]!, venue_id: 'v-2', person_name: 'Bea', business_name: 'SV Nails' },
+      ],
+      businesses: [
+        { id: 'v-1', name: 'SV Studio', phone: '028 9000 0001', email: null, address: null, payments: { paid_pence: 1000, refunded_pence: 0 } },
+        { id: 'v-2', name: 'SV Nails', phone: null, email: null, address: null, payments: { paid_pence: 0, refunded_pence: 0 } },
+      ],
+    });
+    await renderScreen();
+    expect(screen.getByText('with Steph at SV Studio, 13:45 to 14:15')).toBeTruthy();
+    expect(screen.getByText('with Bea at SV Nails, 14:15 to 15:00')).toBeTruthy();
+    expect(screen.getByText('Your visit is with 2 businesses. Each provides, charges for and refunds its own services.')).toBeTruthy();
+    expect(screen.getByTestId('visit-business-payments-v-1')).toHaveTextContent('Paid £10.00.');
+    // A business with no phone or email is still listed, with what it took.
+    expect(screen.getByTestId('visit-business-payments-v-2')).toHaveTextContent('Nothing paid online.');
+  });
+});
+
 describe('cancelling the visit', () => {
   it('shows what is cancelled and refunded before anything is cancelled', async () => {
     await renderScreen();

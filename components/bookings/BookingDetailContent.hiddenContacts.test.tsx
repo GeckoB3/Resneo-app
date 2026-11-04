@@ -11,6 +11,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 
+jest.mock('@/lib/queries/useVisitPartnerLines', () => ({ useVisitPartnerLines: () => new Map() }));
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn() }));
 jest.mock('expo-secure-store', () => ({

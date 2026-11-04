@@ -154,3 +154,34 @@ describe('chips count the whole visit the grid holds (split-visit plan G15)', ()
     expect(positions.get('cut')?.index).toBe(1);
   });
 });
+
+/** A visit across businesses (web split-visit plan 7.2): the other business's services count in the chip. */
+describe('visitSiblingIndex with partner services', () => {
+  const own = { id: 'own', linked_visit_id: 'lv', group_booking_id: 'g-s', date: '2099-06-10', startTime: '10:00', status: 'Booked' };
+  const partners = new Map([
+    [
+      'lv',
+      [
+        { booking_id: 'p1', booking_date: '2099-06-10', start_time: '10:45', status: 'Booked' },
+        { booking_id: 'p2', booking_date: '2099-06-10', start_time: '11:30', status: 'Cancelled' },
+      ],
+    ],
+  ]);
+
+  it('shows 1/2 for one own service and one live service at another business', () => {
+    const pos = visitSiblingIndex([own], partners).get('own')!;
+    expect(visitChipLabel(pos)).toBe('1/2');
+    expect(pos.groupId).toBe('lv');
+  });
+
+  it('counts a partner bar the grid already holds once', () => {
+    const onLinkedColumn = { id: 'p1', linked_visit_id: 'lv', group_booking_id: 'g-n', date: '2099-06-10', startTime: '10:45', status: 'Booked' };
+    const index = visitSiblingIndex([own, onLinkedColumn], partners);
+    expect(visitChipLabel(index.get('own')!)).toBe('1/2');
+    expect(visitChipLabel(index.get('p1')!)).toBe('2/2');
+  });
+
+  it('shows no chip for one own service with nothing visible elsewhere', () => {
+    expect(visitSiblingIndex([own]).size).toBe(0);
+  });
+});

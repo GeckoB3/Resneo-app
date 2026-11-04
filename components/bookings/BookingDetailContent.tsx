@@ -129,6 +129,7 @@ import { useTheme } from '@/theme/useTheme';
 import type { BookingDetail, BookingStatus } from '@/types/booking-detail';
 import type { BookingListRow } from '@/types/booking-list';
 import { CONFIRM_ARM_MS } from '@/lib/ui/confirm-arm';
+import { useVisitPartnerLines } from '@/lib/queries/useVisitPartnerLines';
 
 type SymbolName = SymbolViewProps['name'];
 
@@ -622,6 +623,14 @@ export function BookingDetailContent({
   // no-op on react-native-web, so we arm the button (label flips to "Tap to
   // confirm") and disarm after a few seconds if the user doesn't follow through.
   const [pendingConfirm, setPendingConfirm] = useState<BookingStatus | null>(null);
+  /**
+   * A visit across businesses (web split-visit plan 7.7, D9): the other businesses' live services,
+   * which a cancel here leaves booked. Never the opened booking's own business.
+   */
+  const partnerLinesByVisit = useVisitPartnerLines([booking.linked_visit_id]);
+  const otherPartLines = (partnerLinesByVisit.get(booking.linked_visit_id ?? '') ?? []).filter(
+    (l) => l.status !== 'Cancelled' && l.booking_id !== booking.id && l.venue_id !== booking.venue_id,
+  );
   /**
    * Cancel on one service of a visit with more than one live service asks which
    * (split-visit plan 7.7, G17): just this service, or every service the client
@@ -1534,6 +1543,7 @@ export function BookingDetailContent({
                         durationMinutes: visit?.spansDays ? null : durationMinutes,
                         keepLength: isAppointmentBooking && !isTable,
                         visit: visitEdit,
+                        linkedVisitId: booking.linked_visit_id ?? null,
                       })
                     }
                   />
@@ -1758,6 +1768,14 @@ export function BookingDetailContent({
                   );
                 })}
               </View>
+              {otherPartLines.length > 0 &&
+              (pendingConfirm === 'Cancelled' || (cancelChoiceOpen && cancelNeedsChoice)) ? (
+                <Text variant="bodySmall" testID="cancel-keeps-other-parts">
+                  {`${guestName} keeps ${otherPartLines
+                    .map((l) => `${l.service_name}${l.person_name ? ` with ${l.person_name}` : ''} at ${l.venue_name}`)
+                    .join(', ')}. They will be told what is cancelled and what stays.`}
+                </Text>
+              ) : null}
               {cancelChoiceOpen &&
               cancelNeedsChoice &&
               destructiveActions.some((a) => a.target === 'Cancelled') ? (

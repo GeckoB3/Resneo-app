@@ -40,6 +40,16 @@ type StaffPickerStepProps = {
   onSelect: (practitioner: AppointmentCatalogPractitioner | null) => void;
   /** The staff "Override availability" tick box, above the list (web #187). */
   overrideToggle?: ReactNode;
+  /**
+   * Staff-first, adding the next person to a visit (web split-visit plan 6.2): the services already in
+   * it ("Cut with Steph"), the people who may be added (on a collective, those whose business shares
+   * an address with every business already in it), and the D11 line for those left out.
+   */
+  nextPerson?: {
+    visitLines: string[];
+    people: AppointmentCatalogPractitioner[];
+    exclusionLine: string | null;
+  } | null;
 };
 
 /**
@@ -61,8 +71,11 @@ export function StaffPickerStep({
   overrideToggle,
   selectedPractitionerId = null,
   onSelect,
+  nextPerson = null,
 }: StaffPickerStepProps) {
-  const practitioners = (catalog?.practitioners ?? []).filter((p) => p.services.length > 0);
+  const practitioners = (nextPerson ? nextPerson.people : catalog?.practitioners ?? []).filter(
+    (p) => p.services.length > 0,
+  );
 
   if (isLoading) {
     return <ListSkeleton />;
@@ -74,7 +87,7 @@ export function StaffPickerStep({
       </View>
     );
   }
-  if (practitioners.length === 0) {
+  if (practitioners.length === 0 && !nextPerson) {
     return (
       <View style={styles.stateWrap}>
         <EmptyState
@@ -112,11 +125,28 @@ export function StaffPickerStep({
 
   return (
     <View style={styles.container}>
-      <Text variant="heading">Who is it with?</Text>
+      <Text variant="heading">{nextPerson ? 'Who else is this visit with?' : 'Who is it with?'}</Text>
       <Text variant="bodyMedium" tone="muted">
-        Pick the person, then choose from what they offer.
+        {nextPerson
+          ? 'Pick the next person to see their services. They follow the services already in this visit.'
+          : 'Pick the person, then choose from what they offer.'}
       </Text>
-      {overrideToggle}
+      {nextPerson ? (
+        <View style={styles.visitSoFar} testID="staff-first-visit-so-far">
+          {nextPerson.visitLines.map((line, i) => (
+            <Text key={`${line}-${i}`} variant="bodySmall">
+              {line}
+            </Text>
+          ))}
+          {nextPerson.exclusionLine ? (
+            <Text variant="caption" tone="muted">
+              {nextPerson.exclusionLine}
+            </Text>
+          ) : null}
+        </View>
+      ) : (
+        overrideToggle
+      )}
 
       <FlatList
         data={rows}
@@ -167,6 +197,9 @@ const styles = StyleSheet.create({
   stateWrap: {
     flex: 1,
     padding: spacing.base,
+  },
+  visitSoFar: {
+    gap: spacing.xs,
   },
   list: {
     paddingBottom: spacing.xl,

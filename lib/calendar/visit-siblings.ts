@@ -66,7 +66,15 @@ function startKey(row: VisitSiblingRow): string {
  * plan G15): a visit's services can sit on columns the filter hides, and the
  * chip on the one that is shown still says "1/2".
  */
-export function visitSiblingIndex(rows: readonly VisitSiblingRow[]): Map<string, VisitPosition> {
+export function visitSiblingIndex(
+  rows: readonly VisitSiblingRow[],
+  /**
+   * The other businesses' services of visits across businesses this person may see (web split-visit
+   * plan 7.2, `/api/venue/visits/partner-lines`), by link. They count in the chip ("1/2" for one own
+   * service and one at another business); one the grid already holds is counted once.
+   */
+  partners: ReadonlyMap<string, readonly VisitPartnerSibling[]> = new Map(),
+): Map<string, VisitPosition> {
   const byVisit = new Map<string, VisitSiblingRow[]>();
   const seen = new Set<string>();
   for (const row of rows) {
@@ -80,13 +88,28 @@ export function visitSiblingIndex(rows: readonly VisitSiblingRow[]): Map<string,
   }
   const out = new Map<string, VisitPosition>();
   for (const [groupId, list] of byVisit) {
-    if (list.length < 2) continue;
-    const ordered = [...list].sort((a, b) => startKey(a).localeCompare(startKey(b)));
+    const onGrid = new Set(list.map((r) => r.id));
+    const extra: VisitSiblingRow[] = (partners.get(groupId) ?? [])
+      .filter((p) => !onGrid.has(p.booking_id) && !TERMINAL.has(p.status))
+      .map((p) => ({ id: p.booking_id, date: p.booking_date, startTime: p.start_time, status: p.status }));
+    const all = [...list, ...extra];
+    if (all.length < 2) continue;
+    const ordered = [...all].sort((a, b) => startKey(a).localeCompare(startKey(b)));
     ordered.forEach((row, index) => {
+      if (!onGrid.has(row.id)) return;
       out.set(row.id, { groupId, index, count: ordered.length, anchorId: ordered[0]!.id });
     });
   }
   return out;
+}
+
+/** Another business's service of a visit across businesses, as the chip counts it. */
+export interface VisitPartnerSibling {
+  booking_id: string;
+  booking_date: string;
+  /** HH:MM */
+  start_time: string;
+  status: string;
 }
 
 export function visitChipLabel(position: VisitPosition): string {
@@ -121,6 +144,7 @@ export function siblingRowOf(booking: CalendarGridBooking, date: string | null):
   return {
     id: booking.id,
     group_booking_id: booking.group_booking_id ?? null,
+    linked_visit_id: booking.linked_visit_id ?? null,
     person_label: booking.person_label ?? null,
     date,
     startTime: booking.startTime,

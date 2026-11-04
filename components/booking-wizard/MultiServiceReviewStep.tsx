@@ -3,10 +3,11 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
-import { addMinutesToTime } from '@/lib/booking/booking-format';
+import { addMinutesToTime, timeToMinutes } from '@/lib/booking/booking-format';
 import { formatDayHeading } from '@/lib/dates/venue-dates';
 import type { MultiServiceSegment } from '@/lib/booking/multi-service-chain';
 import { chainTotalPence } from '@/lib/booking/multi-service-chain';
+import { chainSpansPeople } from '@/lib/booking/visit-plan';
 import { formatPence } from '@/lib/format';
 import { hapticSelect } from '@/lib/haptics';
 import { AvailabilityOverrideWarnings } from '@/components/booking-wizard/AvailabilityOverrideControls';
@@ -46,7 +47,20 @@ type MultiServiceReviewStepProps = {
    * refused, from the dry run. An empty list still shows the box ("Nothing").
    */
   overrideWarnings?: string[] | null;
+  /**
+   * A visit across businesses (web split-visit plan 6.1): each business's name by venue id. With two
+   * or more businesses the services are listed under each business's name.
+   */
+  businessNameOf?: (venueId: string) => string;
 };
+
+/** The client's wait before a service with a different person: "5 minute wait", or null. */
+function waitBefore(prev: MultiServiceSegment, seg: MultiServiceSegment): string | null {
+  const prevEnd = timeToMinutes(prev.startTime) + prev.durationMinutes + (prev.processingTailMinutes ?? 0);
+  const wait = timeToMinutes(seg.startTime) - prevEnd;
+  if (wait <= 0) return null;
+  return wait === 1 ? '1 minute wait' : `${wait} minute wait`;
+}
 
 /**
  * Review step for a multi-service (back-to-back) visit. Lists each chosen
@@ -63,10 +77,14 @@ export function MultiServiceReviewStep({
   onContinue,
   errorMessage,
   overrideWarnings = null,
+  businessNameOf,
 }: MultiServiceReviewStepProps) {
   const { colors } = useTheme();
   const totalPence = chainTotalPence(segments);
   const practitionerName = visitPractitioner?.name ?? segments[0]?.practitionerName ?? '';
+  const spansPeople = chainSpansPeople(segments);
+  const venueIds = segments.every((s) => s.venueId) ? [...new Set(segments.map((s) => s.venueId!))] : [];
+  const byBusiness = businessNameOf && venueIds.length >= 2;
 
   return (
     <View style={styles.container}>
@@ -74,23 +92,47 @@ export function MultiServiceReviewStep({
         <Text variant="heading">Review the services</Text>
         {date ? <Text variant="bodyMedium">{formatDayHeading(date)}</Text> : null}
         <Text variant="bodySmall" tone="muted">
-          {practitionerName
-            ? `Same visit with ${practitionerName}, back-to-back. Change the services or continue to details.`
-            : 'Change the services or continue to details.'}
+          {spansPeople
+            ? "Check the services and who each one is with, then continue to the client's details."
+            : practitionerName
+              ? `Check the services with ${practitionerName}, then continue to the client's details.`
+              : "Check the services, then continue to the client's details."}
         </Text>
 
         <Card>
           {segments.map((seg, index) => {
             const endTime = addMinutesToTime(seg.startTime, seg.durationMinutes);
+            const prev = index > 0 ? segments[index - 1]! : null;
+            const wait = spansPeople && prev ? waitBefore(prev, seg) : null;
+            // A visit across businesses: each business's services under its name.
+            const heading =
+              byBusiness && seg.venueId && (!prev || prev.venueId !== seg.venueId) ? businessNameOf!(seg.venueId) : null;
             return (
+              <View key={`${seg.serviceId}-${index}`}>
+                {heading ? (
+                  <Text
+                    variant="label"
+                    tone="secondary"
+                    style={[styles.businessHeading, index > 0 ? { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth } : null]}
+                    testID={`review-business-${index}`}>
+                    {heading}
+                  </Text>
+                ) : null}
+                {wait ? (
+                  <Text variant="caption" tone="muted" style={styles.wait}>
+                    {wait}
+                  </Text>
+                ) : null}
               <View
-                key={`${seg.serviceId}-${index}`}
                 style={[
                   styles.segmentRow,
-                  index > 0 ? { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth } : null,
+                  index > 0 && !heading ? { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth } : null,
                 ]}>
                 <View style={styles.segmentMain}>
-                  <Text variant="bodyMedium">{seg.serviceName}</Text>
+                  <Text variant="bodyMedium">
+                    {seg.serviceName}
+                    {spansPeople && seg.practitionerName ? ` with ${seg.practitionerName}` : ''}
+                  </Text>
                   {/* The line's price includes its add-ons, as its minutes already
                       do, so it adds up to the total; the add-ons are named below.
                       It read "55 min · £35.00" against a £45.00 total. */}
@@ -125,6 +167,7 @@ export function MultiServiceReviewStep({
                     </Text>
                   </Pressable>
                 ) : null}
+              </View>
               </View>
             );
           })}
@@ -181,6 +224,8 @@ const styles = StyleSheet.create({
   },
   segmentMain: { flex: 1, gap: 2 },
   removeBtn: { paddingHorizontal: spacing.xs, paddingVertical: spacing.xs },
+  businessHeading: { paddingTop: spacing.md },
+  wait: { paddingTop: spacing.xs },
   totalRow: {
     flexDirection: 'row',
     alignItems: 'center',

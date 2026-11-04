@@ -78,6 +78,11 @@ export interface MultiServiceSegment {
    */
   chargePence?: number | null;
   chargeLabel?: 'deposit' | 'full_payment' | 'card_hold' | null;
+  /**
+   * The business that does this service, from the server's plan (web split-visit plan 8.3). Set on a
+   * visit with a person per service; a visit across businesses groups its money by it.
+   */
+  venueId?: string | null;
 }
 
 /** The gap between one segment's end and the next one's start: its processing tail, then its buffer. */
@@ -250,6 +255,12 @@ export interface CreateMultiServicePayload {
    */
   require_deposit?: boolean;
   require_card_hold?: boolean;
+  /**
+   * A visit across businesses (web split-visit plan 7.1): each business's own choice, by its venue
+   * id. A business left out follows `require_deposit` / `require_card_hold`.
+   */
+  require_deposit_by_venue?: Record<string, boolean>;
+  require_card_hold_by_venue?: Record<string, boolean>;
   /** Staff "Override availability" (web #187): the chain is booked exactly as laid out. */
   override_availability?: boolean;
   client_address_line1?: string;
@@ -296,6 +307,10 @@ export interface StaffChargeDecision {
   requireDeposit?: boolean;
   /** Staff turned the card-hold toggle on. Omitted means no hold server-side (web #187). */
   requireCardHold?: boolean;
+  /** A visit across businesses: each business's deposit choice, by venue id (7.1). */
+  requireDepositByVenue?: Record<string, boolean>;
+  /** A visit across businesses: each business's card-hold choice, by venue id (7.1). */
+  requireCardHoldByVenue?: Record<string, boolean>;
 }
 
 /**
@@ -314,11 +329,17 @@ export interface StaffChargeDecision {
 function staffChargePayloadFields(
   source: BookingSource,
   charges?: StaffChargeDecision,
-): { require_deposit?: boolean; require_card_hold?: boolean } {
+): Pick<CreateMultiServicePayload, 'require_deposit' | 'require_card_hold' | 'require_deposit_by_venue' | 'require_card_hold_by_venue'> {
   if (!charges) return {};
+  const byVenueDeposit = charges.requireDepositByVenue;
+  const byVenueHold = charges.requireCardHoldByVenue;
   return {
     ...(source === 'walk-in' ? {} : { require_deposit: Boolean(charges.requireDeposit) }),
     ...(charges.requireCardHold != null ? { require_card_hold: charges.requireCardHold } : {}),
+    ...(source !== 'walk-in' && byVenueDeposit && Object.keys(byVenueDeposit).length > 0
+      ? { require_deposit_by_venue: byVenueDeposit }
+      : {}),
+    ...(byVenueHold && Object.keys(byVenueHold).length > 0 ? { require_card_hold_by_venue: byVenueHold } : {}),
   };
 }
 
@@ -444,6 +465,13 @@ export function buildGroupPayload(args: {
  * the chair rather than the client should add it back.
  */
 export function chainTotalMinutes(segments: MultiServiceSegment[]): number {
+  // A visit with a person per service is timed by the server's plan (or laid by hand), not back to
+  // back: the gap between two people's services is the client's wait, with no buffer (web 8.9).
+  const first = segments[0];
+  if (first && segments.some((s) => s.practitionerId !== first.practitionerId)) {
+    const end = Math.max(...segments.map((s) => timeToMinutes(s.startTime) + s.durationMinutes));
+    return end - timeToMinutes(first.startTime);
+  }
   return segments.reduce(
     (sum, s, index) =>
       sum + s.durationMinutes + (index < segments.length - 1 ? chainSegmentGapMinutes(s) : 0),

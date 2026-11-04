@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 
 import { MonthDatePicker } from '@/components/booking-wizard/MonthDatePicker';
 import {
@@ -34,6 +34,8 @@ import {
   type VisitServiceEdit,
 } from '@/lib/booking/visit-schedule-request';
 import { visitOverlapNote, visitOverlapRefusal } from '@/lib/booking/visit-overlaps';
+import { useMoveWholeVisit, useMoveWholeVisitOption } from '@/lib/queries/useMoveWholeVisit';
+import { useVisitPartnerLines } from '@/lib/queries/useVisitPartnerLines';
 import {
   describeProcessingChange,
   describeProcessingGaps,
@@ -246,6 +248,22 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   // not carry them and its source component is out of scope to edit.
   const detailQuery = useBookingDetail(target?.id);
   const currentAddons = detailQuery.data?.addons ?? null;
+
+  /**
+   * A visit across businesses (web split-visit plan 7.5): the other businesses' services, and whether
+   * this person may move every business's services together ("Can book and change" and a link that
+   * allows changes over every calendar of each other part). Other staff move only their own part.
+   */
+  const linkedVisitId = detailQuery.data?.linked_visit_id ?? null;
+  const partnerLinesByVisit = useVisitPartnerLines([linkedVisitId]);
+  const otherBusinessLines = (linkedVisitId ? partnerLinesByVisit.get(linkedVisitId) ?? [] : []).filter(
+    (l) => l.status !== 'Cancelled',
+  );
+  const moveAllOption = useMoveWholeVisitOption(target?.id, Boolean(linkedVisitId));
+  const moveWholeVisit = useMoveWholeVisit(target?.id);
+  const [moveAllBusinesses, setMoveAllBusinesses] = useState(false);
+  /** The save moved every business's services, so Undo moves them all back the same way. */
+  const [movedAllBusinesses, setMovedAllBusinesses] = useState(false);
 
   /** Role + assigned calendars, for the reassign gate on the picker (R16-1). */
 
@@ -1206,6 +1224,18 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   /** Date or time moved — the web picker highlights this as its own state. */
   const scheduleChanged =
     !!target && (date !== target.date || minutes !== timeToMinutes(target.time));
+  /**
+   * Only the start moved: all that moving every business's services together carries (7.5). A
+   * change of service, length or calendar stays this business's own.
+   */
+  const onlyStartMoved =
+    scheduleChanged &&
+    !servicesChanged &&
+    !serviceEditsChanged &&
+    !durationEdited &&
+    !reassignedPractitionerId &&
+    (isVisit || (serviceId === target?.serviceId && variantId === target?.serviceVariantId));
+  const movesAllBusinesses = moveAllBusinesses && moveAllOption.data?.can_move_all === true && onlyStartMoved;
 
   // Debounced dry-run validation (450ms, web parity). Auth/availability errors
   // on the endpoint degrade to "unknown" — the PATCH still validates.
@@ -1573,6 +1603,31 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   async function handleSave() {
     if (!target || !practitionerId || effectiveDuration == null) return;
     setError(null);
+    /*
+      Move whole visit, all businesses (7.5, S28): every business's services shift by the amount this
+      part's start moved, through the client's mover with staff rules.
+    */
+    if (movesAllBusinesses) {
+      try {
+        await moveWholeVisit.mutateAsync({
+          anchor_booking_id: visit?.leadBookingId ?? target.id,
+          booking_date: date,
+          booking_time: minutesToTime(minutes),
+          expected: moveAllOption.data?.expected,
+          defer_modification_guest_notification: true,
+        });
+        hapticSuccess();
+        setMovedAllBusinesses(true);
+        setMode('notify');
+      } catch (e) {
+        hapticWarning();
+        const message = e instanceof ApiError ? e.message : null;
+        setError(accessRefusalMessage(e) ?? message ?? 'Could not move the visit. Try again.');
+        // The visit changed since the sheet opened: read its versions again for the next try.
+        if (e instanceof ApiError && e.status === 409) void moveAllOption.refetch();
+      }
+      return;
+    }
     // A per-service edit changes the visit's schedule as surely as a move does.
     const visitScheduleTouched = scheduleChanged || serviceEditsChanged;
 
@@ -1708,6 +1763,27 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
    */
   async function handleUndo() {
     if (!target) return;
+
+    if (movedAllBusinesses) {
+      // Every business's services go back the same way they went (7.5); no notice for an undo.
+      setUndoing(true);
+      try {
+        await moveWholeVisit.mutateAsync({
+          anchor_booking_id: visit?.leadBookingId ?? target.id,
+          booking_date: target.date,
+          booking_time: target.time.slice(0, 5),
+          defer_modification_guest_notification: true,
+        });
+        hapticSuccess();
+        toast.success('Change undone.');
+        onClose();
+      } catch {
+        hapticWarning();
+        setUndoing(false);
+        toast.error('Could not undo the change.');
+      }
+      return;
+    }
 
     if (isVisit) {
       /**
@@ -2582,6 +2658,38 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
 
           </ScrollView>
 
+          {linkedVisitId && otherBusinessLines.length > 0 ? (
+            <View style={[styles.moveAllBox, { borderColor: colors.border }]} testID="move-all-businesses">
+              <Text variant="caption">
+                {`${target?.guestName || 'The client'} also has ${otherBusinessLines
+                  .map((l) => `${l.service_name}${l.person_name ? ` with ${l.person_name}` : ''} at ${l.venue_name} at ${l.start_time}`)
+                  .join(', ')}.`}
+              </Text>
+              {moveAllOption.data?.can_move_all ? (
+                <View style={styles.moveAllRow}>
+                  <Text variant="bodySmall" style={styles.moveAllLabel}>
+                    Move every business&rsquo;s services together
+                  </Text>
+                  <Switch
+                    value={moveAllBusinesses}
+                    onValueChange={setMoveAllBusinesses}
+                    accessibilityLabel="Move every business's services together"
+                    testID="move-all-switch"
+                  />
+                </View>
+              ) : (
+                <Text variant="caption" tone="muted">
+                  This moves your services only.
+                </Text>
+              )}
+              {moveAllBusinesses && scheduleChanged && !onlyStartMoved ? (
+                <Text variant="caption" color={colors.warning}>
+                  Changing a service, its length or its calendar here moves your services only.
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
+
           {!hasChanges && !servicesChanged ? (
             <Text variant="caption" tone="muted">
               Adjust a field to check availability and enable save.
@@ -2628,7 +2736,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
             <Button
               label={isVisit ? 'Save whole visit' : 'Save changes'}
               onPress={() => void handleSave()}
-              loading={isVisit ? visitSchedule.isPending : modify.isPending}
+              loading={moveWholeVisit.isPending || (isVisit ? visitSchedule.isPending : modify.isPending)}
               disabled={!canSave}
               style={styles.actionButton}
             />
@@ -2640,6 +2748,20 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
 }
 
 const styles = StyleSheet.create({
+  moveAllBox: {
+    gap: spacing.xs,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12,
+    padding: spacing.md,
+  },
+  moveAllRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  moveAllLabel: {
+    flex: 1,
+  },
   // `flex: 1` + a `fill` Sheet: the form is long enough to exceed the sheet's
   // height, and a content-sized body pushes the pinned Save/Cancel row off the
   // bottom of the screen. The ScrollView must be the part that gives.

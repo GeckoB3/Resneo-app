@@ -115,6 +115,11 @@ export interface AppointmentCatalogPractitioner {
   /** The venue this calendar belongs to; only on a collective catalogue, where calendars span members. */
   owning_venue_id?: string;
   owning_venue_name?: string;
+  /**
+   * Collective catalogue only: the member businesses this calendar's business may share a visit
+   * with, itself included (web split-visit plan 8.2, the shared-address test). Older servers omit it.
+   */
+  share_group_ids?: string[];
 }
 
 export interface AppointmentCatalogResponse {

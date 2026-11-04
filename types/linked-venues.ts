@@ -533,6 +533,8 @@ export interface LinkedBooking {
    * rows carry a person label and are not a visit. camelCase on this feed.
    */
   groupBookingId?: string | null;
+  /** A visit across businesses (web split-visit plan 8.8); full-details links only. */
+  linkedVisitId?: string | null;
   personLabel?: string | null;
 }
 

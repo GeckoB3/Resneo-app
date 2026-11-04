@@ -35,8 +35,26 @@ export interface GroupedBookingResponse {
    * stored, 'payment_with_setup' when a payment also vaults the card. The
    * summed no-show fee rides `card_hold_fee_pence`.
    */
-  payment_mode?: 'payment' | 'setup' | 'payment_with_setup';
+  payment_mode?: 'payment' | 'setup' | 'payment_with_setup' | 'linked';
   card_hold_fee_pence?: number | null;
+  /**
+   * A visit across businesses (web split-visit plan 8.4, 8.5): `payment_mode` is `'linked'` when
+   * money is asked for anywhere, and a staff booking gets the visit's one pay link here (also in
+   * `linked_checkout.payment_url`). The fields above describe the lead business's part.
+   */
+  payment_url?: string;
+  linked_checkout?: { id: string; payment_url: string | null };
+  linked_visit_id?: string;
+  parts?: {
+    venue_id: string;
+    group_booking_id: string;
+    booking_ids: string[];
+    primary_booking_id: string;
+    requires_deposit: boolean;
+    total_deposit_pence: number;
+    payment_mode: 'linked' | 'payment';
+    cancellation_notice_hours: number;
+  }[];
   /**
    * Unmet compliance requirements across every segment / attendee, merged by
    * type, `required` first. Staff are never blocked (web 2026-09-01), so a

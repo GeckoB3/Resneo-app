@@ -2,6 +2,7 @@ import { FlatList, StyleSheet, View } from 'react-native';
 
 import { optionFromPricePence } from '@/components/booking-wizard/ServicePickerStep';
 import { Avatar } from '@/components/ui/Avatar';
+import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { DOES_NOT_USUALLY_OFFER } from '@/lib/booking/availability-override';
@@ -27,7 +28,42 @@ type PractitionerStepProps = {
   onSelect: (option: AppointmentServiceOption) => void;
   /** Staff "Override availability" on (web #187): every person is listed, some unassigned. */
   overrideAvailability?: boolean;
+  /**
+   * Several services, and someone other than these people offers some of them (web split-visit plan
+   * 6.1): offers "Choose someone different for each service" under the list.
+   */
+  onChooseEach?: () => void;
 };
+
+/**
+ * The service as `practitioner` offers it: their own price, length, buffer, processing, options and
+ * add-ons (each may differ by person, and on a collective by business).
+ */
+export function optionForPractitioner(
+  serviceOption: AppointmentServiceOption,
+  practitioner: AppointmentCatalogPractitioner,
+): AppointmentServiceOption | null {
+  const service = practitioner.services.find((s) => s.id === serviceOption.serviceId);
+  if (!service) return null;
+  return {
+    ...serviceOption,
+    practitionerId: practitioner.id,
+    practitionerName: practitioner.name,
+    candidatePractitionerIds: undefined,
+    // Use the practitioner-scoped service attributes (price/duration/buffer
+    // may differ; the pattern follows the same row, re-fitted server-side to
+    // a custom staff length).
+    durationMinutes: service.duration_minutes,
+    buffer_minutes: service.buffer_minutes,
+    processing_time_blocks: service.processing_time_blocks,
+    pricePence: service.price_pence,
+    depositPence: service.deposit_pence ?? null,
+    paymentRequirement: service.payment_requirement ?? serviceOption.paymentRequirement ?? null,
+    addonGroups: service.addon_groups ?? [],
+    variants: service.variants ?? [],
+    locationType: service.location_type ?? serviceOption.locationType,
+  };
+}
 
 type PractitionerRow = {
   id: string;
@@ -84,6 +120,7 @@ export function PractitionerStep({
   durationOverride = null,
   onSelect,
   overrideAvailability = false,
+  onChooseEach,
 }: PractitionerStepProps) {
   const rows: PractitionerRow[] = [];
 
@@ -109,7 +146,8 @@ export function PractitionerStep({
   // One row per practitioner that offers this service, each with their own price.
   for (const practitioner of practitioners) {
     const service = practitioner.services.find((s) => s.id === serviceOption.serviceId);
-    if (!service) continue;
+    const option = optionForPractitioner(serviceOption, practitioner);
+    if (!service || !option) continue;
     // The option is chosen after the person, so where this person's options
     // are priced differently the row says "from" the cheapest (web QA G-4).
     const optionFrom = optionFromPricePence(service.variants);
@@ -121,24 +159,7 @@ export function PractitionerStep({
       priceIsFrom: optionFrom != null,
       durationMinutes: service.duration_minutes,
       assigned: service.assigned,
-      option: {
-        ...serviceOption,
-        practitionerId: practitioner.id,
-        practitionerName: practitioner.name,
-        candidatePractitionerIds: undefined,
-        // Use the practitioner-scoped service attributes (price/duration/buffer
-        // may differ; the pattern follows the same row, re-fitted server-side to
-        // a custom staff length).
-        durationMinutes: service.duration_minutes,
-        buffer_minutes: service.buffer_minutes,
-        processing_time_blocks: service.processing_time_blocks,
-        pricePence: service.price_pence,
-        depositPence: service.deposit_pence ?? null,
-        paymentRequirement: service.payment_requirement ?? serviceOption.paymentRequirement ?? null,
-        addonGroups: service.addon_groups ?? [],
-        variants: service.variants ?? [],
-        locationType: service.location_type ?? serviceOption.locationType,
-      },
+      option,
     });
   }
 
@@ -154,6 +175,22 @@ export function PractitionerStep({
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
         ItemSeparatorComponent={Separator}
+        ListFooterComponent={
+          onChooseEach ? (
+            <View style={styles.footer}>
+              <Button
+                label="Choose someone different for each service"
+                variant="secondary"
+                fullWidth
+                testID="choose-each-person"
+                onPress={() => {
+                  hapticSelect();
+                  onChooseEach();
+                }}
+              />
+            </View>
+          ) : null
+        }
         renderItem={({ item }) => {
           const caption = rowCaption(item, durationOverride, overrideAvailability);
           const price = item.isAnyAvailable ? null : formatPrice(item);
@@ -205,6 +242,9 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: spacing.sm,
+  },
+  footer: {
+    marginTop: spacing.md,
   },
   row: {
     flexDirection: 'row',
