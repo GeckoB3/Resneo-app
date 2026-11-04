@@ -56,7 +56,7 @@ const BODY =
   "A full point of sale on the web and in the ResNeo app. Check clients out after their appointment, sell products and gift vouchers, take cash, cards and tips, send receipts, cash up at the end of the day and see your takings. It's included in your plan.";
 const CARDS_OFF = 'To take cards at the till, also turn on Card payments in person, above.';
 const WHICH = 'Which do I need?';
-const WHICH_CARDS = 'Just want to take a card or cash for an appointment on your phone? Turn on Card payments in person.';
+const WHICH_CARDS = 'Just want to take cards for an appointment on your phone? Turn on Card payments in person. You can record cash and other payments without it.';
 const WHICH_TILL = 'Want a till for products, receipts and cashing up? Turn on Checkout, and Card payments in person to take cards at it.';
 
 async function show() {

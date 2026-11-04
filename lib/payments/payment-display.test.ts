@@ -39,8 +39,14 @@ describe('canTakeInPersonPayment (§3.4 rule 2)', () => {
     expect(canTakeInPersonPayment(BASE)).toBe(true);
   });
 
-  it('hides when the venue flag is off (frictionless off)', () => {
-    expect(canTakeInPersonPayment({ ...BASE, inPersonPaymentsEnabled: false })).toBe(false);
+  it('shows with the venue card switch off: recording cash or another way needs no card payments (2026-11-04)', () => {
+    expect(canTakeInPersonPayment({ ...BASE, inPersonPaymentsEnabled: false })).toBe(true);
+  });
+
+  it('with cards off, waits while a deposit is owed online, which Record cash payment settles instead', () => {
+    expect(canTakeInPersonPayment({ ...BASE, inPersonPaymentsEnabled: false, depositOutstanding: true })).toBe(false);
+    // With cards on, the sheet can still take a card for the lot, as before.
+    expect(canTakeInPersonPayment({ ...BASE, depositOutstanding: true })).toBe(true);
   });
 
   it('hides for non-appointment venues', () => {
@@ -303,6 +309,20 @@ describe('buildPaymentHistory', () => {
     const rows = buildPaymentHistory([row({ booking_id: 'bk-2' })], 'bk-1');
     expect(rows[0].note).toBe('Collected on another service in this visit');
     expect(buildPaymentHistory([row({ booking_id: 'bk-1' })], 'bk-1')[0].note).toBeNull();
+  });
+
+  it("shows a recorded payment's own note, and calls one taken back off the booking Removed (2026-11-04)", () => {
+    const rows = buildPaymentHistory(
+      [
+        row({ id: 'm', method: 'external', note: 'Card machine', created_at: '2026-07-23T12:00:00Z' }),
+        row({ id: 'c', method: 'cash', status: 'refunded', created_at: '2026-07-23T11:00:00Z' }),
+      ],
+      'bk-1',
+    );
+    expect(rows.map((r) => [r.key, r.statusLabel, r.note])).toEqual([
+      ['m', 'Collected', 'Card machine'],
+      ['c', 'Removed', null],
+    ]);
   });
 
   it('tolerates a missing list', () => {
@@ -748,9 +768,17 @@ describe('canRefundInPerson', () => {
     expect(canRefundInPerson({ ...base, isAdmin: false })).toBe(false);
   });
 
-  it('is off when the venue switch is off, because the server 403s refunds too', () => {
+  it('refunds no card payment with the venue switch off, since the server refuses it', () => {
     expect(canRefundInPerson({ ...base, inPersonPaymentsEnabled: false })).toBe(false);
     expect(canRefundInPerson({ ...base, inPersonPaymentsEnabled: null })).toBe(false);
+  });
+
+  it('still lets an admin remove a recorded cash or other payment with the switch off (2026-11-04)', () => {
+    const cash = { ...paid, method: 'cash' as const };
+    const other = { ...paid, method: 'external' as const };
+    expect(canRefundInPerson({ ...base, inPersonPaymentsEnabled: false, payments: [cash] })).toBe(true);
+    expect(canRefundInPerson({ ...base, inPersonPaymentsEnabled: false, payments: [other] })).toBe(true);
+    expect(canRefundInPerson({ ...base, inPersonPaymentsEnabled: false, isAdmin: false, payments: [cash] })).toBe(false);
   });
 
   it('needs a succeeded row: pending and failed ones are not refundable', () => {

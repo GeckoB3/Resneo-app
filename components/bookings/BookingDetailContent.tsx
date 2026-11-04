@@ -52,6 +52,8 @@ import {
   depositBadge,
   canTakeInPersonPayment,
   canRefundInPerson,
+  isRecordedPayment,
+  refundablePaymentsFor,
   pendingCardPayments,
   pendingCardState,
 } from '@/lib/payments/payment-display';
@@ -996,6 +998,7 @@ export function BookingDetailContent({
       status: booking.status,
       paymentState: booking.payment_state,
       balanceDuePence: booking.balance_due_pence,
+      depositOutstanding: hasSettleableDeposit(booking.deposit_status),
     });
   const paymentStateLabel = booking.payment_state
     ? bookingPaymentStateLabel(booking.payment_state)
@@ -1029,8 +1032,8 @@ export function BookingDetailContent({
    * Cancelled-but-paid bookings therefore keep the button too, since a refund is
    * precisely what they need.
    */
-  const inPersonPaymentsOn = venue?.in_person_payments_enabled === true && isAppointmentVenue;
-  const isPaidInPerson = inPersonPaymentsOn && booking.payment_state === 'paid';
+  // "Paid" opens the sheet's history and removal, which no longer need the card switch (2026-11-04).
+  const isPaidInPerson = isAppointmentVenue && booking.payment_state === 'paid';
   /**
    * Checkout (POS app step 1, UX spec §13.3 `bk.checkout`). With the venue's `pos_enabled` on,
    * "Check out" takes the place of "Take payment": it opens the sale this booking is on, or starts
@@ -1055,6 +1058,7 @@ export function BookingDetailContent({
     isAdmin,
     payments: booking.payments ?? [],
     cardPresentReady: venue?.card_present_ready === true,
+    cardRefundsAllowed: venue?.in_person_payments_enabled === true,
     initialMode,
   });
 
@@ -1071,9 +1075,10 @@ export function BookingDetailContent({
    * Two taps, neither of them signposted. The ledger it acts on is already right
    * here in this section, so the action belongs beside it.
    *
-   * Gated exactly like the one inside the sheet, plus the venue switch: refunds
-   * are admin-only, need a settled row to act on, and the server 403s every
-   * payment route when in-person payments are off (the kill switch is total).
+   * Gated exactly like the one inside the sheet: admin-only, and needs a settled
+   * row to act on. With "Card payments in person" off only recorded cash or other
+   * payments count, since the server refunds no card then (2026-11-04), and the
+   * button reads "Remove a payment" whenever those are all there is.
    */
   const showInPersonRefund =
     canChange &&
@@ -1083,6 +1088,10 @@ export function BookingDetailContent({
       isAdmin,
       payments: booking.payments,
     });
+  /** Only cash or other recorded payments to act on: those are removed, not refunded (2026-11-04). */
+  const onlyRecordedToRemove =
+    showInPersonRefund &&
+    refundablePaymentsFor(booking.payments, venue?.in_person_payments_enabled === true).every(isRecordedPayment);
 
   // Web parity: deposit actions (send link / record cash / waive / refund) show
   // whenever the booking is active AND there is something the sheet can do;
@@ -2086,7 +2095,7 @@ export function BookingDetailContent({
                 behind a button labelled "Paid". */}
             {showInPersonRefund ? (
               <Button
-                label="Refund a payment"
+                label={onlyRecordedToRemove ? 'Remove a payment' : 'Refund a payment'}
                 variant="ghost"
                 fullWidth
                 onPress={openRefund}

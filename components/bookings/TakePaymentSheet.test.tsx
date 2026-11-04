@@ -1108,6 +1108,25 @@ describe('refunds', () => {
     created_at: '2026-07-23T10:00:00Z',
   };
 
+  it('with the card switch off, offers only recorded payments, to remove rather than refund (2026-11-04)', async () => {
+    const cash = { ...paid, id: 'pay-cash', method: 'cash' as const, amount_pence: 2000 };
+    await render(
+      <TakePaymentSheet
+        target={target({ isAdmin: true, cardPresentReady: false, cardRefundsAllowed: false, payments: [paid, cash] })}
+        onClose={jest.fn()}
+      />,
+    );
+    // No card options without the switch: only cash and another way.
+    expect(screen.queryByText('Card payment')).toBeNull();
+    expect(screen.getByText('Record cash')).toBeTruthy();
+    await press('Remove a payment');
+    expect(screen.getByText('Remove £20.00 · Cash')).toBeTruthy();
+    // The card payment is refunded through Stripe, which follows the switch, so it is not listed.
+    expect(screen.queryByText('Refund £25.00 · Card')).toBeNull();
+    await press('Remove £20.00 · Cash');
+    expect(screen.getByText('Tap again to remove £20.00')).toBeTruthy();
+  });
+
   it('is hidden for non-admins', async () => {
     await render(
       <TakePaymentSheet target={target({ payments: [paid] })} onClose={jest.fn()} />,

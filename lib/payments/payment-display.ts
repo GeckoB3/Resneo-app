@@ -287,6 +287,11 @@ export interface TakePaymentGateInput {
   paymentState: BookingPaymentState | null | undefined;
   /** Outstanding balance; null = price unknown → the button still shows and staff enter the amount. */
   balanceDuePence: number | null | undefined;
+  /**
+   * A deposit is still owed online ('Pending' or 'Failed'). With cards off the sheet can only record,
+   * and **Record cash payment** under Deposit actions settles that deposit, so the sheet waits.
+   */
+  depositOutstanding?: boolean;
 }
 
 /**
@@ -311,10 +316,16 @@ export interface TakePaymentGateInput {
  * server-computed and remains the real guard against collecting twice.
  */
 export function canTakeInPersonPayment(input: TakePaymentGateInput): boolean {
-  if (!input.inPersonPaymentsEnabled) return false;
+  // Not the venue's "Card payments in person" switch (owner, 2026-11-04): recording cash or a payment
+  // taken another way is open to every appointment business, and the sheet offers card options only
+  // where the switch and Stripe make them work (`cardPresentReady`). `inPersonPaymentsEnabled` only
+  // decides whether an owed online deposit holds the button back (below).
   if (!input.isAppointmentVenue) return false;
   if (input.status === 'Cancelled') return false;
   if (input.paymentState === 'paid') return false;
+  // Recording here would leave an online deposit owed: the client is still chased for it, and an
+  // unaccepted booking is still swept. The web hides "Record a payment" the same way.
+  if (input.depositOutstanding && !input.inPersonPaymentsEnabled) return false;
   const balance = input.balanceDuePence ?? null;
   return balance === null || balance > 0;
 }
@@ -337,10 +348,11 @@ export interface RefundGateInput {
  * everything else, so offering the action there would only produce an error.
  */
 export function canRefundInPerson(input: RefundGateInput): boolean {
-  if (!input.inPersonPaymentsEnabled) return false;
   if (!input.isAppointmentVenue) return false;
   if (!input.isAdmin) return false;
-  return refundablePayments(input.payments).length > 0;
+  // A card refund goes through Stripe and follows the switch; a recorded cash or other payment can
+  // be removed with it off (2026-11-04).
+  return refundablePaymentsFor(input.payments, Boolean(input.inPersonPaymentsEnabled)).length > 0;
 }
 
 /** Neutral labels for the whole-booking payment state (§5.5). */
@@ -382,6 +394,19 @@ export function refundablePayments(
   payments: BookingPaymentRow[] | null | undefined,
 ): BookingPaymentRow[] {
   return (payments ?? []).filter((p) => p.status === 'succeeded');
+}
+
+/** Cash, or a payment taken another way, that staff recorded: no money moved through ResNeo. */
+export function isRecordedPayment(p: Pick<BookingPaymentRow, 'method'>): boolean {
+  return p.method === 'cash' || p.method === 'external';
+}
+
+/** What may be refunded or removed now: card payments only while the venue's card switch is on. */
+export function refundablePaymentsFor(
+  payments: BookingPaymentRow[] | null | undefined,
+  cardRefundsAllowed: boolean,
+): BookingPaymentRow[] {
+  return refundablePayments(payments).filter((p) => cardRefundsAllowed || isRecordedPayment(p));
 }
 
 /**
@@ -605,10 +630,12 @@ export function buildPaymentHistory(
       key: p.id,
       pence: p.amount_pence,
       methodLabel: paymentMethodLabel(p.method),
-      statusLabel: PAYMENT_STATUS_LABEL[p.status],
+      // A recorded payment taken back off the booking moved no money through ResNeo (2026-11-04).
+      statusLabel: isRecordedPayment(p) && p.status === 'refunded' ? 'Removed' : PAYMENT_STATUS_LABEL[p.status],
       tone: tones[p.status],
       createdAt: p.created_at,
-      note: otherVisitLineNote(p, openedBookingId),
+      // The payment's own note ("Card machine") as well as where in the visit it was collected.
+      note: [p.note?.trim() || null, otherVisitLineNote(p, openedBookingId)].filter(Boolean).join(' · ') || null,
     }));
 }
 

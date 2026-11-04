@@ -28,7 +28,8 @@ import {
   paymentMethodLabel,
   pendingCardPayments,
   pendingCardState,
-  refundablePayments,
+  isRecordedPayment,
+  refundablePaymentsFor,
   remainingAfterPayment,
   visitPaymentNote,
   type PendingCardVerdict,
@@ -92,6 +93,11 @@ export type TakePaymentTarget = {
   payments: BookingPaymentRow[];
   /** Venue has a connected Stripe account, so card options can work (§6.6). */
   cardPresentReady: boolean;
+  /**
+   * The venue's "Card payments in person" switch: a card refund goes through Stripe and follows it,
+   * while a recorded cash or other payment can be removed with it off (2026-11-04). Absent reads as on.
+   */
+  cardRefundsAllowed?: boolean;
   /**
    * Step to open on. Defaults to the menu; `'refund'` lets the booking detail
    * link straight to the refund list instead of making staff find it behind
@@ -288,7 +294,9 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
    */
   const tapToPayFirst =
     cardAvailable && Platform.OS === 'ios' && tapToPay.applies && tapToPay.supported !== false;
-  const refundable = refundablePayments(target.payments);
+  const refundable = refundablePaymentsFor(target.payments, target.cardRefundsAllowed !== false);
+  /** Only recorded payments to take back: they are removed, not refunded (no money moves through ResNeo). */
+  const onlyRecorded = refundable.length > 0 && refundable.every((p) => isRecordedPayment(p));
   /**
    * Recomputed every render from the LIVE ledger the host feeds in, not just at
    * open: the backend writes the pending row when the PaymentIntent is created,
@@ -390,7 +398,7 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
     }
   }
 
-  async function runRefund(paymentId: string, paymentBookingId?: string) {
+  async function runRefund(paymentId: string, paymentBookingId?: string, recorded = false) {
     setError(null);
     try {
       // Route to the booking the row is anchored to, not the one on screen —
@@ -402,7 +410,7 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
       setSuccess({
         amountPence: null,
         receiptEmailed: false,
-        heading: 'Refund issued',
+        heading: recorded ? 'Payment removed' : 'Refund issued',
         remainingPence: null,
       });
       setMode('success');
@@ -605,7 +613,7 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
               />
               {target.isAdmin && refundable.length > 0 ? (
                 <Button
-                  label="Refund a payment"
+                  label={onlyRecorded ? 'Remove a payment' : 'Refund a payment'}
                   variant="ghost"
                   disabled={busy}
                   onPress={() => {
@@ -700,7 +708,7 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
           <>
             <Input
               label="Note (optional)"
-              placeholder="e.g. bank transfer, gift card"
+              placeholder="e.g. own card machine, bank transfer"
               value={note}
               onChangeText={setNote}
               editable={!busy}
@@ -728,7 +736,9 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
         {mode === 'refund' ? (
           <>
             <Text variant="bodySmall" tone="muted">
-              Refunds are for the full payment. Card refunds go back to the client&apos;s card.
+              {onlyRecorded
+                ? 'Removing a payment takes it off the booking, so it shows as still to pay. Use it to correct a mistake, or when you have given the money back.'
+                : "Refunds are for the full payment. Card refunds go back to the client's card. Removing a cash or other payment takes it off the booking."}
             </Text>
             <View style={styles.buttons}>
               {refundable.map((p) => {
@@ -740,9 +750,13 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
                       // The amount stays in the label while armed: it is the one
                       // fact worth re-reading at the moment of confirming.
                       label={
-                        armed
-                          ? `Tap again to refund ${formatPence(p.amount_pence)}`
-                          : `Refund ${formatPence(p.amount_pence)} · ${paymentMethodLabel(p.method)}`
+                        isRecordedPayment(p)
+                          ? armed
+                            ? `Tap again to remove ${formatPence(p.amount_pence)}`
+                            : `Remove ${formatPence(p.amount_pence)} · ${paymentMethodLabel(p.method)}`
+                          : armed
+                            ? `Tap again to refund ${formatPence(p.amount_pence)}`
+                            : `Refund ${formatPence(p.amount_pence)} · ${paymentMethodLabel(p.method)}`
                       }
                       variant="danger"
                       disabled={busy}
@@ -752,13 +766,13 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
                           armRefund(p.id);
                           return;
                         }
-                        void runRefund(p.id, p.booking_id);
+                        void runRefund(p.id, p.booking_id, isRecordedPayment(p));
                       }}
                       fullWidth
                     />
                     {armed ? (
                       <Button
-                        label="Cancel refund"
+                        label={isRecordedPayment(p) ? 'Keep payment' : 'Cancel refund'}
                         variant="ghost"
                         disabled={busy}
                         onPress={disarmRefund}

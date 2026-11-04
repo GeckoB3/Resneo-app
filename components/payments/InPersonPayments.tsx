@@ -31,25 +31,27 @@ export function inPersonPaymentsInBookingSettings(input: { isAdmin: boolean; pri
 /**
  * The words for "Card payments in person", word for word the web's (`InPersonPaymentsSection`;
  * owner, 2026-10-22), except that the Stripe line points to the app's own Plan & payments. The
- * description says what the switch really gates, which depends on Checkout: with it off, every payment on an appointment in the app (cash included); with it on,
- * the till's cards in person.
+ * description says what the switch really gates, which depends on Checkout: with it off, taking cards on an
+ * appointment in the app (recording cash or another way never needs it; owner, 2026-11-04); with it
+ * on, the till's cards in person.
  */
 export const CARD_PAYMENTS_COPY = {
   title: 'Card payments in person',
   switchLabel: 'Take card payments in person',
   descriptionCheckoutOff:
-    'Your team can take payment for an appointment in the ResNeo app: by card, with Tap to Pay on their phone or a Bluetooth card reader, or by recording cash or another way. Money goes straight to your own Stripe account and ResNeo takes no cut.',
+    'Your team can take card payments for an appointment in the ResNeo app, with Tap to Pay on their phone or a Bluetooth card reader. Money goes straight to your own Stripe account and ResNeo takes no cut.',
   descriptionCheckoutOn:
     'Checkout takes cards in person only while this is on: with Tap to Pay or a Bluetooth card reader in the ResNeo app, on your counter card readers, or by sending a sale to a phone. Money goes straight to your own Stripe account and ResNeo takes no cut.',
   turnedOn: 'Card payments in person turned on.',
   turnedOff: 'Card payments in person turned off.',
   saveFailed: 'Could not change Card payments in person. Try again.',
-  offCheckoutOff: 'While this is off, nobody can take payment on an appointment in the ResNeo app.',
+  offCheckoutOff:
+    "While this is off, your team can't take cards in the ResNeo app. They can still record cash, or a payment taken another way such as your own card machine, on any appointment, on the web or in the app.",
   offCheckoutOn:
     "Checkout is on, but it can't take cards in person until you turn this on. It can still take cash, pay links and gift vouchers.",
   // The web's sentence, pointing to the app's Plan & payments, where Stripe is connected too.
   stripe:
-    'Connect Stripe first, in More, then Plan & payments. Card payments go into your own Stripe account, so this has no effect until that is set up.',
+    "Connect Stripe first, in More, then Plan & payments. Card payments go into your own Stripe account, so cards can't be taken until that is set up. Recording cash or other payments doesn't need Stripe.",
   phones:
     'Your team also needs the latest ResNeo app on a supported phone: iPhone XS or newer (iOS 16.4+), or an Android phone with contactless (NFC) running Android 13 or newer.',
   choice:

@@ -48,7 +48,7 @@ describe('the switch copy deck', () => {
     expect(SWITCH_COPY['sw.bs.cardsOff']).toBe('To take cards at the till, also turn on Card payments in person, above.');
     expect(SWITCH_COPY['sw.bs.which.title']).toBe('Which do I need?');
     expect(SWITCH_COPY['sw.bs.which.cards']).toBe(
-      'Just want to take a card or cash for an appointment on your phone? Turn on Card payments in person.',
+      'Just want to take cards for an appointment on your phone? Turn on Card payments in person. You can record cash and other payments without it.',
     );
     expect(SWITCH_COPY['sw.bs.which.till']).toBe(
       'Want a till for products, receipts and cashing up? Turn on Checkout, and Card payments in person to take cards at it.',

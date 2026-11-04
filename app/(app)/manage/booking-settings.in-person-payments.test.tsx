@@ -83,10 +83,12 @@ import BookingSettingsScreen from '@/app/(app)/manage/booking-settings';
 const SWITCH = 'Take card payments in person';
 const GROUP = 'Payments at your venue';
 const DESCRIPTION_CHECKOUT_OFF =
-  'Your team can take payment for an appointment in the ResNeo app: by card, with Tap to Pay on their phone or a Bluetooth card reader, or by recording cash or another way. Money goes straight to your own Stripe account and ResNeo takes no cut.';
+  'Your team can take card payments for an appointment in the ResNeo app, with Tap to Pay on their phone or a Bluetooth card reader. Money goes straight to your own Stripe account and ResNeo takes no cut.';
 const DESCRIPTION_CHECKOUT_ON =
   'Checkout takes cards in person only while this is on: with Tap to Pay or a Bluetooth card reader in the ResNeo app, on your counter card readers, or by sending a sale to a phone. Money goes straight to your own Stripe account and ResNeo takes no cut.';
-const OFF_CHECKOUT_OFF = 'While this is off, nobody can take payment on an appointment in the ResNeo app.';
+// Recording money taken another way never needs the switch (owner, 2026-11-04), so off says so.
+const OFF_CHECKOUT_OFF =
+  "While this is off, your team can't take cards in the ResNeo app. They can still record cash, or a payment taken another way such as your own card machine, on any appointment, on the web or in the app.";
 const OFF_CHECKOUT_ON =
   "Checkout is on, but it can't take cards in person until you turn this on. It can still take cash, pay links and gift vouchers.";
 const CHOICE =
@@ -172,7 +174,7 @@ describe('Booking settings: Payments at your venue', () => {
     await render(<BookingSettingsScreen />);
     expect(
       screen.getByText(
-        'Connect Stripe first, in More, then Plan & payments. Card payments go into your own Stripe account, so this has no effect until that is set up.',
+        "Connect Stripe first, in More, then Plan & payments. Card payments go into your own Stripe account, so cards can't be taken until that is set up. Recording cash or other payments doesn't need Stripe.",
       ),
     ).toBeTruthy();
   });
@@ -194,7 +196,7 @@ describe('Booking settings: Payments at your venue', () => {
   });
 
   describe('with Checkout off', () => {
-    it('says the switch covers every payment on an appointment, and that off stops them all', async () => {
+    it('says the switch covers cards on an appointment, and that off still lets the team record payments', async () => {
       await render(<BookingSettingsScreen />);
       expect(screen.getByText(DESCRIPTION_CHECKOUT_OFF)).toBeTruthy();
       expect(screen.queryByText(DESCRIPTION_CHECKOUT_ON)).toBeNull();
