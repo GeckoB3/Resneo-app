@@ -1,4 +1,9 @@
-import { joinsPendingMoveNotice, mergeMoveNotice, type MoveNoticeInput } from '@/lib/calendar/move-notice';
+import {
+  joinsPendingMoveNotice,
+  lengthChangeToastMessage,
+  mergeMoveNotice,
+  type MoveNoticeInput,
+} from '@/lib/calendar/move-notice';
 
 type Prev = { time: string; calendar: string };
 
@@ -54,5 +59,22 @@ describe('the notify prompt is keyed by visit (split-visit plan G7)', () => {
     expect(joinsPendingMoveNotice(first, { visitKey: null })).toBe(false);
     const single = mergeMoveNotice(null, notice({ bookingId: 'a', visitKey: null }));
     expect(joinsPendingMoveNotice(single, { visitKey: null })).toBe(false);
+  });
+});
+
+describe('the two-places note rides in the prompt (G13)', () => {
+  const twoPlaces = 'Blow Dry with Sophie is at 11:00, so the client would be in two places.';
+
+  it('carries the latest change note, and drops it when the latest change leaves none', () => {
+    const first = mergeMoveNotice(null, notice({ bookingId: 'beard', overlapNote: twoPlaces }));
+    expect(first.overlapNote).toBe(twoPlaces);
+    const second = mergeMoveNotice(first, notice({ bookingId: 'beard' }));
+    expect(second.overlapNote).toBeNull();
+  });
+
+  it('puts the note in the one toast a resize gets', () => {
+    expect(lengthChangeToastMessage(true, twoPlaces)).toBe(`Service length updated. ${twoPlaces}`);
+    expect(lengthChangeToastMessage(true)).toBe('Service length updated');
+    expect(lengthChangeToastMessage(false, null)).toBe('Duration updated');
   });
 });

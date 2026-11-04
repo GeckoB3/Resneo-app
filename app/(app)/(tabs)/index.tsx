@@ -83,7 +83,9 @@ import { visitOverlapNote, visitTwoPlacesNote } from '@/lib/booking/visit-overla
 import { visitRestoreRequest, visitScheduleRequest } from '@/lib/booking/visit-schedule-request';
 import {
   joinsPendingMoveNotice,
+  lengthChangeToastMessage,
   mergeMoveNotice,
+  SAME_COLUMN_VISIT_OVERLAP_NOTE,
   type MoveNotice,
   type MoveNoticeInput,
 } from '@/lib/calendar/move-notice';
@@ -639,10 +641,13 @@ export default function CalendarScreen() {
         setMoveNotice(next);
         return;
       }
-      toast.success(notice.previous.visit ? 'Service length updated' : 'Duration updated', {
+      const message = lengthChangeToastMessage(!!notice.previous.visit, notice.overlapNote);
+      const undo = {
         actionLabel: 'Undo',
         onAction: () => undoReschedule(notice.previous, { restoreLength: notice.lengthChanged }),
-      });
+      };
+      if (notice.overlapNote) toast.info(message, { ...undo, duration: 7000 });
+      else toast.success(message, undo);
     },
     [toast, undoReschedule],
   );
@@ -1954,13 +1959,14 @@ export default function CalendarScreen() {
           // is, but never silent (web #187). With someone else, the client would
           // be in two places, and the note says where (G13, G16); the server's
           // own reading covers a sibling on a calendar this diary does not hold.
-          const twoPlaces = siblingOverlap.twoPlaces ?? visitOverlapNote(plan.visit_overlaps);
-          if (twoPlaces) {
-            toast.info(twoPlaces);
-          } else if (siblingOverlap.sameColumn > 0) {
-            toast.info('This now overlaps another service of the same visit.');
-          }
+          // The prompt (or the resize toast) carries it: a toast of its own would
+          // sit behind the prompt's sheet, or be replaced by the resize toast.
+          const overlapNote =
+            siblingOverlap.twoPlaces ??
+            visitOverlapNote(plan.visit_overlaps) ??
+            (siblingOverlap.sameColumn > 0 ? SAME_COLUMN_VISIT_OVERLAP_NOTE : null);
           raiseChangeNotice({
+            overlapNote,
             bookingId: input.bookingId,
             guestName: input.guestName,
             previous: input.previousTarget,
@@ -3543,6 +3549,7 @@ export default function CalendarScreen() {
                     weekDays={week.days}
                     today={today}
                     nowMinutes={nowMinutes}
+                    visitPositions={weekVisitPositions}
                     refreshing={linkedQuery.isRefetching}
                     onRefresh={() => void linkedQuery.refetch()}
                     onOpenBooking={(b) => openLinkedBooking(activeLinkedVenue, b)}
@@ -3588,6 +3595,7 @@ export default function CalendarScreen() {
                   compact={compactDay}
                   venue={activeLinkedView ?? activeLinkedVenue}
                   showCreateButton={linkedCreateButton}
+                  visitPositions={dayVisitPositions}
                   date={anchor}
                   nowMinutes={nowMinutes}
                   onOpenBooking={(b) => openLinkedBooking(activeLinkedVenue, b)}
@@ -3913,6 +3921,11 @@ export default function CalendarScreen() {
               ? `Let ${moveNotice.guestName} know about the change?`
               : `The start time has not changed, so ${moveNotice.guestName} has not been told.`}
         </Text>
+        {moveNotice?.overlapNote ? (
+          <Text variant="caption" tone="danger" accessibilityRole="alert">
+            {moveNotice.overlapNote}
+          </Text>
+        ) : null}
         <View style={styles.moveNoticeActions}>
           {moveNotice?.startMoved ? (
             <>
