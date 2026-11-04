@@ -33,6 +33,12 @@ type PractitionerStepProps = {
    * 6.1): offers "Choose someone different for each service" under the list.
    */
   onChooseEach?: () => void;
+  /**
+   * The visit's other services after the first, when several are booked with one person: the heading
+   * names them all and each person's price is theirs for the whole visit (found 2026-11-04: the list
+   * named the first service alone and priced it alone).
+   */
+  extraServices?: ReadonlyArray<{ serviceId: string; serviceName: string }>;
 };
 
 /**
@@ -121,7 +127,10 @@ export function PractitionerStep({
   onSelect,
   overrideAvailability = false,
   onChooseEach,
+  extraServices = [],
 }: PractitionerStepProps) {
+  const visitIds = [serviceOption.serviceId, ...extraServices.map((e) => e.serviceId)];
+  const isVisit = extraServices.length > 0;
   const rows: PractitionerRow[] = [];
 
   // A collective catalogue can withhold the pooled choice per offering
@@ -151,6 +160,35 @@ export function PractitionerStep({
     // The option is chosen after the person, so where this person's options
     // are priced differently the row says "from" the cheapest (web QA G-4).
     const optionFrom = optionFromPricePence(service.variants);
+    if (isVisit) {
+      // This person's price for every service of the visit; "from" when any has options priced apart.
+      let total = 0;
+      let from = false;
+      let known = false;
+      for (const id of visitIds) {
+        const s = practitioner.services.find((x) => x.id === id);
+        if (!s) continue;
+        const sFrom = optionFromPricePence(s.variants);
+        const pence = sFrom ?? s.price_pence;
+        if (sFrom != null) from = true;
+        if (pence != null) {
+          total += pence;
+          known = true;
+        }
+      }
+      rows.push({
+        id: practitioner.id,
+        name: practitioner.name,
+        isAnyAvailable: false,
+        pricePence: known ? total : null,
+        priceIsFrom: from,
+        // A visit's length depends on its buffers and processing: the times step says it.
+        durationMinutes: null,
+        assigned: service.assigned,
+        option,
+      });
+      continue;
+    }
     rows.push({
       id: practitioner.id,
       name: practitioner.name,
@@ -166,8 +204,8 @@ export function PractitionerStep({
   return (
     <View style={styles.container}>
       <Text variant="heading">Choose a practitioner</Text>
-      <Text variant="bodyMedium" tone="muted">
-        {serviceOption.serviceName}
+      <Text variant="bodyMedium" tone="muted" testID="practitioner-step-services">
+        {[serviceOption.serviceName, ...extraServices.map((e) => e.serviceName)].join(' + ')}
       </Text>
 
       <FlatList
@@ -192,7 +230,7 @@ export function PractitionerStep({
           ) : null
         }
         renderItem={({ item }) => {
-          const caption = rowCaption(item, durationOverride, overrideAvailability);
+          const caption = rowCaption(item, isVisit ? null : durationOverride, overrideAvailability);
           const price = item.isAnyAvailable ? null : formatPrice(item);
           return (
             <Card

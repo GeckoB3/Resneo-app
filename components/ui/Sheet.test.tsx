@@ -249,3 +249,27 @@ describe('Sheet', () => {
     expect(screen.queryByText('Body')).toBeNull();
   });
 });
+
+describe('Sheet: a toast raised while it is open (found 2026-11-04)', () => {
+  it('is drawn inside the sheet window too, at the top, since the root host is behind the sheet', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { ToastProvider, useToast } = require('@/providers/ToastProvider') as typeof import('@/providers/ToastProvider');
+    function RaisesOnOpen() {
+      const toast = useToast();
+      useEffect(() => {
+        toast.error('Mrs Kelly is booked at this time.');
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, []);
+      return <Text>Block time</Text>;
+    }
+    await render(
+      <ToastProvider>
+        <Sheet visible onClose={() => {}}>
+          <RaisesOnOpen />
+        </Sheet>
+      </ToastProvider>,
+    );
+    expect(await screen.findByTestId('sheet-toast')).toBeTruthy();
+    expect(screen.getAllByText('Mrs Kelly is booked at this time.').length).toBeGreaterThanOrEqual(1);
+  });
+});

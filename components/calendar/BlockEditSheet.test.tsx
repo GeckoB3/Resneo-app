@@ -257,7 +257,9 @@ describe('BlockEditSheet — choosing the calendar, day and times', () => {
     mockCreate.mockRejectedValue(new ApiError('Mrs Kelly is booked at this time.', 409));
     await render(<BlockEditSheet target={CREATE} onClose={onClose} />);
     await press('Block time');
-    expect(mockToast.error).toHaveBeenCalledWith('Mrs Kelly is booked at this time.');
+    // In the sheet itself: a toast is drawn behind an open sheet, so it was never seen (2026-11-04).
+    expect(screen.getByTestId('block-sheet-error')).toHaveTextContent('Mrs Kelly is booked at this time.');
+    expect(mockToast.error).not.toHaveBeenCalled();
     expect(mockToast.success).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
   });

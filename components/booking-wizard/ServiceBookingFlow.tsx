@@ -1878,6 +1878,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           allowAnyAvailable={anyAvailableEnabled && !availabilityOverride}
           overrideAvailability={availabilityOverride}
           durationOverride={durationOverride}
+          extraServices={chainExtras.map((e) => ({ serviceId: e.option.serviceId, serviceName: e.option.serviceName }))}
           // Someone else offers some of the services: a different person for each (6.1).
           onChooseEach={
             visitMode === 'choose'

@@ -111,3 +111,33 @@ describe('PractitionerStep option prices (web QA G-4)', () => {
     expect(onSelect.mock.calls[0]![0].variants).toHaveLength(2);
   });
 });
+
+describe('PractitionerStep for a visit of several services (found 2026-11-04)', () => {
+  const twoServicePeople = [
+    {
+      id: 'prac-ada',
+      name: 'Ada',
+      services: [
+        { id: 'gents', name: 'Gents Cut', duration_minutes: 30, buffer_minutes: 0, price_pence: 1800, deposit_pence: null },
+        { id: 'beard', name: 'Beard Trim', duration_minutes: 15, buffer_minutes: 0, price_pence: 1000, deposit_pence: null },
+      ],
+    },
+  ] as unknown as AppointmentCatalogPractitioner[];
+
+  it("names every service and prices each person for the whole visit, not the first service alone", async () => {
+    await render(
+      <PractitionerStep
+        practitioners={twoServicePeople}
+        serviceOption={serviceOption}
+        allowAnyAvailable={false}
+        onSelect={jest.fn()}
+        durationOverride={40}
+        extraServices={[{ serviceId: 'beard', serviceName: 'Beard Trim' }]}
+      />,
+    );
+    expect(screen.getByTestId('practitioner-step-services')).toHaveTextContent('Gents Cut + Beard Trim');
+    expect(screen.getAllByText('£28.00').length).toBeGreaterThan(0);
+    // No single-service length in the caption: the times step says how long the visit runs.
+    expect(screen.queryByText(/min ·/)).toBeNull();
+  });
+});

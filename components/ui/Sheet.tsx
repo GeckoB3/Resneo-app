@@ -24,6 +24,7 @@ import { useKeyboardInset } from '@/components/ui/useKeyboardInset';
 import { useReduceMotion } from '@/lib/motion';
 import { requestClientBack } from '@/lib/ui/client-facing';
 import { useOverlayOpen } from '@/lib/ui/open-overlays';
+import { SheetToastHost } from '@/providers/ToastProvider';
 import { SHEET_MAX_WIDTH, useContentMaxWidth } from '@/lib/responsive';
 import { AppLockCover } from '@/providers/AppLockProvider';
 import { clientColors, radius, spacing } from '@/theme/index';
@@ -239,6 +240,8 @@ export function Sheet({
               {children}
             </SheetContent>
           </Animated.View>
+          {/* Toasts raised while the sheet is open, drawn in its own window (the root host is behind it). */}
+          <SheetToastHost />
         </ModalWindowInsets>
         {/* The app-lock cover must be rendered INSIDE this Modal: the provider's
             own cover lives in the root view, and a Modal is a separate native

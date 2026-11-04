@@ -72,6 +72,11 @@ export function BlockEditSheet({ target, onClose }: BlockEditSheetProps) {
   const [endTime, setEndTime] = useState('10:00');
   const [reason, setReason] = useState('');
   const [timeError, setTimeError] = useState<string | null>(null);
+  /**
+   * Why a save or delete was refused, shown in the sheet: a toast is drawn behind an open sheet, so
+   * a refused block (one over a booking, say) left the sheet open with no reason (found 2026-11-04).
+   */
+  const [actionError, setActionError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const deleteConfirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -104,6 +109,7 @@ export function BlockEditSheet({ target, onClose }: BlockEditSheetProps) {
       setReason(target.reason ?? '');
     }
     setTimeError(null);
+    setActionError(null);
     setConfirmingDelete(false);
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [target, timeZone]);
@@ -147,6 +153,7 @@ export function BlockEditSheet({ target, onClose }: BlockEditSheetProps) {
 
   async function handleSave() {
     if (!target || !selectedCalendarId || !validate()) return;
+    setActionError(null);
     try {
       // Send times as HH:mm — the create route validates `HH:mm` exactly (it
       // rejects a seconds suffix with "Invalid request"), and the edit route
@@ -182,7 +189,7 @@ export function BlockEditSheet({ target, onClose }: BlockEditSheetProps) {
       onClose();
     } catch (e) {
       hapticWarning();
-      toast.error(e instanceof ApiError ? e.message : 'Could not save the block. Please try again.');
+      setActionError(e instanceof ApiError ? e.message : 'Could not save the block. Please try again.');
     }
   }
 
@@ -198,13 +205,14 @@ export function BlockEditSheet({ target, onClose }: BlockEditSheetProps) {
     }
     if (deleteConfirmTimer.current) clearTimeout(deleteConfirmTimer.current);
     setConfirmingDelete(false);
+    setActionError(null);
     try {
       await deleteMutation.mutateAsync(target.blockId);
       hapticSuccess();
       onClose();
     } catch (e) {
       hapticWarning();
-      toast.error(e instanceof ApiError ? e.message : 'Could not delete the block. Please try again.');
+      setActionError(e instanceof ApiError ? e.message : 'Could not delete the block. Please try again.');
     }
   }
 
@@ -298,6 +306,12 @@ export function BlockEditSheet({ target, onClose }: BlockEditSheetProps) {
             maxLength={BLOCK_REASON_MAX_LENGTH}
           />
         </ScrollView>
+
+        {actionError ? (
+          <Text variant="caption" tone="danger" testID="block-sheet-error" accessibilityRole="alert">
+            {actionError}
+          </Text>
+        ) : null}
 
         <View style={styles.actions}>
           {isEdit ? (

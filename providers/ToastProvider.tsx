@@ -42,6 +42,12 @@ const ToastContext = createContext<ToastContextValue | null>(null);
 
 type ActiveToast = ToastOptions & { id: number };
 
+/**
+ * The toast on screen now, for a second host inside a sheet (`SheetToastHost`). Kept apart from
+ * `ToastContext` so the many `useToast()` callers do not re-render on every toast.
+ */
+const ToastStateContext = createContext<{ toast: ActiveToast | null; dismiss: () => void } | null>(null);
+
 const TONE_ICON: Record<ToastTone, SymbolViewProps['name'] | null> = {
   default: null,
   success: { ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' },
@@ -113,22 +119,41 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     [show, dismiss],
   );
 
+  const state = useMemo(() => ({ toast, dismiss }), [toast, dismiss]);
+
   return (
     <ToastContext.Provider value={value}>
-      {children}
-      <ToastHost toast={toast} onAction={dismiss} onDismiss={dismiss} />
+      <ToastStateContext.Provider value={state}>
+        {children}
+        <ToastHost toast={toast} onAction={dismiss} onDismiss={dismiss} />
+      </ToastStateContext.Provider>
     </ToastContext.Provider>
   );
+}
+
+/**
+ * The toast again, inside a sheet's own window. A sheet is a Modal, a separate native window that
+ * the root host cannot draw over, so a toast raised with a sheet open (an error from its save, say)
+ * was drawn behind it and never seen (found 2026-11-04: a refused block time left the sheet open
+ * with no reason). Placed at the top so it does not cover the sheet's buttons. Renders nothing
+ * outside a ToastProvider.
+ */
+export function SheetToastHost() {
+  const state = useContext(ToastStateContext);
+  if (!state) return null;
+  return <ToastHost toast={state.toast} onAction={state.dismiss} onDismiss={state.dismiss} placement="top" />;
 }
 
 function ToastHost({
   toast,
   onAction,
   onDismiss,
+  placement = 'bottom',
 }: {
   toast: ActiveToast | null;
   onAction: () => void;
   onDismiss: () => void;
+  placement?: 'bottom' | 'top';
 }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -141,8 +166,12 @@ function ToastHost({
 
   return (
     <View
-      style={[styles.host, { bottom: insets.bottom + spacing['3xl'] + spacing.lg }]}
-      pointerEvents="box-none">
+      style={[
+        styles.host,
+        placement === 'top' ? { top: insets.top + spacing.lg } : { bottom: insets.bottom + spacing['3xl'] + spacing.lg },
+      ]}
+      pointerEvents="box-none"
+      testID={placement === 'top' ? 'sheet-toast' : undefined}>
       <Animated.View
         key={toast.id}
         entering={motionSafe(FadeInDown.springify().damping(20).stiffness(220), reduceMotion)}
