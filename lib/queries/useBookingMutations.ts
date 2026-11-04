@@ -39,6 +39,11 @@ export function invalidateBookingCaches(
   // the detail sheet doesn't leave a stale roster/waitlist row during a polling gap.
   void queryClient.invalidateQueries({ queryKey: queryKeys.schedule.all() });
   void queryClient.invalidateQueries({ queryKey: queryKeys.waitlist.all() });
+  // A visit across businesses lists the other businesses' services read-only; a move of every
+  // business's services (or a part cancelled) changes them, so they are read again too. Found
+  // 2026-11-04 on the phone: after "Move every business's services together" the card kept the
+  // partner's old time.
+  void queryClient.invalidateQueries({ queryKey: ['visit-partner-lines'] });
   // A moved/resized/cancelled booking changes which slots are free.
   invalidateAppointmentAvailability(queryClient);
 }

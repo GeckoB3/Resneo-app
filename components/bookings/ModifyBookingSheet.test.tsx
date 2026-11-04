@@ -15,7 +15,7 @@
  *
  * jest hoists mock factories above imports, so closed-over vars are `mock*`.
  */
-import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, within } from '@testing-library/react-native';
 
 import { ModifyBookingSheet, type ModifyBookingTarget } from './ModifyBookingSheet';
 import { ViewerAccessProvider } from '@/providers/ViewerAccessProvider';
@@ -1459,6 +1459,26 @@ describe('ModifyBookingSheet', () => {
           expect(screen.getByText('14:45–15:45 · 1h · with Kim')).toBeTruthy();
           expect(screen.getByText('14:00–14:45 · 45 min · with Sam')).toBeTruthy();
           expect(screen.getByLabelText('Edit time or person for Blow Dry')).toBeTruthy();
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+
+      it("offers each service's editor only the people who offer it, and whoever has it now", async () => {
+        // 2026-11-04 on the phone: every calendar was offered, and choosing one who does not offer
+        // the service was refused only on the check.
+        jest.useFakeTimers();
+        try {
+          await renderVisit();
+          await pressLabel('Edit time or person for Cut & Finish', 0);
+          const cutPeople = within(screen.getByTestId('visit-line-people-bk-lead'));
+          expect(cutPeople.getByText('Sam')).toBeTruthy();
+          expect(cutPeople.queryByText('Kim')).toBeNull();
+          await pressLabel('Done editing Cut & Finish', 0);
+          await pressLabel('Edit time or person for Blow Dry');
+          const blowPeople = within(screen.getByTestId('visit-line-people-bk-1'));
+          expect(blowPeople.getByText('Sam')).toBeTruthy();
+          expect(blowPeople.getByText('Kim')).toBeTruthy();
         } finally {
           jest.useRealTimers();
         }

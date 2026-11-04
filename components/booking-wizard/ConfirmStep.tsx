@@ -429,7 +429,6 @@ export function ConfirmStep({
   const hasDeposit = visitCharge.amountPence > 0 && !noCardPayments;
   const requireDeposit = requireDepositProp && !noCardPayments;
   const chargeNoun = visitCharge.chargeLabel === 'full_payment' ? 'payment' : 'deposit';
-  const depositLabel = hasDeposit ? formatMoney(visitCharge.amountPence) : null;
 
   // Card hold (spec §7.6/D6): default on, walk-ins included. On a single
   // booking the fee is the (variant-adjusted) deposit_pence column, add-ons
@@ -463,6 +462,36 @@ export function ConfirmStep({
   const [depositByVenue, setDepositByVenue] = useState<Record<string, boolean>>({});
   const [holdByVenue, setHoldByVenue] = useState<Record<string, boolean>>({});
   const partTakesCards = (part: VisitBusinessPart) => !noCardVenueIds.includes(part.venueId);
+  /**
+   * What the summary says is taken now, and the no-show fee it secures: only what staff have ticked
+   * (each business's own ticks on a visit across businesses). Found 2026-11-04 on the phone: "Pay
+   * now £30.00" beside an unticked "Require payment", where nothing would be taken. The amounts
+   * stay on the toggles themselves.
+   */
+  const tickedParts = byBusiness
+    ? byBusiness.filter((p) => partTakesCards(p) && p.depositPence > 0 && Boolean(depositByVenue[p.venueId]))
+    : [];
+  const chargeNowPence =
+    source === 'walk-in'
+      ? 0
+      : byBusiness
+        ? tickedParts.reduce((sum, p) => sum + p.depositPence, 0)
+        : hasDeposit && requireDeposit
+          ? visitCharge.amountPence
+          : 0;
+  const chargeNowNoun = byBusiness
+    ? tickedParts.every((p) => p.chargeLabel === 'deposit')
+      ? 'deposit'
+      : 'payment'
+    : chargeNoun;
+  const holdNowPence = byBusiness
+    ? byBusiness.reduce(
+        (sum, p) => (partTakesCards(p) && p.holdPence > 0 && holdByVenue[p.venueId] ? sum + p.holdPence : sum),
+        0,
+      )
+    : staffCardHold && requireCardHold
+      ? staffCardHold.feePence
+      : 0;
   const spansPeople = isMultiService && chainSpansPeople(multiServiceSegments!);
   const peopleLabel = spansPeople
     ? joinNames([...new Set(multiServiceSegments!.map((s) => s.practitionerName).filter(Boolean))])
@@ -862,20 +891,20 @@ export function ConfirmStep({
         {/* Money now and the no-show fee are separate lines: a chain can owe
             both, and labelling one total "No-show fee" because a hold exists
             somewhere in the visit would misstate what is being collected. */}
-        {depositLabel ? (
-          <View style={styles.depositRow}>
+        {chargeNowPence > 0 ? (
+          <View style={styles.depositRow} testID="confirm-charge-now">
             <Text variant="caption" tone="muted">
-              {chargeNoun === 'payment' ? 'Pay now' : 'Deposit'}
+              {chargeNowNoun === 'payment' ? 'Pay now' : 'Deposit'}
             </Text>
-            <Text variant="bodySmall">{depositLabel}</Text>
+            <Text variant="bodySmall">{formatMoney(chargeNowPence)}</Text>
           </View>
         ) : null}
-        {staffCardHold ? (
-          <View style={styles.depositRow}>
+        {holdNowPence > 0 ? (
+          <View style={styles.depositRow} testID="confirm-hold-now">
             <Text variant="caption" tone="muted">
               No-show fee
             </Text>
-            <Text variant="bodySmall">{formatMoney(staffCardHold.feePence)}</Text>
+            <Text variant="bodySmall">{formatMoney(holdNowPence)}</Text>
           </View>
         ) : null}
       </Card>

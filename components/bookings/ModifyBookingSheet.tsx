@@ -2278,20 +2278,29 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
                               accessibilityLabel={`Start for ${visitLineLabel(line)}`}
                             />
                           </View>
-                          {eligibleStaff.length > 0 ? (
-                            <View style={styles.chipWrap}>
-                              {eligibleStaff.map((p) => (
-                                <Chip
-                                  key={p.id}
-                                  label={p.name}
-                                  selected={p.id === edit.calendarId}
-                                  onPress={() =>
-                                    updateServiceEdit(line.bookingId!, { calendarId: p.id })
-                                  }
-                                />
-                              ))}
-                            </View>
-                          ) : null}
+                          {/* Only the people who offer this service, plus whoever has it now (web
+                              calendarOptionsForService). Found 2026-11-04: every calendar was
+                              offered, so choosing one who does not offer it was refused on check. */}
+                          {(() => {
+                            const offered = line.serviceId ? offeredBy.get(line.serviceId) : undefined;
+                            const lineStaff = offered
+                              ? eligibleStaff.filter((p) => p.id === edit.calendarId || offered.has(p.id))
+                              : eligibleStaff;
+                            return lineStaff.length > 0 ? (
+                              <View style={styles.chipWrap} testID={`visit-line-people-${line.bookingId}`}>
+                                {lineStaff.map((p) => (
+                                  <Chip
+                                    key={p.id}
+                                    label={p.name}
+                                    selected={p.id === edit.calendarId}
+                                    onPress={() =>
+                                      updateServiceEdit(line.bookingId!, { calendarId: p.id })
+                                    }
+                                  />
+                                ))}
+                              </View>
+                            ) : null;
+                          })()}
                           <Stepper
                             label={`Length for ${visitLineLabel(line)}`}
                             value={formatDuration(edit.durationMinutes)}

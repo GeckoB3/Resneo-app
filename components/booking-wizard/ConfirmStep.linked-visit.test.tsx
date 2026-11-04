@@ -140,6 +140,22 @@ describe('ConfirmStep: a visit across businesses', () => {
     ]);
   });
 
+  it('says only what is ticked is taken now, and the no-show fee only once a hold is ticked', async () => {
+    // 2026-11-04 on the phone: "Pay now £30.00" sat beside an unticked "Require payment".
+    await renderConfirm();
+    expect(screen.queryByTestId('confirm-charge-now')).toBeNull();
+    expect(screen.queryByTestId('confirm-hold-now')).toBeNull();
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText(/^Require deposit/));
+    });
+    expect(within(screen.getByTestId('confirm-charge-now')).getByText('£10.00')).toBeTruthy();
+    expect(within(screen.getByTestId('confirm-charge-now')).getByText('Deposit')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText(/^Card hold/));
+    });
+    expect(within(screen.getByTestId('confirm-hold-now')).getByText('£15.00')).toBeTruthy();
+  });
+
   it('offers nothing for a business that cannot take cards', async () => {
     await renderConfirm({ noCardVenueIds: ['v-nails'] });
     const byBusiness = within(screen.getByTestId('staff-charges-by-business'));
