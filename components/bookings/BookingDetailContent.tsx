@@ -2248,7 +2248,12 @@ export function BookingDetailContent({
       {/* Confirming attendance on a Pending booking is a promotion, so it can
           trip the server's unpaid guard exactly like Accept does. */}
       {acceptUnpaidGuard.sheet}
-      <RescheduleSheet target={rescheduleTarget} onClose={() => setRescheduleTarget(null)} />
+      {/* Says it saved: the move was silent here (found 2026-11-04 on the phone). */}
+      <RescheduleSheet
+        target={rescheduleTarget}
+        onClose={() => setRescheduleTarget(null)}
+        onMoved={() => toast.success('Appointment moved.')}
+      />
       <ClassSessionMoveSheet target={classMoveTarget} onClose={() => setClassMoveTarget(null)} />
       <ResourceMoveSheet target={resourceMoveTarget} onClose={() => setResourceMoveTarget(null)} />
       <ModifyBookingSheet target={modifyTarget} onClose={() => setModifyTarget(null)} />

@@ -70,7 +70,13 @@ jest.mock('@/components/bookings/DepositSheet', () => ({ DepositSheet: () => nul
 jest.mock('@/components/bookings/TakePaymentSheet', () => ({ TakePaymentSheet: () => null }));
 jest.mock('@/components/bookings/GroupVisitCards', () => ({ GroupVisitCards: () => null }));
 jest.mock('@/components/bookings/ModifyBookingSheet', () => ({ ModifyBookingSheet: () => null }));
-jest.mock('@/components/calendar/RescheduleSheet', () => ({ RescheduleSheet: () => null }));
+let mockRescheduleProps: { onMoved?: () => void } | null = null;
+jest.mock('@/components/calendar/RescheduleSheet', () => ({
+  RescheduleSheet: (props: { onMoved?: () => void }) => {
+    mockRescheduleProps = props;
+    return null;
+  },
+}));
 jest.mock('@/components/bookings/ClassSessionMoveSheet', () => ({ ClassSessionMoveSheet: () => null }));
 jest.mock('@/components/bookings/ResourceMoveSheet', () => ({ ResourceMoveSheet: () => null }));
 jest.mock('@/components/clients/DocumentsSection', () => ({ DocumentsSection: () => null }));
@@ -240,5 +246,14 @@ describe('BookingDetailContent: cancelling your part of a visit across businesse
     await renderDetail(jest.fn(), { linked_visit_id: null, venue_id: 'v_studio' });
     await press('Cancel booking');
     expect(screen.queryByTestId('cancel-keeps-other-parts')).toBeNull();
+  });
+});
+
+describe('BookingDetailContent reschedule feedback (found 2026-11-04)', () => {
+  it('says the appointment moved once the reschedule sheet saves', async () => {
+    await renderDetail();
+    mockToast.success.mockClear();
+    mockRescheduleProps?.onMoved?.();
+    expect(mockToast.success).toHaveBeenCalledWith('Appointment moved.');
   });
 });
