@@ -1434,6 +1434,10 @@ describe('ModifyBookingSheet', () => {
             ),
           ).toBeTruthy();
           expect(screen.queryByText('Staff')).toBeNull();
+          // Each line says who does it, and its editor is where that changes.
+          expect(screen.getByText('14:45–15:45 · 1h · with Kim')).toBeTruthy();
+          expect(screen.getByText('14:00–14:45 · 45 min · with Sam')).toBeTruthy();
+          expect(screen.getByLabelText('Edit time or person for Blow Dry')).toBeTruthy();
         } finally {
           jest.useRealTimers();
         }

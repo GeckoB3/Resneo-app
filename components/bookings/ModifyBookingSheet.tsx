@@ -2157,19 +2157,24 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
                       aside while the visit is moved as one or its list rewritten. */}
                   {edit && line.bookingId ? (
                     <View style={styles.visitServiceEdit}>
+                      {/* With more than one person, each line says who does it, and the
+                          editor it opens is where that changes (G12). */}
                       <Pressable
                         accessibilityRole="button"
-                        accessibilityLabel={`${expanded ? 'Done editing' : 'Edit time for'} ${visitLineLabel(line)}`}
+                        accessibilityLabel={`${expanded ? 'Done editing' : multiCalendarVisit ? 'Edit time or person for' : 'Edit time for'} ${visitLineLabel(line)}`}
                         disabled={editorsLocked}
                         onPress={() => setExpandedEditId(expanded ? null : line.bookingId)}
                         style={styles.visitServiceEditToggle}>
                         <Text variant="caption" tone={editorsLocked ? 'muted' : 'secondary'}>
                           {edit.date !== date ? `${formatDayHeading(edit.date)} · ` : ''}
                           {edit.time}–{editEnd} · {formatDuration(edit.durationMinutes)}
+                          {multiCalendarVisit && practitioners.some((p) => p.id === edit.calendarId)
+                            ? ` · with ${practitioners.find((p) => p.id === edit.calendarId)!.name}`
+                            : ''}
                         </Text>
                         {!editorsLocked ? (
                           <Text variant="bodySmall" color={colors.brand}>
-                            {expanded ? 'Done' : 'Edit time'}
+                            {expanded ? 'Done' : multiCalendarVisit ? 'Edit' : 'Edit time'}
                           </Text>
                         ) : null}
                       </Pressable>
