@@ -143,3 +143,39 @@ describe('per day, with the derived status (web #187)', () => {
     );
   });
 });
+
+describe('a service cancelled on its own (split visits phase 1)', () => {
+  it('lists the live services on one line and the cancelled one apart', () => {
+    const rows = [
+      row({ id: 'blow', booking_time: '10:00', group_booking_id: 'g1', status: 'Cancelled', booking_item_name: 'Blow Dry' }),
+      row({ id: 'beard', booking_time: '10:30', group_booking_id: 'g1', status: 'Booked', booking_item_name: 'Beard Trim' }),
+      row({ id: 'cut', booking_time: '11:00', group_booking_id: 'g1', status: 'Booked', booking_item_name: 'Cut' }),
+    ];
+    const out = collapseMultiServiceVisits(rows);
+    expect(out.map((r) => [r.id, r.status])).toEqual([
+      ['blow', 'Cancelled'],
+      ['beard', 'Booked'],
+    ]);
+    expect(out[1]!.visit_service_names).toEqual(['Beard Trim', 'Cut']);
+    expect(out.some((r) => r.visit_rest_hidden || r.visit_spans_days)).toBe(false);
+  });
+
+  it('a visit with one live service left lists it under its own time, not the cancelled one', () => {
+    const rows = [
+      row({ id: 'blow', booking_time: '10:00', group_booking_id: 'g1', status: 'Cancelled' }),
+      row({ id: 'beard', booking_time: '10:30', group_booking_id: 'g1', status: 'Booked' }),
+    ];
+    expect(collapseMultiServiceVisits(rows).map((r) => [r.id, r.status])).toEqual([
+      ['blow', 'Cancelled'],
+      ['beard', 'Booked'],
+    ]);
+  });
+
+  it('a wholly cancelled visit is still one line', () => {
+    const rows = [
+      row({ id: 'blow', booking_time: '10:00', group_booking_id: 'g1', status: 'Cancelled' }),
+      row({ id: 'beard', booking_time: '10:30', group_booking_id: 'g1', status: 'Cancelled' }),
+    ];
+    expect(collapseMultiServiceVisits(rows).map((r) => [r.id, r.status])).toEqual([['blow', 'Cancelled']]);
+  });
+});

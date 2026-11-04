@@ -64,6 +64,14 @@ export function isMultiServiceVisitGroup(
   return rows.every((r) => !r.person_label?.trim());
 }
 
+/**
+ * A visit's live services make one list line and its cancelled services another (split visits
+ * phase 1): a service cancelled on its own never stands for the services still booked.
+ */
+function visitLinePart(row: MultiServiceCollapseRow): 'cancelled' | 'live' {
+  return row.status === 'Cancelled' ? 'cancelled' : 'live';
+}
+
 /** Earliest start wins as the representative; nullable times sort first. */
 function compareStart(a: MultiServiceCollapseRow, b: MultiServiceCollapseRow): number {
   return (a.booking_time ?? '').localeCompare(b.booking_time ?? '');
@@ -72,7 +80,8 @@ function compareStart(a: MultiServiceCollapseRow, b: MultiServiceCollapseRow): n
 /**
  * Reduce each day of a multi-service visit (shared `group_booking_id`, no
  * per-person label) to a single representative row — the earliest-start segment
- * of that day, carrying the visit's derived status. Group bookings (people with
+ * of that day, carrying the visit's derived status. A day's live services and its
+ * cancelled services are separate lines. Group bookings (people with
  * `person_label`) and standalone bookings are returned untouched. Order is
  * otherwise preserved; the original array is returned by reference when there
  * is nothing to collapse or mark.
@@ -95,11 +104,20 @@ export function collapseMultiServiceVisits<T extends MultiServiceCollapseRow>(
     daysByGroup.set(gid, days);
   }
 
-  /** group::day -> id of the single representative row kept for that day of the visit. */
+  /** group::day::part -> id of the representative row kept for that part of that day of the visit. */
   const representativeId = new Map<string, string>();
-  for (const [key, group] of byGroupDay) {
+  const rowsOfLine = new Map<string, T[]>();
+  const lineKey = (row: T) => `${dayKey(row)}::${visitLinePart(row)}`;
+  for (const [, group] of byGroupDay) {
     if (!isMultiServiceVisitGroup(group)) continue;
-    const earliest = [...group].sort(compareStart)[0]!;
+    for (const row of group) {
+      const list = rowsOfLine.get(lineKey(row)) ?? [];
+      list.push(row);
+      rowsOfLine.set(lineKey(row), list);
+    }
+  }
+  for (const [key, line] of rowsOfLine) {
+    const earliest = [...line].sort(compareStart)[0]!;
     representativeId.set(key, earliest.id);
   }
 
@@ -108,7 +126,7 @@ export function collapseMultiServiceVisits<T extends MultiServiceCollapseRow>(
     const gid = row.group_booking_id?.trim();
     if (!gid) return [row];
     const key = dayKey(row);
-    const repId = representativeId.get(key);
+    const repId = representativeId.get(lineKey(row));
     if (!repId) {
       /**
        * A lone service of a visit: nothing else of the visit is on this day in
@@ -128,7 +146,7 @@ export function collapseMultiServiceVisits<T extends MultiServiceCollapseRow>(
     // Multi-service day: keep only the representative.
     if (row.id !== repId) return [];
     const spansDays = (daysByGroup.get(gid)?.size ?? 1) > 1;
-    const group = byGroupDay.get(key) ?? [row];
+    const group = rowsOfLine.get(lineKey(row)) ?? [row];
     const status =
       typeof row.status === 'string' ? visitLifecycleStatus(group, row.status) : row.status;
     const names = [...group]
