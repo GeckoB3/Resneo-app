@@ -4,6 +4,7 @@ import { SymbolView } from 'expo-symbols';
 import { format, parseISO } from 'date-fns';
 
 import { WeekGrid, type WeekDayColumn } from '@/components/calendar/WeekGrid';
+import type { VisitPosition } from '@/lib/calendar/visit-siblings';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Text } from '@/components/ui/Text';
@@ -53,6 +54,7 @@ export function LinkedVenueWeekGrid({
   onDayPress,
   refreshing,
   onRefresh,
+  visitPositions,
 }: {
   venue: LinkedVenueCalendar;
   /** The seven dates to render (Monday→Sunday), each "YYYY-MM-DD". */
@@ -80,6 +82,13 @@ export function LinkedVenueWeekGrid({
   onDayPress: (date: string) => void;
   refreshing?: boolean;
   onRefresh?: () => void;
+  /**
+   * Where each booking stands in its visit, counted over every row the diary
+   * holds (own and partner, every column). A partner's visit may sit on two of
+   * its calendars while this grid draws one, so a count over the drawn bars
+   * alone would leave "1/2" off (split-visit plan G15). Defaults to that count.
+   */
+  visitPositions?: Map<string, VisitPosition>;
 }) {
   const { colors } = useTheme();
 
@@ -201,6 +210,7 @@ export function LinkedVenueWeekGrid({
         onDayPress={onDayPress}
         refreshing={refreshing}
         onRefresh={onRefresh}
+        visitPositions={visitPositions}
       />
     </View>
   );

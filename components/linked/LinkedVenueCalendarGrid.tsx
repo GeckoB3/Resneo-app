@@ -25,6 +25,7 @@ import {
 } from '@/lib/linked/linked-calendar-view';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
+import type { VisitPosition } from '@/lib/calendar/visit-siblings';
 import type { LinkedBooking, LinkedVenueCalendar } from '@/types/linked-venues';
 
 /**
@@ -73,6 +74,7 @@ export function LinkedVenueCalendarGrid({
   onRefresh,
   embedded,
   compact,
+  visitPositions,
 }: {
   venue: LinkedVenueCalendar;
   /** The day being shown ("YYYY-MM-DD") — drives the working-hours window. */
@@ -143,6 +145,13 @@ export function LinkedVenueCalendarGrid({
    * compact at its floor scale, which is still far tighter than the default.
    */
   compact?: boolean;
+  /**
+   * Where each booking stands in its visit, counted over every row the diary
+   * holds (own and partner, every column). A partner's visit may sit on two of
+   * its calendars while this grid draws one, so a count over the drawn bars
+   * alone would leave "1/2" off (split-visit plan G15). Defaults to that count.
+   */
+  visitPositions?: Map<string, VisitPosition>;
 }) {
   const { colors } = useTheme();
 
@@ -319,6 +328,7 @@ export function LinkedVenueCalendarGrid({
             onDragColumnReject={editable ? onDragColumnReject : undefined}
             refreshing={refreshing}
             onRefresh={onRefresh}
+            visitPositions={visitPositions}
           />
         </View>
       )}
