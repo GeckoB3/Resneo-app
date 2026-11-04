@@ -24,7 +24,7 @@ import { useKeyboardInset } from '@/components/ui/useKeyboardInset';
 import { useReduceMotion } from '@/lib/motion';
 import { requestClientBack } from '@/lib/ui/client-facing';
 import { useOverlayOpen } from '@/lib/ui/open-overlays';
-import { SheetToastHost } from '@/providers/ToastProvider';
+import { SheetToastHost } from '@/providers/ToastHost';
 import { SHEET_MAX_WIDTH, useContentMaxWidth } from '@/lib/responsive';
 import { AppLockCover } from '@/providers/AppLockProvider';
 import { clientColors, radius, spacing } from '@/theme/index';

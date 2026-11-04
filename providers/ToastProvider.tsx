@@ -1,4 +1,3 @@
-import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import {
   createContext,
   useCallback,
@@ -8,27 +7,13 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { AccessibilityInfo, Pressable, StyleSheet, View } from 'react-native';
-import Animated, { FadeInDown, FadeOutDown } from 'react-native-reanimated';
-import { useReduceMotion, motionSafe } from '@/lib/motion';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AccessibilityInfo } from 'react-native';
 
-import { Text } from '@/components/ui/Text';
 import { hapticError, hapticSuccess } from '@/lib/haptics';
-import { elevation, radius, spacing } from '@/theme/index';
-import { useTheme } from '@/theme/useTheme';
+import { ToastHost, ToastStateContext, type ActiveToast, type ToastOptions } from '@/providers/ToastHost';
 
-export type ToastTone = 'default' | 'success' | 'error' | 'info';
-
-export type ToastOptions = {
-  message: string;
-  tone?: ToastTone;
-  /** Optional trailing action (e.g. Undo). */
-  actionLabel?: string;
-  onAction?: () => void;
-  /** Auto-dismiss after this many ms (default 3200, or 5000 with an action). */
-  duration?: number;
-};
+export type { ToastOptions, ToastTone } from '@/providers/ToastHost';
+export { SheetToastHost } from '@/providers/ToastHost';
 
 type ToastContextValue = {
   show: (opts: ToastOptions) => void;
@@ -40,27 +25,8 @@ type ToastContextValue = {
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
-type ActiveToast = ToastOptions & { id: number };
 
-/**
- * The toast on screen now, for a second host inside a sheet (`SheetToastHost`). Kept apart from
- * `ToastContext` so the many `useToast()` callers do not re-render on every toast.
- */
-const ToastStateContext = createContext<{ toast: ActiveToast | null; dismiss: () => void } | null>(null);
 
-const TONE_ICON: Record<ToastTone, SymbolViewProps['name'] | null> = {
-  default: null,
-  success: { ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' },
-  error: { ios: 'exclamationmark.triangle.fill', android: 'warning', web: 'warning' },
-  info: { ios: 'info.circle.fill', android: 'info', web: 'info' },
-};
-
-const TONE_ACCENT: Record<ToastTone, string | null> = {
-  default: null,
-  success: '#34D399',
-  error: '#F87171',
-  info: '#60A5FA',
-};
 
 /**
  * App-wide transient feedback. Replaces `Alert.alert(...)` for success/error
@@ -131,90 +97,6 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/**
- * The toast again, inside a sheet's own window. A sheet is a Modal, a separate native window that
- * the root host cannot draw over, so a toast raised with a sheet open (an error from its save, say)
- * was drawn behind it and never seen (found 2026-11-04: a refused block time left the sheet open
- * with no reason). Placed at the top so it does not cover the sheet's buttons. Renders nothing
- * outside a ToastProvider.
- */
-export function SheetToastHost() {
-  const state = useContext(ToastStateContext);
-  if (!state) return null;
-  return <ToastHost toast={state.toast} onAction={state.dismiss} onDismiss={state.dismiss} placement="top" />;
-}
-
-function ToastHost({
-  toast,
-  onAction,
-  onDismiss,
-  placement = 'bottom',
-}: {
-  toast: ActiveToast | null;
-  onAction: () => void;
-  onDismiss: () => void;
-  placement?: 'bottom' | 'top';
-}) {
-  const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
-  const reduceMotion = useReduceMotion();
-
-  if (!toast) return null;
-
-  const icon = toast.tone ? TONE_ICON[toast.tone] : null;
-  const accent = toast.tone ? TONE_ACCENT[toast.tone] : null;
-
-  return (
-    <View
-      style={[
-        styles.host,
-        placement === 'top' ? { top: insets.top + spacing.lg } : { bottom: insets.bottom + spacing['3xl'] + spacing.lg },
-      ]}
-      pointerEvents="box-none"
-      testID={placement === 'top' ? 'sheet-toast' : undefined}>
-      <Animated.View
-        key={toast.id}
-        entering={motionSafe(FadeInDown.springify().damping(20).stiffness(220), reduceMotion)}
-        exiting={motionSafe(FadeOutDown.duration(160), reduceMotion)}
-        style={[styles.bar, elevation.raised, { backgroundColor: colors.inverseSurface }]}
-        pointerEvents="auto">
-        {icon && accent ? (
-          <SymbolView name={icon} tintColor={accent} size={20} style={styles.icon} />
-        ) : null}
-        <Text variant="bodySmall" color={colors.onInverse} numberOfLines={3} style={styles.message}>
-          {toast.message}
-        </Text>
-        {toast.actionLabel ? (
-          <Pressable
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel={toast.actionLabel}
-            onPress={() => {
-              toast.onAction?.();
-              onAction();
-            }}>
-            <Text variant="label" color={colors.accent}>
-              {toast.actionLabel}
-            </Text>
-          </Pressable>
-        ) : (
-          <Pressable
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Dismiss"
-            onPress={onDismiss}>
-            <SymbolView
-              name={{ ios: 'xmark', android: 'close', web: 'close' }}
-              tintColor={colors.onInverse}
-              size={14}
-            />
-          </Pressable>
-        )}
-      </Animated.View>
-    </View>
-  );
-}
-
 /** Access the app-wide toast host. Safe to call from any screen under AppProviders. */
 export function useToast(): ToastContextValue {
   const ctx = useContext(ToastContext);
@@ -223,30 +105,3 @@ export function useToast(): ToastContextValue {
   }
   return ctx;
 }
-
-const styles = StyleSheet.create({
-  host: {
-    position: 'absolute',
-    left: spacing.base,
-    right: spacing.base,
-    alignItems: 'center',
-  },
-  bar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    width: '100%',
-    maxWidth: 520,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.base,
-    borderRadius: radius.md,
-  },
-  icon: {
-    width: 20,
-    height: 20,
-  },
-  message: {
-    flex: 1,
-    minWidth: 0,
-  },
-});
