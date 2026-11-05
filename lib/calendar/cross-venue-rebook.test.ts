@@ -93,3 +93,24 @@ describe('collective moves (web D46)', () => {
     );
   });
 });
+
+describe('moving one service of a visit to another business (web 2026-11-05)', () => {
+  it('names the service, says it stays in the visit, and matches the web word for word', () => {
+    const copy = collectiveMoveCopy({
+      targetCalendarName: 'Ada',
+      targetVenueName: 'Zen Studio',
+      ownVenueName: 'Bloom',
+      time: '14:00',
+      visitServiceName: 'Gel Manicure',
+    });
+    expect(copy.title).toBe('Move Gel Manicure to Zen Studio?');
+    expect(copy.message).toBe(
+      "Ada at Zen Studio will have Gel Manicure at 14:00, at the same price, as part of the same visit. It comes off Bloom's diary, and the client gets one message with their whole visit.",
+    );
+    expect(copy.confirmLabel).toBe('Move to Zen Studio');
+    expect(
+      collectiveMoveDoneMessage({ targetCalendarName: 'Ada', venueName: 'Zen Studio', guestNotified: true, visitServiceName: 'Gel Manicure' }),
+    ).toBe('Moved Gel Manicure to Ada at Zen Studio. It is still part of the visit.');
+    expect(`${copy.title}${copy.message}`).not.toContain(String.fromCharCode(0x2014));
+  });
+});

@@ -54,7 +54,19 @@ export function collectiveMoveCopy(w: {
   targetVenueName: string;
   ownVenueName: string;
   time: string;
+  /** A service of a visit, which stays in the visit (web 2026-11-05): its name. */
+  visitServiceName?: string | null;
 }): { title: string; message: string; confirmLabel: string } {
+  if (w.visitServiceName !== undefined && w.visitServiceName !== null) {
+    const service = w.visitServiceName.trim() || 'this service';
+    return {
+      title: `Move ${service} to ${w.targetVenueName}?`,
+      message:
+        `${w.targetCalendarName} at ${w.targetVenueName} will have ${service} at ${w.time}, at the same price, as part of the same visit. ` +
+        `It comes off ${w.ownVenueName}'s diary, and the client gets one message with their whole visit.`,
+      confirmLabel: `Move to ${w.targetVenueName}`,
+    };
+  }
   return {
     title: `Move this booking to ${w.targetVenueName}?`,
     message:
@@ -69,7 +81,13 @@ export function collectiveMoveDoneMessage(r: {
   targetCalendarName: string;
   venueName: string;
   guestNotified: boolean;
+  /** Set when a service of a visit moved and stays in the visit (web 2026-11-05). */
+  visitServiceName?: string | null;
 }): string {
+  if (r.visitServiceName !== undefined && r.visitServiceName !== null) {
+    const service = r.visitServiceName.trim() || 'this service';
+    return `Moved ${service} to ${r.targetCalendarName} at ${r.venueName}. It is still part of the visit.`;
+  }
   return r.guestNotified
     ? `Moved to ${r.targetCalendarName} at ${r.venueName}.`
     : `Moved to ${r.targetCalendarName} at ${r.venueName}. The client was not sent a message, because ${r.venueName} has booking change messages turned off.`;

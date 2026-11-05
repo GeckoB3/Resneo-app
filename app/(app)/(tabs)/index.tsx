@@ -2340,9 +2340,15 @@ export default function CalendarScreen() {
       const targetCalendarId = targetHit
         ? targetHit.practitionerId
         : linkedColumnPractitionerIdForPatch(targetColumnId);
-      // A service of a visit, or a person of a group, never moves to another business (split-visit
-      // plan 7.6, S24): say so before any sheet opens, rather than offer a move the server refuses.
-      const crossBusinessRefusal = crossBusinessMoveRefusal(booking, sourceVenueId, targetVenueId);
+      // A person of a group, or a service of a visit outside the collective, never moves to another
+      // business (split-visit plan 7.6, S24): say so before any sheet opens. Inside the collective a
+      // service of a visit moves and stays in the visit (web 2026-11-05).
+      const crossBusinessRefusal = crossBusinessMoveRefusal(
+        booking,
+        sourceVenueId,
+        targetVenueId,
+        staffCollective?.member_venue_ids ?? null,
+      );
       if (crossBusinessRefusal) {
         toast.error(crossBusinessRefusal);
         return;
@@ -2408,8 +2414,11 @@ export default function CalendarScreen() {
               targetCalendarName: move.targetCalendarName,
               venueName: result.venue_name,
               guestNotified: result.guest_notified,
+              visitServiceName: result.visit ? (move.booking.serviceName ?? '') : null,
             }),
           );
+          // The client would now be in two places: said after the move, as a drag says it (7.4).
+          if (result.overlap_note) toast.info(result.overlap_note);
         },
         onError: (e) => {
           setCrossVenueMove(null);
@@ -4057,6 +4066,10 @@ export default function CalendarScreen() {
                 targetVenueName: target.targetVenueName,
                 ownVenueName: crossVenueMove.sourceVenueName ?? venue?.name ?? 'your venue',
                 time: crossVenueMove.time,
+                visitServiceName:
+                  crossVenueMove.booking.group_booking_id && !crossVenueMove.booking.person_label
+                    ? (crossVenueMove.booking.serviceName ?? '')
+                    : null,
               });
               return (
                 <ConfirmSheet

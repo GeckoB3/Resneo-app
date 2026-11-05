@@ -19,6 +19,10 @@ export interface MoveBookingToVenueResult {
   venue_id: string;
   venue_name: string;
   guest_notified: boolean;
+  /** A service of a visit, which stays in the visit (web 2026-11-05). Absent from older servers. */
+  visit?: boolean;
+  /** Where the client would now be in two places, or null. */
+  overlap_note?: string | null;
 }
 
 /**
@@ -26,8 +30,10 @@ export interface MoveBookingToVenueResult {
  *
  * Moves a booking to a calendar at another venue of the same live collective in one step: the other
  * venue gets its own booking at the same price, the original is cancelled quietly, and the client is
- * sent one message from the new venue. A booking with a deposit, card hold, payment or completed
- * form, or that is part of a visit or group, is refused with 409 and a sentence
+ * sent one message from the new venue. Since 2026-11-05 a service of a visit moves too and stays in
+ * the visit (the client gets one message of the whole visit). A booking with a deposit, card hold,
+ * payment, unfinished till sale or completed form, one person of a group, or a service of a visit
+ * moving to a business at another address, is refused with 409 and a sentence
  * (`COLLECTIVE_MOVE_ATTACHED`, `COLLECTIVE_MOVE_SERVICE`, `COLLECTIVE_MOVE_TIME`,
  * `COLLECTIVE_MOVE_NOT_ALLOWED`), which the caller shows as it is.
  */
