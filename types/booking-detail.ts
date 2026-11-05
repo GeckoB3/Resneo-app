@@ -66,6 +66,11 @@ export interface BookingPaymentRow {
    * have none, and older payloads omitted it entirely.
    */
   stripe_payment_intent_id?: string | null;
+  /**
+   * Set on a payment the till took (the booking read projects them here): its real method. Such a
+   * payment is never a recorded one to remove, and only its own business refunds it (web 2026-11-05).
+   */
+  pos_method?: string | null;
 }
 
 /**

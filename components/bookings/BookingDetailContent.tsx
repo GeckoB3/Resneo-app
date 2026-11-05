@@ -1053,6 +1053,7 @@ export function BookingDetailContent({
   const paymentSheetTarget = (initialMode?: 'menu' | 'refund'): TakePaymentTarget => ({
     id: booking.id,
     guestName,
+    ownerVenueName: linked?.venueName ?? null,
     balanceDuePence: booking.balance_due_pence ?? null,
     visitPayment: booking.visit_payment ?? null,
     isAdmin,
@@ -1087,11 +1088,14 @@ export function BookingDetailContent({
       isAppointmentVenue,
       isAdmin,
       payments: booking.payments,
+      otherBusiness: Boolean(linked),
     });
   /** Only cash or other recorded payments to act on: those are removed, not refunded (2026-11-04). */
   const onlyRecordedToRemove =
     showInPersonRefund &&
-    refundablePaymentsFor(booking.payments, venue?.in_person_payments_enabled === true).every(isRecordedPayment);
+    refundablePaymentsFor(booking.payments, venue?.in_person_payments_enabled === true, {
+      otherBusiness: Boolean(linked),
+    }).every(isRecordedPayment);
 
   // Web parity: deposit actions (send link / record cash / waive / refund) show
   // whenever the booking is active AND there is something the sheet can do;

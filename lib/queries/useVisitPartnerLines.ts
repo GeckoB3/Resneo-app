@@ -25,14 +25,19 @@ export interface VisitPartnerLine {
   service_name: string;
   person_name: string | null;
   status: string;
+  /**
+   * That business has taken payment for its part (web 2026-11-05), so the front desk does not send
+   * the client there to pay. Still no price. Absent from older servers.
+   */
+  paid?: boolean;
 }
 
 const EMPTY: ReadonlyMap<string, VisitPartnerLine[]> = new Map();
 
-/** "10:45 Gel Manicure with Bea, SV Nails, Booked": the visit card's read-only line (7.3). */
+/** "10:45 Gel Manicure with Bea, SV Nails, Booked, paid": the visit card's read-only line (7.3). */
 export function partnerLineText(line: VisitPartnerLine): string {
   const who = line.person_name ? ` with ${line.person_name}` : '';
-  return `${line.start_time} ${line.service_name}${who}, ${line.venue_name}, ${line.status}`;
+  return `${line.start_time} ${line.service_name}${who}, ${line.venue_name}, ${line.status}${line.paid ? ', paid' : ''}`;
 }
 
 /**

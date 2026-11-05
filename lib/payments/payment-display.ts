@@ -335,6 +335,8 @@ export interface RefundGateInput {
   isAppointmentVenue: boolean;
   isAdmin: boolean;
   payments: BookingPaymentRow[] | null | undefined;
+  /** The booking is another business's: its till payments are its own to refund. */
+  otherBusiness?: boolean;
 }
 
 /**
@@ -352,7 +354,9 @@ export function canRefundInPerson(input: RefundGateInput): boolean {
   if (!input.isAdmin) return false;
   // A card refund goes through Stripe and follows the switch; a recorded cash or other payment can
   // be removed with it off (2026-11-04).
-  return refundablePaymentsFor(input.payments, Boolean(input.inPersonPaymentsEnabled)).length > 0;
+  return refundablePaymentsFor(input.payments, Boolean(input.inPersonPaymentsEnabled), {
+    otherBusiness: input.otherBusiness === true,
+  }).length > 0;
 }
 
 /** Neutral labels for the whole-booking payment state (§5.5). */
@@ -396,17 +400,26 @@ export function refundablePayments(
   return (payments ?? []).filter((p) => p.status === 'succeeded');
 }
 
-/** Cash, or a payment taken another way, that staff recorded: no money moved through ResNeo. */
-export function isRecordedPayment(p: Pick<BookingPaymentRow, 'method'>): boolean {
-  return p.method === 'cash' || p.method === 'external';
+/**
+ * Cash, or a payment taken another way, that staff recorded: no money moved through ResNeo. Never a
+ * payment the till took (`pos_method`): its cash came out of a drawer and is refunded there.
+ */
+export function isRecordedPayment(p: Pick<BookingPaymentRow, 'method' | 'pos_method'>): boolean {
+  return (p.method === 'cash' || p.method === 'external') && !p.pos_method;
 }
 
-/** What may be refunded or removed now: card payments only while the venue's card switch is on. */
+/**
+ * What may be refunded or removed now: card payments only while the venue's card switch is on, and
+ * on another business's booking never a payment its till took, which only it refunds (2026-11-05).
+ */
 export function refundablePaymentsFor(
   payments: BookingPaymentRow[] | null | undefined,
   cardRefundsAllowed: boolean,
+  opts: { otherBusiness?: boolean } = {},
 ): BookingPaymentRow[] {
-  return refundablePayments(payments).filter((p) => cardRefundsAllowed || isRecordedPayment(p));
+  return refundablePayments(payments).filter(
+    (p) => (cardRefundsAllowed || isRecordedPayment(p)) && !(opts.otherBusiness && p.pos_method),
+  );
 }
 
 /**

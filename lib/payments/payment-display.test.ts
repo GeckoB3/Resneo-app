@@ -781,6 +781,16 @@ describe('canRefundInPerson', () => {
     expect(canRefundInPerson({ ...base, inPersonPaymentsEnabled: false, isAdmin: false, payments: [cash] })).toBe(false);
   });
 
+  it("treats cash the till took as the till's to refund, and never another business's (2026-11-05)", () => {
+    const tillCash = { ...paid, method: 'cash' as const, pos_method: 'cash' };
+    // Not a recorded payment to remove: with the card switch off it is not offered at all here.
+    expect(canRefundInPerson({ ...base, inPersonPaymentsEnabled: false, payments: [tillCash] })).toBe(false);
+    // On another business's booking, its till payments are never offered, switch or not.
+    expect(canRefundInPerson({ ...base, otherBusiness: true, payments: [tillCash] })).toBe(false);
+    // A cash payment recorded on that booking may still be taken back off it.
+    expect(canRefundInPerson({ ...base, otherBusiness: true, payments: [{ ...paid, method: 'cash' as const }] })).toBe(true);
+  });
+
   it('needs a succeeded row: pending and failed ones are not refundable', () => {
     expect(canRefundInPerson({ ...base, payments: [] })).toBe(false);
     expect(canRefundInPerson({ ...base, payments: null })).toBe(false);

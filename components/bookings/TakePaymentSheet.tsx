@@ -80,6 +80,11 @@ export type TakePaymentTarget = {
   id: string;
   guestName: string;
   /**
+   * Another business's booking (a linked partner or a collective member): the payment is recorded on
+   * its books, and a card goes to its account, so the sheet says whose it is (2026-11-05).
+   */
+  ownerVenueName?: string | null;
+  /**
    * Outstanding balance; null = price unknown, staff must enter an amount
    * (§5.7). VISIT-scoped: on a multi-service visit this is the whole visit's
    * balance, because one collection settles every service in it.
@@ -132,6 +137,8 @@ type SuccessInfo = {
   remainingPence: number | null;
   /** Card payments only: what "Share receipt" sends (Apple 5.10). */
   receipt?: CardReceipt;
+  /** The line under the heading, where the usual "once the payment is confirmed" does not fit. */
+  note?: string;
 };
 
 /** What a card collection reports back on success, for the receipt. */
@@ -294,7 +301,9 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
    */
   const tapToPayFirst =
     cardAvailable && Platform.OS === 'ios' && tapToPay.applies && tapToPay.supported !== false;
-  const refundable = refundablePaymentsFor(target.payments, target.cardRefundsAllowed !== false);
+  const refundable = refundablePaymentsFor(target.payments, target.cardRefundsAllowed !== false, {
+    otherBusiness: Boolean(target.ownerVenueName),
+  });
   /** Only recorded payments to take back: they are removed, not refunded (no money moves through ResNeo). */
   const onlyRecorded = refundable.length > 0 && refundable.every((p) => isRecordedPayment(p));
   /**
@@ -412,6 +421,10 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
         receiptEmailed: false,
         heading: recorded ? 'Payment removed' : 'Refund issued',
         remainingPence: null,
+        // A removal is bookkeeping and takes effect at once; a card refund waits on Stripe.
+        note: recorded
+          ? 'It is off the booking now, so the booking shows that amount as still to pay.'
+          : 'The booking updates in a moment once the refund is confirmed.',
       });
       setMode('success');
     } catch (e) {
@@ -442,6 +455,11 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
             <Text variant="bodySmall" tone="muted">
               {target.guestName}
             </Text>
+            {target.ownerVenueName ? (
+              <Text variant="bodySmall" tone="muted" testID="take-payment-owner">
+                {`This is ${target.ownerVenueName}'s booking, so the payment is recorded for them.`}
+              </Text>
+            ) : null}
             {isCharging && isPartial ? (
               <Text variant="bodySmall" tone="muted">
                 Part of the {formatPence(balancePence)} outstanding.
@@ -480,7 +498,7 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
                 </Text>
               ) : null}
               <Text variant="caption" tone="muted">
-                The booking updates in a moment once the payment is confirmed.
+                {success.note ?? 'The booking updates in a moment once the payment is confirmed.'}
               </Text>
             </View>
             <View style={styles.buttons}>

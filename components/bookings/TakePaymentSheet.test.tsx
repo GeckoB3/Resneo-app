@@ -1125,6 +1125,16 @@ describe('refunds', () => {
     expect(screen.queryByText('Refund £25.00 · Card')).toBeNull();
     await press('Remove £20.00 · Cash');
     expect(screen.getByText('Tap again to remove £20.00')).toBeTruthy();
+    await press('Tap again to remove £20.00');
+    expect(mockRefund).toHaveBeenCalledWith({ paymentId: 'pay-cash' });
+    // A removal takes effect at once: no "once the payment is confirmed" (2026-11-05).
+    expect(screen.getByText('Payment removed')).toBeTruthy();
+    expect(screen.getByText('It is off the booking now, so the booking shows that amount as still to pay.')).toBeTruthy();
+  });
+
+  it("says whose booking it is when it belongs to another business (2026-11-05)", async () => {
+    await render(<TakePaymentSheet target={target({ ownerVenueName: 'Light 16' })} onClose={jest.fn()} />);
+    expect(screen.getByText("This is Light 16's booking, so the payment is recorded for them.")).toBeTruthy();
   });
 
   it('is hidden for non-admins', async () => {
@@ -1175,6 +1185,7 @@ describe('refunds', () => {
     await press('Tap again to refund £25.00');
     expect(mockRefund).toHaveBeenCalledWith({ paymentId: 'pay-1' });
     expect(screen.getByText('Refund issued')).toBeTruthy();
+    expect(screen.getByText('The booking updates in a moment once the refund is confirmed.')).toBeTruthy();
   });
 
   it('lets an armed refund be cancelled', async () => {

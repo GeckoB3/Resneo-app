@@ -1460,9 +1460,13 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
                 ? { state: 'valid', outsideHours: res.outside_hours === true }
                 : { state: 'invalid', reason: res.error ?? 'This time is not available.' },
             });
+            // This booking is a business's whole part of a visit across businesses: say where else
+            // the client is before saving, as the visit routes do (web 2026-11-05).
+            setVisitOverlapWarning(res.ok ? visitOverlapNote(res.visit_overlaps) : null);
           },
           onError: () => {
             if (checkSeq.current !== seq) return;
+            setVisitOverlapWarning(null);
             setChecked({ sig: signature, result: { state: 'unknown' } });
           },
         },
@@ -2718,7 +2722,8 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
                   it.
                 </Text>
               ) : null}
-              {visitOverlapWarning ? (
+              {/* Moving every business's services together keeps the visit's spacing. */}
+              {visitOverlapWarning && !movesAllBusinesses ? (
                 <Text variant="caption" color={colors.warning} testID="visit-overlap-warning">
                   {visitOverlapWarning} Save to keep it.
                 </Text>

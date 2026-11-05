@@ -4,6 +4,7 @@ import { apiFetch } from '@/lib/api/client';
 import { invalidateAppointmentAvailability } from '@/lib/queries/invalidateAvailability';
 import { bookingStatusPatchBody, type CancelScope } from '@/lib/booking/cancel-scope';
 import type { BookingModificationNotifyResult } from '@/lib/booking/modification-notify-result';
+import type { VisitOverlap } from '@/lib/booking/visit-overlaps';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import type { BookingDetail, BookingStatus } from '@/types/booking-detail';
@@ -569,6 +570,12 @@ export type ValidateAppointmentModificationResult =
        * Modify sheet shows a note.
        */
       outside_hours?: boolean;
+      /**
+       * The other businesses' services of a visit across businesses this time would overlap, so the
+       * client would be in two places (web 2026-11-05). Reported, not refused; the sheet warns.
+       * Absent from older servers.
+       */
+      visit_overlaps?: VisitOverlap[];
     }
   | { ok: false; error?: string };
 
