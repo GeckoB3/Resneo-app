@@ -40,8 +40,9 @@ export function staffMayCustomizeFlags(service: ManagedService): StaffMayCustomi
 
 /** True when the admin enabled at least one override field on the service. */
 export function staffMayCustomizeAny(service: ManagedService): boolean {
-  // A collective member's copy the host has locked: only the host sets its values (web 2026-11-05).
-  if (service.collective?.role === 'replica' && service.collective.member_values_locked) return false;
+  // A collective member's copy of a page service: its admins set its calendars' values with Edit
+  // values, never its staff, and not even its admins once the host locks it (web 2026-11-05).
+  if (service.collective?.role === 'replica') return false;
   const f = staffMayCustomizeFlags(service);
   return f.name || f.description || f.duration || f.buffer || f.price || f.deposit || f.colour;
 }

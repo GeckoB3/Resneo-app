@@ -212,6 +212,30 @@ export function calendarValuesClearedByFlagChange(params: {
   return out;
 }
 
+/**
+ * What a host's save would clear on members' calendars, for the same question (web
+ * `memberValuesClearedByOptions`, 2026-11-05). A member's values are its own, so the host's
+ * switches never clear them; only a service with options does, for the price, length and buffer
+ * each option sets.
+ */
+export function memberValuesClearedByOptions(params: {
+  serviceHasOption: boolean;
+  links: readonly ({ calendar_id: string } & object)[];
+  calendarName: (calendarId: string) => string;
+}): CalendarValuesCleared[] {
+  if (!params.serviceHasOption) return [];
+  const optionFields = VALUES_CLEARED_WHEN_FLAG_OFF.filter((f) => f.label !== 'deposit');
+  const out: CalendarValuesCleared[] = [];
+  for (const link of params.links) {
+    const row = link as Record<string, unknown>;
+    const fields = optionFields.filter((f) => typeof row[f.column] === 'number').map((f) => f.label as string);
+    if (fields.length > 0) {
+      out.push({ calendarId: link.calendar_id, calendarName: params.calendarName(link.calendar_id), fields });
+    }
+  }
+  return out;
+}
+
 /** "price", "price and length", "price, length and buffer". */
 export function andList(words: readonly string[]): string {
   return words.length <= 1 ? (words[0] ?? '') : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;

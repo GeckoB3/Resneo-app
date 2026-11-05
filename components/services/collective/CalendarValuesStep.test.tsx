@@ -89,7 +89,7 @@ describe('CalendarValuesStep', () => {
     expect(screen.getByText('Standard: £40.00')).toBeTruthy();
     expect(
       screen.getByText(
-        'Saving a value here also lets every calendar that offers Balayage have its own length or buffer, at every venue, and staff can then set it for their own calendar. You can turn this off under Optional overrides per calendar in the service.',
+        'Saving a value here also lets each of your own calendars that offers Balayage have its own length or buffer, and your staff can then set it for their own calendar. You can turn this off under Staff override permissions in the service.',
       ),
     ).toBeTruthy();
 

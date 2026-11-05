@@ -537,8 +537,8 @@ describe('a new service at a host', () => {
 describe('switching a permission off with values set (found on the phone, 2026-10-30)', () => {
   it('asks first, naming each calendar, and Go back sends nothing', async () => {
     master().staff_may_customize_price = true;
-    const calendar = fixture().collective_calendars![1]!.calendars[0]!;
-    calendar.assigned[0]!.values = { ...calendar.assigned[0]!.values, custom_price_pence: 1500 } as never;
+    // One of the host's own calendars: its switches are for those (web 2026-11-05).
+    (fixture().practitioner_services[0] as Record<string, unknown>).custom_price_pence = 1500;
     await openTheForm();
     await act(async () => {
       fireEvent.press(screen.getByText('Staff override permissions'));
@@ -549,7 +549,7 @@ describe('switching a permission off with values set (found on the phone, 2026-1
     await pressName('Save changes');
     expect(patches()).toEqual([]);
     expect(screen.getByText("Clear calendars' own values?")).toBeTruthy();
-    expect(screen.getByText('Mo at Light 3: price')).toBeTruthy();
+    expect(screen.getByText('Amy: price')).toBeTruthy();
 
     await pressName('Go back');
     expect(patches()).toEqual([]);
@@ -557,6 +557,22 @@ describe('switching a permission off with values set (found on the phone, 2026-1
     await pressName('Save changes');
     await pressName('Clear and save');
     expect((patches()[0]?.body as Record<string, unknown>).staff_may_customize_price).toBe(false);
+  });
+
+  it("asks nothing about a member's calendar, whose values are its own (2026-11-05)", async () => {
+    master().staff_may_customize_price = true;
+    const calendar = fixture().collective_calendars![1]!.calendars[0]!;
+    calendar.assigned[0]!.values = { ...calendar.assigned[0]!.values, custom_price_pence: 1500 } as never;
+    await openTheForm();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Staff override permissions'));
+    });
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Staff may change: Price'), 'valueChange', false);
+    });
+    await pressName('Save changes');
+    expect(screen.queryByText("Clear calendars' own values?")).toBeNull();
+    expect(patches()).toHaveLength(1);
   });
 
   it('asks nothing when no calendar has its own value', async () => {
@@ -788,5 +804,39 @@ describe('Choose calendars for a service at a member (CQ-06)', () => {
     });
     await pressName('Save your settings');
     expect(patches()[0]?.body).toEqual({ id: 's1', calendars: { add: [], remove: ['cal-a', 'cal-z'] } });
+  });
+});
+
+describe("the other venues' prices and times in the host's form (2026-11-05)", () => {
+  const LET_THEM = 'Let them set their own price, length, buffer and deposit';
+  const lockCalls = () => mockCalls.filter((c) => c.method === 'PUT' && c.path === '/api/venue/collectives/col-1/member-values');
+
+  it("says the switches are the host's own calendars', and locks the service first when the host turns it off", async () => {
+    await openTheForm();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Staff override permissions'));
+    });
+    expect(screen.getByText('Your own calendars')).toBeTruthy();
+    expect(screen.getByText('Calendars at Light 3')).toBeTruthy();
+    expect(screen.getByLabelText(LET_THEM).props.value).toBe(true);
+    await act(async () => {
+      fireEvent(screen.getByLabelText(LET_THEM), 'valueChange', false);
+    });
+    expect(
+      screen.getByText('Only you set these on their calendars, with Edit values. Any they set before stay until you change them.'),
+    ).toBeTruthy();
+    await pressName('Save changes');
+    expect(lockCalls().map((c) => c.body)).toEqual([{ item_id: 'item-1', locked: true }]);
+    const writes = mockCalls.filter((c) => c.method !== 'GET').map((c) => `${c.method} ${c.path}`);
+    expect(writes.indexOf('PUT /api/venue/collectives/col-1/member-values')).toBeLessThan(
+      writes.findIndex((w) => w.startsWith('PATCH /api/venue/appointment-services')),
+    );
+  });
+
+  it('sends nothing for the lock when it did not change', async () => {
+    await openTheForm();
+    await pressName('Save changes');
+    expect(patches()).toHaveLength(1);
+    expect(lockCalls()).toEqual([]);
   });
 });

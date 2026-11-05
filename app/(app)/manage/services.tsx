@@ -67,7 +67,7 @@ import {
   useSuggestService,
 } from '@/lib/queries/useCollectiveServiceTools';
 import { useVenueServices } from '@/lib/queries/useCollectiveCurate';
-import { useSwitchServiceOn } from '@/lib/queries/useCollectiveArea';
+import { useSetMemberValuesLock, useSwitchServiceOn } from '@/lib/queries/useCollectiveArea';
 import { TodoStrip } from '@/components/collective-area/AreaPieces';
 import { AdoptionRequestsCard } from '@/components/linked/setup/AdoptionSheets';
 import {
@@ -160,6 +160,7 @@ import {
   andList,
   calendarValueFlags,
   calendarValuesClearedByFlagChange,
+  memberValuesClearedByOptions,
   type CalendarValuesCleared,
   calendarValuesTarget,
   OPTION_SET_FLAGS,
@@ -911,6 +912,11 @@ export default function ServicesScreen() {
   } | null>(null);
   /** A new service goes on the page unless the host unticks it, with its calendars at any venue (CQ-05). */
   const [addToPage, setAddToPage] = useState(true);
+  /**
+   * "Let them set their own price, length, buffer and deposit" for the other venues on the page
+   * (web 2026-11-05). Off is the host's lock, saved with the service.
+   */
+  const [memberValuesAllowed, setMemberValuesAllowed] = useState(true);
   const [newPageCalendars, setNewPageCalendars] = useState<CollectiveCalendarRef[]>([]);
   /** The form was opened by Set up with AI's More settings: the setup decides about the page itself. */
   const [formFromSetup, setFormFromSetup] = useState(false);
@@ -1341,6 +1347,12 @@ export default function ServicesScreen() {
   const optionsLocked = isAdmin && variantDrafts.some((v) => v.isActive);
   /** A page service reads the same on every calendar, so none may rename or re-describe it (CQ-05). */
   const nameLocked = editingPageMaster || addingToPage;
+  /**
+   * A page service at the host: the override switches are its own calendars', and the other venues'
+   * calendars get a part of their own, with the host's lock (web 2026-11-05).
+   */
+  const showMemberValues = (editingPageMaster || addingToPage) && collectiveMemberNames.length > 0;
+  const setMemberValuesLock = useSetMemberValuesLock(serviceCollective?.id ?? null);
   const staffMayLocked = (key: keyof StaffMayState): boolean =>
     (nameLocked && (key === 'name' || key === 'description')) ||
     (optionsLocked && (OPTION_SET_FLAGS as readonly string[]).includes(key));
@@ -1468,6 +1480,7 @@ export default function ServicesScreen() {
     setPractitionerIds(linked);
     setIsActive(service.is_active !== false);
     setStaffOnly(isStaffOnlyService(service));
+    setMemberValuesAllowed(service.collective?.member_values_locked !== true);
     setStaffMay({
       name: service.staff_may_customize_name ?? false,
       description: service.staff_may_customize_description ?? false,
@@ -1550,6 +1563,7 @@ export default function ServicesScreen() {
     setValuesStep(null);
     setError(null);
     setAddToPage(true);
+    setMemberValuesAllowed(true);
     setNewPageCalendars([]);
     setFormFromSetup(false);
     setCreating(true);
@@ -1827,22 +1841,25 @@ export default function ServicesScreen() {
               ),
             )
         : [];
-      const clears = calendarValuesClearedByFlagChange({
-        before: savedService,
-        after: {
-          staff_may_customize_price: staffMaySends('price'),
-          staff_may_customize_deposit: staffMaySends('deposit'),
-          staff_may_customize_duration: staffMaySends('duration'),
-          staff_may_customize_buffer: staffMaySends('buffer'),
-        },
-        links: [
-          ...practitionerServices
+      const calendarName = (calendarId: string) => names.get(calendarId) ?? 'A calendar';
+      // A member's calendars keep their own values whatever these switches say (web 2026-11-05),
+      // except on a service with options: the server then clears their price, length and buffer.
+      const clears = [
+        ...calendarValuesClearedByFlagChange({
+          before: savedService,
+          after: {
+            staff_may_customize_price: staffMaySends('price'),
+            staff_may_customize_deposit: staffMaySends('deposit'),
+            staff_may_customize_duration: staffMaySends('duration'),
+            staff_may_customize_buffer: staffMaySends('buffer'),
+          },
+          links: practitionerServices
             .filter((link) => link.service_id === savedService.id)
             .map((link) => ({ ...link, calendar_id: link.practitioner_id })),
-          ...memberLinks,
-        ],
-        calendarName: (calendarId) => names.get(calendarId) ?? 'A calendar',
-      });
+          calendarName,
+        }),
+        ...memberValuesClearedByOptions({ serviceHasOption: optionsLocked, links: memberLinks, calendarName }),
+      ];
       if (clears.length > 0) {
         setFlagClearAsk(clears);
         return;
@@ -1952,6 +1969,21 @@ export default function ServicesScreen() {
         // 409 with them listed; the flow holds the save until the operator has
         // seen them, then sends this same patch acknowledged.
         const pageCollective = editingPageMaster ? (editingService?.collective ?? null) : null;
+        // The other venues' part, when the host changed it (web 2026-11-05). First, so the bookings
+        // question's second save cannot lose it, and a failure leaves the sheet open.
+        if (
+          pageCollective?.item_id &&
+          showMemberValues &&
+          memberValuesAllowed === (pageCollective.member_values_locked === true)
+        ) {
+          try {
+            await setMemberValuesLock.mutateAsync({ itemId: pageCollective.item_id, locked: !memberValuesAllowed });
+          } catch {
+            hapticWarning();
+            setError(areaCopy('svc.form.memberValues.failed'));
+            return;
+          }
+        }
         const outcome = await removal.start((acknowledge) =>
           update
             .mutateAsync({
@@ -2021,6 +2053,12 @@ export default function ServicesScreen() {
                 .map((c) => ({ venue_id: c.venue_id, calendar_id: c.calendar_id })),
             });
             showOfferSummary(createdId, serviceCollective.name, answer);
+            // Off: the host's lock, from the start (web 2026-11-05).
+            if (!memberValuesAllowed && answer.item_id) {
+              await setMemberValuesLock
+                .mutateAsync({ itemId: answer.item_id, locked: true })
+                .catch(() => toast.error(areaCopy('svc.form.memberValues.failedAfterCreate')));
+            }
           } catch {
             setPageNote({
               serviceId: createdId,
@@ -3610,9 +3648,15 @@ export default function ServicesScreen() {
                 {/* Staff override permissions */}
                 <CollapsibleCard title="Staff override permissions" summary={staffMaySummary}>
                   <View style={styles.sectionStack}>
+                    {showMemberValues ? (
+                      <Text variant="label" tone="muted">
+                        {areaCopy('svc.form.staffMay.ownHeading')}
+                      </Text>
+                    ) : null}
                     <Text variant="caption" tone="muted">
-                      Allow staff members with their own calendar to override these fields for their
-                      calendar only.
+                      {showMemberValues
+                        ? areaCopy(optionsLocked ? 'svc.form.staffMay.ownHelpOptions' : 'svc.form.staffMay.ownHelp')
+                        : 'Allow staff members with their own calendar to override these fields for their calendar only.'}
                     </Text>
                     {STAFF_MAY_FIELDS.map(({ key, label }) => (
                       <View key={key} style={styles.switchRow}>
@@ -3641,6 +3685,28 @@ export default function ServicesScreen() {
                           collective: editingService?.collective?.collective_name ?? serviceCollective?.name,
                         })}
                       </Text>
+                    ) : null}
+                    {showMemberValues ? (
+                      <View style={[styles.sectionStack, styles.memberValuesPart, { borderTopColor: colors.border }]}>
+                        <Text variant="label" tone="muted">
+                          {areaCopy('svc.form.memberValues.heading', { venueList: memberVenueWords })}
+                        </Text>
+                        <View style={styles.switchRow}>
+                          <Text variant="bodyMedium" style={styles.flexText}>
+                            {areaCopy(optionsLocked ? 'svc.form.memberValues.labelOptions' : 'svc.form.memberValues.label')}
+                          </Text>
+                          <Switch
+                            value={memberValuesAllowed}
+                            accessibilityLabel={areaCopy(
+                              optionsLocked ? 'svc.form.memberValues.labelOptions' : 'svc.form.memberValues.label',
+                            )}
+                            onValueChange={setMemberValuesAllowed}
+                          />
+                        </View>
+                        <Text variant="caption" tone="muted">
+                          {areaCopy(memberValuesAllowed ? 'svc.form.memberValues.open' : 'svc.form.memberValues.locked')}
+                        </Text>
+                      </View>
                     ) : null}
                   </View>
                 </CollapsibleCard>
@@ -4088,6 +4154,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: spacing.xs,
+  },
+  // The other venues' part of the overrides on a page service (web 2026-11-05).
+  memberValuesPart: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: spacing.md,
+  },
+  flexText: {
+    flex: 1,
+    paddingRight: spacing.md,
   },
   radioRow: {
     flexDirection: 'row',

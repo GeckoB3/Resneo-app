@@ -66,6 +66,13 @@ describe('staffMayCustomizeFlags / staffMayCustomizeAny', () => {
     expect(staffMayCustomizeAny(none)).toBe(false);
     expect(staffMayCustomizeFlags(none).price).toBe(false);
   });
+  it("never offers staff a collective member's copy of a page service, whatever its flags (web 2026-11-05)", () => {
+    // The copy's flags are on so the values apply; the member's admins set them, not its staff.
+    const copy = { ...BASE, collective: { role: 'replica', member_values_locked: false } } as unknown as ManagedService;
+    expect(staffMayCustomizeAny(copy)).toBe(false);
+    const own = { ...BASE, collective: { role: 'master', member_values_locked: false } } as unknown as ManagedService;
+    expect(staffMayCustomizeAny(own)).toBe(true);
+  });
 });
 
 describe('poundsToPenceOrNull', () => {
