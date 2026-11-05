@@ -334,32 +334,30 @@ describe('ServiceBookingFlow: a person for each service', () => {
     expect(confirmProps.at(-1)!.businessParts).toBeNull();
   });
 
-  it('offers "Choose someone different for each service" when one person offers them all', async () => {
+  it('opens on a person for each service when one person offers them all, and one person stays one tap (2026-11-05)', async () => {
     mockCatalog = chooseCatalog;
     await renderAndTick();
 
-    expect(screen.getByText('Choose a practitioner')).toBeTruthy();
-    await press(() => screen.getByText('Choose someone different for each service'));
+    // Straight to a person per service: staff missed the old "Choose someone different" link.
     expect(screen.getByText('Who is each service with?')).toBeTruthy();
+    expect(screen.queryByText('Choose someone different for each service')).toBeNull();
     // Steph offers both, so she is listed for each; Bea only for the manicure.
     expect(within(screen.getByTestId('visit-people-service-0')).queryByText('Bea')).toBeNull();
     expect(within(screen.getByTestId('visit-people-service-1')).getByText('Bea')).toBeTruthy();
 
-    // Back returns to the one-person list.
-    await press(() => screen.getByLabelText('Back'));
-    expect(screen.getByText('Choose a practitioner')).toBeTruthy();
-    await press(() => screen.getByText('Steph'));
+    // Steph for the first fills the second, which she also does.
+    await press(() => within(screen.getByTestId('visit-people-service-0')).getByText('Steph'));
+    expect(within(screen.getByTestId('visit-people-service-1')).getByLabelText(/^Steph/).props.accessibilityState?.selected).toBe(true);
+    await press(() => screen.getByTestId('visit-people-continue'));
     await press(() => screen.getByText('Continue'));
-    // One person for the visit: the chain names nobody, as before.
+    // One person for the visit: the chain names nobody, as a visit with one person always did.
     expect(slotAsks.at(-1)!.chain!.every((c) => c.practitioner_id == null)).toBe(true);
   });
 
   it('asks the month about the services that follow with the same person', async () => {
     mockCatalog = chooseCatalog;
     await renderAndTick();
-    await press(() => screen.getByText('Choose someone different for each service'));
     await press(() => within(screen.getByTestId('visit-people-service-0')).getByText('Steph'));
-    await press(() => within(screen.getByTestId('visit-people-service-1')).getByText('Steph'));
     await press(() => screen.getByTestId('visit-people-continue'));
     await waitFor(() => expect(monthAsks.length).toBeGreaterThan(0));
     // Both with Steph: the month asks for the whole 60-minute block.
@@ -406,18 +404,43 @@ describe('ServiceBookingFlow: a person for each service', () => {
       ),
     } as AppointmentCatalogResponse;
     await renderAndTick();
-    // Dee offers both, so the one-person list comes first.
-    await press(() => screen.getByText('Choose someone different for each service'));
 
     // Cut with Steph, then the manicure with Bea.
     await press(() => within(screen.getByTestId('visit-people-service-0')).getByText('Steph'));
     await press(() => within(screen.getByTestId('visit-people-service-1')).getByText('Bea'));
     expect(screen.getByTestId('visit-people-continue').props.accessibilityState?.disabled).toBe(false);
 
-    // Changing the cut to Dee (SV Away) clears Bea, whose business is elsewhere.
+    // Changing the cut to Dee (SV Away) clears Bea, whose business is elsewhere, and Dee, who does
+    // the manicure too, takes it (2026-11-05: a choice fills what is not chosen).
     await press(() => within(screen.getByTestId('visit-people-service-0')).getByText('Dee'));
-    expect(screen.getByTestId('visit-people-continue').props.accessibilityState?.disabled).toBe(true);
     expect(within(screen.getByTestId('visit-people-service-1')).queryByText('Bea')).toBeNull();
+    expect(within(screen.getByTestId('visit-people-service-1')).getByLabelText(/^Dee/).props.accessibilityState?.selected).toBe(true);
+    expect(screen.getByTestId('visit-people-continue').props.accessibilityState?.disabled).toBe(false);
+  });
+
+  it('staff-first "Any available" for several services asks "any" for each one (2026-11-05)', async () => {
+    mockVenue.staffFirstEnabled = true;
+    mockVenue.anyAvailableEnabled = true;
+    await act(async () => {
+      render(
+        <SafeAreaProvider initialMetrics={safeAreaMetrics}>
+          <ServiceBookingFlow onCreated={jest.fn()} />
+        </SafeAreaProvider>,
+      );
+    });
+    await waitFor(() => expect(screen.getByText('Who is it with?')).toBeTruthy());
+    await press(() => screen.getByText('Any available'));
+    await press(() => screen.getByText('Cut'));
+    await press(() => screen.getByText('Gel Manicure'));
+    await press(() => screen.getByText('Continue'));
+    // The date step, then the times.
+    await press(() => screen.getByText('Continue'));
+    // Nobody does both: "any" for the whole visit found no times, as it looked for one person.
+    await waitFor(() => expect(slotAsks.length).toBeGreaterThan(0));
+    expect(slotAsks.at(-1)!.chain).toEqual([
+      expect.objectContaining({ service_id: 'svc-cut', practitioner_id: '__any_available__' }),
+      expect.objectContaining({ service_id: 'svc-gel', practitioner_id: '__any_available__' }),
+    ]);
   });
 
   it('staff-first: adds a service with someone else, at the same address, and plans them together', async () => {

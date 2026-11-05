@@ -1,6 +1,7 @@
 /** Mirror of the web's `visit-people.test.ts`, run under jest. */
 import {
   addressExclusionLine,
+  fillUnchosenChoices,
   layVisitStarts,
   leadingSamePersonCount,
   nobodyHereLine,
@@ -234,5 +235,30 @@ describe('visitTraderLine (counsel text 2.2)', () => {
         { name: 'C', address: null, serviceNames: ['z'] },
       ]),
     ).toBe('You are booking with A (x), B (y) and C (z). Each business provides, charges for and refunds its own services.');
+  });
+});
+
+describe('fillUnchosenChoices (straight to a person per service, web 2026-11-05)', () => {
+  const people = [person('amy', ['cut', 'blow', 'brows']), person('ben', ['blow']), person('cara', ['nails'])];
+  const fill = (choices: Array<string | null>, changedIndex: number, anyOk = true) =>
+    fillUnchosenChoices({
+      people,
+      serviceIds: ['cut', 'blow', 'nails'],
+      choices,
+      changedIndex,
+      isCollective: false,
+      anyId: 'ANY',
+      anyOfferedFor: () => anyOk,
+    });
+
+  it('fills the other services the person offers, and never changes a choice already made', () => {
+    expect(fill(['amy', null, null], 0)).toEqual(['amy', 'amy', null]);
+    expect(fill(['amy', 'ben', null], 0)).toEqual(['amy', 'ben', null]);
+    expect(fill([null, 'amy', null], 1)).toEqual(['amy', 'amy', null]);
+  });
+
+  it('fills "any" only where "any" may be offered', () => {
+    expect(fill(['ANY', null, null], 0)).toEqual(['ANY', 'ANY', 'ANY']);
+    expect(fill(['ANY', null, null], 0, false)).toEqual(['ANY', null, null]);
   });
 });

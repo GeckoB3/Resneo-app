@@ -21,6 +21,7 @@ import {
   offersService,
   personFitsBusinesses,
   pruneLaterChoices,
+  fillUnchosenChoices,
   visitPersonMode,
   type StoredPersonChoice,
 } from '@/lib/booking/visit-people';
@@ -344,19 +345,14 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     () => (selectedService ? [selectedService.serviceId, ...chainExtras.map((e) => e.option.serviceId)] : []),
     [selectedService, chainExtras],
   );
-  /**
-   * What the person step offers for these services (6.1). Staff-first chooses its people as it goes,
-   * and a column tapped on the calendar keeps that person, so both stay one person.
-   */
-  const visitMode = useMemo(
-    () =>
-      isStaffFirst || prefilledPractitionerId
-        ? ('single_service' as const)
-        : visitPersonMode(bookableCatalog?.practitioners ?? [], visitServiceIds),
-    [isStaffFirst, prefilledPractitionerId, bookableCatalog, visitServiceIds],
-  );
   /** Several services with a person each: the server plans the times across people (8.3). */
-  const perServiceActive = visitServiceIds.length > 1 && visitPeople != null;
+  /** The same named person for every service: booked exactly as a visit with one person always was. */
+  const onePersonThroughout =
+    visitPeople != null &&
+    visitPeople.length > 1 &&
+    visitPeople.every((c) => !!c && c !== ANY_AVAILABLE_PRACTITIONER_ID && c === visitPeople[0]);
+  /** A person per service is in play for the times and the booking: the visit really is split, or "any". */
+  const perServiceActive = visitServiceIds.length > 1 && visitPeople != null && !onePersonThroughout;
   /** What the flow asked for each service of the visit, in order: its option, choices and length. */
   const visitAsks: VisitPlanAsk[] = useMemo(
     () =>
@@ -532,7 +528,11 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
               ...option,
               practitionerId: ANY_AVAILABLE_PRACTITIONER_ID,
               practitionerName: 'Any available',
-              candidatePractitionerIds: practitioners.map((p) => p.id),
+              // Several services are "any" each (below), so the first one's pool is everyone who does it.
+              candidatePractitionerIds: (wanted.length > 1
+                ? (bookableCatalog?.practitioners ?? []).filter((p) => p.services.some((s) => s.id === option.serviceId))
+                : practitioners
+              ).map((p) => p.id),
             }
           : option;
       setSelectedService(resolved);
@@ -548,16 +548,21 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
       setChainExtras(extras);
       const cursor = nextChainCursor(extras, 0);
       setChainCursor(cursor);
-      // Who does each service (web split-visit plan 6.1). Nobody offers every service: straight to
-      // a person for each. Someone does, and someone else offers some: the one-person list, with
-      // "Choose someone different for each service" under it. Staff-first and a tapped column keep
-      // one person.
+      // Who does each service (web split-visit plan 6.1). Whenever more than one person could take
+      // part of the visit, straight to a person for each (web 2026-11-05: staff missed "Choose
+      // someone different for each service"); a choice fills the other services that person does.
+      // Staff-first and a tapped column keep their person, except that staff-first "Any available"
+      // for several services is "any" for each one, so the times may use different people where
+      // nobody does it all (the server keeps one person when it can).
       const mode =
         isStaffFirst || prefilledPractitionerId
           ? 'single_service'
           : visitPersonMode(bookableCatalog?.practitioners ?? [], wanted);
-      const perService = mode === 'per_service' || mode === 'unavailable';
-      setVisitPeople(perService ? wanted.map(() => null) : null);
+      const perService = mode === 'per_service' || mode === 'unavailable' || mode === 'choose';
+      const anyForEach = isStaffFirst && staffPick?.kind === 'any' && wanted.length > 1;
+      setVisitPeople(
+        perService ? wanted.map(() => null) : anyForEach ? wanted.map(() => ANY_AVAILABLE_PRACTITIONER_ID) : null,
+      );
       // Decide whether this flow runs the practitioner-choice step:
       // only when 2+ staff offer every service and it wasn't pre-scoped.
       // Staff-first never does — the person came first.
@@ -565,7 +570,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
         !isStaffFirst &&
         !prefilledPractitionerId &&
         !perService &&
-        (practitioners.length >= 2 || mode === 'choose');
+        practitioners.length >= 2;
       setNeedsPractitionerStep(needsPractitioner);
       if (perService) {
         goToStep('visit_people');
@@ -1106,19 +1111,35 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
    */
   const chooseVisitPerson = useCallback(
     (index: number, choice: string) => {
-      const next = visitServiceIds.map((_, i) => (i === index ? choice : visitPeople?.[i] ?? null));
+      const people = bookableCatalog?.practitioners ?? [];
+      const picked = visitServiceIds.map((_, i) => (i === index ? choice : visitPeople?.[i] ?? null));
+      const fitting = pruneLaterChoices({
+        people,
+        serviceIds: visitServiceIds,
+        choices: picked,
+        changedIndex: index,
+        isCollective,
+        anyId: ANY_AVAILABLE_PRACTITIONER_ID,
+      });
+      // One person for everything stays one tap: the choice fills the other services not chosen yet.
       setVisitPeople(
-        pruneLaterChoices({
-          people: bookableCatalog?.practitioners ?? [],
+        fillUnchosenChoices({
+          people,
           serviceIds: visitServiceIds,
-          choices: next,
+          choices: fitting,
           changedIndex: index,
           isCollective,
           anyId: ANY_AVAILABLE_PRACTITIONER_ID,
+          // As VisitPeopleStep offers it: on, more than one person, and no offering withholding it.
+          anyOfferedFor: (serviceId) => {
+            if (!anyAvailableEnabled || availabilityOverride) return false;
+            const offering = people.filter((p) => p.services.some((s) => s.id === serviceId));
+            return offering.length > 1 && !offering.some((p) => p.services.find((s) => s.id === serviceId)?.any_available === false);
+          },
         }),
       );
     },
-    [visitServiceIds, visitPeople, bookableCatalog, isCollective],
+    [visitServiceIds, visitPeople, bookableCatalog, isCollective, anyAvailableEnabled, availabilityOverride],
   );
 
   /**
@@ -1882,15 +1903,6 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           overrideAvailability={availabilityOverride}
           durationOverride={durationOverride}
           extraServices={chainExtras.map((e) => ({ serviceId: e.option.serviceId, serviceName: e.option.serviceName }))}
-          // Someone else offers some of the services: a different person for each (6.1).
-          onChooseEach={
-            visitMode === 'choose'
-              ? () => {
-                  setVisitPeople(visitServiceIds.map(() => null));
-                  goToStep('visit_people');
-                }
-              : undefined
-          }
           onSelect={(option) => {
             setVisitPeople(null);
             setSelectedService(option);

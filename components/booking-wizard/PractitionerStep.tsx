@@ -2,7 +2,6 @@ import { FlatList, StyleSheet, View } from 'react-native';
 
 import { optionFromPricePence } from '@/components/booking-wizard/ServicePickerStep';
 import { Avatar } from '@/components/ui/Avatar';
-import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { DOES_NOT_USUALLY_OFFER } from '@/lib/booking/availability-override';
@@ -28,11 +27,6 @@ type PractitionerStepProps = {
   onSelect: (option: AppointmentServiceOption) => void;
   /** Staff "Override availability" on (web #187): every person is listed, some unassigned. */
   overrideAvailability?: boolean;
-  /**
-   * Several services, and someone other than these people offers some of them (web split-visit plan
-   * 6.1): offers "Choose someone different for each service" under the list.
-   */
-  onChooseEach?: () => void;
   /**
    * The visit's other services after the first, when several are booked with one person: the heading
    * names them all and each person's price is theirs for the whole visit (found 2026-11-04: the list
@@ -126,7 +120,6 @@ export function PractitionerStep({
   durationOverride = null,
   onSelect,
   overrideAvailability = false,
-  onChooseEach,
   extraServices = [],
 }: PractitionerStepProps) {
   const visitIds = [serviceOption.serviceId, ...extraServices.map((e) => e.serviceId)];
@@ -213,22 +206,6 @@ export function PractitionerStep({
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
         ItemSeparatorComponent={Separator}
-        ListFooterComponent={
-          onChooseEach ? (
-            <View style={styles.footer}>
-              <Button
-                label="Choose someone different for each service"
-                variant="secondary"
-                fullWidth
-                testID="choose-each-person"
-                onPress={() => {
-                  hapticSelect();
-                  onChooseEach();
-                }}
-              />
-            </View>
-          ) : null
-        }
         renderItem={({ item }) => {
           const caption = rowCaption(item, isVisit ? null : durationOverride, overrideAvailability);
           const price = item.isAnyAvailable ? null : formatPrice(item);
@@ -280,9 +257,6 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: spacing.sm,
-  },
-  footer: {
-    marginTop: spacing.md,
   },
   row: {
     flexDirection: 'row',

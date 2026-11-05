@@ -206,6 +206,43 @@ export function pruneLaterChoices<P extends VisitPerson>(params: {
   return next;
 }
 
+/**
+ * The person step opens straight on a person per service (web 2026-11-05: clients missed "Choose
+ * someone different for each service"). So that one person for everything stays one tap, a choice
+ * fills every other service not chosen yet, where that person (or "any") may take it. Choices
+ * already made are never changed. The caller runs {@link pruneLaterChoices} first.
+ */
+export function fillUnchosenChoices<P extends VisitPerson>(params: {
+  people: readonly P[];
+  serviceIds: readonly string[];
+  choices: readonly StoredPersonChoice[];
+  changedIndex: number;
+  isCollective: boolean;
+  anyId: string;
+  /** Whether "any available" may be offered for a service. */
+  anyOfferedFor: (serviceId: string) => boolean;
+}): StoredPersonChoice[] {
+  const chosen = params.choices[params.changedIndex];
+  if (!chosen) return [...params.choices];
+  const next = [...params.choices];
+  for (let i = 0; i < params.serviceIds.length; i += 1) {
+    if (i === params.changedIndex || next[i]) continue;
+    const serviceId = params.serviceIds[i]!;
+    if (chosen === params.anyId) {
+      if (params.anyOfferedFor(serviceId)) next[i] = chosen;
+      continue;
+    }
+    const { people } = peopleForService({
+      people: params.people,
+      serviceId,
+      chosen: choicesAsPersonChoices(next.filter((_, j) => j !== i), params.anyId),
+      isCollective: params.isCollective,
+    });
+    if (people.some((p) => p.id === chosen)) next[i] = chosen;
+  }
+  return next;
+}
+
 /** One service of a visit laid out by hand (staff "Override availability"). */
 export interface LaidSegment {
   /** The calendar; the same person is the same calendar here (one business, or one calendar). */

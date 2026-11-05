@@ -84,7 +84,7 @@ export function VisitPeopleStep({
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <Text variant="heading">Who is each service with?</Text>
         <Text variant="bodySmall" tone="muted">
-          Choose who does each service. It can be a different person for each one.
+          Choose who does each service: the same person for all of them, or someone different for each.
         </Text>
         {lists.map(({ svc, index, listed, excluded, showAny }) => {
           const chosen = choices[index] ?? null;
