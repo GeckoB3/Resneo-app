@@ -30,6 +30,13 @@ jest.mock('@/components/collective-area/MemberCalendarsSheet', () => {
   };
 });
 
+// The member's calendars table has its own tests (MemberCalendarsGrid.test.tsx); here it only shows it is there.
+jest.mock('@/components/collective-area/MemberCalendarsGrid', () => {
+  const React = require('react');
+  const { Text } = require('react-native');
+  return { MemberCalendarsGrid: () => React.createElement(Text, null, 'Which calendars offer what') };
+});
+
 let mockParams: Record<string, string> = {};
 const mockPush = jest.fn();
 jest.mock('expo-router', () => ({
@@ -210,6 +217,8 @@ describe('CollectiveAreaScreen', () => {
     expect(screen.queryByText('Venues')).toBeNull();
     expect(screen.getByText(/^On the Northside page/)).toBeTruthy();
     expect(screen.getByText(/^Parked while you are part of Northside/)).toBeTruthy();
+    // Which calendar offers what, above the lists (2026-11-05).
+    expect(screen.getByText('Which calendars offer what')).toBeTruthy();
   });
   it("lets a host switch to every venue's services, with the members' suggestions above (2026-10-27)", async () => {
     mockServices = [{ id: 's1', name: 'Balayage', collective: block('master') }];

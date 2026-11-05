@@ -159,7 +159,7 @@ export function MemberServicesList({
   return (
     <View style={styles.stack}>
       <Text variant="bodySmall" tone="secondary">
-        Tap a service to choose which of your calendars offer it.
+        Tick your calendars in the table above for many services at once, or tap a service to give a calendar its own price or length.
       </Text>
       {section(
         'on-page',

@@ -41,6 +41,7 @@ import {
   VenueHealthCards,
 } from '@/components/collective-area/AreaPieces';
 import { HistoryPanel, MemberServicesList, VenuesPanel, type VenueRow } from '@/components/collective-area/AreaTabs';
+import { MemberCalendarsGrid } from '@/components/collective-area/MemberCalendarsGrid';
 import { LinkTodosCard } from '@/components/collective-area/LinkTodosCard';
 import { ListingsPanel } from '@/components/collective-area/ListingsPanel';
 import { MemberCalendarsSheet } from '@/components/collective-area/MemberCalendarsSheet';
@@ -428,6 +429,8 @@ function AreaBody({
                     hostName={collective.hostVenueName}
                     currencySymbol={currencySymbol}
                   />
+                  {/* Which calendar offers what, ticked many at a time and saved together (web 2026-11-05). */}
+                  <MemberCalendarsGrid collectiveId={collective.id} collectiveName={collective.name} />
                   <MemberServicesList
                     services={services}
                     hostName={collective.hostVenueName}
