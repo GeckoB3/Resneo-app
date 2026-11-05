@@ -1,12 +1,10 @@
 /**
  * The Collective area's other tabs, as the web's (2026-09-17):
  *
- *   MemberServicesList  a member's services tab (web `MemberServicesList` in CollectiveAreaClient)
  *   VenuesPanel         the host's Venues tab (web `CollectiveVenuesPanel`)
  *   HistoryPanel        the History tab (web `CollectiveHistoryPanel`)
  */
 import { useRouter, type Href } from 'expo-router';
-import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
@@ -25,8 +23,6 @@ import { areaCopy } from '@/lib/collective-area/copy';
 import { invitedVenueStatus } from '@/lib/collective-area/invite-links';
 import {
   groupStatus,
-  hiddenPillVenue,
-  type AreaService,
   type CollectiveCalendarGroup,
   type HistoryFilter,
 } from '@/lib/collective-area/model';
@@ -41,166 +37,6 @@ import { useInviteCheck } from '@/lib/queries/useCollectiveLinks';
 import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
-
-// ---------------------------------------------------------------------------
-// A member's services
-// ---------------------------------------------------------------------------
-
-export function MemberServicesList({
-  services,
-  hostName,
-  collectiveName,
-  onChooseCalendars,
-}: {
-  services: AreaService[];
-  hostName: string;
-  collectiveName: string;
-  /**
-   * A page service tapped: choose which of this venue's calendars offer it, on this screen (owner,
-   * 2026-10-29; it used to send the member to the Services screen).
-   */
-  onChooseCalendars: (serviceId: string) => void;
-}) {
-  const { colors } = useTheme();
-  const onPage = services.filter((s) => s.collective?.role === 'replica');
-  const parked = services.filter((s) => s.collective?.role === 'parked');
-  const retired = services.filter((s) => s.collective?.role === 'retired');
-  /**
-   * The parked services are also under Your services above, with their ticks, and the retired ones
-   * need nothing doing: both start folded, count in the heading, so the list on the page is what a
-   * member sees first (web 2026-10-28: a member scrolled past 31 rows to reach nothing).
-   */
-  const [open, setOpen] = useState<Record<string, boolean>>({});
-
-  const section = (
-    id: string,
-    title: string,
-    caption: string,
-    rows: AreaService[],
-    badge: (s: AreaService) => React.ReactNode,
-    folded = false,
-  ) => {
-    if (rows.length === 0) return null;
-    const shown = !folded || open[id] === true;
-    const heading = (
-      <Text variant="label" style={styles.flex1}>
-        {title} <Text variant="bodySmall" tone="muted">{`(${rows.length})`}</Text>
-      </Text>
-    );
-    return (
-      <View style={styles.section}>
-        {folded ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ expanded: shown }}
-            accessibilityLabel={`${title} (${rows.length})`}
-            onPress={() => setOpen((prev) => ({ ...prev, [id]: !shown }))}
-            style={styles.foldHead}
-          >
-            {heading}
-            <SymbolView
-              name={
-                shown
-                  ? { ios: 'chevron.up', android: 'expand_less', web: 'expand_less' }
-                  : { ios: 'chevron.down', android: 'expand_more', web: 'expand_more' }
-              }
-              tintColor={colors.textMuted}
-              size={16}
-            />
-          </Pressable>
-        ) : (
-          heading
-        )}
-        {shown ? (
-          <>
-            <Text variant="caption" tone="secondary">
-              {caption}
-            </Text>
-            <Card padded={false}>
-              {rows.map((s, index) => {
-                const rowStyle = [styles.memberRow, index > 0 ? [styles.rowDivider, { borderTopColor: colors.border }] : null];
-                const content = (
-                  <>
-                    <Text variant="bodySmall" style={styles.flex1}>
-                      {s.name}
-                    </Text>
-                    {badge(s)}
-                  </>
-                );
-                // A service on the page: tap it to choose its calendars here.
-                return s.collective?.role === 'replica' ? (
-                  <Pressable
-                    key={s.id}
-                    accessibilityRole="button"
-                    accessibilityLabel={areaCopy('ms.openService', { service: s.name })}
-                    onPress={() => onChooseCalendars(s.id)}
-                    style={({ pressed }) => [rowStyle, styles.tapRow, pressed ? { opacity: 0.6 } : null]}
-                  >
-                    {content}
-                    <SymbolView
-                      name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
-                      tintColor={colors.textMuted}
-                      size={14}
-                    />
-                  </Pressable>
-                ) : (
-                  <View key={s.id} style={rowStyle}>
-                    {content}
-                  </View>
-                );
-              })}
-            </Card>
-          </>
-        ) : null}
-      </View>
-    );
-  };
-
-  return (
-    <View style={styles.stack}>
-      <Text variant="bodySmall" tone="secondary">
-        Tick your calendars in the table above for many services at once, or tap a service to give a calendar its own price or length.
-      </Text>
-      {section(
-        'on-page',
-        areaCopy('svc.member.section.fromHostTitle', { host: hostName, collective: collectiveName }),
-        areaCopy('svc.member.section.fromHostCaption', { host: hostName, collective: collectiveName }),
-        onPage,
-        (s) => {
-          // Switched off by the host: on the page, but nobody can book it (web 2026-10-28).
-          if (s.is_active === false) {
-            return (
-              <Text variant="caption" color={colors.warning} style={styles.switchedOffNote}>
-                {areaCopy('svc.member.switchedOff', { host: hostName })}
-              </Text>
-            );
-          }
-          const block = s.collective!;
-          const venue = block.status === 'hidden' ? hiddenPillVenue(block.hidden_reasons) : null;
-          return (
-            <SyncBadge status={block.status} label={venue ? areaCopy('svc.card.hiddenAt', { venue }) : null} />
-          );
-        },
-      )}
-      {section(
-        'parked',
-        areaCopy('svc.member.section.parkedTitle', { collective: collectiveName }),
-        areaCopy('svc.member.section.parkedCaption', { collective: collectiveName, host: hostName }),
-        parked,
-        () => <Badge label={areaCopy('common.pill.parked')} />,
-        true,
-      )}
-      {section(
-        'retired',
-        areaCopy('svc.member.section.retired', { host: hostName }),
-        areaCopy('svc.member.section.retiredCaption', { host: hostName, collective: collectiveName }),
-        retired,
-        () => <Badge label={areaCopy('common.pill.retired')} />,
-        true,
-      )}
-    </View>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // The host's Venues tab

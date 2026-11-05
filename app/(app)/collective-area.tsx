@@ -40,11 +40,9 @@ import {
   TodoStrip,
   VenueHealthCards,
 } from '@/components/collective-area/AreaPieces';
-import { HistoryPanel, MemberServicesList, VenuesPanel, type VenueRow } from '@/components/collective-area/AreaTabs';
-import { MemberCalendarsGrid } from '@/components/collective-area/MemberCalendarsGrid';
+import { HistoryPanel, VenuesPanel, type VenueRow } from '@/components/collective-area/AreaTabs';
 import { LinkTodosCard } from '@/components/collective-area/LinkTodosCard';
 import { ListingsPanel } from '@/components/collective-area/ListingsPanel';
-import { MemberCalendarsSheet } from '@/components/collective-area/MemberCalendarsSheet';
 import { MemberSuggestPanel } from '@/components/collective-area/MemberSuggestPanel';
 import { ServicesGridBar, ServicesGridList, useServicesGrid } from '@/components/collective-area/ServicesGrid';
 import { SuggestionsReviewCard } from '@/components/collective-area/SuggestionsReviewCard';
@@ -71,7 +69,7 @@ import {
   type AreaService,
   type CollectiveCalendarGroup,
 } from '@/lib/collective-area/model';
-import { useCollectiveRetry } from '@/lib/queries/useCollectiveArea';
+import { useCollectiveRetry, useOwnCollectiveCalendars } from '@/lib/queries/useCollectiveArea';
 import { useCollectives } from '@/lib/queries/useCollectives';
 import { useManagedServices } from '@/lib/queries/useServicesManage';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
@@ -211,8 +209,6 @@ function AreaBody({
       : 'services',
   );
   const [historyVenueId, setHistoryVenueId] = useState<string | null>(null);
-  /** A member's page service opened from its list, to choose its calendars here (2026-10-29). */
-  const [calendarsServiceId, setCalendarsServiceId] = useState<string | null>(null);
   const [servicesView, setServicesView] = useState<ServicesView>(
     oneParam(params.view) === 'venues' ? 'venues' : 'page',
   );
@@ -226,11 +222,24 @@ function AreaBody({
     initialVenueId: oneParam(params.venue),
     initialFilter: oneParam(params.filter) === 'suggested' ? 'suggested' : null,
   });
+  // A member gets the host's grid over its own calendars and its copies of the page's services
+  // (web 2026-11-05); the host, every venue's calendars and its own services.
+  const ownCalendars = useOwnCollectiveCalendars(collective.id, !collective.isHost);
+  const gridGroups = useMemo(
+    () => (collective.isHost ? groups : ownCalendars.data ? [ownCalendars.data] : []),
+    [collective.isHost, groups, ownCalendars.data],
+  );
+  const gridServices = useMemo(
+    () => (collective.isHost ? services : services.filter((s) => s.collective?.role === 'replica')),
+    [collective.isHost, services],
+  );
   const grid = useServicesGrid({
     collectiveId: collective.id,
     collectiveName: collective.name,
-    services,
-    groups,
+    services: gridServices,
+    groups: gridGroups,
+    viewer: collective.isHost ? 'host' : 'member',
+    hostName: collective.hostVenueName,
   });
   // `?choose={venueId}` opens straight on that venue's calendars (What needs you on Services).
   const chooseVenueId = oneParam(params.choose);
@@ -386,11 +395,8 @@ function AreaBody({
                 todos={todos}
                 onRetry={onRetry}
                 onOpenService={(id) => {
-                  if (!collective.isHost) {
-                    setCalendarsServiceId(id);
-                    return;
-                  }
-                  setServicesView('page');
+                  // A member's grid is its only view; the host's may be showing every venue's services.
+                  if (collective.isHost) setServicesView('page');
                   grid.setOpenServiceId(id);
                 }}
                 onOpenVenue={(id) => {
@@ -429,21 +435,30 @@ function AreaBody({
                     hostName={collective.hostVenueName}
                     currencySymbol={currencySymbol}
                   />
-                  {/* Which calendar offers what, ticked many at a time and saved together (web 2026-11-05). */}
-                  <MemberCalendarsGrid collectiveId={collective.id} collectiveName={collective.name} />
-                  <MemberServicesList
-                    services={services}
-                    hostName={collective.hostVenueName}
-                    collectiveName={collective.name}
-                    onChooseCalendars={setCalendarsServiceId}
-                  />
-                  {calendarsServiceId ? (
-                    <MemberCalendarsSheet
-                      serviceId={calendarsServiceId}
-                      currencySymbol={currencySymbol}
-                      onClose={() => setCalendarsServiceId(null)}
-                    />
-                  ) : null}
+                  {/* One section: the host's grid, with this venue's own calendars (web 2026-11-05). */}
+                  <View style={styles.memberGrid}>
+                    <Text variant="label">
+                      {areaCopy('svc.member.section.fromHostTitle', {
+                        host: collective.hostVenueName,
+                        collective: collective.name,
+                      })}{' '}
+                      <Text variant="bodySmall" tone="muted">{`(${gridServices.length})`}</Text>
+                    </Text>
+                    <Text variant="caption" tone="secondary">
+                      {areaCopy('svc.member.chooseHere')}
+                    </Text>
+                    {ownCalendars.isError ? (
+                      <Text variant="bodySmall" tone="danger">
+                        Could not load your calendars. Pull down to try again.
+                      </Text>
+                    ) : ownCalendars.data ? (
+                      <ServicesGridList grid={grid} currencySymbol={currencySymbol} />
+                    ) : (
+                      <Text variant="bodySmall" tone="muted">
+                        Loading your calendars…
+                      </Text>
+                    )}
+                  </View>
                   <LeaveCollectiveCard
                     collectiveId={collective.id}
                     collectiveName={collective.name}
@@ -493,6 +508,7 @@ function AreaBody({
         {tab === 'services' && collective.isHost ? (
           showVenueServices ? <VenueServicesBar panel={panel} /> : <ServicesGridBar grid={grid} />
         ) : null}
+        {tab === 'services' && !collective.isHost && ownCalendars.data ? <ServicesGridBar grid={grid} /> : null}
       </View>
     </Screen>
   );
@@ -507,5 +523,6 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   intro: { gap: spacing.xxs },
+  memberGrid: { gap: spacing.sm },
   bookingPageLink: { alignSelf: 'flex-start', marginTop: spacing.sm },
 });

@@ -10,13 +10,14 @@
  *   history                GET  /api/venue/collectives/[id]/history
  *   hosting and members    PATCH /api/venue/collectives/[id]/members
  */
-import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Platform, Share } from 'react-native';
 
 import { ApiError, apiFetch, apiRawFetch } from '@/lib/api/client';
 import type {
   BulkOp,
   BulkOpResult,
+  CollectiveCalendarGroup,
   CollectiveSync,
   HistoryFilter,
   HistoryPage,
@@ -36,7 +37,27 @@ function useInvalidateArea() {
     void queryClient.invalidateQueries({ queryKey: queryKeys.collectives.all() });
     void queryClient.invalidateQueries({ queryKey: queryKeys.staffCollective.all() });
     void queryClient.invalidateQueries({ queryKey: ['collectiveHistory'] });
+    void queryClient.invalidateQueries({ queryKey: ['collectiveOwnCalendars'] });
   };
+}
+
+/**
+ * A member's own calendars and what each offers on the page, in the grid's shape (web 2026-11-05:
+ * GET /api/venue/collectives/{id}/my-calendars). Null on an older server or outside a collective.
+ */
+export function useOwnCollectiveCalendars(collectiveId: string | null, enabled: boolean) {
+  const accessToken = useAccessToken();
+  return useQuery({
+    queryKey: ['collectiveOwnCalendars', collectiveId, accessToken],
+    enabled: enabled && Boolean(accessToken && collectiveId),
+    queryFn: async (): Promise<CollectiveCalendarGroup | null> => {
+      const data = await apiFetch<{ group?: CollectiveCalendarGroup | null }>(
+        `/api/venue/collectives/${collectiveId}/my-calendars`,
+        { accessToken: accessToken! },
+      );
+      return data.group ?? null;
+    },
+  });
 }
 
 /**
@@ -46,9 +67,11 @@ function useInvalidateArea() {
  * `{ ops, acknowledgeAffected: true }` (CQ-04) sends removals the host has been shown the upcoming
  * bookings for. The flag covers every removal in the request, so send only those.
  */
-export function useCollectiveBulkSave(collectiveId: string | null) {
+export function useCollectiveBulkSave(collectiveId: string | null, options: { member?: boolean } = {}) {
   const accessToken = useAccessToken();
   const invalidate = useInvalidateArea();
+  // A member saves its own calendars through its own route, in the same shape (web 2026-11-05).
+  const path = options.member ? 'my-calendars' : 'bulk';
   return useMutation({
     mutationFn: async (input: BulkOp[] | { ops: BulkOp[]; acknowledgeAffected?: boolean }): Promise<BulkOpResult[]> => {
       if (!accessToken || !collectiveId) throw new Error('Missing access token');
@@ -59,7 +82,7 @@ export function useCollectiveBulkSave(collectiveId: string | null) {
         const chunk = ops.slice(start, start + BULK_CHUNK);
         try {
           const data = await apiFetch<{ results?: BulkOpResult[] }>(
-            `/api/venue/collectives/${collectiveId}/bulk`,
+            `/api/venue/collectives/${collectiveId}/${path}`,
             {
               accessToken,
               method: 'POST',

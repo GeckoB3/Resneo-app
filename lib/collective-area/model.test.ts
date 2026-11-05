@@ -12,6 +12,7 @@ import {
   bulkFailureRetryable,
   bulkOps,
   calendarWillOffer,
+  cellLabel,
   cellState,
   describeStaged,
   failedKeptLine,
@@ -30,6 +31,7 @@ import {
   pickerResult,
   pickerServices,
   pickerState,
+  isOnPage,
   removalWarnings,
   retryOutcome,
   selectionLabel,
@@ -114,6 +116,15 @@ describe('the area', () => {
   it('reads a cell as all, some or no calendars', () => {
     expect(cellState(groups[0]!, 'item-1')).toBe('some');
     expect(cellState(groups[1]!, 'item-1')).toBe('none');
+  });
+
+  it("says how many calendars offer it, and counts a member's copy as on the page (web 2026-11-05)", () => {
+    const active = groups[0]!.calendars.filter((c) => c.is_active);
+    const offering = active.filter((c) => c.assigned.some((a) => a.item_id === 'item-1')).length;
+    expect(cellLabel(groups[0]!, 'item-1')).toBe(`${offering} of ${active.length} calendars`);
+    expect(cellLabel(groups[1]!, 'item-1')).toBe('No calendars');
+    expect(isOnPage({ id: 'c1', name: 'Cut', collective: block({ role: 'replica' }) })).toBe(true);
+    expect(isOnPage({ id: 'c2', name: 'Cut', collective: block({ role: 'parked', item_id: null }) })).toBe(false);
   });
 
   it('lists services on the page first and filters the ones needing attention', () => {
@@ -392,6 +403,10 @@ describe('choosing calendars for the services picked (web CollectiveBulkCalendar
     ]);
     expect(removalWarnings([...off('v-a', 'c-a'), ...off('v-b', 'c-b')], list, everywhere)).toEqual([
       'Nobody will be able to book 5 of these services at any venue: Cut, Tint, Perm and 2 more.',
+    ]);
+    // A member sees only its own venue, so it is never told nobody anywhere can book them.
+    expect(removalWarnings(off('v-a', 'c-a'), list, [everywhere[0]!], true)).toEqual([
+      'Nobody at Zen in Holywood will offer 5 of these services: Cut, Tint, Perm and 2 more.',
     ]);
   });
 

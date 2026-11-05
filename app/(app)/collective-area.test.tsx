@@ -20,23 +20,6 @@ jest.mock('@/components/ui/Sheet', () => {
   };
 });
 
-// Choose calendars opens the Services screen's member sheet, which has its own tests.
-jest.mock('@/components/collective-area/MemberCalendarsSheet', () => {
-  const React = require('react');
-  const { Text } = require('react-native');
-  return {
-    MemberCalendarsSheet: ({ serviceId }: { serviceId: string }) =>
-      React.createElement(Text, null, `Calendars sheet for ${serviceId}`),
-  };
-});
-
-// The member's calendars table has its own tests (MemberCalendarsGrid.test.tsx); here it only shows it is there.
-jest.mock('@/components/collective-area/MemberCalendarsGrid', () => {
-  const React = require('react');
-  const { Text } = require('react-native');
-  return { MemberCalendarsGrid: () => React.createElement(Text, null, 'Which calendars offer what') };
-});
-
 let mockParams: Record<string, string> = {};
 const mockPush = jest.fn();
 jest.mock('expo-router', () => ({
@@ -78,7 +61,10 @@ const mockBulkSave = jest.fn(async (ops: unknown[]) => ops.map((_op, index) => (
 const mockPatch = jest.fn();
 // "Switch it on" (2026-10-28): resolves once the services are read again.
 const mockSwitchOn = jest.fn(async (_serviceId: string) => undefined);
+// A member's own calendars, for the grid it shares with the host (web 2026-11-05).
+let mockOwnGroup: CollectiveCalendarGroup | null | undefined;
 jest.mock('@/lib/queries/useCollectiveArea', () => ({
+  useOwnCollectiveCalendars: () => ({ data: mockOwnGroup, isError: false }),
   useCollectiveRetry: () => ({ mutate: mockRetry, isPending: false }),
   useCollectiveBulkSave: () => ({ mutate: jest.fn(), mutateAsync: mockBulkSave, isPending: false }),
   useCollectiveBulkPreview: () => ({ mutate: jest.fn(), isPending: false }),
@@ -158,6 +144,24 @@ const service = (id: string, name: string, overrides: Partial<VenueServicesRespo
   ...overrides,
 });
 
+/** A member's own calendars: Chair 1 offers the page's service, Chair 2 does not. */
+const ownGroup = (): CollectiveCalendarGroup => ({
+  venue_id: 'v-zen',
+  venue_name: 'Zen Studio',
+  is_host: false,
+  is_viewer: true,
+  sync: { venues: 1, applied: 1, pending: [], failed: [] },
+  calendars: [
+    {
+      id: 'cal-1',
+      name: 'Chair 1',
+      is_active: true,
+      assigned: [{ item_id: 'item-1', service_id: 's1', values: {}, last_changed: null } as never],
+    },
+    { id: 'cal-2', name: 'Chair 2', is_active: true, assigned: [] },
+  ],
+});
+
 const hostView: VenueServicesResponse = {
   role: 'host',
   collective_name: 'Northside',
@@ -208,17 +212,24 @@ describe('CollectiveAreaScreen', () => {
     expect(screen.getByPlaceholderText('Search services')).toBeTruthy();
   });
 
-  it('gives a member its own lists, and no Venues tab', async () => {
+  it("gives a member the host's grid in one section, its own calendars only, and no Venues tab (2026-11-05)", async () => {
     mockServices = [
       { id: 's1', name: 'Balayage', collective: block('replica') },
       { id: 's2', name: 'Old cut', collective: block('parked') },
     ];
+    mockOwnGroup = ownGroup();
     await render(<CollectiveAreaScreen />);
     expect(screen.queryByText('Venues')).toBeNull();
     expect(screen.getByText(/^On the Northside page/)).toBeTruthy();
-    expect(screen.getByText(/^Parked while you are part of Northside/)).toBeTruthy();
-    // Which calendar offers what, above the lists (2026-11-05).
-    expect(screen.getByText('Which calendars offer what')).toBeTruthy();
+    // The page's services only, each with how many of its calendars offer it.
+    expect(screen.getByText('Balayage')).toBeTruthy();
+    expect(screen.queryByText('Old cut')).toBeNull();
+    expect(screen.getByText('Zen Studio (you)')).toBeTruthy();
+    expect(screen.getByText('1 of 2 calendars')).toBeTruthy();
+    // No separate lists, and nothing to put on or take off the page.
+    expect(screen.queryByText(/^Parked while you are part of Northside/)).toBeNull();
+    expect(screen.queryByText('Not on the page')).toBeNull();
+    expect(screen.getByText('Select')).toBeTruthy();
   });
   it("lets a host switch to every venue's services, with the members' suggestions above (2026-10-27)", async () => {
     mockServices = [{ id: 's1', name: 'Balayage', collective: block('master') }];
@@ -283,7 +294,7 @@ describe('CollectiveAreaScreen', () => {
     expect(screen.getByText('Your services')).toBeTruthy();
     expect(screen.getByText('Suggest to Host Venue (0)')).toBeTruthy();
     expect(screen.queryByText("Every venue's services")).toBeNull();
-    expect(screen.getByText(/^Parked while you are part of Northside/)).toBeTruthy();
+    expect(screen.getByText(/^On the Northside page/)).toBeTruthy();
   });
   it("lets the host set a member calendar's own values from a service's sheet (2026-10-28)", async () => {
     mockServices = [
@@ -620,44 +631,31 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
     expect(screen.queryByText('Balayage')).toBeNull();
   });
 
-  it('opens Choose calendars on this screen when a member taps a page service (2026-10-29)', async () => {
+  it("opens a page service's own calendars on this screen when a member taps it, with no page actions", async () => {
     mockGroups = [];
-    mockServices = [
-      { id: 's1', name: 'Balayage', collective: block('replica') },
-      { id: 's2', name: 'Old cut', collective: block('parked') },
-    ];
+    mockOwnGroup = ownGroup();
+    mockServices = [{ id: 's1', name: 'Balayage', collective: block('replica') }];
     await render(<CollectiveAreaScreen />);
-    expect(screen.queryByText('Open Services')).toBeNull();
-    expect(screen.queryByText(/Calendars sheet for/)).toBeNull();
     await act(async () => {
-      fireEvent.press(screen.getByLabelText('Choose calendars for Balayage'));
+      fireEvent.press(screen.getByLabelText('Balayage'));
     });
-    expect(screen.getByText('Calendars sheet for s1')).toBeTruthy();
+    // Its own calendars, as the host's sheet lists every venue's.
+    expect(screen.getByText('Chair 1')).toBeTruthy();
+    expect(screen.getByText('Chair 2')).toBeTruthy();
+    expect(screen.queryByText('Take off the page')).toBeNull();
     expect(mockPush).not.toHaveBeenCalled();
-    // A parked service is not on the page: nothing to choose there.
-    await act(async () => {
-      fireEvent.press(screen.getByLabelText('Parked while you are part of Northside (1)'));
-    });
-    expect(screen.queryByLabelText('Choose calendars for Old cut')).toBeNull();
   });
 
-  it("folds a member's parked and retired lists until opened", async () => {
+  it('says a service the host switched off cannot be booked, with no switch for the member, and the member can leave', async () => {
     mockGroups = [];
+    mockOwnGroup = ownGroup();
     mockServices = [
       { id: 's1', name: 'Balayage', collective: block('replica') },
-      { id: 's2', name: 'Old cut', collective: block('parked') },
       { id: 's3', name: 'Brows', collective: block('replica'), is_active: false },
     ];
     await render(<CollectiveAreaScreen />);
-    expect(screen.getByText('Balayage')).toBeTruthy();
-    // Switched off by the host: said instead of the sync badge (web 2026-10-28).
     expect(screen.getByText('Switched off by Host Venue, so nobody can book it')).toBeTruthy();
-    expect(screen.queryByText('Old cut')).toBeNull();
-    await act(async () => {
-      fireEvent.press(screen.getByLabelText('Parked while you are part of Northside (1)'));
-    });
-    expect(screen.getByText('Old cut')).toBeTruthy();
-    expect(screen.getByText(/tick them under Your services and send them to Host Venue\.$/)).toBeTruthy();
+    expect(screen.queryByText('Turn it on')).toBeNull();
     // A member can leave from here, now the More tab shows one collective row.
     expect(screen.getByRole('button', { name: 'Leave Northside' })).toBeTruthy();
   });

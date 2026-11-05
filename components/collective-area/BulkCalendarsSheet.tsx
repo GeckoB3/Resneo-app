@@ -106,7 +106,7 @@ export function BulkCalendarsSheet({ grid }: { grid: ServicesGridState }) {
     // What the Save does, change by change, and who is left with nobody to offer a service,
     // counted over every venue, not only the ones shown.
     const described = describeStaged(result.ops, services, grid.groups);
-    const warnings = removalWarnings(result.ops, services, grid.groups);
+    const warnings = removalWarnings(result.ops, services, grid.groups, grid.isMember);
     return (
       <Sheet visible onClose={() => (grid.saving ? undefined : setAskingRemoval(false))} maxHeight="92%" fill>
         <View style={styles.header}>

@@ -51,6 +51,8 @@ export interface CollectiveCalendarGroup {
   venue_id: string;
   venue_name: string;
   is_host: boolean;
+  /** The venue reading it, marked "(you)": the host's own column, or a member's only one (web 2026-11-05). */
+  is_viewer?: boolean;
   sync: CollectiveSync;
   calendars: CollectiveCalendarEntry[];
   /**
@@ -208,8 +210,21 @@ export const CELL_LABEL: Record<CellState, string> = {
   none: areaCopy('ov.grid.cell.none'),
 };
 
+/** A venue's line for a service: "All calendars", "2 of 3 calendars" or "No calendars" (web 2026-11-05). */
+export function cellLabel(group: CollectiveCalendarGroup, itemId: string | null | undefined): string {
+  const state = cellState(group, itemId);
+  if (state !== 'some') return CELL_LABEL[state];
+  const active = group.calendars.filter((c) => c.is_active);
+  const offering = active.filter((c) => c.assigned.some((a) => a.item_id === itemId)).length;
+  return areaCopy('ov.grid.cell.someCount', { count: offering, total: active.length });
+}
+
+/**
+ * On the page: the host's own service (its master), or a member's copy of one. A venue is either the
+ * host or a member, so the grid reads the same for both (web 2026-11-05: members get the host's grid).
+ */
 export function isOnPage(service: AreaService): boolean {
-  return service.collective?.role === 'master';
+  return service.collective?.role === 'master' || service.collective?.role === 'replica';
 }
 
 export function isHiddenAt(service: AreaService, venueId: string): boolean {
@@ -570,8 +585,8 @@ export const UNDO_WINDOW_MS = 60_000;
  * A venue as the host reads it (web `gridVenueName`, CQ-07): only the host sees the grid, so its
  * own venue is "Aura Hair Studio (you)". A member of the same name arrives labelled with its town.
  */
-export function gridVenueName(group: Pick<CollectiveCalendarGroup, 'is_host' | 'venue_name'>): string {
-  return group.is_host ? areaCopy('svc.cal.venueYou', { venue: group.venue_name }) : group.venue_name;
+export function gridVenueName(group: Pick<CollectiveCalendarGroup, 'is_host' | 'is_viewer' | 'venue_name'>): string {
+  return (group.is_viewer ?? group.is_host) ? areaCopy('svc.cal.venueYou', { venue: group.venue_name }) : group.venue_name;
 }
 
 export interface DescribeService {
@@ -886,6 +901,8 @@ export function removalWarnings(
   ops: readonly BulkOp[],
   services: readonly PickerService[],
   groups: readonly CollectiveCalendarGroup[],
+  /** Only the viewer's own venue is known (a member's grid): never "nobody at any venue". */
+  ownVenueOnly = false,
 ): string[] {
   const nowhere: string[] = [];
   const atVenue = new Map<string, string[]>();
@@ -915,7 +932,7 @@ export function removalWarnings(
       anywhere += after;
       if (before > 0 && after === 0) emptied.push(group.venue_name);
     }
-    if (anywhere === 0) {
+    if (anywhere === 0 && !ownVenueOnly) {
       nowhere.push(service.name);
       continue;
     }

@@ -48,7 +48,7 @@ import {
   bulkFailure,
   bulkOps,
   calendarWillOffer,
-  CELL_LABEL,
+  cellLabel,
   cellState,
   describeStaged,
   failedKeptLine,
@@ -168,8 +168,17 @@ export function useServicesGrid(input: {
   collectiveName: string;
   services: AreaService[];
   groups: CollectiveCalendarGroup[];
+  /**
+   * Who is choosing (web 2026-11-05). A member gets the host's grid with one venue, its own
+   * calendars, over its copies of the page's services: nothing goes on or off the page from here,
+   * and saves go through the member's route. Defaults to the host.
+   */
+  viewer?: 'host' | 'member';
+  /** The host's name, for a member's service the host has switched off. */
+  hostName?: string;
 }) {
   const { collectiveId, collectiveName, services, groups } = input;
+  const isMember = input.viewer === 'member';
   const [filter, setFilter] = useState<GridFilter>('all');
   const [search, setSearch] = useState('');
   const [selecting, setSelecting] = useState(false);
@@ -198,7 +207,7 @@ export function useServicesGrid(input: {
   const [pageAsk, setPageAsk] = useState<PageAsk | null>(null);
   const [pageNote, setPageNote] = useState<PageNote | null>(null);
   const [pageBusy, setPageBusy] = useState(false);
-  const save = useCollectiveBulkSave(collectiveId);
+  const save = useCollectiveBulkSave(collectiveId, { member: isMember });
   const previewMutation = useCollectiveBulkPreview(collectiveId);
   /** "Switch it on" for a page service switched off at the host, and what went wrong with the last one. */
   const switchOnMutation = useSwitchServiceOn();
@@ -585,7 +594,10 @@ export function useServicesGrid(input: {
     },
     crossing,
     /** Whether "Put on the page" / "Take off the page" would change anything ticked (CQ-03). */
-    canPageChange: (kind: PageOpKind) => pageChangeable(kind, [...selectedServices], services).length > 0,
+    // A member puts nothing on or off the page: that is the host's (it suggests instead).
+    canPageChange: (kind: PageOpKind) => !isMember && pageChangeable(kind, [...selectedServices], services).length > 0,
+    isMember,
+    hostName: input.hostName ?? 'the host',
     staged,
     setStaged,
     discard: () => {
@@ -657,7 +669,8 @@ export function ServicesGridList({ grid, currencySymbol }: { grid: ServicesGridS
         options={[
           { value: 'all', label: areaCopy('ov.filter.all') },
           { value: 'attention', label: grid.attentionLabel },
-          { value: 'off_page', label: areaCopy('ov.filter.offPage') },
+          // A member's grid holds only what is on the page.
+          ...(grid.isMember ? [] : [{ value: 'off_page' as const, label: areaCopy('ov.filter.offPage') }]),
         ]}
         value={grid.filter}
         onChange={grid.setFilter}
@@ -767,7 +780,15 @@ export function ServicesGridList({ grid, currencySymbol }: { grid: ServicesGridS
               </View>
               {/* Switched off on the Services screen: on the page, but nobody can book it anywhere.
                   Saying so, with the switch right here, is the whole fix (web 2026-10-28). */}
-              {switchedOff ? (
+              {switchedOff && grid.isMember ? (
+                // The host switched it off: only the host can switch it back on.
+                <View style={styles.switchedOff}>
+                  <Text variant="caption" color={colors.warning}>
+                    {areaCopy('svc.member.switchedOff', { host: grid.hostName })}
+                  </Text>
+                </View>
+              ) : null}
+              {switchedOff && !grid.isMember ? (
                 <View style={styles.switchedOff}>
                   <Text variant="caption" color={colors.warning}>
                     {areaCopy('ov.grid.row.switchedOff')}
@@ -805,7 +826,7 @@ export function ServicesGridList({ grid, currencySymbol }: { grid: ServicesGridS
                         ) : changes > 0 ? (
                           <Badge label={areaCopy('ov.grid.cell.staged', { count: changes })} tone="brand" />
                         ) : (
-                          <Badge label={CELL_LABEL[state]} tone={hidden ? 'warning' : CELL_TONE[state]} />
+                          <Badge label={cellLabel(group, service.collective?.item_id)} tone={hidden ? 'warning' : CELL_TONE[state]} />
                         )}
                         {hidden && changes === 0 && !pageChange ? (
                           <Badge label={areaCopy('ov.grid.cell.hidden')} tone="warning" />
@@ -886,7 +907,7 @@ export function ServicesGridBar({ grid }: { grid: ServicesGridState }) {
             ) : null}
             {/* Only when a venue's copy actually failed to update: a refused change is not helped
                 by bringing copies up to date (CQ-04). */}
-            {grid.groups.some((g) => g.sync.failed.length > 0) ? (
+            {!grid.isMember && grid.groups.some((g) => g.sync.failed.length > 0) ? (
               <Button label={areaCopy('ov.bulk.retry')} variant="secondary" size="sm" style={styles.barCell} onPress={() => grid.runBulk('retry')} />
             ) : null}
             <Button label={areaCopy('ov.bulk.clearSelection')} variant="ghost" size="sm" style={styles.barCell} onPress={grid.clearSelection} />
@@ -1022,7 +1043,7 @@ function ServiceSheet({ grid, currencySymbol }: { grid: ServicesGridState; curre
       <Sheet visible onClose={close} maxHeight="92%" fill>
         <CalendarValuesStep
           key={valuesTarget.calendarId}
-          mode="host"
+          mode={grid.isMember ? 'own' : 'host'}
           collectiveId={grid.collectiveId}
           serviceName={service.name}
           target={valuesTarget}
@@ -1071,13 +1092,15 @@ function ServiceSheet({ grid, currencySymbol }: { grid: ServicesGridState; curre
             ))}
           </View>
         ) : null}
-        <Button
-          label={onPage ? areaCopy('ov.bulk.withdraw') : areaCopy('ov.bulk.offer')}
-          variant="secondary"
-          fullWidth
-          disabled={busy || unsavedTicks}
-          onPress={() => grid.askPageChange(service.id, onPage ? 'withdraw' : 'offer')}
-        />
+        {grid.isMember ? null : (
+          <Button
+            label={onPage ? areaCopy('ov.bulk.withdraw') : areaCopy('ov.bulk.offer')}
+            variant="secondary"
+            fullWidth
+            disabled={busy || unsavedTicks}
+            onPress={() => grid.askPageChange(service.id, onPage ? 'withdraw' : 'offer')}
+          />
+        )}
         {!onPage ? (
           <Text variant="bodySmall" tone="secondary">
             {areaCopy('ov.grid.sheet.offPage')}
@@ -1123,8 +1146,11 @@ function ServiceSheet({ grid, currencySymbol }: { grid: ServicesGridState; curre
                             </Text>
                           ) : null}
                         </View>
-                        {/* The host's grid: a value for a setting not yet on turns it on. */}
-                        {assignedNow && service.collective?.role === 'master' ? (
+                        {/* The host's grid: a value for a setting not yet on turns it on. A member's:
+                            its own calendars, for the values the host lets calendars set. */}
+                        {assignedNow &&
+                        isOnPage(service) &&
+                        (!grid.isMember || Object.values(calendarValueFlags(service)).some(Boolean)) ? (
                           <Button
                             label={areaCopy('svc.cal.editValues')}
                             variant="ghost"
