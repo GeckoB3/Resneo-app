@@ -375,8 +375,11 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   );
   /** A member business's name on a collective, for the review's headings and the money per business. */
   const businessNameOf = useCallback(
-    (venueId: string) =>
-      catalogQuery.data?.practitioners.find((p) => p.owning_venue_id === venueId)?.owning_venue_name ?? 'Another business',
+    (venueId: string) => {
+      const p = catalogQuery.data?.practitioners.find((x) => x.owning_venue_id === venueId);
+      // The staff label tells two venues of one name apart (web 2026-11-05).
+      return p?.owning_venue_label?.trim() || p?.owning_venue_name || 'Another business';
+    },
     [catalogQuery.data],
   );
 

@@ -116,6 +116,12 @@ export interface AppointmentCatalogPractitioner {
   owning_venue_id?: string;
   owning_venue_name?: string;
   /**
+   * The venue as staff tell it apart (web 2026-11-05): two venues of one name in one town read by
+   * street or booking address, "Aura Hair Studio (/book/light-3)", and the viewer's own bare.
+   * Guests' catalogues label by town. Older servers send the guest label or none.
+   */
+  owning_venue_label?: string;
+  /**
    * Collective catalogue only: the member businesses this calendar's business may share a visit
    * with, itself included (web split-visit plan 8.2, the shared-address test). Older servers omit it.
    */

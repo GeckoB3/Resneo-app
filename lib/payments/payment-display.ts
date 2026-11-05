@@ -641,7 +641,8 @@ export function buildPaymentHistory(
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
     .map((p) => ({
       key: p.id,
-      pence: p.amount_pence,
+      // A till payment refunded in full carries what is left, nothing: say what came back (web 2026-11-05).
+      pence: p.status === 'refunded' && (p.pos_refunded_pence ?? 0) > 0 ? p.pos_refunded_pence! : p.amount_pence,
       methodLabel: paymentMethodLabel(p.method),
       // A recorded payment taken back off the booking moved no money through ResNeo (2026-11-04).
       statusLabel: isRecordedPayment(p) && p.status === 'refunded' ? 'Removed' : PAYMENT_STATUS_LABEL[p.status],

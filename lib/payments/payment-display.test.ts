@@ -285,6 +285,14 @@ describe('buildPaymentHistory', () => {
     ...over,
   });
 
+  it("shows a till payment refunded in full at what came back, not the £0.00 left of it (2026-11-05)", () => {
+    const rows = buildPaymentHistory(
+      [row({ method: 'cash', pos_method: 'cash', status: 'refunded', amount_pence: 0, pos_refunded_pence: 1000 })],
+      'bk-1',
+    );
+    expect(rows[0]).toMatchObject({ pence: 1000, statusLabel: 'Refunded' });
+  });
+
   it('lists every row newest first, including pending and failed ones', () => {
     // A failed or still-processing attempt is precisely what staff need when
     // something goes wrong; hiding it left the booking looking simply unpaid.

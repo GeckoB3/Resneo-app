@@ -71,6 +71,8 @@ export interface BookingPaymentRow {
    * payment is never a recorded one to remove, and only its own business refunds it (web 2026-11-05).
    */
   pos_method?: string | null;
+  /** A till payment: what has been refunded from the visit's share (its amount is what is left). */
+  pos_refunded_pence?: number | null;
 }
 
 /**

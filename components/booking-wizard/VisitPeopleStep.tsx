@@ -112,7 +112,7 @@ export function VisitPeopleStep({
                       key={person.id}
                       name={person.name}
                       avatar={person.name}
-                      detail={isCollective ? person.owning_venue_name ?? null : null}
+                      detail={isCollective ? person.owning_venue_label?.trim() || person.owning_venue_name || null : null}
                       price={personPrice(person, svc.serviceId)}
                       selected={chosen === person.id}
                       onPress={() => onChoose(index, person.id)}
