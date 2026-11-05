@@ -10,7 +10,7 @@ import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { EndCollectiveCard, SyncBadge } from '@/components/collective-area/AreaPieces';
+import { CollectiveNameSheet, EndCollectiveCard, SyncBadge } from '@/components/collective-area/AreaPieces';
 import { InviteVenueSheet } from '@/components/collective-area/InviteVenueSheet';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -214,6 +214,12 @@ export interface VenueRow {
   also_runs: string | null;
   /** Its subscription has lapsed, so the page leaves its calendars out until it is put right (web 2026-11-04). */
   lapsed?: boolean;
+  /** Its own name, as clients see it (web 2026-11-05). Absent from older servers: the row reads `venue_name`. */
+  own_name?: string;
+  /** The name staff in the collective call it by, or null. */
+  name_in_collective?: string | null;
+  /** Another active business here has its own name, so staff need a way to tell them apart. */
+  shares_name?: boolean;
 }
 
 type Ask = { venue: VenueRow; kind: 'remove' | 'cancel' | 'host' | 'cancel_move' } | null;
@@ -241,6 +247,8 @@ export function VenuesPanel({
   const { colors } = useTheme();
   const patch = useCollectiveMembersPatch(collectiveId);
   const [asking, setAsking] = useState<Ask>(null);
+  /** The business whose name in the collective the host is choosing (web 2026-11-05). */
+  const [naming, setNaming] = useState<VenueRow | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** Inviting any venue, in its own sheet here (web `CollectiveInvitePanel`, 2026-10-28). */
   const [inviting, setInviting] = useState(false);
@@ -349,11 +357,14 @@ export function VenuesPanel({
       <Card padded={false}>
         {ordered.map((row, index) => {
           const group = groups.find((g) => g.venue_id === row.venue_id) ?? null;
+          // Its own name, then what staff call it when that differs (web 2026-11-05).
+          const title = row.own_name ?? row.venue_name;
+          const canName = row.own_name !== undefined && (row.shares_name === true || Boolean(row.name_in_collective));
           return (
             <View key={row.venue_id} style={[styles.venueRow, index > 0 ? [styles.rowDivider, { borderTopColor: colors.border }] : null]}>
               <Text variant="bodyMedium">
                 {/* Only the host sees this tab, so the host row is the viewer's own venue (web CQ-07). */}
-                {row.is_host ? areaCopy('svc.cal.venueYou', { venue: row.venue_name }) : row.venue_name}
+                {row.is_host ? areaCopy('svc.cal.venueYou', { venue: title }) : title}
                 {row.status === 'invited' ? ` ${areaCopy('ov.venues.invited')}` : ''}
               </Text>
               <View style={styles.badges}>
@@ -367,12 +378,31 @@ export function VenuesPanel({
               {row.status === 'invited' ? (
                 <InvitedVenueStatus collectiveId={collectiveId} venueId={row.venue_id} venueName={row.venue_name} />
               ) : null}
+              {row.name_in_collective ? (
+                <Text variant="caption" tone="secondary">
+                  {areaCopy('names.knownAs', { collective: collectiveName, name: row.name_in_collective })}
+                </Text>
+              ) : row.shares_name && row.status === 'active' && !row.is_host ? (
+                // The host's own row reads its bare name here, which is not what other businesses see.
+                <Text variant="caption" tone="secondary">
+                  {areaCopy('names.shared', { label: row.venue_name })}
+                </Text>
+              ) : null}
               {row.also_runs ? (
                 <Text variant="caption" tone="muted">
                   {areaCopy('bm.members.alsoRuns', { modelList: row.also_runs })}
                 </Text>
               ) : null}
               <View style={styles.actions}>
+                {canName ? (
+                  <Button
+                    label={row.name_in_collective ? areaCopy('names.change') : areaCopy('names.set')}
+                    variant="ghost"
+                    size="sm"
+                    disabled={patch.isPending}
+                    onPress={() => setNaming(row)}
+                  />
+                ) : null}
                 {row.status === 'active' ? (
                   <Button
                     label={areaCopy('bp.members.history')}
@@ -414,6 +444,16 @@ export function VenuesPanel({
           );
         })}
       </Card>
+
+      <CollectiveNameSheet
+        visible={naming !== null}
+        onClose={() => setNaming(null)}
+        collectiveId={collectiveId}
+        collectiveName={collectiveName}
+        venueId={naming?.venue_id ?? ''}
+        venueName={naming?.own_name ?? naming?.venue_name ?? ''}
+        current={naming?.name_in_collective ?? null}
+      />
 
       <EndCollectiveCard collectiveId={collectiveId} collectiveName={collectiveName} onEnded={onEnded} />
 

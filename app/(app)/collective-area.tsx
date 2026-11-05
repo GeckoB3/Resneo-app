@@ -36,6 +36,7 @@ import {
   LeaveCollectiveCard,
   PausedHostingBanner,
   LapsedVenuesNotice,
+  CollectiveNameNotice,
   TodoStrip,
   VenueHealthCards,
 } from '@/components/collective-area/AreaPieces';
@@ -61,6 +62,7 @@ import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { areaCopy } from '@/lib/collective-area/copy';
+import { namedMembers, sharesNameInCollective } from '@/lib/collective-area/names';
 import { areaCollectiveWithFallback, type AreaCollectiveWithFallback } from '@/lib/collective-area/fallback';
 import {
   buildCollectiveTodos,
@@ -246,20 +248,27 @@ function AreaBody({
     [collective.isHost, services, groups],
   );
 
-  const venueRows = useMemo<VenueRow[]>(
-    () =>
-      (entry?.members ?? [])
-        .filter((m) => m.status === 'active' || m.status === 'invited')
-        .map((m) => ({
-          venue_id: m.venueId,
-          venue_name: m.venueName,
-          status: m.status as 'active' | 'invited',
-          is_host: m.venueId === entry?.hostVenueId,
-          also_runs: m.alsoRuns ?? null,
-          lapsed: m.lapsed === true,
-        })),
-    [entry],
-  );
+  const venueRows = useMemo<VenueRow[]>(() => {
+    const named = namedMembers(entry?.members ?? []);
+    return (entry?.members ?? [])
+      .filter((m) => m.status === 'active' || m.status === 'invited')
+      .map((m) => ({
+        venue_id: m.venueId,
+        venue_name: m.venueName,
+        status: m.status as 'active' | 'invited',
+        is_host: m.venueId === entry?.hostVenueId,
+        also_runs: m.alsoRuns ?? null,
+        lapsed: m.lapsed === true,
+        // What staff in the collective call each business, when two share a name (web 2026-11-05).
+        ...(typeof m.ownName === 'string'
+          ? {
+              own_name: m.ownName,
+              name_in_collective: m.nameInCollective ?? null,
+              shares_name: sharesNameInCollective(named, m.venueId),
+            }
+          : {}),
+      }));
+  }, [entry]);
 
   // Update now says what it did either way (web `retryVenue`, CQ-11): up to date, still updating,
   // or why that venue could not be updated.
@@ -332,6 +341,20 @@ function AreaBody({
           {/* A paused page has its own banner; otherwise say whose calendars a lapsed plan took off it. */}
           {entry && !entry.pausedAt ? (
             <LapsedVenuesNotice collectiveName={collective.name} myVenueId={entry.myVenueId} members={entry.members} />
+          ) : null}
+          {/* Two businesses here share a name: ask for names staff will recognise (web 2026-11-05). */}
+          {entry ? (
+            <CollectiveNameNotice
+              collectiveId={collective.id}
+              collectiveName={collective.name}
+              isHost={collective.isHost}
+              myVenueId={entry.myVenueId}
+              members={entry.members}
+              onOpenVenues={() => {
+                setHistoryVenueId(null);
+                setTab('venues');
+              }}
+            />
           ) : null}
           {/* The host asked whether to use this venue's same-named service (web plan L13). */}
           {!collective.isHost ? <AdoptionRequestsCard collectiveId={collective.id} /> : null}

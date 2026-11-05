@@ -24,6 +24,12 @@ import {
   type SyncStatus,
 } from '@/lib/collective-area/model';
 import { useCollectiveMembersPatch } from '@/lib/queries/useCollectiveArea';
+import {
+  collectiveNameClashes,
+  COLLECTIVE_NAME_MAX,
+  namedMembers,
+  tidyCollectiveName,
+} from '@/lib/collective-area/names';
 import { useDissolveCollective } from '@/lib/queries/useCollectives';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -338,6 +344,170 @@ export function LapsedVenuesNotice({
   );
 }
 
+/**
+ * What staff in the collective call a business, when two share a name (web `CollectiveNameDialog`,
+ * 2026-11-05). The host names any business from the Venues tab; a business names itself from the
+ * notice above the tabs. Clients never see the name.
+ */
+export function CollectiveNameSheet({
+  visible,
+  onClose,
+  collectiveId,
+  collectiveName,
+  venueId,
+  venueName,
+  current,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  collectiveId: string;
+  collectiveName: string;
+  venueId: string;
+  venueName: string;
+  current: string | null;
+}) {
+  const patch = useCollectiveMembersPatch(collectiveId);
+  const [value, setValue] = useState(current ?? '');
+  const [error, setError] = useState<string | null>(null);
+  const [shownFor, setShownFor] = useState<string | null>(null);
+  // Start from the current name each time the sheet opens for a business.
+  const key = visible ? `${venueId}:${current ?? ''}` : null;
+  if (key !== shownFor) {
+    setShownFor(key);
+    if (key) {
+      setValue(current ?? '');
+      setError(null);
+    }
+  }
+  const trimmed = tidyCollectiveName(value);
+  const save = (name: string | null) => {
+    setError(null);
+    patch.mutate(
+      { action: 'set_name', venueId, name_in_collective: name },
+      {
+        onSuccess: onClose,
+        onError: (err) => setError(err instanceof ApiError ? err.message : 'Could not save the name. Please try again.'),
+      },
+    );
+  };
+  return (
+    // A short form: the default lifts the whole sheet above the keyboard, so Save stays in reach.
+    <Sheet visible={visible} onClose={patch.isPending ? () => undefined : onClose}>
+      <View style={styles.sheetBody}>
+        <Text variant="subheading">{areaCopy('names.dialog.title', { venue: venueName })}</Text>
+        <Text variant="bodySmall" tone="secondary">
+          {areaCopy('names.dialog.intro', { collective: collectiveName, venue: venueName })}
+        </Text>
+        <Input
+          testID="collective-name-input"
+          label={areaCopy('names.field', { collective: collectiveName })}
+          helper={areaCopy('names.hint')}
+          value={value}
+          onChangeText={setValue}
+          maxLength={COLLECTIVE_NAME_MAX}
+          autoCorrect={false}
+        />
+        {error ? (
+          <Text variant="bodySmall" tone="danger">
+            {error}
+          </Text>
+        ) : null}
+        <Button
+          label={areaCopy('names.save')}
+          fullWidth
+          disabled={!trimmed || trimmed === (current ?? '') || patch.isPending}
+          loading={patch.isPending}
+          onPress={() => save(trimmed)}
+        />
+        {current ? (
+          <Button
+            label={areaCopy('names.clear')}
+            variant="secondary"
+            fullWidth
+            disabled={patch.isPending}
+            onPress={() => save(null)}
+          />
+        ) : null}
+        <Button label="Go back" variant="secondary" fullWidth disabled={patch.isPending} onPress={onClose} />
+      </View>
+    </Sheet>
+  );
+}
+
+/**
+ * Asks for names when two businesses in the collective share one (web `CollectiveNameNotice`,
+ * 2026-11-05). The host is sent to the Venues tab; a member that shares the name chooses its own
+ * here; a member with a name sees it and can change it. Older servers send no own names: nothing.
+ */
+export function CollectiveNameNotice({
+  collectiveId,
+  collectiveName,
+  isHost,
+  myVenueId,
+  members,
+  onOpenVenues,
+}: {
+  collectiveId: string;
+  collectiveName: string;
+  isHost: boolean;
+  myVenueId: string;
+  members: { venueId: string; status: string; ownName?: string; nameInCollective?: string | null }[];
+  onOpenVenues: () => void;
+}) {
+  const { colors } = useTheme();
+  const [naming, setNaming] = useState(false);
+  const named = namedMembers(members);
+  if (named.length === 0) return null;
+  const clashes = collectiveNameClashes(named);
+  const me = named.find((m) => m.venueId === myVenueId) ?? null;
+  const myClash = clashes.find((c) => c.venueIds.includes(myVenueId)) ?? null;
+  const warn = [styles.banner, { backgroundColor: colors.warningSurface, borderColor: colors.warning }];
+
+  if (isHost) {
+    if (clashes.length === 0) return null;
+    return (
+      <View testID="collective-name-notice" style={warn}>
+        {clashes.map((c) => (
+          <Text key={c.name} variant="bodySmall">
+            {areaCopy('names.todo.host', { collective: collectiveName, name: c.name })}
+          </Text>
+        ))}
+        <Button label={areaCopy('names.todo.hostButton')} variant="secondary" size="sm" onPress={onOpenVenues} />
+      </View>
+    );
+  }
+
+  if (!me || me.status !== 'active') return null;
+  const chosen = me.nameInCollective ?? null;
+  if (!myClash && !chosen) return null;
+  return (
+    <>
+      {myClash ? (
+        <View testID="collective-name-notice" style={warn}>
+          <Text variant="bodySmall">{areaCopy('names.todo.member', { collective: collectiveName, name: myClash.name })}</Text>
+          <Button label={areaCopy('names.set')} variant="secondary" size="sm" onPress={() => setNaming(true)} />
+        </View>
+      ) : (
+        <View testID="collective-name-notice" style={styles.nameLine}>
+          <Text variant="bodySmall" tone="secondary">
+            {areaCopy('names.knownAsYou', { collective: collectiveName, name: chosen! })}
+          </Text>
+          <Button label={areaCopy('names.change')} variant="ghost" size="sm" onPress={() => setNaming(true)} />
+        </View>
+      )}
+      <CollectiveNameSheet
+        visible={naming}
+        onClose={() => setNaming(false)}
+        collectiveId={collectiveId}
+        collectiveName={collectiveName}
+        venueId={myVenueId}
+        venueName={me.ownName}
+        current={chosen}
+      />
+    </>
+  );
+}
+
 export function PausedHostingBanner({
   collectiveId,
   collectiveName,
@@ -527,5 +697,6 @@ const styles = StyleSheet.create({
   },
   buttonRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   sheetBody: { gap: spacing.md },
+  nameLine: { gap: spacing.xs, alignItems: 'flex-start' },
   endCard: { gap: spacing.sm, borderWidth: StyleSheet.hairlineWidth },
 });

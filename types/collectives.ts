@@ -84,6 +84,10 @@ export interface CollectiveMemberView {
    * 2026-11-04): from the daily check or straight from its plan. Absent from older servers.
    */
   lapsed?: boolean;
+  /** Its own name, unlabelled, for comparing names (web 2026-11-05). Absent from older servers. */
+  ownName?: string;
+  /** The name staff in the collective call it by, chosen by it or the host, or null (web 2026-11-05). */
+  nameInCollective?: string | null;
 }
 
 export interface CollectiveView {
@@ -389,6 +393,11 @@ export interface JoinPreview {
    * place, which joining makes, and which hold it up. Absent on older servers.
    */
   links?: LinkNeed[];
+  /**
+   * Another business in the collective has this venue's name, so the sheet asks what staff there
+   * should call it (web 2026-11-05). Absent on older servers.
+   */
+  name_shared?: boolean;
 }
 
 // ---------------------------------------------------------------------------

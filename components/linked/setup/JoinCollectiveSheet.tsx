@@ -13,8 +13,11 @@ import {
 } from '@/components/linked/setup/JoinSteps';
 import { StepShell } from '@/components/linked/setup/StepShell';
 import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { areaCopy } from '@/lib/collective-area/copy';
+import { COLLECTIVE_NAME_MAX, tidyCollectiveName } from '@/lib/collective-area/names';
 import {
   defaultJoinDraft,
   EMPTY_JOIN_DRAFT,
@@ -78,6 +81,8 @@ export function JoinCollectiveSheet({
    * choices are kept as they were sent: the preview is read again once the venue is in.
    */
   const [joined, setJoined] = useState<{ preview: JoinPreview; draft: JoinDraft } | null>(null);
+  /** What staff in the collective call this venue, asked only when another one has its name (web 2026-11-05). */
+  const [nameInCollective, setNameInCollective] = useState('');
 
   useEffect(() => {
     if (!visible) return;
@@ -86,6 +91,7 @@ export function JoinCollectiveSheet({
     setAgreed(false);
     setError(null);
     setJoined(null);
+    setNameInCollective('');
   }, [visible]);
 
   useEffect(() => {
@@ -109,7 +115,17 @@ export function JoinCollectiveSheet({
     // One request: the server links the venue with every venue in the collective and joins it, or
     // refuses with nothing done, naming the venue (web 2026-10-28).
     join.mutate(
-      { collectiveId, payload: { action: 'accept', consent_version: preview.consent_version, ...joinChoicesFrom(preview, draft) } },
+      {
+        collectiveId,
+        payload: {
+          action: 'accept',
+          consent_version: preview.consent_version,
+          ...joinChoicesFrom(preview, draft),
+          ...(preview.name_shared && tidyCollectiveName(nameInCollective)
+            ? { name_in_collective: tidyCollectiveName(nameInCollective) }
+            : {}),
+        },
+      },
       {
         onSuccess: () => {
           toast.success(`Joined ${name}.`);
@@ -196,6 +212,18 @@ export function JoinCollectiveSheet({
                 </Text>
               ) : null}
               <JoinFormsSwitch preview={preview} draft={draft} onChange={setDraft} />
+              {preview.name_shared ? (
+                <Input
+                  testID="join-name-in-collective"
+                  label={areaCopy('names.field', { collective: name })}
+                  helper={areaCopy('names.join', { collective: name, venue: venueName })}
+                  placeholder={areaCopy('names.hint')}
+                  value={nameInCollective}
+                  onChangeText={setNameInCollective}
+                  maxLength={COLLECTIVE_NAME_MAX}
+                  autoCorrect={false}
+                />
+              ) : null}
               <ChoiceRow
                 kind="checkbox"
                 selected={agreed}
