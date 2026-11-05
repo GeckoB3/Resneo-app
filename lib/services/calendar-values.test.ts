@@ -47,10 +47,25 @@ describe('which fields the step shows', () => {
     ]);
     const deposit = calendarValueDefaults({ duration_minutes: 30, payment_requirement: 'deposit', deposit_pence: 500 });
     expect(keys(shownCalendarValueFields('host', NO_CALENDAR_VALUE_FLAGS, deposit))).toContain('custom_deposit_pence');
-    // A deposit the service already lets calendars set is shown either way.
-    expect(keys(shownCalendarValueFields('host', { ...NO_CALENDAR_VALUE_FLAGS, deposit: true }, noDeposit))).toContain(
+    // Through the collective a deposit means nothing on a service that takes none, whatever the
+    // setting says: a member's copy has every setting on (web 2026-11-05).
+    expect(keys(shownCalendarValueFields('host', { ...NO_CALENDAR_VALUE_FLAGS, deposit: true }, noDeposit))).not.toContain(
       'custom_deposit_pence',
     );
+  });
+
+  it("shows a member every value on its copy, and a deposit only when the service takes one (web 2026-11-05)", () => {
+    const all = { duration: true, buffer: true, price: true, deposit: true };
+    const noDeposit = calendarValueDefaults({ duration_minutes: 30, price_pence: 2500, payment_requirement: 'none' });
+    expect(keys(shownCalendarValueFields('member', all, noDeposit))).toEqual([
+      'custom_price_pence',
+      'custom_duration_minutes',
+      'custom_buffer_minutes',
+    ]);
+    const deposit = calendarValueDefaults({ duration_minutes: 30, payment_requirement: 'deposit', deposit_pence: 500 });
+    expect(keys(shownCalendarValueFields('member', NO_CALENDAR_VALUE_FLAGS, deposit))).toContain('custom_deposit_pence');
+    // Its own route still goes by the settings.
+    expect(keys(shownCalendarValueFields('own', { ...NO_CALENDAR_VALUE_FLAGS, price: true }, deposit))).toEqual(['custom_price_pence']);
   });
 
   // CQ-12 (Rule B): each option sets its own price, length and buffer, so only a deposit is a calendar's own.
@@ -176,6 +191,7 @@ describe('which calendar', () => {
       calendarName: 'Mo',
       venueName: 'Light 3',
       serviceId: 'replica-1',
+      atHost: false,
       current: { ...NONE, custom_price_pence: 4500 },
     });
   });

@@ -90,7 +90,11 @@ export function MemberServiceSheet({
   /** One calendar's own values, edited as a step of this sheet, never a second sheet over it. */
   const [valuesCalendarId, setValuesCalendarId] = useState<string | null>(null);
   const flags = staffMayCustomizeFlags(service);
-  const valuesAllowed = canEditValues && (flags.price || flags.duration || flags.buffer || flags.deposit);
+  // A member's copy: its calendars set their own values unless the host has locked it (web 2026-11-05).
+  const valuesAllowed =
+    canEditValues &&
+    (flags.price || flags.duration || flags.buffer || flags.deposit) &&
+    !(block.role === 'replica' && block.member_values_locked);
   const saving = save.isPending;
   const savedInstructions = (service as WithInstructions).pre_appointment_instructions ?? '';
 
@@ -426,9 +430,11 @@ function CalendarValuesStep({
     () => ownCalendarValuesTarget({ id: calendarId, name: calendarName }, service.id, link),
     [calendarId, calendarName, service.id, link],
   );
+  // A member's copy saves through the collective, so the change shows in its History.
+  const copy = service.collective?.role === 'replica';
   const editor = useCalendarValuesEditor({
-    mode: 'own',
-    collectiveId: null,
+    mode: copy ? 'member' : 'own',
+    collectiveId: copy ? (service.collective?.collective_id ?? null) : null,
     serviceName: service.name,
     target,
     flags: calendarValueFlags(service),

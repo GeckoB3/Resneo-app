@@ -91,7 +91,12 @@ import {
   type StagedOp,
 } from '@/lib/collective-area/model';
 import { offerDoneSummary } from '@/lib/collective-area/offer-summary';
-import { useCollectiveBulkPreview, useCollectiveBulkSave, useSwitchServiceOn } from '@/lib/queries/useCollectiveArea';
+import {
+  useCollectiveBulkPreview,
+  useCollectiveBulkSave,
+  useSetMemberValuesLock,
+  useSwitchServiceOn,
+} from '@/lib/queries/useCollectiveArea';
 import { useOfferServiceOnPage, useTakeServiceOffPage } from '@/lib/queries/useServicesManage';
 import {
   calendarValueDefaults,
@@ -208,6 +213,29 @@ export function useServicesGrid(input: {
   const [pageNote, setPageNote] = useState<PageNote | null>(null);
   const [pageBusy, setPageBusy] = useState(false);
   const save = useCollectiveBulkSave(collectiveId, { member: isMember });
+  /**
+   * The host's lock on members' prices and times, per page service (web 2026-11-05). What a lock or
+   * unlock saved here stands until the services reload brings the same back.
+   */
+  const lockMutation = useSetMemberValuesLock(collectiveId);
+  const [lockSaved, setLockSaved] = useState<Record<string, boolean>>({});
+  const [lockError, setLockError] = useState<string | null>(null);
+  const valuesLocked = (service: AreaService): boolean => {
+    const itemId = service.collective?.item_id ?? null;
+    return (itemId ? lockSaved[itemId] : undefined) ?? service.collective?.member_values_locked === true;
+  };
+  const setValuesLock = (service: AreaService, locked: boolean) => {
+    const itemId = service.collective?.item_id;
+    if (!itemId) return;
+    setLockError(null);
+    lockMutation.mutate(
+      { itemId, locked },
+      {
+        onSuccess: () => setLockSaved((prev) => ({ ...prev, [itemId]: locked })),
+        onError: (err) => setLockError(err instanceof Error && err.message ? err.message : areaCopy('values.lock.failed')),
+      },
+    );
+  };
   const previewMutation = useCollectiveBulkPreview(collectiveId);
   /** "Switch it on" for a page service switched off at the host, and what went wrong with the last one. */
   const switchOnMutation = useSwitchServiceOn();
@@ -598,6 +626,10 @@ export function useServicesGrid(input: {
     canPageChange: (kind: PageOpKind) => !isMember && pageChangeable(kind, [...selectedServices], services).length > 0,
     isMember,
     hostName: input.hostName ?? 'the host',
+    valuesLocked,
+    setValuesLock,
+    locking: lockMutation.isPending,
+    lockError,
     staged,
     setStaged,
     discard: () => {
@@ -780,6 +812,14 @@ export function ServicesGridList({ grid, currencySymbol }: { grid: ServicesGridS
               </View>
               {/* Switched off on the Services screen: on the page, but nobody can book it anywhere.
                   Saying so, with the switch right here, is the whole fix (web 2026-10-28). */}
+              {isOnPage(service) && grid.valuesLocked(service) ? (
+                // Only the host sets members' prices and times for it (web 2026-11-05).
+                <Text variant="caption" tone="muted">
+                  {grid.isMember
+                    ? areaCopy('svc.member.valuesLocked', { host: grid.hostName })
+                    : areaCopy('ov.grid.row.valuesLocked')}
+                </Text>
+              ) : null}
               {switchedOff && grid.isMember ? (
                 // The host switched it off: only the host can switch it back on.
                 <View style={styles.switchedOff}>
@@ -1043,7 +1083,7 @@ function ServiceSheet({ grid, currencySymbol }: { grid: ServicesGridState; curre
       <Sheet visible onClose={close} maxHeight="92%" fill>
         <CalendarValuesStep
           key={valuesTarget.calendarId}
-          mode={grid.isMember ? 'own' : 'host'}
+          mode={grid.isMember ? 'member' : 'host'}
           collectiveId={grid.collectiveId}
           serviceName={service.name}
           target={valuesTarget}
@@ -1107,6 +1147,34 @@ function ServiceSheet({ grid, currencySymbol }: { grid: ServicesGridState; curre
           </Text>
         ) : (
           <>
+            {grid.isMember && grid.valuesLocked(service) ? (
+              <Text variant="bodySmall" tone="secondary">
+                {areaCopy('values.lock.memberNote', { host: grid.hostName, service: service.name })}
+              </Text>
+            ) : null}
+            {!grid.isMember && grid.groups.some((g) => !g.is_host) ? (
+              // The host's lock on members' prices and times, per service (web 2026-11-05).
+              <View style={[styles.venueBlock, { borderColor: colors.border }]}>
+                <Text variant="bodySmall">
+                  {areaCopy(grid.valuesLocked(service) ? 'values.lock.locked' : 'values.lock.open', {
+                    service: service.name,
+                  })}
+                </Text>
+                <Button
+                  label={areaCopy(grid.valuesLocked(service) ? 'values.lock.unlock' : 'values.lock.lock')}
+                  variant="secondary"
+                  size="sm"
+                  loading={grid.locking}
+                  disabled={busy || grid.locking}
+                  onPress={() => grid.setValuesLock(service, !grid.valuesLocked(service))}
+                />
+                {grid.lockError ? (
+                  <Text variant="caption" tone="danger" accessibilityRole="alert">
+                    {grid.lockError}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
             <Text variant="label">{areaCopy('svc.cal.heading')}</Text>
             {grid.groups.map((group) => {
               const active = group.calendars.filter((c) => c.is_active);
@@ -1146,11 +1214,9 @@ function ServiceSheet({ grid, currencySymbol }: { grid: ServicesGridState; curre
                             </Text>
                           ) : null}
                         </View>
-                        {/* The host's grid: a value for a setting not yet on turns it on. A member's:
-                            its own calendars, for the values the host lets calendars set. */}
-                        {assignedNow &&
-                        isOnPage(service) &&
-                        (!grid.isMember || Object.values(calendarValueFlags(service)).some(Boolean)) ? (
+                        {/* The host's grid: any calendar; on its own, a value for a setting not yet on
+                            turns it on. A member's: its own calendars, unless the host has locked it. */}
+                        {assignedNow && isOnPage(service) && (!grid.isMember || !grid.valuesLocked(service)) ? (
                           <Button
                             label={areaCopy('svc.cal.editValues')}
                             variant="ghost"

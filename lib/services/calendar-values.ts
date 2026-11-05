@@ -30,7 +30,13 @@ export type CalendarValueFlags = Record<CalendarValueFlag, boolean>;
 
 export type CalendarValues = Record<CalendarValueKey, number | null>;
 
-export type CalendarValuesMode = 'host' | 'own';
+/**
+ * host    the collective's host, on any venue's calendar, through the collective.
+ * member  a member, on its own calendar for its copy of a page service, through the collective too,
+ *         so the change shows in History (web 2026-11-05).
+ * own     a venue's admin or staff, on its own calendars, through its own per-calendar route.
+ */
+export type CalendarValuesMode = 'host' | 'member' | 'own';
 
 /** Which calendar, at which venue, and the service at that venue (the host's own, or its copy). */
 export interface CalendarValuesTarget {
@@ -40,6 +46,11 @@ export interface CalendarValuesTarget {
   serviceId: string;
   /** The calendar's own values now, null where it keeps the standard. */
   current: CalendarValues;
+  /**
+   * The calendar is the host's own. A member's calendar may set every value on its copy whatever
+   * the host's own service allows (web 2026-11-05), so nothing turns on for it. Absent: unknown.
+   */
+  atHost?: boolean;
 }
 
 /** The service's own values, shown as the standard a blank field means. */
@@ -149,7 +160,9 @@ export function shownCalendarValueFields(
   return CALENDAR_VALUE_FIELDS.filter(
     (f) =>
       !(hasOptions && OPTION_SET_FLAGS.includes(f.flag)) &&
-      (flags[f.flag] || (mode === 'host' && (f.flag !== 'deposit' || takesDeposit))),
+      // Through the collective any value may be set (on the host's own calendars a save turns its
+      // setting on), and a deposit only where the service takes one (web 2026-11-05).
+      (mode === 'own' ? flags[f.flag] : f.flag !== 'deposit' || takesDeposit),
   );
 }
 
@@ -285,6 +298,7 @@ export function calendarValuesTarget(
     calendarName: calendar.name,
     venueName: group.venue_name,
     serviceId: assignment.service_id,
+    atHost: group.is_host,
     current: {
       custom_price_pence: assignment.values.custom_price_pence ?? null,
       custom_duration_minutes: assignment.values.custom_duration_minutes ?? null,

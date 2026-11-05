@@ -119,6 +119,26 @@ export function useCollectiveBulkPreview(collectiveId: string | null) {
  * Bring one venue up to date again (the collective's one Retry). The answer's `collective_sync`
  * says whether it is up to date now, still updating, or failed (CQ-11, `retryOutcome`).
  */
+/**
+ * The host locks or unlocks a service's prices and times on members' calendars (web 2026-11-05:
+ * PUT /api/venue/collectives/{id}/member-values).
+ */
+export function useSetMemberValuesLock(collectiveId: string | null) {
+  const accessToken = useAccessToken();
+  const invalidate = useInvalidateArea();
+  return useMutation({
+    mutationFn: async (input: { itemId: string; locked: boolean }): Promise<{ changed: boolean; locked: boolean }> => {
+      if (!accessToken || !collectiveId) throw new Error('Missing access token');
+      return apiFetch<{ changed: boolean; locked: boolean }>(`/api/venue/collectives/${collectiveId}/member-values`, {
+        accessToken,
+        method: 'PUT',
+        body: JSON.stringify({ item_id: input.itemId, locked: input.locked }),
+      });
+    },
+    onSettled: invalidate,
+  });
+}
+
 export function useCollectiveRetry(collectiveId: string | null) {
   const accessToken = useAccessToken();
   const invalidate = useInvalidateArea();

@@ -151,6 +151,12 @@ export interface ServiceCollectiveBlock {
   offered_at?: string | null;
   /** The host's parked service: it was on the page before, so offering it again puts it back (web CQ-05). */
   was_on_page?: boolean;
+  /**
+   * The host has locked this service's prices and times (web 2026-11-05): only the host sets a
+   * member calendar's price, length, buffer, deposit or colour for it. False lets each member set
+   * its own calendars' values. Absent on older servers.
+   */
+  member_values_locked?: boolean;
 }
 
 /**

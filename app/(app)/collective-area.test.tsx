@@ -66,6 +66,7 @@ let mockOwnGroup: CollectiveCalendarGroup | null | undefined;
 jest.mock('@/lib/queries/useCollectiveArea', () => ({
   useOwnCollectiveCalendars: () => ({ data: mockOwnGroup, isError: false }),
   useCollectiveRetry: () => ({ mutate: mockRetry, isPending: false }),
+  useSetMemberValuesLock: () => ({ mutate: jest.fn(), isPending: false }),
   useCollectiveBulkSave: () => ({ mutate: jest.fn(), mutateAsync: mockBulkSave, isPending: false }),
   useCollectiveBulkPreview: () => ({ mutate: jest.fn(), isPending: false }),
   useCollectiveMembersPatch: () => ({ mutate: mockPatch, isPending: false }),

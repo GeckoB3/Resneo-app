@@ -33,6 +33,9 @@ import { useTheme } from '@/theme/useTheme';
  *   host  the collective's host, on any venue's calendar: saved through the collective, which tells
  *         that venue. A value for a field calendars may not set yet turns the setting on for the
  *         service, and the step says so before the save.
+ *   member a member, on its own calendar for its copy of a page service: saved through the
+ *         collective too, so it shows in History; every value, unless the host has locked the
+ *         service (web 2026-11-05). Nothing turns on.
  *   own   a venue's admin, on its own calendars: only the fields the service lets calendars set.
  *
  * `CalendarValuesStep` is the plain frame (title, fields, Back and Save) for a sheet that draws its
@@ -65,7 +68,8 @@ export function useCalendarValuesEditor(input: CalendarValuesEditorInput) {
   const [text, setText] = useState<Record<CalendarValueKey, string>>(() => calendarValuesText(target.current));
   const [error, setError] = useState<string | null>(null);
   const shown = shownCalendarValueFields(mode, flags, defaults, hasOptions);
-  const turnsOn = mode === 'host' ? fieldsTurnedOnBySaving(shown, flags) : [];
+  // Only the host's own calendars need its service's settings on; a member's copy allows every value.
+  const turnsOn = mode === 'host' && target.atHost !== false ? fieldsTurnedOnBySaving(shown, flags) : [];
   const saving = hostSave.isPending || ownSave.isPending;
 
   const submit = () => {
@@ -81,7 +85,7 @@ export function useCalendarValuesEditor(input: CalendarValuesEditorInput) {
     setError(null);
     const onError = (err: unknown) =>
       setError(refusalText(err, areaCopy('values.saveFailed'), areaCopy('values.saveFailed')));
-    if (mode === 'host') {
+    if (mode !== 'own') {
       if (!collectiveId) return;
       hostSave.mutate(
         { collectiveId, body: { calendar_id: target.calendarId, service_id: target.serviceId, values: patch.values } },
@@ -116,7 +120,7 @@ export function CalendarValuesFields({ editor }: { editor: CalendarValuesEditor 
   return (
     <View style={styles.fields}>
       <Text variant="bodySmall" tone="secondary">
-        {mode === 'host'
+        {mode === 'host' && !target.atHost
           ? areaCopy('values.help.host', { calendar: target.calendarName, venue: target.venueName })
           : areaCopy('values.help.own', { calendar: target.calendarName })}
       </Text>

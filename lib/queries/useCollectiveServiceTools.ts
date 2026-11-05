@@ -99,6 +99,8 @@ function useInvalidateServicesAndCollectives() {
   return () => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.services.all() });
     void queryClient.invalidateQueries({ queryKey: queryKeys.collectives.all() });
+    // A member's own calendars in its grid, with each calendar's own values (web 2026-11-05).
+    void queryClient.invalidateQueries({ queryKey: ['collectiveOwnCalendars'] });
     // The public booking catalogue mirrors service changes.
     void queryClient.invalidateQueries({ queryKey: queryKeys.appointments.all() });
   };
