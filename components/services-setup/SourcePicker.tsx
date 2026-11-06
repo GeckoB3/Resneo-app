@@ -171,7 +171,7 @@ export function SourcePicker({
           active={choice === 'url'}
           icon={SOURCE_SYMBOLS.url}
           title="Your old booking page"
-          description="Paste a link to your booking page or website, for example on Fresha, Treatwell or Booksy."
+          description="Paste a link to your old booking page or your website."
           onPress={() => choose('url')}
         />
         <Tile
