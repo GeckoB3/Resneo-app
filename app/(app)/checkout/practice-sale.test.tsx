@@ -138,7 +138,7 @@ describe('the sale screen and practice sales', () => {
       await show();
       expect(screen.queryByText(/practice-screen/)).toBeNull();
       expect(mockTitles).toContain('Sale R-12');
-      expect(screen.getAllByText('Take £40.00').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('Pay Now').length).toBeGreaterThan(0);
       expect(screen.getAllByText('Park sale').length).toBeGreaterThan(0);
       expect(screen.getAllByText('Void sale').length).toBeGreaterThan(0);
       // The ordinary pay sheet is there, for the same sale.
@@ -152,7 +152,7 @@ describe('the sale screen and practice sales', () => {
     await show();
     expect(screen.getByText('practice-screen sale-1')).toBeTruthy();
     expect(screen.queryByText('Park sale')).toBeNull();
-    expect(screen.queryByText('Take £40.00')).toBeNull();
+    expect(screen.queryByText('Pay Now')).toBeNull();
     expect(mockPaySheetSales).toHaveLength(0);
   });
 

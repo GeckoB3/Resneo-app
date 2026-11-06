@@ -333,7 +333,7 @@ export function PracticeSale({
           <View style={posStyles.buttons}>
             {coachMark('pay')}
             {balance > 0 && sale.lines.length > 0 ? (
-              <Button label={t('sale.pay.amount', { amount: money(balance) })} onPress={() => setSheet('pay')} fullWidth />
+              <Button label={t('sale.payNow')} onPress={() => setSheet('pay')} fullWidth />
             ) : sale.lines.length > 0 ? (
               // Nothing left to pay (a discount took it all): a real sale is completed now.
               <>

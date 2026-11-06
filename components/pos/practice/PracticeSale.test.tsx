@@ -225,7 +225,7 @@ describe('a practice sale', () => {
       ['Card reader', 'In a real sale, the reader on your desk asks your client to tap or insert their card.'],
       ['Pay by link or QR code', 'Your client gets a link by text or email and pays on their own phone.'],
     ] as const) {
-      await press('Take £30.00');
+      await press('Pay Now');
       await press(tile);
       // The outcome straight away (design B13): the method, what it would do, and "Paid".
       expect(screen.getByText(sentence)).toBeTruthy();
@@ -237,7 +237,7 @@ describe('a practice sale', () => {
     }
 
     // The venue's own payment types, under "Other ways".
-    await press('Take £30.00');
+    await press('Pay Now');
     await press('Other ways');
     await press('Bank transfer');
     expect(screen.getByText('Bank transfer')).toBeTruthy();
@@ -246,7 +246,7 @@ describe('a practice sale', () => {
     ).toBeTruthy();
     await press('Choose another way to pay');
 
-    await press('Take £30.00');
+    await press('Pay Now');
     await press('Cash');
     expect(screen.getByText('Type what they gave you, and Checkout works out the change.')).toBeTruthy();
     await act(async () => {
@@ -269,7 +269,7 @@ describe('a practice sale', () => {
 
   it('shows the receipt the client would get, from the practice sale', async () => {
     await show(practice());
-    await press('Take £30.00');
+    await press('Pay Now');
     await press('Card');
     expect(screen.getByText("This is what your client's receipt looks like.")).toBeTruthy();
     expect(await screen.findByText(/Practice item: £30\.00/)).toBeTruthy();

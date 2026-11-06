@@ -111,7 +111,10 @@ export const POS_COPY = {
   'sale.void': 'Void sale',
   'sale.discount': 'Add a discount',
   'sale.bar.balance': '{balance} to pay',
-  'sale.pay.amount': 'Take {amount}',
+  // The sale's main button. It read "Take {amount}" until 2026-11-06, when the owner asked for
+  // "Pay Now": the same button leads to paying part of the bill, so a full amount on it misled.
+  // The totals above it still show what is due. Title case is the owner's wording (the web's `sale.payNow`).
+  'sale.payNow': 'Pay Now',
   'sale.pay.open': 'Take payment',
   'sale.notFound.title': "We can't find this sale",
   'sale.notFound.body': 'It may belong to another venue, or the link is wrong.',
