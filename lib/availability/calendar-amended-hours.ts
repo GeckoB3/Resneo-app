@@ -227,17 +227,17 @@ export function amendedHoursVenueNote(args: {
   }
   const parts: string[] = [];
   if (closedDates.length === 1) {
-    parts.push(`Your venue is closed on ${formatDayHeading(closedDates[0]!)}, so guests cannot book this calendar that day.`);
+    parts.push(`Your venue is closed on ${formatDayHeading(closedDates[0]!)}, so this calendar is not offered for booking that day.`);
   } else if (closedDates.length > 1) {
     parts.push(
-      `Your venue is closed on ${closedDates.length} of these dates (first ${formatDayHeading(closedDates[0]!)}), so guests cannot book this calendar on them.`,
+      `Your venue is closed on ${closedDates.length} of these dates (first ${formatDayHeading(closedDates[0]!)}), so this calendar is not offered for booking on them.`,
     );
   }
   if (outside) {
-    parts.push(`Hours outside ${outside.venue} on ${formatDayHeading(outside.date)} are not bookable by guests.`);
+    parts.push(`Hours outside ${outside.venue} on ${formatDayHeading(outside.date)} are not offered for booking.`);
   }
   if (parts.length === 0) return null;
-  return `${parts.join(' ')} Staff can still book. To open to guests as well, amend your business hours for these dates too (Settings → Business hours).`;
+  return `${parts.join(' ')} Your team can still book there with Override availability, or by moving a booking. To offer these hours to everyone, amend your business hours for these dates too (Settings → Business hours).`;
 }
 
 /**

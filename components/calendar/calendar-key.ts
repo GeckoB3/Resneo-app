@@ -28,7 +28,7 @@ export const CALENDAR_KEY_DESCRIPTION =
   "Linked venues' calendars use the same colours as your own, drawn from their own hours and closures.";
 
 export const CALENDAR_KEY_FOOTNOTE =
-  "Staff can book over a closed stripe on your own calendars, with a note, but never inside a linked venue's closed hours.";
+  "Staff can move a booking onto a closed stripe on your own calendars, with a note, but never into a linked venue's closed hours. To book someone new there, tick Override availability.";
 
 export const CALENDAR_KEY_ENTRIES: readonly CalendarKeyEntry[] = [
   {

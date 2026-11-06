@@ -115,7 +115,7 @@ export function describeCalendarWeeklyMismatch(
   return (
     `${calendarName}'s hours on ${days} run outside your business hours ` +
     `(${first.dayName}: calendar ${first.calendarHours}, business ${first.venueHours}). ` +
-    `Guests can only book within business hours, so widen your business hours for ${
+    `Only times within business hours are offered for booking, so widen your business hours for ${
       mismatches.length === 1 ? 'that day' : 'those days'
     } too.`
   );
@@ -150,7 +150,7 @@ export function describeVenueWeeklyMismatch(
   const list = hits.length <= 3 ? hits.join('; ') : `${hits.slice(0, 3).join('; ')}; and ${hits.length - 3} more`;
   return (
     `These business hours are narrower than the calendar hours of ${list}. ` +
-    `Guests can only book within business hours. Widen the business hours, or adjust those calendars' hours to match.`
+    `Only times within business hours are offered for booking. Widen the business hours, or adjust those calendars' hours to match.`
   );
 }
 
@@ -229,6 +229,6 @@ export function describeDatedMismatch(mismatches: DatedHoursMismatch[]): string 
     `${who} ${names.length === 1 ? 'is' : 'are'} still scheduled to work outside these hours ` +
     `(${first.calendarName} works ${first.calendarHours} but ${where}` +
     `${mismatches.length > 1 ? `, and ${mismatches.length - 1} more date${mismatches.length > 2 ? 's' : ''}` : ''}). ` +
-    `Guests can only book within business hours. Adjust those calendars' hours or closures to match.`
+    `Only times within business hours are offered for booking. Adjust those calendars' hours or closures to match.`
   );
 }
