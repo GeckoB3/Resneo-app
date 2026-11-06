@@ -46,6 +46,7 @@ import { resolveColumnDayHours } from '@/lib/calendar/column-day-hours';
 import { calendarHasAvailableHoursOnDate } from '@/lib/calendar/calendar-has-hours-on-date';
 import { MonthGrid, type MonthDayDatum } from '@/components/calendar/MonthGrid';
 import { MonthPickerSheet } from '@/components/calendar/MonthPickerSheet';
+import { useSharedDiaryDate } from '@/lib/dates/shared-diary-date';
 import { type RescheduleTarget } from '@/components/calendar/RescheduleSheet';
 import { WeekGrid, type WeekDayColumn } from '@/components/calendar/WeekGrid';
 import { WeekMatrixGrid } from '@/components/calendar/WeekMatrixGrid';
@@ -417,7 +418,12 @@ export default function CalendarScreen() {
   const today = calendarDateInTimeZone(new Date(), timeZone);
 
   const [scope, setScope] = useState<Scope>('day');
-  const [anchor, setAnchor] = useState<string>(today);
+  /*
+    The day the diary is on, shared with the Appointments tab: picking a day on
+    either shows it on both, and it stays picked until "Today" or signing in
+    again (lib/dates/shared-diary-date.ts).
+  */
+  const [anchor, setAnchor] = useSharedDiaryDate(today);
 
   // `selectedId` is a calendar id, or the 'all' sentinel for the multi-calendar
   // day view (reception parity). null falls back to the first calendar.
@@ -467,11 +473,11 @@ export default function CalendarScreen() {
   useEffect(() => {
     const d = typeof params.date === 'string' ? params.date : null;
     if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync anchor/scope to deep-link param
       setAnchor(d);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync scope to deep-link param
       setScope('day');
     }
-  }, [params.date]);
+  }, [params.date, setAnchor]);
   const [detailBookingId, setDetailBookingId] = useState<string | null>(null);
   /**
    * The link behind the open detail when it is a partner's booking: the same
@@ -1417,10 +1423,10 @@ export default function CalendarScreen() {
         return addDaysToDateStr(current, direction);
       });
     },
-    [scope],
+    [scope, setAnchor],
   );
 
-  const goToday = useCallback(() => setAnchor(today), [today]);
+  const goToday = useCallback(() => setAnchor(today), [setAnchor, today]);
 
   // ---- Wide-day multi-calendar column filter (web parity) ----
   // Tapping a calendar from "all" isolates to just it; further taps add/remove
@@ -1449,7 +1455,7 @@ export default function CalendarScreen() {
     setAnchor(date);
     setScope('day');
     setMonthPickerOpen(false);
-  }, []);
+  }, [setAnchor]);
 
   // Horizontal swipe on the grid body → prev/next day (day scope) or week (week
   // scope), reusing step(). HORIZONTAL-only: activeOffsetX arms the pan once the
@@ -1503,7 +1509,7 @@ export default function CalendarScreen() {
       setDetailLinked(null);
       setDetailBookingId(jump.bookingId);
     },
-    [calendarIds, clearOwnerVenue],
+    [calendarIds, clearOwnerVenue, setAnchor],
   );
 
   /** The contact search's Book: the booking form with this person and the diary's day. */
@@ -1655,7 +1661,7 @@ export default function CalendarScreen() {
       setAnchor(date);
       setAddSheetTarget({ kind: 'slot', time, practitionerId: effectiveId ?? '' });
     },
-    [effectiveId, refusedOnPausedColumn, refusedOnOthersColumn],
+    [effectiveId, refusedOnPausedColumn, refusedOnOthersColumn, setAnchor],
   );
 
   /**

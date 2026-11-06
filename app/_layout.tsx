@@ -29,6 +29,7 @@ import {
 import { useDeviceOrientationLock } from '@/lib/orientation';
 import { useAppMode } from '@/lib/mode/useAppMode';
 import { startChosenSiteHydration } from '@/lib/sites/active-site';
+import { startSharedDiaryDateHydration } from '@/lib/dates/shared-diary-date';
 import { registerSiteSwitchCleanup } from '@/lib/sites/site-switch-cleanup';
 import { AppProviders } from '@/providers/AppProviders';
 import { useAuth } from '@/providers/AuthProvider';
@@ -46,6 +47,8 @@ initObservability();
 initAnalytics();
 // The site this phone acts on (web roles plan §6.2c), read before any request can go out.
 void startChosenSiteHydration();
+// The day picked on the Calendar and Appointments tabs, so they open on it rather than on today.
+void startSharedDiaryDateHydration();
 registerSiteSwitchCleanup();
 
 export default function RootLayout() {

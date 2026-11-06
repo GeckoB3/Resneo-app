@@ -21,6 +21,7 @@ import { getAuthCallbackRedirectUrl } from '@/lib/auth/redirect';
 import { setObservabilityUser } from '@/lib/observability';
 import { setQueryAuthScope } from '@/lib/queries/keys';
 import { markSiteOfferDue, syncChosenSiteUser } from '@/lib/sites/active-site';
+import { syncSharedDiaryDateUser } from '@/lib/dates/shared-diary-date';
 import { queryClient } from '@/lib/queries/queryClient';
 import { clearAllStocktakeDrafts } from '@/lib/retail/stocktake-draft';
 import { clearAllServicesSetups } from '@/lib/services-setup/setup-storage';
@@ -113,6 +114,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setQueryAuthScope(userId);
       // The site chosen on this phone belongs to this login only.
       syncChosenSiteUser(userId);
+      // So does the day picked on the Calendar and Appointments tabs.
+      syncSharedDiaryDateUser(userId);
       if (signedOutRef.current === null) signedOutRef.current = !userId;
       identify(userId);
       setIsLoading(false);
@@ -129,6 +132,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setQueryAuthScope(userId);
       // Signing out (or in as someone else) forgets the chosen site.
       syncChosenSiteUser(userId);
+      // And the day picked on the Calendar and Appointments tabs: the next sign-in starts on today.
+      syncSharedDiaryDateUser(userId);
       identify(userId);
 
       if (userId) {

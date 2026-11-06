@@ -9,8 +9,9 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeInDown, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { useReduceMotion, motionSafe, layoutSafe } from '@/lib/motion';
+import { hapticSelect } from '@/lib/haptics';
 import { Sheet } from '@/components/ui/Sheet';
 import { Button } from '@/components/ui/Button';
 import { apiFetch , ApiError } from '@/lib/api/client';
@@ -26,6 +27,7 @@ import { BULK_ACTION_BAR_CLEARANCE } from '@/components/ui/BulkActionBar';
 import { BookingSortSheet } from '@/components/bookings/BookingSortSheet';
 import { BookingFilterSheet, type FilterOption } from '@/components/bookings/BookingFilterSheet';
 import { BookingDateRangeSheet } from '@/components/bookings/BookingDateRangeSheet';
+import { MonthPickerSheet } from '@/components/calendar/MonthPickerSheet';
 import { Chip } from '@/components/ui/Chip';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
@@ -60,6 +62,7 @@ import {
   getWeekRangeFromDate,
   type DateRange,
 } from '@/lib/dates/venue-dates';
+import { daysBetweenDateStrs, useSharedDiaryDate } from '@/lib/dates/shared-diary-date';
 import { useBookingsList } from '@/lib/queries/useBookingsList';
 import {
   useComplianceBookingFlags,
@@ -263,7 +266,12 @@ type ListRow =
   | { kind: 'header'; date: string; title: string }
   | { kind: 'booking'; booking: BookingListRow };
 
-function rangeFor(scope: Scope, anchor: string, custom: DateRange | null): DateRange {
+/**
+ * The dates the list covers. Custom runs from the shared day for `customSpan`
+ * days, so the range moves with the day picked here, on the Calendar or with
+ * "Today"; until a range is applied it is the one day.
+ */
+function rangeFor(scope: Scope, anchor: string, customSpan: number | null): DateRange {
   if (scope === 'week') {
     const week = getWeekRangeFromDate(anchor);
     return { from: week.from, to: week.to };
@@ -273,7 +281,9 @@ function rangeFor(scope: Scope, anchor: string, custom: DateRange | null): DateR
   }
   if (scope === 'custom') {
     // Fall back to the single anchor day until the user picks a range.
-    return custom ?? { from: anchor, to: anchor };
+    return customSpan === null
+      ? { from: anchor, to: anchor }
+      : { from: anchor, to: addDaysToDateStr(anchor, customSpan) };
   }
   return { from: anchor, to: anchor };
 }
@@ -413,9 +423,15 @@ export default function BookingsScreen() {
   const venueId = venue?.id ?? null;
 
   const [scope, setScope] = useState<Scope>('day');
-  const [anchor, setAnchor] = useState<string>(() => calendarDateInTimeZone(new Date(), timeZone));
-  // Stable "today" in the venue tz for seeding the custom-range inputs.
-  const today = useMemo(() => calendarDateInTimeZone(new Date(), timeZone), [timeZone]);
+  // Today in the venue's timezone, worked out as the Calendar tab does.
+  const today = calendarDateInTimeZone(new Date(), timeZone);
+  /*
+    The day this list is on, shared with the Calendar tab: picking a day on
+    either shows it on both, and it stays picked until "Today" or signing in
+    again (lib/dates/shared-diary-date.ts). Day shows it, Week runs seven days
+    from it, Month shows its month, Custom starts on it.
+  */
+  const [anchor, setAnchor] = useSharedDiaryDate(today);
   const [status, setStatus] = useState<string>('All');
   const [search, setSearch] = useState('');
   const [practitionerFilter, setPractitionerFilter] = useState<string | null>(null);
@@ -431,9 +447,11 @@ export default function BookingsScreen() {
   // Guest scope from the `?guest=` deep link — filters the list to one contact.
   const [guestFilter, setGuestFilter] = useState<string | null>(null);
 
-  // --- Custom date range (Custom scope) ---
-  const [customRange, setCustomRange] = useState<DateRange | null>(null);
+  // --- Custom date range (Custom scope): days after the shared day, null until one is applied ---
+  const [customSpan, setCustomSpan] = useState<number | null>(null);
   const [rangeSheetOpen, setRangeSheetOpen] = useState(false);
+  // Tapping the date opens a calendar to pick any day (as on the Calendar tab).
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
 
   // --- Day time-window filter (start/end hour, inclusive) on the day view ---
   const [dayHourRange, setDayHourRange] = useState<{ start: number; end: number } | null>(null);
@@ -468,8 +486,8 @@ export default function BookingsScreen() {
   );
 
   const range = useMemo(
-    () => rangeFor(scope, anchor, customRange),
-    [scope, anchor, customRange],
+    () => rangeFor(scope, anchor, customSpan),
+    [scope, anchor, customSpan],
   );
 
   // Day uses the single-date endpoint (all statuses); week/month/custom use the range endpoint.
@@ -821,8 +839,8 @@ export default function BookingsScreen() {
       : scope === 'week'
         ? formatRangeLabel(range.from, range.to)
         : scope === 'custom'
-          ? customRange
-            ? formatRangeLabel(customRange.from, customRange.to)
+          ? customSpan !== null
+            ? formatRangeLabel(range.from, range.to)
             : 'Pick a date range'
           : formatMonthLabel(anchor);
 
@@ -834,13 +852,15 @@ export default function BookingsScreen() {
         return addDaysToDateStr(current, direction);
       });
     },
-    [scope],
+    [scope, setAnchor],
   );
 
-  const goToday = useCallback(
-    () => setAnchor(calendarDateInTimeZone(new Date(), timeZone)),
-    [timeZone],
-  );
+  // Back to today. In Custom the range keeps its length and starts today.
+  const goToday = useCallback(() => {
+    hapticSelect();
+    setAnchor(today);
+  }, [setAnchor, today]);
+  const isToday = anchor === today;
 
   const openBooking = useCallback((id: string) => setOpenBookingId(id), []);
 
@@ -1061,9 +1081,9 @@ export default function BookingsScreen() {
       setDayHourRange(null);
     }
     if (next === 'custom') {
-      setRangeSheetOpen((wasOpen) => wasOpen || customRange === null);
+      setRangeSheetOpen((wasOpen) => wasOpen || customSpan === null);
     }
-  }, [customRange]);
+  }, [customSpan]);
 
   return (
     <Screen padded={false} bottomInset={false}>
@@ -1074,11 +1094,17 @@ export default function BookingsScreen() {
         <View style={styles.dateNav}>
           {/* Custom range has no day-stepping — tap the label to edit the range. */}
           {scope === 'custom' ? null : <NavButton dir="left" onPress={() => step(-1)} />}
+          {/* Tapping the date opens a calendar to jump to any day (the range sheet in
+              Custom). The Today pill, shown whenever the list is off today, goes back. */}
           <Pressable
-            onPress={scope === 'custom' ? () => setRangeSheetOpen(true) : goToday}
+            onPress={() => {
+              hapticSelect();
+              if (scope === 'custom') setRangeSheetOpen(true);
+              else setDatePickerOpen(true);
+            }}
             accessibilityRole="button"
             accessibilityLabel={label}
-            accessibilityHint={scope === 'custom' ? 'Edit the date range' : 'Jump to today'}
+            accessibilityHint={scope === 'custom' ? 'Edit the date range' : 'Pick a date to jump to'}
             style={({ pressed }) => [styles.dateLabel, { opacity: pressed ? 0.55 : 1 }]}>
             <View style={styles.dateLabelInner}>
               <Text variant="subheading" numberOfLines={1}>
@@ -1087,6 +1113,28 @@ export default function BookingsScreen() {
               <LiveDot state={liveState} />
             </View>
           </Pressable>
+          {!isToday ? (
+            <Animated.View
+              entering={motionSafe(FadeIn.duration(160), reduceMotion)}
+              exiting={motionSafe(FadeOut.duration(120), reduceMotion)}>
+              <Pressable
+                onPress={goToday}
+                accessibilityRole="button"
+                accessibilityLabel="Jump to today"
+                style={({ pressed }) => [
+                  styles.todayPill,
+                  {
+                    borderColor: colors.border,
+                    backgroundColor: colors.surface,
+                    opacity: pressed ? 0.7 : 1,
+                  },
+                ]}>
+                <Text variant="label" color={colors.brand}>
+                  Today
+                </Text>
+              </Pressable>
+            </Animated.View>
+          ) : null}
           {scope === 'custom' ? null : <NavButton dir="right" onPress={() => step(1)} />}
         </View>
 
@@ -1414,18 +1462,38 @@ export default function BookingsScreen() {
       <BookingDateRangeSheet
         visible={rangeSheetOpen}
         onClose={() => setRangeSheetOpen(false)}
-        from={customRange?.from ?? null}
-        to={customRange?.to ?? null}
+        // Opens on the shared day, so a range starts where the list already is.
+        from={anchor}
+        to={customSpan === null ? anchor : range.to}
         today={today}
         onApply={(r) => {
-          setCustomRange(r);
+          // "From" becomes the shared day (the Calendar follows); the range keeps its length.
+          setAnchor(r.from);
+          setCustomSpan(daysBetweenDateStrs(r.from, r.to));
           setScope('custom');
         }}
+      />
+
+      {/* Jump to any day, as the Calendar tab's date does. */}
+      <MonthPickerSheet
+        visible={datePickerOpen}
+        anchor={anchor}
+        today={today}
+        counts={NO_DAY_COUNTS}
+        onSelectDay={(date) => {
+          hapticSelect();
+          setAnchor(date);
+          setDatePickerOpen(false);
+        }}
+        onClose={() => setDatePickerOpen(false)}
       />
       </ErrorBoundary>
     </Screen>
   );
 }
+
+/** The list has no per-day counts for the date picker's badges. */
+const NO_DAY_COUNTS: Record<string, number> = {};
 
 function ItemSeparator() {
   return <View style={styles.separator} />;
@@ -1502,6 +1570,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+  },
+  todayPill: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 1,
+    borderRadius: radius.pill,
+    borderWidth: 1,
   },
   toolbarIcons: {
     flexDirection: 'row',
