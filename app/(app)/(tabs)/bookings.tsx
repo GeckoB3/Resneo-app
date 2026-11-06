@@ -54,15 +54,15 @@ import type { BookingModel } from '@/types/venue';
 import {
   addDaysToDateStr,
   addMonthsToDateStr,
-  calendarDateInTimeZone,
   formatDayHeading,
   formatMonthLabel,
   formatRangeLabel,
   getMonthRangeFromDate,
-  getWeekRangeFromDate,
+  getCalendarWeekFromDate,
   type DateRange,
 } from '@/lib/dates/venue-dates';
 import { daysBetweenDateStrs, useSharedDiaryDate } from '@/lib/dates/shared-diary-date';
+import { useVenueToday } from '@/lib/dates/use-venue-today';
 import { useBookingsList } from '@/lib/queries/useBookingsList';
 import {
   useComplianceBookingFlags,
@@ -271,9 +271,10 @@ type ListRow =
  * days, so the range moves with the day picked here, on the Calendar or with
  * "Today"; until a range is applied it is the one day.
  */
-function rangeFor(scope: Scope, anchor: string, customSpan: number | null): DateRange {
+export function rangeFor(scope: Scope, anchor: string, customSpan: number | null): DateRange {
   if (scope === 'week') {
-    const week = getWeekRangeFromDate(anchor);
+    // The Monday-to-Sunday week the day falls in, as the Calendar tab and the web show it.
+    const week = getCalendarWeekFromDate(anchor);
     return { from: week.from, to: week.to };
   }
   if (scope === 'month') {
@@ -423,13 +424,13 @@ export default function BookingsScreen() {
   const venueId = venue?.id ?? null;
 
   const [scope, setScope] = useState<Scope>('day');
-  // Today in the venue's timezone, worked out as the Calendar tab does.
-  const today = calendarDateInTimeZone(new Date(), timeZone);
+  // Today in the venue's timezone, kept current as on the Calendar tab.
+  const today = useVenueToday(timeZone);
   /*
     The day this list is on, shared with the Calendar tab: picking a day on
-    either shows it on both, and it stays picked until "Today" or signing in
-    again (lib/dates/shared-diary-date.ts). Day shows it, Week runs seven days
-    from it, Month shows its month, Custom starts on it.
+    either shows it on both, and it stays picked until "Today", signing in
+    again, or a new day (lib/dates/shared-diary-date.ts). Day shows it, Week
+    shows its Monday-to-Sunday week, Month shows its month, Custom starts on it.
   */
   const [anchor, setAnchor] = useSharedDiaryDate(today);
   const [status, setStatus] = useState<string>('All');

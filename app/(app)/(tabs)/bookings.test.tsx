@@ -6,7 +6,7 @@
  * status OR either attendance timestamp. Imported as a pure function (no render),
  * matching the `buildDestinations` pattern in settings.test.tsx.
  */
-import { computeBookingSummary, defaultVenueSelection } from '@/app/(app)/(tabs)/bookings';
+import { computeBookingSummary, defaultVenueSelection, rangeFor } from '@/app/(app)/(tabs)/bookings';
 import type { BookingListRow } from '@/types/booking-list';
 
 function bk(overrides: Partial<BookingListRow> & { id: string }): BookingListRow {
@@ -98,5 +98,29 @@ describe('defaultVenueSelection', () => {
     const sel = defaultVenueSelection(null, []);
     expect(sel.own).toBe(true);
     expect(sel.linked.size).toBe(0);
+  });
+});
+
+/**
+ * The dates the list covers for the shared day (2026-11-06 is a Friday). Week is the Monday-to-
+ * Sunday week the day falls in, as on the Calendar tab and the web; Custom starts on the day.
+ */
+describe('rangeFor', () => {
+  it('is the day itself in Day', () => {
+    expect(rangeFor('day', '2026-11-06', null)).toEqual({ from: '2026-11-06', to: '2026-11-06' });
+  });
+
+  it('is the Monday-to-Sunday week in Week', () => {
+    expect(rangeFor('week', '2026-11-06', null)).toEqual({ from: '2026-11-02', to: '2026-11-08' });
+    expect(rangeFor('week', '2026-11-08', null)).toEqual({ from: '2026-11-02', to: '2026-11-08' });
+  });
+
+  it('is the whole month in Month', () => {
+    expect(rangeFor('month', '2026-11-06', null)).toEqual({ from: '2026-11-01', to: '2026-11-30' });
+  });
+
+  it('starts Custom on the shared day and keeps its length', () => {
+    expect(rangeFor('custom', '2026-11-06', 3)).toEqual({ from: '2026-11-06', to: '2026-11-09' });
+    expect(rangeFor('custom', '2026-11-06', null)).toEqual({ from: '2026-11-06', to: '2026-11-06' });
   });
 });

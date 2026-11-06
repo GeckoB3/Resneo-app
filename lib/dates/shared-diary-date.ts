@@ -7,10 +7,11 @@ import { Platform } from 'react-native';
  *
  * Picking a day on either screen picks it on both, and it stays picked when the
  * person leaves the screen, leaves the app, or the phone closes the app in the
- * background. It goes back to today only when they press "Today" or sign in
- * again: AuthProvider reports every change of login here, and no login (signing
- * out, or a session that ended) forgets the date, so the next sign-in starts on
- * today.
+ * background. It goes back to today when they press "Today", when they sign in
+ * again (AuthProvider reports every change of login here, and no login forgets
+ * the date), and when a new day starts at the venue: the date is stored with the
+ * day it was picked on and ignored once that day has passed, so the diary opens
+ * on today each morning.
  *
  * Nothing stored means "today", so a person who never moves off today is never
  * left on yesterday after midnight. Picking today stores nothing.
@@ -22,7 +23,7 @@ import { Platform } from 'react-native';
 
 const STORAGE_KEY = 'resneo_diary_date_v1';
 
-type StoredDate = { userId: string | null; date: string };
+type StoredDate = { userId: string | null; date: string; pickedOn: string };
 
 let stored: StoredDate | null = null;
 /** The SecureStore read on launch; null until started. */
@@ -58,7 +59,10 @@ async function readStored(): Promise<StoredDate | null> {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<StoredDate> | null;
     const date = parseDiaryDate(parsed?.date);
-    return date ? { date, userId: typeof parsed?.userId === 'string' ? parsed.userId : null } : null;
+    const pickedOn = parseDiaryDate(parsed?.pickedOn);
+    return date && pickedOn
+      ? { date, pickedOn, userId: typeof parsed?.userId === 'string' ? parsed.userId : null }
+      : null;
   } catch {
     return null;
   }
@@ -115,9 +119,9 @@ export function syncSharedDiaryDateUser(userId: string | null): void {
   reconcileUser();
 }
 
-/** The picked date, or null for "today". */
-export function getSharedDiaryDate(): string | null {
-  return stored?.date ?? null;
+/** The picked date, or null for "today": nothing picked, or picked on a day before `today`. */
+export function getSharedDiaryDate(today: string): string | null {
+  return stored && stored.pickedOn === today ? stored.date : null;
 }
 
 /**
@@ -128,8 +132,8 @@ export function setSharedDiaryDate(date: string, today: string): void {
   const valid = parseDiaryDate(date);
   if (!valid) return;
   const next = valid === today ? null : valid;
-  if ((stored?.date ?? null) === next) return;
-  stored = next ? { date: next, userId: currentUserId ?? null } : null;
+  if (getSharedDiaryDate(today) === next && (next !== null || stored === null)) return;
+  stored = next ? { date: next, pickedOn: today, userId: currentUserId ?? null } : null;
   void writeStored(stored);
   emit();
 }
@@ -145,15 +149,18 @@ export type SharedDiaryDateUpdate = string | ((current: string) => string);
 
 /**
  * The shared date for a screen, as `[date, setDate]`. `today` is the venue's
- * today; the date is today whenever nothing is picked. The setter takes a value
+ * today, live (`useVenueToday`); the date is today whenever nothing was picked
+ * today. The setter takes a value
  * or an updater, resolved against the latest date so quick taps on the arrows
  * step from where the last one landed.
  */
 export function useSharedDiaryDate(today: string): [string, (next: SharedDiaryDateUpdate) => void] {
-  const picked = useSyncExternalStore(subscribeSharedDiaryDate, getSharedDiaryDate, getSharedDiaryDate);
+  // Read against today, so a day picked yesterday is ignored as soon as today changes.
+  const read = useCallback(() => getSharedDiaryDate(today), [today]);
+  const picked = useSyncExternalStore(subscribeSharedDiaryDate, read, read);
   const setDate = useCallback(
     (next: SharedDiaryDateUpdate) => {
-      const date = typeof next === 'function' ? next(getSharedDiaryDate() ?? today) : next;
+      const date = typeof next === 'function' ? next(getSharedDiaryDate(today) ?? today) : next;
       setSharedDiaryDate(date, today);
     },
     [today],

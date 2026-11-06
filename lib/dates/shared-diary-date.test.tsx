@@ -1,18 +1,7 @@
 /**
- * The date the Calendar and Appointments tabs share: one day for both, kept until "Today" or
- * signing in again, and across launches for the login that picked it.
+ * The date the Calendar and Appointments tabs share: one day for both, kept until "Today",
+ * signing in again or a new day, and across launches for the login that picked it.
  */
-const mockStore = new Map<string, string>();
-jest.mock('expo-secure-store', () => ({
-  getItemAsync: jest.fn(async (key: string) => mockStore.get(key) ?? null),
-  setItemAsync: jest.fn(async (key: string, value: string) => {
-    mockStore.set(key, value);
-  }),
-  deleteItemAsync: jest.fn(async (key: string) => {
-    mockStore.delete(key);
-  }),
-}));
-
 import { Pressable, Text } from 'react-native';
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
@@ -28,6 +17,17 @@ import {
   syncSharedDiaryDateUser,
   useSharedDiaryDate,
 } from '@/lib/dates/shared-diary-date';
+
+const mockStore = new Map<string, string>();
+jest.mock('expo-secure-store', () => ({
+  getItemAsync: jest.fn(async (key: string) => mockStore.get(key) ?? null),
+  setItemAsync: jest.fn(async (key: string, value: string) => {
+    mockStore.set(key, value);
+  }),
+  deleteItemAsync: jest.fn(async (key: string) => {
+    mockStore.delete(key);
+  }),
+}));
 
 const TODAY = '2026-11-06';
 const KEY = 'resneo_diary_date_v1';
@@ -50,8 +50,8 @@ beforeEach(() => {
 });
 
 /** A stand-in for one tab: shows its date, steps it, and has a "Today" button. */
-function Tab({ name }: { name: string }) {
-  const [date, setDate] = useSharedDiaryDate(TODAY);
+function Tab({ name, today = TODAY }: { name: string; today?: string }) {
+  const [date, setDate] = useSharedDiaryDate(today);
   return (
     <>
       <Text testID={`${name}-date`}>{date}</Text>
@@ -112,7 +112,7 @@ describe('the two tabs', () => {
     await press('appointments Today');
     await flush();
     expect(screen.getByTestId('appointments-date')).toHaveTextContent(TODAY);
-    expect(getSharedDiaryDate()).toBeNull();
+    expect(getSharedDiaryDate(TODAY)).toBeNull();
     expect(mockStore.has(KEY)).toBe(false);
   });
 
@@ -123,6 +123,42 @@ describe('the two tabs', () => {
   });
 });
 
+describe('a new day', () => {
+  beforeEach(() => syncSharedDiaryDateUser('user-1'));
+
+  it('opens on today when the day was picked yesterday', async () => {
+    setSharedDiaryDate('2026-12-24', '2026-11-05');
+    await flush();
+    expect(getSharedDiaryDate('2026-11-05')).toBe('2026-12-24');
+    expect(getSharedDiaryDate(TODAY)).toBeNull();
+  });
+
+  it('moves a tab left open overnight on to the new day', async () => {
+    const view = await render(<Tab name="calendar" />);
+    await press('calendar pick');
+    expect(screen.getByTestId('calendar-date')).toHaveTextContent('2026-12-24');
+    // Midnight at the venue: useVenueToday hands the screens the new day.
+    await view.rerender(<Tab name="calendar" today="2026-11-07" />);
+    expect(screen.getByTestId('calendar-date')).toHaveTextContent('2026-11-07');
+  });
+
+  it('forgets a stored day from an earlier version that did not say when it was picked', async () => {
+    __resetSharedDiaryDateForTests();
+    mockStore.set(KEY, JSON.stringify({ userId: 'user-1', date: '2026-12-24' }));
+    await startSharedDiaryDateHydration();
+    syncSharedDiaryDateUser('user-1');
+    expect(getSharedDiaryDate(TODAY)).toBeNull();
+  });
+
+  it('clears a stale stored day when today is picked', async () => {
+    setSharedDiaryDate('2026-12-24', '2026-11-05');
+    await flush();
+    setSharedDiaryDate(TODAY, TODAY);
+    await flush();
+    expect(mockStore.has(KEY)).toBe(false);
+  });
+});
+
 describe('signing out and in', () => {
   it('forgets the day when nobody is signed in, so the next sign-in starts on today', async () => {
     syncSharedDiaryDateUser('user-1');
@@ -130,10 +166,10 @@ describe('signing out and in', () => {
     await flush();
     syncSharedDiaryDateUser(null);
     await flush();
-    expect(getSharedDiaryDate()).toBeNull();
+    expect(getSharedDiaryDate(TODAY)).toBeNull();
     expect(mockStore.has(KEY)).toBe(false);
     syncSharedDiaryDateUser('user-1');
-    expect(getSharedDiaryDate()).toBeNull();
+    expect(getSharedDiaryDate(TODAY)).toBeNull();
   });
 
   it('keeps the day across a relaunch for the same login', async () => {
@@ -143,7 +179,7 @@ describe('signing out and in', () => {
     __resetSharedDiaryDateForTests();
     await startSharedDiaryDateHydration();
     syncSharedDiaryDateUser('user-1');
-    expect(getSharedDiaryDate()).toBe('2026-12-24');
+    expect(getSharedDiaryDate(TODAY)).toBe('2026-12-24');
   });
 
   it('drops a day picked by a different login', async () => {
@@ -154,17 +190,17 @@ describe('signing out and in', () => {
     await startSharedDiaryDateHydration();
     syncSharedDiaryDateUser('user-2');
     await flush();
-    expect(getSharedDiaryDate()).toBeNull();
+    expect(getSharedDiaryDate(TODAY)).toBeNull();
     expect(mockStore.has(KEY)).toBe(false);
   });
 
   it('waits for the stored day before judging it, when the login is known first', async () => {
-    mockStore.set(KEY, JSON.stringify({ userId: 'user-1', date: '2026-12-24' }));
+    mockStore.set(KEY, JSON.stringify({ userId: 'user-1', date: '2026-12-24', pickedOn: TODAY }));
     const hydration = startSharedDiaryDateHydration();
     syncSharedDiaryDateUser('user-1');
     await hydration;
     await flush();
-    expect(getSharedDiaryDate()).toBe('2026-12-24');
+    expect(getSharedDiaryDate(TODAY)).toBe('2026-12-24');
   });
 });
 
@@ -180,7 +216,7 @@ describe('helpers', () => {
     syncSharedDiaryDateUser('user-1');
     setSharedDiaryDate('2026-12-24', TODAY);
     setSharedDiaryDate('nonsense', TODAY);
-    expect(getSharedDiaryDate()).toBe('2026-12-24');
+    expect(getSharedDiaryDate(TODAY)).toBe('2026-12-24');
   });
 
   it('counts days between dates, across a month end and backwards', () => {

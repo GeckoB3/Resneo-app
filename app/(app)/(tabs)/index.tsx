@@ -47,6 +47,7 @@ import { calendarHasAvailableHoursOnDate } from '@/lib/calendar/calendar-has-hou
 import { MonthGrid, type MonthDayDatum } from '@/components/calendar/MonthGrid';
 import { MonthPickerSheet } from '@/components/calendar/MonthPickerSheet';
 import { useSharedDiaryDate } from '@/lib/dates/shared-diary-date';
+import { useVenueToday } from '@/lib/dates/use-venue-today';
 import { type RescheduleTarget } from '@/components/calendar/RescheduleSheet';
 import { WeekGrid, type WeekDayColumn } from '@/components/calendar/WeekGrid';
 import { WeekMatrixGrid } from '@/components/calendar/WeekMatrixGrid';
@@ -119,7 +120,6 @@ import { hapticSelect, hapticSuccess } from '@/lib/haptics';
 import {
   addDaysToDateStr,
   addMonthsToDateStr,
-  calendarDateInTimeZone,
   formatDayHeading,
   formatMonthLabel,
   formatRangeLabel,
@@ -415,13 +415,14 @@ export default function CalendarScreen() {
   const openingHours = venue?.opening_hours ?? null;
   const timeZone = venue?.timezone ?? 'Europe/London';
   const complianceEnabled = featureFlags?.resolved?.compliance_records_enabled === true;
-  const today = calendarDateInTimeZone(new Date(), timeZone);
+  // Today at the venue, kept current, so a diary left open overnight moves on to the new day.
+  const today = useVenueToday(timeZone);
 
   const [scope, setScope] = useState<Scope>('day');
   /*
     The day the diary is on, shared with the Appointments tab: picking a day on
-    either shows it on both, and it stays picked until "Today" or signing in
-    again (lib/dates/shared-diary-date.ts).
+    either shows it on both, and it stays picked until "Today", signing in
+    again, or a new day (lib/dates/shared-diary-date.ts).
   */
   const [anchor, setAnchor] = useSharedDiaryDate(today);
 
