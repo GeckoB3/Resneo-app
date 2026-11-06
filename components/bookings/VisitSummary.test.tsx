@@ -9,10 +9,10 @@ jest.mock('@/providers/ToastProvider', () => ({
   useToast: () => ({ error: mockToastError, success: jest.fn(), info: jest.fn() }),
 }));
 jest.mock('@/lib/haptics', () => ({ hapticSuccess: jest.fn(), hapticWarning: jest.fn(), hapticTap: jest.fn(), hapticSelect: jest.fn() }));
-const mockPartnerLines = new Map<string, unknown[]>();
+let mockVisitDetail: unknown = null;
 jest.mock('@/lib/queries/useVisitPartnerLines', () => {
   const actual = jest.requireActual<typeof import('@/lib/queries/useVisitPartnerLines')>('@/lib/queries/useVisitPartnerLines');
-  return { ...actual, useVisitPartnerLines: () => mockPartnerLines };
+  return { ...actual, useVisitDetail: () => mockVisitDetail };
 });
 
 import { VisitSummary } from '@/components/bookings/VisitSummary';
@@ -323,13 +323,13 @@ describe('VisitSummary', () => {
     expect(screen.queryByText('Total')).toBeNull();
   });
 
-  /** A visit across businesses (web split-visit plan 7.3): the other business's services, read-only. */
+  /** An older server (web split-visit plan 7.3): the other business's services as bare lines. */
   it("lists another business's services read-only, never this business's own", async () => {
-    mockPartnerLines.set('lv-1', [
+    mockVisitDetail = { legacy: true, parts: [], lines: [
       { booking_id: 'p1', linked_visit_id: 'lv-1', venue_id: 'v-nails', venue_name: 'SV Nails', booking_date: '2026-09-10', start_time: '10:45', end_time: '11:30', service_name: 'Gel Manicure', person_name: 'Bea', status: 'Booked' },
       { booking_id: 'p2', linked_visit_id: 'lv-1', venue_id: 'v-nails', venue_name: 'SV Nails', booking_date: '2026-09-10', start_time: '11:30', end_time: '12:00', service_name: 'Nail Art', person_name: null, status: 'Cancelled' },
       { booking_id: 'own', linked_visit_id: 'lv-1', venue_id: 'v-studio', venue_name: 'SV Studio', booking_date: '2026-09-10', start_time: '09:00', end_time: '10:00', service_name: 'Colour', person_name: 'Amy', status: 'Booked' },
-    ]);
+    ] };
     await render(
       <VisitSummary
         {...common}
@@ -345,6 +345,89 @@ describe('VisitSummary', () => {
     expect(screen.getByText('10:45 Gel Manicure with Bea, SV Nails, Booked')).toBeTruthy();
     expect(screen.queryByText(/Nail Art/)).toBeNull();
     expect(screen.queryByText(/Colour with Amy/)).toBeNull();
-    mockPartnerLines.clear();
+    expect(screen.queryByTestId('visit-money')).toBeNull();
+    mockVisitDetail = null;
+  });
+
+  /**
+   * A visit across businesses (owner, 2026-11-05): a Cut & Blow Dry with Aisha at Aura Hair Studio,
+   * then a Root Tint with Andrew at Light 16. Each card shows the whole visit in time order, every
+   * service's price, and each business's part with who takes the payment.
+   */
+  describe('a visit across businesses', () => {
+    const lines = (ownVenue: string) => [
+      { booking_id: 'aura-1', linked_visit_id: 'lv-x', venue_id: 'v-aura', venue_name: 'Aura Hair Studio', booking_date: '2026-11-07', start_time: '09:30', end_time: '10:30', service_name: 'Cut & Blow Dry', person_name: 'Aisha', status: 'Booked', own: ownVenue === 'v-aura', price_pence: 5500 },
+      { booking_id: 'light-1', linked_visit_id: 'lv-x', venue_id: 'v-light', venue_name: 'Light 16', booking_date: '2026-11-07', start_time: '10:30', end_time: '10:50', service_name: 'Root Tint', person_name: 'Andrew', status: 'Booked', own: ownVenue === 'v-light', price_pence: 6500 },
+    ];
+    const parts = (ownVenue: string, auraPaid = 0) => [
+      { venue_id: 'v-aura', venue_name: 'Aura Hair Studio', own: ownVenue === 'v-aura', total_pence: 5500, paid_pence: auraPaid, outstanding_pence: 5500 - auraPaid },
+      { venue_id: 'v-light', venue_name: 'Light 16', own: ownVenue === 'v-light', total_pence: 6500, paid_pence: 0, outstanding_pence: 6500 },
+    ];
+    afterEach(() => {
+      mockVisitDetail = null;
+    });
+
+    it('shows the whole visit and what each business takes, on its own booking', async () => {
+      mockVisitDetail = { lines: lines('v-aura'), parts: parts('v-aura') };
+      await render(
+        <VisitSummary
+          {...common}
+          booking={base({ id: 'aura-1', venue_id: 'v-aura', linked_visit_id: 'lv-x', booking_date: '2026-11-07', booking_time: '09:30', booking_end_time: '10:30', booking_total_price_pence: 5500 })}
+          visit={null}
+          visitRows={[]}
+          headerStatus="Booked"
+          dateLabel="Sat 7 Nov"
+          timeLabel="09:30 – 10:30"
+          durationMinutes={60}
+          serviceName="Cut & Blow Dry"
+          practitionerName="Aisha"
+        />,
+      );
+      // The header spans both businesses.
+      expect(screen.getByText('09:30 – 10:50')).toBeTruthy();
+      expect(screen.getByText('1 hr 20 min · Sat 7 Nov')).toBeTruthy();
+      expect(screen.getByTestId('visit-business-opened')).toHaveTextContent('Aura Hair Studio (you)');
+      // The other business's service, with its person, time, length and price.
+      expect(screen.getByText('Root Tint')).toBeTruthy();
+      expect(screen.getByText('10:30–10:50 · 20 min · with Andrew')).toBeTruthy();
+      // On its row, as Light 16's part, and as what Light 16 still has to take.
+      expect(screen.getAllByText('£65.00')).toHaveLength(3);
+      // The money: the whole visit, then each part and who takes it.
+      expect(screen.getByTestId('visit-whole-total')).toHaveTextContent('£120.00');
+      expect(screen.getAllByText(/Yours to take|takes this payment/).map((n) => n.props.children)).toEqual([
+        'Yours to take',
+        'Light 16 takes this payment',
+      ]);
+    });
+
+    it("lists the signed-in business's own services first when the partner's later booking is opened", async () => {
+      mockVisitDetail = { lines: lines('v-aura'), parts: parts('v-aura', 5500) };
+      await render(
+        <VisitSummary
+          {...common}
+          booking={base({ id: 'light-1', venue_id: 'v-light', linked_visit_id: 'lv-x', booking_date: '2026-11-07', booking_time: '10:30', booking_end_time: '10:50', booking_total_price_pence: 6500 })}
+          visit={null}
+          visitRows={[]}
+          headerStatus="Booked"
+          dateLabel="Sat 7 Nov"
+          timeLabel="10:30 – 10:50"
+          durationMinutes={20}
+          serviceName="Root Tint"
+          practitionerName="Andrew"
+        />,
+      );
+      expect(screen.getByText('09:30 – 10:50')).toBeTruthy();
+      // Its section heading and its part in the money.
+      expect(screen.getAllByText('Aura Hair Studio (you)')).toHaveLength(2);
+      expect(screen.getByTestId('visit-business-opened')).toHaveTextContent('Light 16');
+      expect(screen.getByText('09:30–10:30 · 1 hr · with Aisha')).toBeTruthy();
+      expect(screen.getAllByText(/Yours to take|takes this payment/).map((n) => n.props.children)).toEqual([
+        'Yours to take',
+        'Light 16 takes this payment',
+      ]);
+      // What Aura has taken for its own part, and that nothing of it is still owed.
+      expect(screen.getByText('Paid so far')).toBeTruthy();
+      expect(screen.getByTestId('visit-whole-total')).toHaveTextContent('£120.00');
+    });
   });
 });

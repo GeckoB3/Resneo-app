@@ -221,6 +221,11 @@ export interface PosSale {
     lines: { line_id: string; quantity: number; amount_pence: number; restock: boolean }[];
   }[];
   tips: PosTipShare[];
+  /**
+   * The visits across businesses its bookings belong to (web 2026-11-05), so the till can say what
+   * the other businesses take for their own services. Absent from older servers.
+   */
+  linked_visit_ids?: string[];
 }
 
 /** Every sale write answers with the whole sale (Appendix E). */

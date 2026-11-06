@@ -164,6 +164,9 @@ export const POS_COPY = {
     "We'll add it to their diary as a walk-in that ends now, so their day and the {client}'s history stay right.",
   'walkin.option': 'Option',
   'walkin.sameVisit': 'It joins the visit already on this sale.',
+  // A visit across businesses (web 2026-11-05): the other businesses' services are not on this sale.
+  'visit.otherPart': 'This visit also has {services} at {business} ({amount}). {business} takes that payment, so it is not on this sale.',
+  'visit.otherPart.paid': 'This visit also has {services} at {business}, which they have been paid for.',
   'walkin.confirm': 'Add service',
   'custom.name': 'Item name',
   'custom.price': 'Price',

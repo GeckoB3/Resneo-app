@@ -26,6 +26,7 @@ import {
 import { RewardReadyChip } from '@/components/pos/LoyaltyReward';
 import { IssuedVouchers, VoucherLineSheet, voucherLineDetails } from '@/components/pos/VoucherSheets';
 import { AmountRow, money, Notice, posStyles, usePosT } from '@/components/pos/parts';
+import { PosVisitOtherPartsNote } from '@/components/pos/PosVisitOtherPartsNote';
 import { saleHref, useOpenCheckout } from '@/components/pos/useOpenCheckout';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -293,6 +294,8 @@ function SaleBody({
         {notice ? <Notice tone="warning">{notice}</Notice> : null}
 
         {history ? <Notice tone="warning">{t('hist.banner', { venue: historyVenue })}</Notice> : null}
+
+        {!completed && !voided ? <PosVisitOtherPartsNote linkedVisitId={sale.linked_visit_ids?.[0] ?? null} /> : null}
 
         {sale.parked && editable ? (
           <Notice

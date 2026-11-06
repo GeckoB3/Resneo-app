@@ -18,7 +18,12 @@ import { formatPence } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { buildPriceSummary, type DepositBadgeTone } from '@/lib/payments/payment-display';
 import { useUpdateBookingStatus } from '@/lib/queries/useBookingMutations';
-import { partnerLineText, useVisitPartnerLines } from '@/lib/queries/useVisitPartnerLines';
+import {
+  partnerLineText,
+  useVisitDetail,
+  type VisitPartMoney,
+  type VisitPartnerLine,
+} from '@/lib/queries/useVisitPartnerLines';
 import type { GroupVisitBookingRow } from '@/lib/queries/useGroupVisit';
 import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
@@ -203,13 +208,54 @@ export function VisitSummary({
 }: VisitSummaryProps) {
   const { colors } = useTheme();
   /**
-   * Another business's services of a visit across businesses: read-only lines, never acted on or
-   * priced here (web split-visit plan 7.3). Never the opened booking's own business.
+   * A visit across businesses (web split-visit plan 7.3; owner, 2026-11-05): every service the staff
+   * member may see, their own business's included when a partner's booking is opened, each with its
+   * price, and each business's money. Read again when this booking's status or payment changes.
    */
-  const partnerLinesByVisit = useVisitPartnerLines([booking.linked_visit_id]);
-  const otherPartLines = (partnerLinesByVisit.get(booking.linked_visit_id ?? '') ?? []).filter(
-    (l) => l.status !== 'Cancelled' && l.booking_id !== booking.id && l.venue_id !== booking.venue_id,
+  const visitDetail = useVisitDetail(
+    booking.linked_visit_id,
+    `${booking.status}|${booking.payment_state ?? ''}|${booking.amount_paid_pence ?? ''}`,
   );
+  /** The opened booking's business: its part is the rows below, with every action on them. */
+  const openedVenueId =
+    visitDetail?.lines.find((l) => l.booking_id === booking.id)?.venue_id ?? booking.venue_id ?? null;
+  /** The visit's services at the other businesses: read-only, never acted on here. */
+  const otherPartLines = (visitDetail?.lines ?? []).filter(
+    (l) => l.status !== 'Cancelled' && l.booking_id !== booking.id && l.venue_id !== openedVenueId,
+  );
+  /**
+   * The whole visit is on the card: every business's services in time order, and each business's
+   * money with who takes it. An older server sends only bare lines, listed as before.
+   */
+  const crossBusiness = otherPartLines.length > 0 && !visitDetail?.legacy;
+  /** The other businesses, each with its services and money, in the order their first service starts. */
+  const otherBusinesses = (() => {
+    const byVenue = new Map<string, VisitPartnerLine[]>();
+    for (const line of crossBusiness ? otherPartLines : []) {
+      byVenue.set(line.venue_id, [...(byVenue.get(line.venue_id) ?? []), line]);
+    }
+    return [...byVenue.entries()].map(([venueId, lines]) => ({
+      venueId,
+      name: lines[0]!.venue_name,
+      own: lines.some((l) => l.own),
+      lines,
+      money: visitDetail?.parts.find((part) => part.venue_id === venueId) ?? null,
+    }));
+  })();
+  type OtherBusiness = (typeof otherBusinesses)[number];
+  const openedStartHm = booking.booking_time?.slice(0, 5) ?? null;
+  /** Businesses whose first service starts before the opened booking: drawn above it. */
+  const businessesBefore = otherBusinesses.filter(
+    (part) =>
+      openedStartHm != null &&
+      `${part.lines[0]!.booking_date}T${part.lines[0]!.start_time}` < `${booking.booking_date}T${openedStartHm}`,
+  );
+  const businessesAfter = otherBusinesses.filter((part) => !businessesBefore.includes(part));
+  const openedPart: VisitPartMoney | null =
+    visitDetail?.parts.find((part) => part.venue_id === openedVenueId) ?? null;
+  const openedBusinessName =
+    openedPart?.venue_name ?? visitDetail?.lines.find((l) => l.booking_id === booking.id)?.venue_name ?? null;
+  const openedIsOwn = openedPart ? openedPart.own : !otherBusinesses.some((part) => part.own);
   const isServiceVisit = !!visit && visitRows.length > 1;
   const isAppointment = !!(
     booking.appointment_service_id ||
@@ -289,8 +335,32 @@ export function VisitSummary({
 
   const spansDays = !!visit?.spansDays;
   const spansCalendars = !!visit?.spansCalendars;
+  /** First start and last end across every business on the day, for a visit across businesses. */
+  const wholeVisit = (() => {
+    if (!crossBusiness || spansDays) return null;
+    const day = booking.booking_date;
+    const sameDay = otherPartLines.filter((l) => l.booking_date === day);
+    if (sameDay.length === 0) return null;
+    const spans = [
+      ...rows
+        .filter((r) => r.status !== 'Cancelled' && (!r.booking_date || r.booking_date === day))
+        .map((r) => ({ start: r.booking_time?.slice(0, 5) ?? null, end: r.booking_end_time?.slice(0, 5) ?? null })),
+      ...sameDay.map((l) => ({ start: l.start_time, end: l.end_time })),
+    ];
+    const starts = spans.map((x) => x.start).filter((v): v is string => Boolean(v)).sort();
+    const ends = spans.map((x) => x.end).filter((v): v is string => Boolean(v)).sort();
+    const start = starts[0];
+    if (!start) return null;
+    const end = ends[ends.length - 1] ?? null;
+    return {
+      label: end ? `${start} – ${end}` : start,
+      minutes: end ? timeToMinutes(end) - timeToMinutes(start) : null,
+    };
+  })();
+  const headerTimeLabel = wholeVisit?.label ?? timeLabel;
+  const headerMinutes = wholeVisit?.minutes ?? durationMinutes;
   const context = [
-    durationMinutes != null && durationMinutes > 0 ? fmtDuration(durationMinutes) : null,
+    headerMinutes != null && headerMinutes > 0 ? fmtDuration(headerMinutes) : null,
     dateLabel,
     // "First visit" is already the line under the guest's name; say it once.
     // A last-visit date adds something the count there does not, so it stays.
@@ -315,6 +385,114 @@ export function VisitSummary({
     </View>
   );
 
+  /** One money line under a total: a deposit, what is paid, or what is still owed. */
+  const moneyLine = (row: { key: string; label: string; pence?: number | null; note?: string | null }) => {
+    const isBalance = row.key === 'balance';
+    const owed = isBalance && row.pence != null && row.pence > 0;
+    const settled = isBalance && row.pence === 0;
+    return (
+      <View key={row.key} style={styles.moneyRow}>
+        <Text variant="bodySmall" tone={isBalance ? 'secondary' : 'muted'}>
+          {row.label}
+        </Text>
+        <Text
+          variant="bodySmall"
+          color={owed ? colors.warning : settled ? colors.success : undefined}
+          tone={owed || settled ? undefined : isBalance ? 'muted' : 'secondary'}
+          style={styles.tabular}>
+          {row.pence != null ? formatPence(row.pence) : (row.note ?? '')}
+        </Text>
+      </View>
+    );
+  };
+
+  /** What the whole visit comes to, every business's part included; null while any is unknown. */
+  const wholeTotalPence =
+    totalPence != null && otherBusinesses.every((part) => part.money?.total_pence != null)
+      ? otherBusinesses.reduce((sum, part) => sum + (part.money?.total_pence ?? 0), totalPence)
+      : null;
+
+  /** A business's part in the money footer: its name, who takes the payment, and what it comes to. */
+  const businessMoneyRow = (key: string, name: string, own: boolean, pence: number | null) => (
+    <View key={key} style={[styles.moneyRow, styles.businessMoney]} testID="visit-business-money">
+      <View style={styles.flex1}>
+        <Text variant="bodyMedium">{own ? `${name} (you)` : name}</Text>
+        <Text variant="caption" tone="muted">
+          {own ? 'Yours to take' : `${name} takes this payment`}
+        </Text>
+      </View>
+      {pence != null ? (
+        <Text variant="bodyMedium" style={styles.tabular}>
+          {formatPence(pence)}
+        </Text>
+      ) : detailHydrating ? (
+        <Skeleton height={14} width={48} />
+      ) : (
+        <Text variant="caption" tone="muted">
+          Not set
+        </Text>
+      )}
+    </View>
+  );
+
+  /** Another business's part: what it comes to, what it has taken and what it still has to take. */
+  const otherBusinessMoney = (part: OtherBusiness) => (
+    <View key={part.venueId}>
+      {businessMoneyRow(part.venueId, part.name, part.own, part.money?.total_pence ?? null)}
+      {part.money && part.money.paid_pence > 0
+        ? moneyLine({ key: 'paid', label: 'Paid so far', pence: part.money.paid_pence })
+        : null}
+      {part.money && part.money.outstanding_pence != null
+        ? moneyLine({ key: 'balance', label: 'Outstanding', pence: part.money.outstanding_pence })
+        : null}
+    </View>
+  );
+
+  /** Another business's services: its name, then each service, read-only, with its price. */
+  const renderOtherBusiness = (part: OtherBusiness) => (
+    <View key={part.venueId} style={[styles.rows, { borderTopColor: colors.border }]} testID="visit-partner-lines">
+      <Text variant="caption" tone="muted" style={styles.sectionHeading}>
+        {part.own ? `${part.name} (you)` : part.name}
+      </Text>
+      {part.lines.map((line, index) => {
+        const minutes = line.end_time ? timeToMinutes(line.end_time) - timeToMinutes(line.start_time) : null;
+        const caption = [
+          line.booking_date !== booking.booking_date ? formatShortDay(line.booking_date) : null,
+          line.end_time ? `${line.start_time}–${line.end_time}` : line.start_time,
+          minutes != null && minutes > 0 ? fmtDuration(minutes) : null,
+          line.person_name ? `with ${line.person_name}` : null,
+        ]
+          .filter(Boolean)
+          .join(' · ');
+        return (
+          <View
+            key={line.booking_id}
+            style={[styles.row, index > 0 ? [styles.rowDivided, { borderTopColor: colors.border }] : null]}
+            testID="visit-partner-line">
+            <View style={styles.rowMain}>
+              <View style={styles.rowText}>
+                <Text variant="bodyMedium" numberOfLines={2}>
+                  {line.service_name}
+                </Text>
+                <Text variant="caption" tone="muted" style={styles.tabular}>
+                  {caption}
+                </Text>
+              </View>
+              <View style={styles.rowTrailing}>
+                <StatusPill status={line.status} />
+                {line.price_pence != null ? (
+                  <Text variant="bodyMedium" style={styles.tabular}>
+                    {formatPence(line.price_pence)}
+                  </Text>
+                ) : null}
+              </View>
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+
   return (
     <View
       style={[styles.block, { borderColor: colors.border, backgroundColor: colors.surfaceRaised }]}
@@ -322,9 +500,9 @@ export function VisitSummary({
       {/* Header: when, how long, status and what is owed */}
       <View style={[styles.header, { backgroundColor: colors.surface }]}>
         <View style={styles.headerText}>
-          {timeLabel ? (
+          {headerTimeLabel ? (
             <Text variant="title" style={styles.tabular}>
-              {timeLabel}
+              {headerTimeLabel}
             </Text>
           ) : null}
           <Text variant="caption" tone="muted">
@@ -339,6 +517,8 @@ export function VisitSummary({
         </View>
       </View>
 
+      {businessesBefore.map(renderOtherBusiness)}
+
       {/* One row per service */}
       {visitLoading && isServiceVisit === false && booking.group_booking_id && rows.length <= 1 ? (
         <View style={[styles.rows, { borderTopColor: colors.border }]}>
@@ -347,17 +527,24 @@ export function VisitSummary({
         </View>
       ) : rows.length > 0 ? (
         <View style={[styles.rows, { borderTopColor: colors.border }]}>
+          {crossBusiness && openedBusinessName ? (
+            <Text variant="caption" tone="muted" style={styles.sectionHeading} testID="visit-business-opened">
+              {openedIsOwn ? `${openedBusinessName} (you)` : openedBusinessName}
+            </Text>
+          ) : null}
           {rows.map((row, index) => {
             const minutes = rowMinutes(row);
             const segTime = timeRange(row);
             // A lone service runs for the whole visit, and the header already says when.
             const showSegTime =
-              isServiceVisit || segTime.replace(/\s+/g, '') !== (timeLabel ?? '').replace(/\s+/g, '');
+              isServiceVisit ||
+              crossBusiness ||
+              segTime.replace(/\s+/g, '') !== (headerTimeLabel ?? '').replace(/\s+/g, '');
             const caption = [
               spansDays && row.booking_date ? formatShortDay(row.booking_date) : null,
               showSegTime ? segTime : null,
               minutes != null ? fmtDuration(minutes) : null,
-              (spansCalendars || !isServiceVisit) && row.calendar_name ? `with ${row.calendar_name}` : null,
+              (spansCalendars || crossBusiness || !isServiceVisit) && row.calendar_name ? `with ${row.calendar_name}` : null,
             ]
               .filter(Boolean)
               .join(' · ');
@@ -383,7 +570,7 @@ export function VisitSummary({
                     ) : null}
                   </View>
                   <View style={styles.rowTrailing}>
-                    {isServiceVisit ? <StatusPill status={row.status} /> : null}
+                    {isServiceVisit || crossBusiness ? <StatusPill status={row.status} /> : null}
                     {pence != null ? (
                       <Text variant="bodyMedium" style={styles.tabular}>
                         {formatPence(pence)}
@@ -406,7 +593,10 @@ export function VisitSummary({
         </View>
       ) : null}
 
-      {otherPartLines.length > 0 ? (
+      {businessesAfter.map(renderOtherBusiness)}
+
+      {/* An older server's bare lines for the other businesses, as before. */}
+      {otherPartLines.length > 0 && !crossBusiness ? (
         <View style={[styles.rows, { borderTopColor: colors.border }]} testID="visit-partner-lines">
           {otherPartLines.map((line) => (
             <Text key={line.booking_id} variant="bodySmall" tone="secondary" style={styles.partnerLine}>
@@ -416,8 +606,34 @@ export function VisitSummary({
         </View>
       ) : null}
 
-      {/* Money: the total, then what has been paid and what is owed */}
-      {showMoney ? (
+      {/* A visit across businesses: the whole visit, then each business's part and who takes it */}
+      {crossBusiness ? (
+        <View
+          style={[styles.money, { borderTopColor: colors.border, backgroundColor: colors.surface }]}
+          testID="visit-money">
+          {rows.length === 0 && addons.length > 0 ? <View style={styles.addons}>{addons.map(addonLine)}</View> : null}
+          <View style={styles.moneyRow}>
+            <Text variant="label" tone="secondary">
+              Visit total
+            </Text>
+            {wholeTotalPence != null ? (
+              <Text variant="subheading" style={styles.tabular} testID="visit-whole-total">
+                {formatPence(wholeTotalPence)}
+              </Text>
+            ) : detailHydrating ? (
+              <Skeleton height={16} width={56} />
+            ) : (
+              <Text variant="caption" tone="muted">
+                Not set
+              </Text>
+            )}
+          </View>
+          {businessesBefore.map(otherBusinessMoney)}
+          {businessMoneyRow('opened', openedBusinessName ?? 'This business', openedIsOwn, totalPence)}
+          {moneyRows.map(moneyLine)}
+          {businessesAfter.map(otherBusinessMoney)}
+        </View>
+      ) : showMoney ? (
         <View style={[styles.money, { borderTopColor: colors.border, backgroundColor: colors.surface }]}>
           {rows.length === 0 && addons.length > 0 ? <View style={styles.addons}>{addons.map(addonLine)}</View> : null}
           <View style={styles.moneyRow}>
@@ -436,25 +652,7 @@ export function VisitSummary({
               </Text>
             )}
           </View>
-          {moneyRows.map((row) => {
-            const isBalance = row.key === 'balance';
-            const owed = isBalance && row.pence != null && row.pence > 0;
-            const settled = isBalance && row.pence === 0;
-            return (
-              <View key={row.key} style={styles.moneyRow}>
-                <Text variant="bodySmall" tone={isBalance ? 'secondary' : 'muted'}>
-                  {row.label}
-                </Text>
-                <Text
-                  variant="bodySmall"
-                  color={owed ? colors.warning : settled ? colors.success : undefined}
-                  tone={owed || settled ? undefined : isBalance ? 'muted' : 'secondary'}
-                  style={styles.tabular}>
-                  {row.pence != null ? formatPence(row.pence) : (row.note ?? '')}
-                </Text>
-              </View>
-            );
-          })}
+          {moneyRows.map(moneyLine)}
         </View>
       ) : null}
     </View>
@@ -463,6 +661,16 @@ export function VisitSummary({
 
 const styles = StyleSheet.create({
   partnerLine: { paddingVertical: spacing.xs, paddingHorizontal: spacing.sm },
+  sectionHeading: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    fontWeight: '600',
+  },
+  businessMoney: {
+    marginTop: spacing.xs,
+  },
   block: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radius.lg,
