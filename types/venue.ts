@@ -198,6 +198,11 @@ export interface VenueBootstrap {
   cover_photo_url?: string | null;
   cuisine_type?: string | null;
   plan_status?: string | null;
+  /**
+   * ResNeo has suspended this account (web Super console, Compliance tab). Every change is refused
+   * with 403 `VENUE_SUSPENDED`; the app shows <AccountSuspended/> instead of its screens.
+   */
+  account_suspended?: boolean;
   /** Email the owner when a new booking comes in (Communications owner-alert). */
   owner_booking_notification_enabled?: boolean;
   /** A separate email for guests: shown on the page, and where replies go. */

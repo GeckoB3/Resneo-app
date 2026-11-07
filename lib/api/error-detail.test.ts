@@ -64,6 +64,12 @@ describe('getApiErrorMessage', () => {
     ).toBe('Some device details need checking. (platform: Invalid enum value)');
   });
 
+  it('explains a suspended account (web Compliance tab), whatever the server words', () => {
+    expect(getApiErrorMessage({ error: 'Anything', code: 'VENUE_SUSPENDED' }, 403)).toBe(
+      'This account has been suspended by ResNeo. Contact support@resneo.com if you think this is a mistake.',
+    );
+  });
+
   it('leaves a 400 without details exactly as the server phrased it', () => {
     expect(getApiErrorMessage({ error: 'Missing id' }, 400)).toBe('Missing id');
   });

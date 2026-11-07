@@ -2,6 +2,7 @@ import { Stack } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { AccountSuspended } from '@/components/auth/AccountSuspended';
 import { StaffRequired } from '@/components/auth/StaffRequired';
 import { TapToPayIntroduction } from '@/components/payments/TapToPayIntroduction';
 import { CardCapabilityReporter } from '@/components/pos/CardCapabilityReporter';
@@ -14,6 +15,7 @@ import { WaitlistAvailabilityBanner } from '@/components/waitlist/WaitlistAvaila
 import { useColorScheme } from '@/components/useColorScheme';
 import { useRole } from '@/lib/queries/useRole';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
+import { useVenue } from '@/lib/queries/useVenue';
 import { LiveViewerAccessProvider } from '@/providers/ViewerAccessProvider';
 import { darkColors, fonts, lightColors } from '@/theme/index';
 
@@ -30,6 +32,8 @@ export default function AppLayout() {
   // the customer route group exists it still lands on <StaffRequired/>.
   const role = useRole();
   const staffQuery = useStaffMe();
+  // The same cached bootstrap every screen reads: no extra request.
+  const venueQuery = useVenue();
   const colorScheme = useColorScheme();
   const colors = colorScheme === 'dark' ? darkColors : lightColors;
 
@@ -57,6 +61,19 @@ export default function AppLayout() {
       <StaffRequired
         onRetry={() => void staffQuery.refetch()}
         retrying={staffQuery.isFetching}
+      />
+    );
+  }
+
+  // ResNeo suspended this account (web Compliance tab). Every change would be refused with 403
+  // VENUE_SUSPENDED, so the screens are not offered. Terminal like the staff gate above, so it
+  // replaces the Stack; "Check again" refetches in case the suspension was lifted.
+  if (venueQuery.data?.account_suspended === true) {
+    return (
+      <AccountSuspended
+        venueName={venueQuery.data.name ?? null}
+        onRetry={() => void venueQuery.refetch()}
+        retrying={venueQuery.isFetching}
       />
     );
   }

@@ -107,6 +107,9 @@ export function getApiErrorMessage(body: unknown, status: number): string {
     if (body.code === 'VENUE_SUBSCRIPTION_EXPIRED') {
       return 'Subscription ended. Resubscribe on the web dashboard to edit bookings.';
     }
+    if (body.code === 'VENUE_SUSPENDED') {
+      return 'This account has been suspended by ResNeo. Contact support@resneo.com if you think this is a mistake.';
+    }
     if (status === 403) {
       return body.error;
     }
