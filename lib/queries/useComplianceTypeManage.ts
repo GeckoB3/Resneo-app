@@ -107,6 +107,12 @@ export interface ComplianceTemplateDetail {
     version_number: number;
     form_schema: ComplianceTemplateFormSchema | null;
   } | null;
+  /**
+   * True once a record has been saved with this form (or a collective copy of it): the result type
+   * then decides whether those records count, so it can no longer change. Missing from older web
+   * builds, which read as locked.
+   */
+  result_type_locked?: boolean;
 }
 
 /** Editable (non-schema) fields — complianceTypePatchSchema on the web. */
@@ -114,6 +120,8 @@ export interface ComplianceTemplatePatch {
   name?: string;
   category?: ComplianceTypeCategory;
   description?: string | null;
+  /** Accepted by the web only until the first record is saved with this form (409 after that). */
+  result_type?: ComplianceResultType;
   validity_period_days?: number | null;
   capture_methods?: ComplianceTypeCaptureMethod[];
   form_link_expiry_days?: number | null;
@@ -162,6 +170,8 @@ export interface CreateComplianceTemplateInput {
   form_link_expiry_days?: number | null;
   online_unmet_message?: string | null;
   form_schema: BuilderFormSchema;
+  /** The library template the builder started from ("Use template"), recorded on the new form. */
+  library_template_slug?: string;
 }
 
 /** One library starter template summary (GET /library). */

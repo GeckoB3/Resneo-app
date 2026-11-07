@@ -24,22 +24,18 @@ import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import { DEFAULT_COMPLIANCE_CONFIG, type ComplianceConfig } from '@/types/venue';
 
-type CaptureMethod = ComplianceConfig['default_capture_method'];
 type LinkChannel = ComplianceConfig['default_form_link_channel'];
 
-/** The three panels of the web Settings → Compliance section, in web order. */
+/**
+ * The three panels of the web Settings → Compliance section, in web order. The first is labelled
+ * Forms; its value stays `templates` so an existing `?tab=templates` link still opens it.
+ */
 type SettingsTab = 'templates' | 'requirements' | 'general';
 
 const TAB_OPTIONS: { value: SettingsTab; label: string }[] = [
-  { value: 'templates', label: 'Templates' },
+  { value: 'templates', label: 'Forms' },
   { value: 'requirements', label: 'Requirements' },
   { value: 'general', label: 'General' },
-];
-
-const CAPTURE_METHOD_OPTIONS: { value: CaptureMethod; label: string }[] = [
-  { value: 'staff_in_venue', label: 'Staff' },
-  { value: 'client_online', label: 'Client' },
-  { value: 'both', label: 'Both' },
 ];
 
 const LINK_CHANNEL_OPTIONS: { value: LinkChannel; label: string }[] = [
@@ -61,12 +57,18 @@ function clampInt(text: string, min: number, max: number, fallback: number): num
 /**
  * Compliance settings — the app port of the web `ComplianceSettingsSection`
  * (Settings → Compliance): three panels behind a segmented control, in web
- * order. **Templates & types** lists/creates/duplicates the venue's form types
- * (incl. the starter library), **Service requirements** maps compliance types
- * onto services per-service (enforcement, lead time, online collection), and
- * **General** edits the venue-level defaults stored on `feature_flags.compliance`
- * plus the enable toggle, saved together via
+ * order. **Forms** lists/creates/duplicates the venue's forms (incl. the
+ * starter library), **Requirements** maps forms onto services per-service
+ * (enforcement, lead time, online collection), and **General** edits the
+ * venue-level defaults stored on `feature_flags.compliance` plus the enable
+ * toggle, saved together via
  * `useUpdateFeatureFlags({ compliance_records_enabled, compliance })`. Admin-only.
+ *
+ * General offers what the web General panel offers and nothing the server ignores (2026-11-07):
+ * the link channel, reminder cadence and link expiry. The stored `default_capture_method`,
+ * `lock_period_hours` and `incomplete_behaviour` are read by no server code (a new requirement's
+ * lead time comes from the request, never this default), so their controls were removed; a save
+ * sends their stored values back unchanged.
  */
 export default function ComplianceSettingsScreen() {
   const toast = useToast();
@@ -82,26 +84,20 @@ export default function ComplianceSettingsScreen() {
   const [tab, setTab] = useState<SettingsTab>(isSettingsTab(params.tab) ? params.tab : 'templates');
   const [hydratedKey, setHydratedKey] = useState<string | null>(null);
   const [recordsEnabled, setRecordsEnabled] = useState(false);
-  const [captureMethod, setCaptureMethod] = useState<CaptureMethod>(
-    DEFAULT_COMPLIANCE_CONFIG.default_capture_method,
-  );
   const [linkChannel, setLinkChannel] = useState<LinkChannel>(
     DEFAULT_COMPLIANCE_CONFIG.default_form_link_channel,
   );
   const [reminderDays, setReminderDays] = useState(String(DEFAULT_COMPLIANCE_CONFIG.reminder_cadence_days));
   const [expiryDays, setExpiryDays] = useState(String(DEFAULT_COMPLIANCE_CONFIG.form_link_expiry_days));
-  const [lockHours, setLockHours] = useState(String(DEFAULT_COMPLIANCE_CONFIG.lock_period_hours));
 
   // Hydrate once from the stored config (render-time guard, no effect/loop).
   const savedEnabled = flags.data?.resolved?.compliance_records_enabled ?? false;
   if (flags.data && hydratedKey !== 'loaded') {
     const cfg = { ...DEFAULT_COMPLIANCE_CONFIG, ...(flags.data.raw.compliance ?? {}) };
     setRecordsEnabled(savedEnabled);
-    setCaptureMethod(cfg.default_capture_method);
     setLinkChannel(cfg.default_form_link_channel);
     setReminderDays(String(cfg.reminder_cadence_days));
     setExpiryDays(String(cfg.form_link_expiry_days));
-    setLockHours(String(cfg.lock_period_hours));
     setHydratedKey('loaded');
   }
 
@@ -143,13 +139,16 @@ export default function ComplianceSettingsScreen() {
   }
 
   function handleSave() {
+    // Settings with no control here keep their stored values (the web General panel does the same).
+    const stored: ComplianceConfig = {
+      ...DEFAULT_COMPLIANCE_CONFIG,
+      ...(flags.data?.raw.compliance ?? {}),
+    };
     const config: ComplianceConfig = {
-      default_capture_method: captureMethod,
+      ...stored,
       default_form_link_channel: linkChannel,
       reminder_cadence_days: clampInt(reminderDays, 0, 90, DEFAULT_COMPLIANCE_CONFIG.reminder_cadence_days),
       form_link_expiry_days: clampInt(expiryDays, 1, 90, DEFAULT_COMPLIANCE_CONFIG.form_link_expiry_days),
-      lock_period_hours: clampInt(lockHours, 0, 720, DEFAULT_COMPLIANCE_CONFIG.lock_period_hours),
-      incomplete_behaviour: 'warn_only',
     };
     update.mutate(
       { compliance_records_enabled: recordsEnabled, compliance: config },
@@ -218,77 +217,38 @@ export default function ComplianceSettingsScreen() {
 
             <SectionCard>
               <SectionCard.Header
-                eyebrow="Defaults"
-                title="New forms"
-                description="Pre-selected when you create a compliance type."
+                eyebrow="Form links"
+                title="Sending, reminders & expiry"
+                description="How form links are sent, how long they last and when clients are nudged."
               />
               <SectionCard.Body style={styles.cardBody}>
                 <View style={styles.field}>
                   <Text variant="label" tone="secondary">
-                    Default capture method
-                  </Text>
-                  <Segmented options={CAPTURE_METHOD_OPTIONS} value={captureMethod} onChange={setCaptureMethod} />
-                </View>
-                <View style={styles.field}>
-                  <Text variant="label" tone="secondary">
-                    Form link channel
+                    Default form-link channel
                   </Text>
                   <Segmented options={LINK_CHANNEL_OPTIONS} value={linkChannel} onChange={setLinkChannel} />
+                  {linkChannel !== 'email' ? (
+                    <Text variant="caption" tone="muted">
+                      SMS uses your plan’s messaging allowance; if SMS can’t be sent we email the link instead so it always reaches the client.
+                    </Text>
+                  ) : null}
                 </View>
-              </SectionCard.Body>
-            </SectionCard>
-
-            <SectionCard>
-              <SectionCard.Header
-                eyebrow="Form links"
-                title="Reminders & expiry"
-                description="How long links last and when clients are nudged."
-              />
-              <SectionCard.Body style={styles.cardBody}>
                 <Input
                   label="Reminder cadence (days before expiry)"
                   value={reminderDays}
                   onChangeText={setReminderDays}
                   keyboardType="number-pad"
-                  helper="0 disables expiry reminders. Max 90."
+                  helper="How many days before a record expires we remind the client to renew it. Set 0 to turn expiry reminders off."
                 />
                 <Input
-                  label="Form link expiry (days)"
+                  label="Form-link expiry (days)"
                   value={expiryDays}
                   onChangeText={setExpiryDays}
                   keyboardType="number-pad"
                   // Web QA FD-7 (2026-09-23): booking links last until the end of the
                   // appointment day, whatever this is set to.
-                  helper="How long a form link stays valid after you send it, from 1 to 90 days. A link sent for a booking lasts at least until the end of the appointment day. A per-type setting still wins."
+                  helper="How long a form link stays valid after you send it. A link sent for a booking lasts at least until the end of the appointment day."
                 />
-              </SectionCard.Body>
-            </SectionCard>
-
-            <SectionCard>
-              <SectionCard.Header
-                eyebrow="Enforcement"
-                title="Bookings"
-                description="Defaults applied to new service requirements."
-              />
-              <SectionCard.Body style={styles.cardBody}>
-                <Input
-                  label="Lock period (hours before booking)"
-                  value={lockHours}
-                  onChangeText={setLockHours}
-                  keyboardType="number-pad"
-                  helper="Clients must complete required forms this many hours ahead. 0 = no lock. Max 720."
-                />
-                <View style={styles.switchRow}>
-                  <View style={styles.switchText}>
-                    <Text variant="bodyMedium">When a client arrives incomplete</Text>
-                    <Text variant="caption" tone="muted">
-                      Warn staff. Blocking check-in is coming soon.
-                    </Text>
-                  </View>
-                  <Text variant="bodySmall" tone="secondary">
-                    Warn only
-                  </Text>
-                </View>
               </SectionCard.Body>
             </SectionCard>
 

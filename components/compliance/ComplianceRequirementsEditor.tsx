@@ -191,7 +191,7 @@ export function ComplianceRequirementsEditor({
           </Text>
         ) : allTypes.length === 0 && !typesList.isLoading ? (
           <Text variant="bodySmall" tone="secondary">
-            No compliance types set up yet. Create one from the Compliance page first.
+            No forms set up yet. Create one first in Compliance settings, Forms.
           </Text>
         ) : requirements.length === 0 ? (
           <Text variant="bodySmall" tone="secondary">
@@ -214,14 +214,19 @@ export function ComplianceRequirementsEditor({
                     <View style={styles.reqText}>
                       <Text variant="bodyMedium" numberOfLines={1}>
                         {r.compliance_type_name}
-                        {!r.compliance_type_is_active ? '  (archived)' : ''}
                       </Text>
-                      <Badge
-                        label={
-                          CATEGORY_LABELS[r.compliance_type_category] ?? r.compliance_type_category
-                        }
-                        tone="neutral"
-                      />
+                      <View style={styles.badgeRow}>
+                        <Badge
+                          label={
+                            CATEGORY_LABELS[r.compliance_type_category] ?? r.compliance_type_category
+                          }
+                          tone="neutral"
+                        />
+                        {/* An archived form is no longer asked for; the row stays so Restore brings it back. */}
+                        {!r.compliance_type_is_active ? (
+                          <Badge label="Archived, not asked for" tone="warning" />
+                        ) : null}
+                      </View>
                     </View>
                     <Button
                       label="Remove"
@@ -298,8 +303,21 @@ export function ComplianceRequirementsEditor({
                       {blocksOnline && r.online_collection === 'none' ? (
                         <Text variant="caption" color={colors.warning}>
                           This blocks online booking but is not offered online, so clients cannot
-                          complete it themselves. Choose how it is collected online above, or add an
-                          unmet message on the type.
+                          complete it themselves. Choose how it is collected online above, or add a
+                          message on the form for when online booking is blocked.
+                        </Text>
+                      ) : null}
+                      {blocksOnline &&
+                      r.online_collection !== 'none' &&
+                      r.compliance_type_client_form_can_meet === false ? (
+                        <Text
+                          variant="caption"
+                          color={colors.warning}
+                          testID="compliance-team-records-result">
+                          Only your team can record a result for this, so a form the client fills in
+                          online can never let them book. The booking page asks them to contact you
+                          instead. Add a message on the form for when online booking is blocked to
+                          tell them how to arrange it.
                         </Text>
                       ) : null}
                     </View>
@@ -495,7 +513,7 @@ function AddRequirementSheet({
         </Text>
 
         <Text variant="label" tone="secondary">
-          Compliance type
+          Form
         </Text>
         <View style={styles.chipWrap}>
           {availableTypes.map((t) => (
@@ -623,6 +641,12 @@ const styles = StyleSheet.create({
   reqText: {
     flex: 1,
     minWidth: 0,
+    gap: spacing.xs,
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'flex-start',
     gap: spacing.xs,
   },
   chipWrap: {

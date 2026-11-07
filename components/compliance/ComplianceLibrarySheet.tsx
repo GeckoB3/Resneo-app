@@ -5,12 +5,10 @@ import { Button } from '@/components/ui/Button';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
-import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
-  useCloneComplianceTemplate,
   useComplianceLibrary,
+  type ComplianceLibraryTemplate,
 } from '@/lib/queries/useComplianceTypeManage';
-import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
@@ -24,50 +22,28 @@ import {
 type Props = {
   visible: boolean;
   onClose: () => void;
-  /** Fired after a successful clone so the templates list can refetch. */
-  onCloned?: () => void;
+  /** A template was picked: open the form builder with a copy of it (web parity, 2026-11-07). */
+  onUseTemplate: (template: ComplianceLibraryTemplate) => void;
 };
 
 /**
- * "Add from library" sheet — lists the built-in starter compliance templates
- * (GET /library) and clones one in a tap (POST /library/[slug]/clone). Cloning
- * invalidates the compliance query keys via the hook, so the templates list
- * refreshes; we also fire `onCloned` for an explicit refetch + close.
+ * "Add from library" sheet: lists the built-in starter compliance templates (GET /library). "Use
+ * template" opens the form builder with a copy of one, to change before it is created as the
+ * venue's own form, as on the web. The template itself never changes.
  */
-export function ComplianceLibrarySheet({ visible, onClose, onCloned }: Props) {
+export function ComplianceLibrarySheet({ visible, onClose, onUseTemplate }: Props) {
   const { colors } = useTheme();
-  const toast = useToast();
   const library = useComplianceLibrary(visible);
-  const clone = useCloneComplianceTemplate();
-  const [cloningSlug, setCloningSlug] = useState<string | null>(null);
   const [previewSlug, setPreviewSlug] = useState<string | null>(null);
 
   const templates = library.data?.templates ?? [];
-
-  function handleClone(slug: string, name: string) {
-    setCloningSlug(slug);
-    clone.mutate(slug, {
-      onSuccess: () => {
-        setCloningSlug(null);
-        hapticSuccess();
-        toast.success(`${name} added.`);
-        onCloned?.();
-        onClose();
-      },
-      onError: (error) => {
-        setCloningSlug(null);
-        hapticWarning();
-        toast.error(error instanceof ApiError ? error.message : 'Could not add the template.');
-      },
-    });
-  }
 
   return (
     <Sheet visible={visible} onClose={onClose} fill maxHeight="88%">
       <View style={styles.header}>
         <Text variant="subheading">Add from library</Text>
         <Text variant="bodySmall" tone="muted">
-          Start from a ready-made template. You can edit its fields afterwards.
+          Pick a template to open it in the form builder. Change anything you like before you create it; the template itself stays as it is.
         </Text>
       </View>
 
@@ -105,7 +81,7 @@ export function ComplianceLibrarySheet({ visible, onClose, onCloned }: Props) {
                         CATEGORY_LABELS[t.category] ?? t.category,
                         RESULT_TYPE_LABELS[t.result_type] ?? t.result_type,
                         validityLabel(t.validity_period_days),
-                        `${t.field_count} field${t.field_count === 1 ? '' : 's'}`,
+                        `${t.field_count} question${t.field_count === 1 ? '' : 's'}`,
                       ].join(' · ')}
                     </Text>
                     {t.description ? (
@@ -123,14 +99,7 @@ export function ComplianceLibrarySheet({ visible, onClose, onCloned }: Props) {
                         onPress={() => setPreviewSlug(showPreview ? null : t.slug)}
                       />
                     ) : null}
-                    <Button
-                      label="Add"
-                      variant="secondary"
-                      size="sm"
-                      loading={cloningSlug === t.slug}
-                      disabled={clone.isPending && cloningSlug !== t.slug}
-                      onPress={() => handleClone(t.slug, t.name)}
-                    />
+                    <Button label="Use template" size="sm" onPress={() => onUseTemplate(t)} />
                   </View>
                 </View>
                 {showPreview && previewFields.length > 0 ? (

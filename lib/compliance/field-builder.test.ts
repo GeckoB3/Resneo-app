@@ -165,13 +165,123 @@ describe('fieldBuilderReducer', () => {
     });
   });
 
-  it('ensureResultField reuses an existing staff-only select without adding a field', () => {
+  it('ensureResultField reuses a staff-only select whose answers read as a pass and a fail', () => {
     let state = fieldBuilderReducer(emptyBuilderState, { type: 'addField', fieldType: 'select' });
     const id = state.fields[0]!.id;
     state = fieldBuilderReducer(state, { type: 'updateField', id, patch: { staff_only: true } });
+    state = fieldBuilderReducer(state, { type: 'updateOption', id, index: 0, label: 'Passed' });
+    state = fieldBuilderReducer(state, { type: 'addOption', id });
+    state = fieldBuilderReducer(state, { type: 'updateOption', id, index: 1, label: 'Reaction' });
     state = fieldBuilderReducer(state, { type: 'ensureResultField' });
     expect(state.fields).toHaveLength(1);
-    expect(state.resultMapping).toEqual({ field: id, pass_values: [], fail_values: [] });
+    // A pass/fail result must be required.
+    expect(state.fields[0]).toMatchObject({ required: true });
+    expect(state.resultMapping).toEqual({ field: id, pass_values: ['passed'], fail_values: ['reaction'] });
+  });
+
+  it('ensureResultField leaves any other staff-only Dropdown alone and adds a fresh Result (web parity)', () => {
+    const photoId = {
+      id: 'f_photo_id',
+      type: 'select' as const,
+      label: 'Photo ID seen',
+      required: false,
+      staff_only: true,
+      options: [
+        { value: 'yes', label: 'Yes' },
+        { value: 'no', label: 'No' },
+      ],
+    };
+    // Only a pass answer, no fail answer: not a result question either.
+    const onlyPass = { ...photoId, id: 'f_half', options: [{ value: 'pass', label: 'Pass' }] };
+    const state = fieldBuilderReducer(
+      { ...emptyBuilderState, fields: [photoId, onlyPass] },
+      { type: 'ensureResultField' },
+    );
+    expect(state.fields).toHaveLength(3);
+    expect(state.fields[0]).toEqual(photoId);
+    const added = state.fields[2]!;
+    expect(added).toMatchObject({
+      type: 'select',
+      label: 'Result (staff decision)',
+      required: true,
+      staff_only: true,
+    });
+    expect(state.resultMapping).toEqual({ field: added.id, pass_values: ['pass'], fail_values: ['fail'] });
+  });
+
+  it('renaming an answer carries its Pass or Fail mark to the new value (web parity)', () => {
+    const state = fieldBuilderReducer(emptyBuilderState, { type: 'ensureResultField' });
+    const id = state.fields[0]!.id;
+    const renamed = reduce(
+      state,
+      { type: 'updateOption', id, index: 0, label: 'No reaction' },
+      { type: 'updateOption', id, index: 1, label: 'Reaction seen' },
+    );
+    const options = (renamed.fields[0] as { options: { value: string }[] }).options;
+    expect(options.map((o) => o.value)).toEqual(['no_reaction', 'reaction_seen']);
+    expect(renamed.resultMapping).toEqual({
+      field: id,
+      pass_values: ['no_reaction'],
+      fail_values: ['reaction_seen'],
+    });
+  });
+
+  it('renaming an answer on another question leaves the mapping alone', () => {
+    let state = fieldBuilderReducer(emptyBuilderState, { type: 'ensureResultField' });
+    state = fieldBuilderReducer(state, { type: 'addField', fieldType: 'select' });
+    const other = state.fields[1]!.id;
+    const mapping = state.resultMapping;
+    state = fieldBuilderReducer(state, { type: 'updateOption', id: other, index: 0, label: 'Pass' });
+    expect(state.resultMapping).toBe(mapping);
+  });
+
+  it('removing an answer drops it from Pass and Fail', () => {
+    let state = fieldBuilderReducer(emptyBuilderState, { type: 'ensureResultField' });
+    const id = state.fields[0]!.id;
+    state = fieldBuilderReducer(state, { type: 'removeOption', id, index: 1 });
+    expect(state.resultMapping).toEqual({ field: id, pass_values: ['pass'], fail_values: [] });
+  });
+
+  it('ensureFieldsForResultType adds a signature for Signed and a file upload for File upload (web parity)', () => {
+    const signed = fieldBuilderReducer(emptyBuilderState, { type: 'ensureFieldsForResultType', resultType: 'signed' });
+    expect(signed.fields).toEqual([
+      expect.objectContaining({ type: 'signature', label: 'Client signature', required: true }),
+    ]);
+    expect(fieldBuilderReducer(signed, { type: 'ensureFieldsForResultType', resultType: 'signed' })).toBe(signed);
+    const file = fieldBuilderReducer(signed, { type: 'ensureFieldsForResultType', resultType: 'file_uploaded' });
+    expect(file.fields.map((f) => f.type)).toEqual(['signature', 'file']);
+    // Switching to Completed removes nothing.
+    expect(fieldBuilderReducer(file, { type: 'ensureFieldsForResultType', resultType: 'completed' })).toBe(file);
+  });
+
+  it("ensureFieldsForResultType wires a library patch test's own Result question", () => {
+    const state = fieldBuilderReducer(
+      {
+        ...emptyBuilderState,
+        fields: [
+          {
+            id: 'f_result',
+            type: 'select',
+            label: 'Result',
+            required: false,
+            staff_only: true,
+            options: [
+              { value: 'pass', label: 'Pass' },
+              { value: 'fail', label: 'Fail' },
+              { value: 'inconclusive', label: 'Inconclusive' },
+            ],
+          },
+        ],
+      },
+      { type: 'ensureFieldsForResultType', resultType: 'pass_fail' },
+    );
+    expect(state.fields).toHaveLength(1);
+    expect(state.fields[0]).toMatchObject({ required: true });
+    expect(state.resultMapping).toEqual({
+      field: 'f_result',
+      pass_values: ['pass'],
+      fail_values: ['fail', 'inconclusive'],
+    });
   });
 });
 

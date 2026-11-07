@@ -29,7 +29,7 @@ export const COMPLIANCE_ENFORCEMENT_OPTIONS = [
     value: 'warn_staff',
     label: 'Warn staff',
     description:
-      'The booking still goes through. Your team sees an outstanding-form flag on the calendar and booking so they can collect the record before the appointment. The client is not told.',
+      'The booking still goes through. Your team sees an outstanding-form flag on the calendar and booking. Whether the client is asked for it online depends on Online booking below.',
   },
   {
     value: 'warn_client',
@@ -45,9 +45,9 @@ export const COMPLIANCE_ENFORCEMENT_OPTIONS = [
   },
   {
     value: 'block_all',
-    label: 'Block all bookings',
+    label: 'Block online, required for staff',
     description:
-      'No one can book this service until a valid record is on file, online or from the dashboard. An admin can override when booking from the dashboard.',
+      'Clients cannot book this service online until a valid record is on file. Your team can still book it, and sees a red Required flag until the record is collected.',
   },
 ] as const;
 
@@ -124,6 +124,11 @@ export interface ComplianceRequirementRow {
   compliance_type_name: string;
   compliance_type_category: string;
   compliance_type_is_active: boolean;
+  /**
+   * False when a form the client fills in can never meet this: a pass/fail form whose result only
+   * the team records, like a patch test (web QA 2026-11-07). Missing from older web builds: unknown.
+   */
+  compliance_type_client_form_can_meet?: boolean;
 }
 
 const requirementKeys = {
@@ -195,6 +200,32 @@ export function useVenueWideComplianceRequirements(enabled = true) {
       }
       return apiFetch<{ requirements: ComplianceRequirementRow[] }>(
         '/api/venue/compliance/requirements?scope=venue',
+        { accessToken },
+      );
+    },
+  });
+}
+
+/**
+ * GET /api/venue/compliance/requirements with no filter: every requirement row of
+ * the venue, every form, All bookings included. "Choose services" reads where one
+ * form is asked for from it (web parity, 2026-11-07). The same key and payload as
+ * the counts and the venue-wide names below, so the three share one cache entry.
+ */
+export function useAllComplianceRequirements(enabled = true) {
+  const accessToken = useAccessToken();
+  const queryEnabled = enabled && isBackendConfigured() && accessToken !== null;
+
+  return useQuery({
+    queryKey: requirementKeys.forVenue(accessToken),
+    enabled: queryEnabled,
+    retry: false, // 403/402 = plan gate
+    queryFn: async (): Promise<{ requirements: ComplianceRequirementRow[] }> => {
+      if (!accessToken) {
+        throw new Error('Missing parameters');
+      }
+      return apiFetch<{ requirements: ComplianceRequirementRow[] }>(
+        '/api/venue/compliance/requirements',
         { accessToken },
       );
     },

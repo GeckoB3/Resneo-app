@@ -16,10 +16,20 @@ type ChipProps = {
   onPress?: () => void;
   /** When set, renders a trailing × that clears this filter (a removable chip). */
   onRemove?: () => void;
+  /** Greys the chip out and ignores presses (e.g. a one-per-form question type already added). */
+  disabled?: boolean;
 };
 
 /** Selectable filter pill — used in the Bookings/Calendar/Contacts filter bars. */
-export function Chip({ label, selected = false, count, selectedColor, onPress, onRemove }: ChipProps) {
+export function Chip({
+  label,
+  selected = false,
+  count,
+  selectedColor,
+  onPress,
+  onRemove,
+  disabled,
+}: ChipProps) {
   const { colors } = useTheme();
   const fill = selectedColor ?? colors.brand;
 
@@ -31,14 +41,15 @@ export function Chip({ label, selected = false, count, selectedColor, onPress, o
   return (
     <Pressable
       onPress={handlePress}
+      disabled={disabled}
       accessibilityRole="button"
-      accessibilityState={{ selected }}
+      accessibilityState={disabled ? { selected, disabled } : { selected }}
       style={({ pressed }) => [
         styles.chip,
         {
           backgroundColor: selected ? fill : colors.surface,
           borderColor: selected ? fill : colors.border,
-          opacity: pressed ? 0.85 : 1,
+          opacity: disabled ? 0.45 : pressed ? 0.85 : 1,
         },
       ]}>
       <Text variant="label" color={selected ? colors.onBrand : colors.textSecondary}>

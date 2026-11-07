@@ -1,5 +1,6 @@
 import {
   computeResult,
+  parseFormSchema,
   resolveDateDefault,
   seedDefaultResponses,
   validateFormSchemaForType,
@@ -32,13 +33,14 @@ describe('validateFormSchemaForType', () => {
     expect(validateFormSchemaForType(schema([textField]), 'completed').ok).toBe(true);
   });
 
-  it('flags duplicate field ids', () => {
+  // Friendlier messages (web parity, 2026-11-07): the exact words a business owner reads.
+  it('flags duplicate field ids, once however many clash', () => {
     const res = validateFormSchemaForType(
-      schema([textField, { ...textField, label: 'Again' }]),
+      schema([textField, { ...textField, label: 'Again' }, { ...textField, label: 'Third' }]),
       'completed',
     );
     expect(res.ok).toBe(false);
-    expect(res.errors.some((e) => e.includes('Duplicate field id'))).toBe(true);
+    expect(res.errors).toEqual(['Two questions share an id. Remove one and add it again.']);
   });
 
   it('rejects more than one signature field', () => {
@@ -46,7 +48,7 @@ describe('validateFormSchemaForType', () => {
       schema([signatureField, { ...signatureField, id: 'sig2' }]),
       'signed',
     );
-    expect(res.errors).toContain('A form may contain at most one signature field.');
+    expect(res.errors).toEqual(['A form can have one Signature question.']);
   });
 
   it('rejects more than one file field', () => {
@@ -54,70 +56,81 @@ describe('validateFormSchemaForType', () => {
       schema([fileField, { ...fileField, id: 'doc2' }]),
       'file_uploaded',
     );
-    expect(res.errors).toContain('A form may contain at most one file upload field.');
+    expect(res.errors).toEqual(['A form can have one File upload question.']);
   });
 
   it('requires a signature field for a signed type', () => {
     const res = validateFormSchemaForType(schema([textField]), 'signed');
     expect(res.ok).toBe(false);
-    expect(res.errors).toContain('Types with result type "signed" must include a signature field.');
+    expect(res.errors).toEqual(['A signed form needs a Signature question.']);
   });
 
   it('requires a file field for a file_uploaded type', () => {
     const res = validateFormSchemaForType(schema([textField]), 'file_uploaded');
-    expect(res.errors).toContain('Types with result type "file_uploaded" must include a file upload field.');
+    expect(res.errors).toEqual(['A file upload form needs a File upload question.']);
   });
 
   describe('pass_fail mapping', () => {
+    const passFail = (field: ComplianceField, pass: string[], fail: string[]) =>
+      validateFormSchemaForType(
+        schema([field], { result_mapping: { field: field.id, pass_values: pass, fail_values: fail } }),
+        'pass_fail',
+      );
+
     it('requires a result_mapping', () => {
       const res = validateFormSchemaForType(schema([resultSelect]), 'pass_fail');
-      expect(res.errors).toContain(
-        'Pass/fail types require a result_mapping pointing at a result field.',
+      expect(res.errors).toEqual(['Choose the question your team uses to record pass or fail.']);
+    });
+
+    it('says when the question the mapping points at was removed', () => {
+      const res = validateFormSchemaForType(
+        schema([textField], {
+          result_mapping: { field: 'gone', pass_values: ['clear'], fail_values: ['reaction'] },
+        }),
+        'pass_fail',
       );
+      expect(res.errors).toEqual([
+        'The pass or fail question was removed. Add it back or pick another.',
+      ]);
+    });
+
+    it('requires the mapped question to be a Dropdown', () => {
+      const res = passFail({ ...textField, id: 'result' }, ['clear'], ['reaction']);
+      expect(res.errors).toEqual(['The pass or fail question must be a Dropdown.']);
     });
 
     it('requires the mapped field to be a staff-only select', () => {
-      const nonStaff: ComplianceField = { ...resultSelect, staff_only: false };
-      const res = validateFormSchemaForType(
-        schema([nonStaff], {
-          result_mapping: { field: 'result', pass_values: ['clear'], fail_values: ['reaction'] },
-        }),
-        'pass_fail',
-      );
-      expect(res.errors).toContain('The pass/fail result field must be marked staff_only.');
+      const res = passFail({ ...resultSelect, staff_only: false }, ['clear'], ['reaction']);
+      expect(res.errors).toEqual(['The pass or fail question must be marked Staff only.']);
     });
 
     it('requires the mapped result field to be marked required (audit M7)', () => {
-      const notRequired: ComplianceField = { ...resultSelect, required: false };
-      const res = validateFormSchemaForType(
-        schema([notRequired], {
-          result_mapping: { field: 'result', pass_values: ['clear'], fail_values: ['reaction'] },
-        }),
-        'pass_fail',
-      );
-      expect(res.errors).toContain(
-        'The pass/fail result field must be marked required so a decision is always recorded.',
-      );
+      const res = passFail({ ...resultSelect, required: false }, ['clear'], ['reaction']);
+      expect(res.errors).toEqual(['The pass or fail question must be marked Required.']);
     });
 
-    it('rejects mapping values absent from the options', () => {
-      const res = validateFormSchemaForType(
-        schema([resultSelect], {
-          result_mapping: { field: 'result', pass_values: ['clear'], fail_values: ['nope'] },
-        }),
-        'pass_fail',
-      );
-      expect(res.errors.some((e) => e.includes('not present in the result field options'))).toBe(true);
+    it('needs at least one Pass answer and one Fail answer (new check)', () => {
+      expect(passFail(resultSelect, [], ['reaction']).errors).toEqual([
+        'Mark at least one answer as Pass and one as Fail.',
+      ]);
+      expect(passFail(resultSelect, ['clear'], []).errors).toEqual([
+        'Mark at least one answer as Pass and one as Fail.',
+      ]);
+    });
+
+    it('rejects mapping values absent from the options, with the same message once', () => {
+      expect(passFail(resultSelect, ['clear'], ['nope']).errors).toEqual([
+        'Mark at least one answer as Pass and one as Fail.',
+      ]);
+      expect(passFail(resultSelect, [], ['nope']).errors).toEqual([
+        'Mark at least one answer as Pass and one as Fail.',
+      ]);
     });
 
     it('rejects a value that is both pass and fail', () => {
-      const res = validateFormSchemaForType(
-        schema([resultSelect], {
-          result_mapping: { field: 'result', pass_values: ['clear'], fail_values: ['clear'] },
-        }),
-        'pass_fail',
-      );
-      expect(res.errors.some((e) => e.includes('cannot be both pass and fail'))).toBe(true);
+      expect(passFail(resultSelect, ['clear'], ['clear', 'reaction']).errors).toEqual([
+        "An answer can't be both Pass and Fail: clear.",
+      ]);
     });
 
     it('accepts a valid pass_fail mapping', () => {
@@ -129,6 +142,50 @@ describe('validateFormSchemaForType', () => {
       );
       expect(res.ok).toBe(true);
     });
+  });
+});
+
+describe('parseFormSchema (an edit keeps what the app does not show)', () => {
+  const raw = {
+    schema_version: '1.0',
+    title: 'PPD Patch Test',
+    fields: [
+      {
+        id: 'f_test_date',
+        type: 'date',
+        label: 'Date of patch test',
+        required: true,
+        sets_record_date: true,
+        some_future_setting: { keep: 'me' },
+      },
+      { id: 'notes', type: 'text', label: 'Notes', later_key: 7 },
+    ],
+  };
+
+  it("keeps a date question's sets_record_date, which the builder has no control for", () => {
+    const parsed = parseFormSchema(raw);
+    if (!parsed.ok) throw new Error(parsed.error);
+    expect(parsed.schema.fields[0]).toMatchObject({ type: 'date', sets_record_date: true });
+  });
+
+  it('keeps question keys this port does not know, and still fills the known defaults', () => {
+    const parsed = parseFormSchema(raw);
+    if (!parsed.ok) throw new Error(parsed.error);
+    expect(parsed.schema.fields[0]).toMatchObject({ some_future_setting: { keep: 'me' } });
+    expect(parsed.schema.fields[1]).toMatchObject({
+      later_key: 7,
+      required: false,
+      staff_only: false,
+    });
+  });
+
+  it('defaults sets_record_date to false on a date question without it (as the web does)', () => {
+    const parsed = parseFormSchema({
+      title: 'Form',
+      fields: [{ id: 'd', type: 'date', label: 'When' }],
+    });
+    if (!parsed.ok) throw new Error(parsed.error);
+    expect(parsed.schema.fields[0]).toMatchObject({ sets_record_date: false });
   });
 });
 

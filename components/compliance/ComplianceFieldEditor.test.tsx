@@ -1,4 +1,5 @@
 import { useReducer } from 'react';
+import { Text } from 'react-native';
 
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
@@ -19,9 +20,8 @@ import {
  * flushes before assertions (RTL press/act flush, per project memory).
  */
 async function press(el: Parameters<typeof fireEvent.press>[0]) {
-  await act(async () => {
-    fireEvent.press(el);
-  });
+  // fireEvent is async in RNTL v14 and wraps itself in act: await it so it cannot overlap the next step.
+  await fireEvent.press(el);
 }
 
 function Harness({
@@ -32,7 +32,13 @@ function Harness({
   isPassFail?: boolean;
 }) {
   const [state, dispatch] = useReducer(fieldBuilderReducer, initial);
-  return <ComplianceFieldEditor state={state} dispatch={dispatch} isPassFail={isPassFail} />;
+  return (
+    <>
+      <ComplianceFieldEditor state={state} dispatch={dispatch} isPassFail={isPassFail} />
+      {/* The builder's result mapping, so a test can see what a rename did to it. */}
+      <Text testID="mapping-json">{JSON.stringify(state.resultMapping ?? null)}</Text>
+    </>
+  );
 }
 
 describe('ComplianceFieldEditor', () => {
@@ -98,6 +104,51 @@ describe('ComplianceFieldEditor', () => {
     expect(screen.getByText('Pass / fail result')).toBeTruthy();
     // With no staff-only dropdown yet, it nudges the user to add one.
     expect(screen.getByText(/Add a staff-only Dropdown field first/)).toBeTruthy();
+  });
+
+  it('allows one Signature and one File upload question, and says why (web parity)', async () => {
+    await render(<Harness />);
+    expect(screen.queryByTestId('one-per-form-hint')).toBeNull();
+
+    await press(screen.getByText('+ Signature'));
+    expect(screen.getByRole('button', { name: '+ Signature' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '+ File upload' })).not.toBeDisabled();
+    expect(screen.getByTestId('one-per-form-hint')).toHaveTextContent(
+      'A form can have one Signature question and one File upload question.',
+    );
+    // A second press adds nothing: one Signature card (its type tag), no second.
+    await press(screen.getByText('+ Signature'));
+    expect(screen.getAllByText('Signature')).toHaveLength(1);
+
+    await press(screen.getByText('+ File upload'));
+    expect(screen.getByRole('button', { name: '+ File upload' })).toBeDisabled();
+    await press(screen.getByText('+ File upload'));
+    expect(screen.getAllByText('File upload')).toHaveLength(1);
+  });
+
+  it('explains Staff only under the question', async () => {
+    await render(<Harness />);
+    await press(screen.getByText('+ Short text'));
+    expect(screen.getByText('Hidden from clients. Only your team sees and answers it.')).toBeTruthy();
+    expect(screen.getByText('Shown above the questions.')).toBeTruthy();
+  });
+
+  it('names the question the team records the result with, and a renamed answer keeps its mark', async () => {
+    const initial = fieldBuilderReducer(emptyBuilderState, { type: 'ensureResultField' });
+    await render(<Harness initial={initial} isPassFail />);
+    expect(screen.getByTestId('result-mapping-hint')).toHaveTextContent(
+      'Your team records the result with Result (staff decision). Mark which answers count as a pass and which as a fail.',
+    );
+    expect(screen.getByText('1 pass · 1 fail')).toBeTruthy();
+
+    // Rename "Pass" to "No reaction": its stored value changes, and it still counts as the pass.
+    await fireEvent.changeText(screen.getByDisplayValue('Pass'), 'No reaction');
+    const mapping = JSON.parse(String(screen.getByTestId('mapping-json').props.children)) as {
+      pass_values: string[];
+      fail_values: string[];
+    };
+    expect(mapping.pass_values).toEqual(['no_reaction']);
+    expect(mapping.fail_values).toEqual(['fail']);
   });
 
   it('renders an options editor for select fields', async () => {

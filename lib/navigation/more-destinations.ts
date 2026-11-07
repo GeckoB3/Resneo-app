@@ -289,7 +289,7 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
   // Requirements / General). Admin + appointment tier, NOT gated on the records
   // flag (web SettingsView parity) so admins can turn compliance on from here.
   if (isAdmin && isAppointmentTier) {
-    list.push({ id: 'compliance-settings', label: 'Compliance settings', hint: 'Templates, service requirements & defaults', icon: { ios: 'checklist', android: 'rule', web: 'rule' }, tile: TILE.slate, group: 'setup', kind: 'route', target: '/manage/compliance-settings', keywords: ['settings', 'consent', 'forms', 'templates', 'requirements', 'general', 'enforcement'] });
+    list.push({ id: 'compliance-settings', label: 'Compliance settings', hint: 'Forms, service requirements & defaults', icon: { ios: 'checklist', android: 'rule', web: 'rule' }, tile: TILE.slate, group: 'setup', kind: 'route', target: '/manage/compliance-settings', keywords: ['settings', 'consent', 'forms', 'templates', 'requirements', 'general', 'enforcement'] });
   }
 
   // ── Team & clients — people, messaging & client data. ──────────────────────

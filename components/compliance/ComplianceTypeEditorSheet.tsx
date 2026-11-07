@@ -1,5 +1,5 @@
-import { useReducer, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { useReducer, useRef, useState } from 'react';
+import { ScrollView, StyleSheet, Switch, View } from 'react-native';
 
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -23,7 +23,6 @@ import {
 } from '@/lib/compliance/form-schema';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
-  COMPLIANCE_TYPE_CAPTURE_METHODS,
   COMPLIANCE_TYPE_CATEGORIES,
   FORM_LINK_EXPIRY_MAX,
   FORM_LINK_EXPIRY_MIN,
@@ -36,6 +35,7 @@ import {
   useRestoreComplianceVersion,
   useUpdateComplianceTemplate,
   VALIDITY_DAYS_MAX,
+  type ComplianceLibraryTemplate,
   type ComplianceTypeCaptureMethod,
   type ComplianceTypeCategory,
 } from '@/lib/queries/useComplianceTypeManage';
@@ -43,21 +43,31 @@ import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
+import type { ChooseServicesForm } from './ComplianceChooseServicesSheet';
 import { ComplianceFieldEditor } from './ComplianceFieldEditor';
-import {
-  CAPTURE_METHOD_LABELS,
-  CATEGORY_LABELS,
-  RESULT_TYPE_LABELS,
-  validityLabel,
-} from './complianceTypeLabels';
+import { CATEGORY_LABELS, RESULT_TYPE_LABELS, validityLabel } from './complianceTypeLabels';
 
 type ValidityMode = 'lifetime' | 'per_visit' | 'days';
 
 const VALIDITY_OPTIONS: { value: ValidityMode; label: string }[] = [
   { value: 'lifetime', label: 'No expiry' },
   { value: 'per_visit', label: 'Per visit' },
-  { value: 'days', label: 'Expires after' },
+  { value: 'days', label: 'Expires after a number of days' },
 ];
+
+/**
+ * The one "Captured by" choice (web parity, 2026-11-07): the team can always fill a form in or
+ * send a link, so staff capture is always on and only online completion by clients is a choice.
+ */
+function captureMethodsFor(clientsOnline: boolean): ComplianceTypeCaptureMethod[] {
+  return ['staff_in_venue', ...(clientsOnline ? (['client_online'] as const) : [])];
+}
+
+/** "Archive {name}?" body: how many services ask for the form ("all bookings" counts as one). */
+function archiveConfirmBody(serviceCount: number): string {
+  const services = serviceCount === 1 ? '1 service' : `${serviceCount} services`;
+  return `It is asked for on ${services}. Archiving stops it being asked for. Records are kept, and you can restore it at any time.`;
+}
 
 /** Web builder's parenthetical result-type labels (aligns app ↔ web copy). */
 const RESULT_TYPE_DROPDOWN_LABELS: Record<ComplianceResultType, string> = {
@@ -80,11 +90,34 @@ type Props = {
   typeId: string | null;
   /** 'create' opens the empty builder; otherwise edits the given typeId. */
   mode?: 'create' | 'edit';
+  /**
+   * Create only: start from this library template, pre-filled so it can be changed before it is
+   * created (web parity, 2026-11-07). Creating makes the venue's own form; the template never changes.
+   */
+  template?: ComplianceLibraryTemplate | null;
   /** Admins can edit + archive; everyone else gets a read-only view. */
   canEdit: boolean;
+  /**
+   * How many requirement rows ask for this form (the list's `service_requirement_count`; the
+   * "All bookings" row counts as one). Archiving a form some service asks for confirms first.
+   */
+  serviceCount?: number;
   onClose: () => void;
   /** Fired after a successful create/version save so the list can refetch. */
   onSaved?: () => void;
+  /** Open another form in the editor: Duplicate opens the copy (web parity, 2026-11-07). */
+  onOpenType?: (typeId: string) => void;
+  /**
+   * A form was just created: ask which services need it (web parity, 2026-11-07). Given, it takes
+   * the place of `onClose` after a create, so the parent closes the editor and then opens Choose
+   * services on the new form. Without it the editor closes and says the form was created.
+   */
+  onCreated?: (form: ChooseServicesForm) => void;
+  /**
+   * "Choose services" for the open, active form. The parent closes the editor and then opens that
+   * sheet, since one sheet cannot open over another. No button without it.
+   */
+  onChooseServices?: (form: ChooseServicesForm) => void;
 };
 
 /**
@@ -98,15 +131,23 @@ export function ComplianceTypeEditorSheet({
   visible,
   typeId,
   mode = 'edit',
+  template = null,
   canEdit,
+  serviceCount = 0,
   onClose,
   onSaved,
+  onOpenType,
+  onCreated,
+  onChooseServices,
 }: Props) {
   const { colors } = useTheme();
   const toast = useToast();
   const isCreate = mode === 'create';
 
   const detail = useComplianceTemplateDetail(visible && !isCreate ? typeId : null);
+  // The result type can change until the first record is saved with this form (always, when creating).
+  // An older web build sends no flag, which reads as locked.
+  const resultTypeLocked = !isCreate && (detail.data?.result_type_locked ?? true);
   const update = useUpdateComplianceTemplate();
   const createType = useCreateComplianceTemplate();
   const versionsQuery = useComplianceTypeVersions(visible && !isCreate ? typeId : null);
@@ -122,15 +163,14 @@ export function ComplianceTypeEditorSheet({
   const [resultType, setResultType] = useState<ComplianceResultType>('completed');
   const [validityMode, setValidityMode] = useState<ValidityMode>('lifetime');
   const [validityDaysText, setValidityDaysText] = useState('180');
-  const [captureMethods, setCaptureMethods] = useState<ComplianceTypeCaptureMethod[]>([
-    'staff_in_venue',
-    'client_online',
-  ]);
+  // "Clients can fill this in online": on by default.
+  const [clientsOnline, setClientsOnline] = useState(true);
   const [expiryDaysText, setExpiryDaysText] = useState('');
   const [unmetMessage, setUnmetMessage] = useState('');
   const [changelog, setChangelog] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
   const [confirmingArchive, setConfirmingArchive] = useState(false);
+  const bodyScrollRef = useRef<ScrollView>(null);
   const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<'save' | 'archive' | 'duplicate' | null>(null);
 
@@ -138,7 +178,7 @@ export function ComplianceTypeEditorSheet({
   const [builder, dispatch] = useReducer(fieldBuilderReducer, emptyBuilderState);
 
   // Hydration key distinguishes create-mode from each edited type.
-  const targetKey = isCreate ? '__create__' : detail.data?.type.id ?? null;
+  const targetKey = isCreate ? `__create__${template ? `:${template.slug}` : ''}` : detail.data?.type.id ?? null;
 
   if (visible && targetKey && hydratedKey !== targetKey) {
     if (isCreate) {
@@ -147,11 +187,44 @@ export function ComplianceTypeEditorSheet({
       setResultType('completed');
       setValidityMode('lifetime');
       setValidityDaysText('180');
-      setCaptureMethods(['staff_in_venue', 'client_online']);
+      setClientsOnline(true);
       setExpiryDaysText('');
       setUnmetMessage('');
       setChangelog('');
       dispatch({ type: 'hydrate', state: emptyBuilderState });
+      if (template) {
+        // A copy of the library template, to change before it is created.
+        setName(template.name);
+        if ((COMPLIANCE_TYPE_CATEGORIES as readonly string[]).includes(template.category)) {
+          setCategory(template.category as ComplianceTypeCategory);
+        }
+        if ((COMPLIANCE_RESULT_TYPES as readonly string[]).includes(template.result_type)) {
+          setResultType(template.result_type as ComplianceResultType);
+        }
+        setValidityMode(
+          template.validity_period_days == null
+            ? 'lifetime'
+            : template.validity_period_days === 0
+              ? 'per_visit'
+              : 'days',
+        );
+        if (template.validity_period_days != null && template.validity_period_days > 0) {
+          setValidityDaysText(String(template.validity_period_days));
+        }
+        setClientsOnline((template.capture_methods ?? []).includes('client_online'));
+        const parsedTemplate = template.form_schema ? parseFormSchema(template.form_schema) : null;
+        if (parsedTemplate && parsedTemplate.ok) {
+          dispatch({
+            type: 'hydrate',
+            state: {
+              fields: parsedTemplate.schema.fields.map((f) => ({ ...f })),
+              description: parsedTemplate.schema.description ?? template.description ?? '',
+              introMarkdown: parsedTemplate.schema.intro_markdown ?? '',
+              resultMapping: parsedTemplate.schema.result_mapping,
+            },
+          });
+        }
+      }
     } else if (detail.data) {
       const t = detail.data.type;
       setName(t.name);
@@ -177,11 +250,7 @@ export function ComplianceTypeEditorSheet({
           ? String(t.validity_period_days)
           : '180',
       );
-      setCaptureMethods(
-        (t.capture_methods ?? []).filter((m): m is ComplianceTypeCaptureMethod =>
-          (COMPLIANCE_TYPE_CAPTURE_METHODS as readonly string[]).includes(m),
-        ),
-      );
+      setClientsOnline((t.capture_methods ?? []).includes('client_online'));
       setExpiryDaysText(t.form_link_expiry_days != null ? String(t.form_link_expiry_days) : '');
       setUnmetMessage(t.online_unmet_message ?? '');
       setChangelog('');
@@ -218,12 +287,6 @@ export function ComplianceTypeEditorSheet({
   const version = isCreate ? null : detail.data?.version ?? null;
   const isArchived = type ? !type.is_active : false;
 
-  function toggleCaptureMethod(method: ComplianceTypeCaptureMethod) {
-    setCaptureMethods((prev) =>
-      prev.includes(method) ? prev.filter((m) => m !== method) : [...prev, method],
-    );
-  }
-
   /** Validate meta + schema. Returns parsed numeric fields + the built schema. */
   function validateAll(): {
     ok: boolean;
@@ -232,8 +295,7 @@ export function ComplianceTypeEditorSheet({
   } {
     const problems: string[] = [];
 
-    if (!name.trim()) problems.push('Give the template a name.');
-    if (captureMethods.length === 0) problems.push('Choose at least one capture method.');
+    if (!name.trim()) problems.push('Give the form a name.');
 
     let validityDays: number | null = null;
     if (validityMode === 'per_visit') {
@@ -260,7 +322,7 @@ export function ComplianceTypeEditorSheet({
     }
 
     if (builder.fields.length === 0) {
-      problems.push('Add at least one form field.');
+      problems.push('Add at least one question.');
     } else {
       // Run the ported cross-field schema validation against the result type.
       const schema = buildSchema();
@@ -300,23 +362,35 @@ export function ComplianceTypeEditorSheet({
           description: builder.description.trim() ? builder.description.trim() : null,
           result_type: resultType,
           validity_period_days: validityDays,
-          capture_methods: captureMethods,
+          capture_methods: captureMethodsFor(clientsOnline),
           form_link_expiry_days: expiryDays,
           online_unmet_message: unmetMessage.trim() ? unmetMessage.trim() : null,
           form_schema: schema,
+          ...(template ? { library_template_slug: template.slug } : {}),
         },
         {
-          onSuccess: () => {
+          onSuccess: (created) => {
             setPendingAction(null);
             hapticSuccess();
-            toast.success(`${name.trim()} created.`);
             onSaved?.();
+            // Straight on to which services need it (web parity, 2026-11-07). Its title says the
+            // form is ready, so there is no toast, which would be drawn behind that sheet anyway.
+            const createdId = created?.type?.id;
+            if (createdId && onCreated) {
+              onCreated({
+                id: createdId,
+                name: created.type.name ?? name.trim(),
+                clientOnline: clientsOnline,
+              });
+              return;
+            }
+            toast.success(`${name.trim()} created.`);
             onClose();
           },
           onError: (error) => {
             setPendingAction(null);
             hapticWarning();
-            setErrors([error instanceof ApiError ? error.message : 'Could not create the type.']);
+            setErrors([error instanceof ApiError ? error.message : 'Could not create the form.']);
           },
         },
       );
@@ -334,8 +408,10 @@ export function ComplianceTypeEditorSheet({
           name: name.trim(),
           category,
           description: builder.description.trim() ? builder.description.trim() : null,
+          // Unchanged unless the form has no records yet; the web refuses a change after that.
+          ...(resultTypeLocked ? {} : { result_type: resultType }),
           validity_period_days: validityDays,
-          capture_methods: captureMethods,
+          capture_methods: captureMethodsFor(clientsOnline),
           form_link_expiry_days: expiryDays,
           online_unmet_message: unmetMessage.trim() ? unmetMessage.trim() : null,
           form_schema: schema,
@@ -346,14 +422,14 @@ export function ComplianceTypeEditorSheet({
         onSuccess: () => {
           setPendingAction(null);
           hapticSuccess();
-          toast.success('Template saved.');
+          toast.success('Form saved.');
           onSaved?.();
           onClose();
         },
         onError: (error) => {
           setPendingAction(null);
           hapticWarning();
-          setErrors([error instanceof ApiError ? error.message : 'Could not save the template.']);
+          setErrors([error instanceof ApiError ? error.message : 'Could not save the form.']);
         },
       },
     );
@@ -375,26 +451,41 @@ export function ComplianceTypeEditorSheet({
         setPendingAction(null);
         setConfirmingArchive(false);
         hapticWarning();
-        setErrors([error instanceof ApiError ? error.message : 'Could not update the template.']);
+        setErrors([error instanceof ApiError ? error.message : 'Could not update the form.']);
       },
     });
   }
 
+  /**
+   * Archiving a form some service asks for stops it being asked for, so it confirms first; a form
+   * no service uses archives at once, and Restore never asks (web parity, 2026-11-07).
+   */
+  function handleArchivePress() {
+    if (!isArchived && serviceCount > 0) {
+      setConfirmingArchive(true);
+      // The confirmation sits at the foot of the form; bring its buttons out from behind the footer.
+      setTimeout(() => bodyScrollRef.current?.scrollToEnd({ animated: true }), 50);
+    } else handleArchiveToggle();
+  }
+
+  /** Duplicate, then open the copy in the editor so it can be changed at once (web parity). */
   function handleDuplicate() {
     if (!type) return;
     setPendingAction('duplicate');
     duplicateType.mutate(type.id, {
-      onSuccess: () => {
+      onSuccess: (copy) => {
         setPendingAction(null);
         hapticSuccess();
-        toast.success(`${type.name} duplicated.`);
+        toast.success('Copy made. Change anything you like.');
         onSaved?.();
-        onClose();
+        const copyId = copy?.type?.id;
+        if (copyId && onOpenType) onOpenType(copyId);
+        else onClose();
       },
       onError: (error) => {
         setPendingAction(null);
         hapticWarning();
-        setErrors([error instanceof ApiError ? error.message : 'Could not duplicate the type.']);
+        setErrors([error instanceof ApiError ? error.message : 'Could not duplicate the form.']);
       },
     });
   }
@@ -436,31 +527,34 @@ export function ComplianceTypeEditorSheet({
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <Text variant="subheading" numberOfLines={1} style={styles.headerTitle}>
-            {isCreate ? 'New compliance type' : type?.name ?? 'Compliance template'}
+            {isCreate ? (template ? 'New form from a template' : 'New form') : type?.name ?? 'Edit form'}
           </Text>
           {version ? <Badge label={`v${version.version_number}`} tone="neutral" /> : null}
           {isArchived ? <Badge label="Archived" tone="warning" /> : null}
         </View>
         <Text variant="bodySmall" tone="muted">
           {!canEdit
-            ? 'Only venue admins can edit compliance templates.'
+            ? 'Only admins can edit forms.'
             : isCreate
-              ? 'Build the form clients or staff will complete.'
-              : 'Edit the settings and form fields. Saving publishes a new version.'}
+              ? template
+                ? `Starting from the library template ${template.name}. Change anything you like, then tap Create form. This makes your own form; the library template stays as it is.`
+                : 'Build the form clients or staff will complete.'
+              : 'Edit the settings and questions. Saving publishes a new version.'}
         </Text>
       </View>
 
       <ScrollView
+        ref={bodyScrollRef}
         style={styles.body}
         contentContainerStyle={styles.bodyContent}
         keyboardShouldPersistTaps="handled">
         {loadingDetail ? (
           <Text variant="bodySmall" tone="muted">
-            Loading template…
+            Loading form…
           </Text>
         ) : detailError ? (
           <Text variant="bodySmall" tone="danger">
-            {detail.error instanceof ApiError ? detail.error.message : 'Could not load the template.'}
+            {detail.error instanceof ApiError ? detail.error.message : 'Could not load the form.'}
           </Text>
         ) : canEdit ? (
           <>
@@ -487,14 +581,17 @@ export function ComplianceTypeEditorSheet({
                   />
                 ))}
               </View>
+              <Text variant="caption" tone="muted">
+                Only used to group your forms.
+              </Text>
             </View>
 
-            {/* Result type — editable on create, immutable on edit (web parity) */}
+            {/* Result type: editable until the first record is saved with this form (web parity) */}
             <View style={styles.fieldBlock}>
               <Text variant="label" tone="secondary">
                 Result type
               </Text>
-              {isCreate ? (
+              {!resultTypeLocked ? (
                 <View style={styles.chipWrap}>
                   {COMPLIANCE_RESULT_TYPES.map((r) => (
                     <Chip
@@ -503,9 +600,9 @@ export function ComplianceTypeEditorSheet({
                       selected={resultType === r}
                       onPress={() => {
                         setResultType(r);
-                        // Auto-wire a staff-only Pass/Fail result field so a valid
-                        // pass_fail form exists immediately (web parity).
-                        if (r === 'pass_fail') dispatch({ type: 'ensureResultField' });
+                        // Add the question the result type needs (a signature, a file upload, or a
+                        // staff Result wired to pass and fail), so the form is valid at once (web parity).
+                        dispatch({ type: 'ensureFieldsForResultType', resultType: r });
                       }}
                     />
                   ))}
@@ -519,10 +616,12 @@ export function ComplianceTypeEditorSheet({
                   <Text variant="body">{RESULT_TYPE_DROPDOWN_LABELS[resultType]}</Text>
                 </View>
               )}
-              <Text variant="caption" tone="muted">
+              <Text variant="caption" tone="muted" testID="result-type-hint">
                 {isCreate
-                  ? 'Determines how the record result is recorded.'
-                  : "Result type can't change after creation."}
+                  ? 'Determines how the record result is recorded. You can change this until the first record is saved with this form.'
+                  : resultTypeLocked
+                    ? 'This cannot change now that records have been saved with this form, because it decides whether they count. To use a different result type, duplicate the form.'
+                    : 'You can change this until the first record is saved with this form.'}
               </Text>
             </View>
 
@@ -547,23 +646,29 @@ export function ComplianceTypeEditorSheet({
                     : 'Single-use: a new record is needed for every visit.'}
                 </Text>
               )}
+              {!isCreate ? (
+                <Text variant="caption" tone="muted" testID="validity-edit-hint">
+                  Changes apply to records collected from now on. Records you already hold keep their
+                  expiry date.
+                </Text>
+              ) : null}
             </View>
 
-            {/* Capture methods */}
-            <View style={styles.fieldBlock}>
-              <Text variant="label" tone="secondary">
-                Captured by
-              </Text>
-              <View style={styles.chipWrap}>
-                {COMPLIANCE_TYPE_CAPTURE_METHODS.map((m) => (
-                  <Chip
-                    key={m}
-                    label={CAPTURE_METHOD_LABELS[m] ?? m}
-                    selected={captureMethods.includes(m)}
-                    onPress={() => toggleCaptureMethod(m)}
-                  />
-                ))}
+            {/* Captured by: one choice (web parity, 2026-11-07). */}
+            <View style={styles.switchRow}>
+              <View style={styles.switchText}>
+                <Text variant="bodyMedium">Clients can fill this in online</Text>
+                <Text variant="caption" tone="muted">
+                  Your team can always fill it in at your business or send the client a link.
+                </Text>
               </View>
+              <Switch
+                accessibilityLabel="Clients can fill this in online"
+                value={clientsOnline}
+                onValueChange={setClientsOnline}
+                trackColor={{ true: colors.brand, false: colors.border }}
+                thumbColor={colors.surfaceRaised}
+              />
             </View>
 
             <Input
@@ -580,7 +685,7 @@ export function ComplianceTypeEditorSheet({
               value={unmetMessage}
               onChangeText={setUnmetMessage}
               placeholder="e.g. Please call us to arrange your patch test before booking."
-              helper="Shown to clients who can't book online until this is on file. Max 500 characters."
+              helper="Shown when a client can't book online because this form is missing and they can't fill it in themselves. It replaces the standard wording, which asks them to contact you, so add your number if you want them to call."
               multiline
               maxLength={500}
               optional
@@ -685,23 +790,45 @@ export function ComplianceTypeEditorSheet({
         {/* Archive / restore — admin only, edit mode only */}
         {canEdit && !isCreate && type ? (
           <View style={styles.archiveBlock}>
-            <Button
-              label="Duplicate this type"
-              variant="ghost"
-              size="sm"
-              loading={duplicating}
-              disabled={duplicating}
-              onPress={handleDuplicate}
-            />
+            <View style={styles.formActions}>
+              {/* Which services ask for this form, in one place (web parity, 2026-11-07). */}
+              {!isArchived && onChooseServices ? (
+                <Button
+                  label="Choose services"
+                  variant="ghost"
+                  size="sm"
+                  onPress={() =>
+                    onChooseServices({
+                      id: type.id,
+                      name: type.name,
+                      clientOnline: (type.capture_methods ?? ['client_online']).includes('client_online'),
+                    })
+                  }
+                />
+              ) : null}
+              <Button
+                label="Duplicate"
+                variant="ghost"
+                size="sm"
+                loading={duplicating}
+                disabled={duplicating}
+                onPress={handleDuplicate}
+              />
+            </View>
             {confirmingArchive && !isArchived ? (
-              <>
+              <View
+                testID="archive-confirm"
+                style={[
+                  styles.archiveConfirm,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                ]}>
+                <Text variant="bodyMedium">{`Archive ${type.name}?`}</Text>
                 <Text variant="caption" tone="muted">
-                  Archiving hides this template from capture and new requirements. Existing records
-                  are kept.
+                  {archiveConfirmBody(serviceCount)}
                 </Text>
                 <View style={styles.archiveRow}>
                   <Button
-                    label="Archive template"
+                    label="Archive"
                     variant="danger"
                     size="sm"
                     loading={archiving}
@@ -709,7 +836,7 @@ export function ComplianceTypeEditorSheet({
                     style={styles.archiveBtn}
                   />
                   <Button
-                    label="Keep active"
+                    label="Cancel"
                     variant="secondary"
                     size="sm"
                     disabled={archiving}
@@ -717,17 +844,14 @@ export function ComplianceTypeEditorSheet({
                     style={styles.archiveBtn}
                   />
                 </View>
-              </>
+              </View>
             ) : (
               <Button
-                label={isArchived ? 'Restore template' : 'Archive template'}
+                label={isArchived ? 'Restore' : 'Archive'}
                 variant={isArchived ? 'secondary' : 'ghost'}
                 size="sm"
                 loading={archiving}
-                onPress={() => {
-                  if (isArchived) handleArchiveToggle();
-                  else setConfirmingArchive(true);
-                }}
+                onPress={handleArchivePress}
               />
             )}
           </View>
@@ -747,7 +871,7 @@ export function ComplianceTypeEditorSheet({
         />
         {canEdit ? (
           <Button
-            label={isCreate ? 'Create type' : 'Save changes'}
+            label={isCreate ? 'Create form' : 'Save changes'}
             variant="primary"
             loading={saving}
             disabled={loadingDetail || detailError}
@@ -788,10 +912,8 @@ function ReadonlySummary({
         />
         <ReadonlyRow label="Validity" value={validityLabel(type.validity_period_days)} />
         <ReadonlyRow
-          label="Captured by"
-          value={
-            (type.capture_methods ?? []).map((m) => CAPTURE_METHOD_LABELS[m] ?? m).join(', ') || 'None'
-          }
+          label="Clients can fill this in online"
+          value={(type.capture_methods ?? []).includes('client_online') ? 'Yes' : 'No'}
         />
         <ReadonlyRow
           label="Form link expiry"
@@ -809,7 +931,7 @@ function ReadonlySummary({
         </Text>
         {fields.length === 0 ? (
           <Text variant="caption" tone="muted">
-            This template has no form fields.
+            This form has no questions.
           </Text>
         ) : (
           <View style={[styles.readonlyBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -921,9 +1043,32 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     alignItems: 'flex-start',
   },
+  formActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+  },
+  archiveConfirm: {
+    alignSelf: 'stretch',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
   archiveRow: {
     flexDirection: 'row',
     gap: spacing.sm,
+  },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  switchText: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
   },
   archiveBtn: {
     flexGrow: 0,

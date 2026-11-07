@@ -56,6 +56,10 @@ export function ComplianceFieldEditor({ state, dispatch, isPassFail }: Props) {
   const selectFields = state.fields.filter(
     (f): f is Extract<ComplianceField, { type: 'select' }> => f.type === 'select',
   );
+  /** A form can have one Signature question and one File upload question (web parity). */
+  const onePerForm = (t: ComplianceFieldType) =>
+    (t === 'signature' || t === 'file') && state.fields.some((f) => f.type === t);
+  const anyOnePerFormTaken = onePerForm('signature') || onePerForm('file');
 
   return (
     <View style={styles.root}>
@@ -69,10 +73,16 @@ export function ComplianceFieldEditor({ state, dispatch, isPassFail }: Props) {
             <Chip
               key={t}
               label={`+ ${FIELD_TYPE_LABELS[t] ?? t}`}
+              disabled={onePerForm(t)}
               onPress={() => dispatch({ type: 'addField', fieldType: t as ComplianceFieldType })}
             />
           ))}
         </View>
+        {anyOnePerFormTaken ? (
+          <Text variant="caption" tone="muted" testID="one-per-form-hint">
+            A form can have one Signature question and one File upload question.
+          </Text>
+        ) : null}
       </View>
 
       {/* Field list */}
@@ -123,7 +133,7 @@ export function ComplianceFieldEditor({ state, dispatch, isPassFail }: Props) {
           accessibilityLabel="Intro text"
           value={state.introMarkdown}
           onChangeText={(v) => dispatch({ type: 'setIntroMarkdown', value: v })}
-          placeholder="Guidance for the person completing the form (markdown supported)"
+          placeholder="Guidance for the person completing the form"
           placeholderTextColor={colors.textMuted}
           multiline
           numberOfLines={3}
@@ -133,6 +143,9 @@ export function ComplianceFieldEditor({ state, dispatch, isPassFail }: Props) {
           ]}
           textAlignVertical="top"
         />
+        <Text variant="caption" tone="muted">
+          Shown above the questions.
+        </Text>
       </View>
     </View>
   );
@@ -228,6 +241,9 @@ function FieldCard({
           />
         </View>
       </View>
+      <Text variant="caption" tone="muted">
+        Hidden from clients. Only your team sees and answers it.
+      </Text>
 
       {hasOptions ? <OptionsEditor field={field} dispatch={dispatch} /> : null}
       <FieldExtras field={field} dispatch={dispatch} />
@@ -435,8 +451,10 @@ function ResultMappingEditor({
       <Text variant="label" color={colors.warning}>
         Pass / fail result
       </Text>
-      <Text variant="caption" tone="secondary">
-        Choose a staff-only dropdown field, then mark which options count as a pass or a fail.
+      <Text variant="caption" tone="secondary" testID="result-mapping-hint">
+        {resultField
+          ? `Your team records the result with ${resultField.label}. Mark which answers count as a pass and which as a fail.`
+          : 'Choose a staff-only dropdown field, then mark which options count as a pass or a fail.'}
       </Text>
 
       {staffSelects.length === 0 ? (

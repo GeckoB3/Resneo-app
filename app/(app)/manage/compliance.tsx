@@ -25,6 +25,7 @@ import {
   useRevokeFormLink,
 } from '@/lib/queries/useCompliance';
 import { useSendComplianceFormLink } from '@/lib/queries/useBookingCompliance';
+import { COMPLIANCE_ENFORCEMENT_LABELS } from '@/lib/queries/useComplianceRequirements';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useUpdateFeatureFlags } from '@/lib/queries/useVenueSettings';
 import { useToast } from '@/providers/ToastProvider';
@@ -47,12 +48,8 @@ function formatComplianceDate(iso: string | null | undefined): string {
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
-const ENFORCEMENT_LABELS: Record<string, string> = {
-  warn_staff: 'Warn staff',
-  warn_client: 'Warn client',
-  block_online: 'Block online booking',
-  block_all: 'Block all bookings',
-};
+/** One set of enforcement labels with the requirements editor (block_all reads "Block online, required for staff"). */
+const ENFORCEMENT_LABELS = COMPLIANCE_ENFORCEMENT_LABELS;
 
 /** Group today's missing rows by booking (port of web's `groupTodaysCheckIns`). */
 interface CheckInGroup {
@@ -684,10 +681,10 @@ export default function ComplianceScreen() {
               (templates, per-service requirements and general defaults). */}
           <View style={[styles.setupCta, { borderColor: colors.border, backgroundColor: colors.surfaceRaised }]}>
             <Text variant="bodySmall" tone="secondary" style={styles.setupCtaText}>
-              Create or update your compliance types and choose which forms each service needs.
+              Create or update your forms and choose which ones each service needs.
             </Text>
             <Button
-              label="Set up types and requirements"
+              label="Set up forms and requirements"
               variant="primary"
               onPress={() => router.push('/manage/compliance-settings' as Href)}
             />

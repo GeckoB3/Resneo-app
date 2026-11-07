@@ -90,6 +90,12 @@ const dateFieldSchema = z.object({
   default_value: z
     .union([z.literal('today'), z.string().regex(/^\d{4}-\d{2}-\d{2}$/)])
     .optional(),
+  /**
+   * The date the record is really from (a patch test done days before it was written up): the
+   * record's captured date, lead time and expiry count from this answer (web parity; the library
+   * patch tests set it). The builder has no control for it, so an edit must carry it through.
+   */
+  sets_record_date: z.boolean().optional().default(false),
 });
 const signatureFieldSchema = z.object({
   ...fieldBase,
@@ -132,7 +138,11 @@ export const formSchemaSchema = z.object({
 });
 export type ComplianceFormSchema = z.infer<typeof formSchemaSchema>;
 
-/** Parse an unknown value into a validated form schema. */
+/**
+ * Parse an unknown value into a validated form schema. Each question keeps any key this port does
+ * not know (zod would strip it), so a question setting the web adds later survives an edit and
+ * save in the app rather than being silently dropped.
+ */
 export function parseFormSchema(
   raw: unknown,
 ): { ok: true; schema: ComplianceFormSchema } | { ok: false; error: string } {
@@ -140,7 +150,21 @@ export function parseFormSchema(
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid form schema' };
   }
-  return { ok: true, schema: parsed.data };
+  const rawFields = (raw as { fields?: unknown }).fields;
+  if (!Array.isArray(rawFields)) return { ok: true, schema: parsed.data };
+  return {
+    ok: true,
+    schema: {
+      ...parsed.data,
+      // The parsed array keeps the raw order, so index i is the same question.
+      fields: parsed.data.fields.map((field, i) => {
+        const source: unknown = rawFields[i];
+        return source && typeof source === 'object'
+          ? ({ ...(source as Record<string, unknown>), ...field } as ComplianceField)
+          : field;
+      }),
+    },
+  };
 }
 
 // ─── Editor save-time validation (spec §7.4) ────────────────────────────────────
@@ -152,8 +176,9 @@ export interface FormSchemaValidationResult {
 
 /**
  * Cross-field validation that depends on the type's `result_type`.
- * Returns all violations (not just the first) for a helpful editor experience.
- * Mirrors the web `validateFormSchemaForType` exactly.
+ * Returns all violations (not just the first) for a helpful editor experience, in plain words a
+ * business owner can act on (web parity, 2026-11-07; same checks, same order, same messages as
+ * the web `validateFormSchemaForType`). "No questions at all" is checked by the builder first.
  */
 export function validateFormSchemaForType(
   schema: ComplianceFormSchema,
@@ -161,58 +186,63 @@ export function validateFormSchemaForType(
 ): FormSchemaValidationResult {
   const errors: string[] = [];
 
-  // Unique field ids.
+  // Unique field ids (said once, however many clash).
   const seen = new Set<string>();
+  let duplicateId = false;
   for (const f of schema.fields) {
-    if (seen.has(f.id)) errors.push(`Duplicate field id "${f.id}". Field ids must be unique.`);
+    if (seen.has(f.id)) duplicateId = true;
     seen.add(f.id);
   }
+  if (duplicateId) errors.push('Two questions share an id. Remove one and add it again.');
 
   // At most one signature field, at most one file field (v1 limitation).
   const signatureFields = schema.fields.filter((f) => f.type === 'signature');
   const fileFields = schema.fields.filter((f) => f.type === 'file');
-  if (signatureFields.length > 1) errors.push('A form may contain at most one signature field.');
-  if (fileFields.length > 1) errors.push('A form may contain at most one file upload field.');
+  if (signatureFields.length > 1) errors.push('A form can have one Signature question.');
+  if (fileFields.length > 1) errors.push('A form can have one File upload question.');
 
   // result_type-specific rules.
   if (resultType === 'pass_fail') {
     const mapping = schema.result_mapping;
     if (!mapping) {
-      errors.push('Pass/fail types require a result_mapping pointing at a result field.');
+      errors.push('Choose the question your team uses to record pass or fail.');
     } else {
       const mapped = schema.fields.find((f) => f.id === mapping.field);
       if (!mapped) {
-        errors.push(`result_mapping references unknown field "${mapping.field}".`);
+        errors.push('The pass or fail question was removed. Add it back or pick another.');
       } else if (mapped.type !== 'select') {
-        errors.push('The result field referenced by result_mapping must be a select field.');
+        errors.push('The pass or fail question must be a Dropdown.');
       } else if (!mapped.staff_only) {
-        errors.push('The pass/fail result field must be marked staff_only.');
+        errors.push('The pass or fail question must be marked Staff only.');
       } else if (!mapped.required) {
         // audit M7: an optional result field can be left blank, which would otherwise let a
         // record with no pass/fail decision satisfy a booking (see audit H4).
-        errors.push('The pass/fail result field must be marked required so a decision is always recorded.');
+        errors.push('The pass or fail question must be marked Required.');
       } else {
         const optionValues = new Set(mapped.options.map((o) => o.value));
         const declared = [...mapping.pass_values, ...mapping.fail_values];
         const missing = declared.filter((v) => !optionValues.has(v));
-        if (missing.length > 0) {
-          errors.push(
-            `result_mapping values not present in the result field options: ${missing.join(', ')}.`,
-          );
+        // No pass answer or no fail answer, or a marked answer no longer on the question: one message.
+        if (
+          mapping.pass_values.length === 0 ||
+          mapping.fail_values.length === 0 ||
+          missing.length > 0
+        ) {
+          errors.push('Mark at least one answer as Pass and one as Fail.');
         }
         const overlap = mapping.pass_values.filter((v) => mapping.fail_values.includes(v));
         if (overlap.length > 0) {
-          errors.push(`A value cannot be both pass and fail: ${overlap.join(', ')}.`);
+          errors.push(`An answer can't be both Pass and Fail: ${overlap.join(', ')}.`);
         }
       }
     }
   }
 
   if (resultType === 'signed' && signatureFields.length === 0) {
-    errors.push('Types with result type "signed" must include a signature field.');
+    errors.push('A signed form needs a Signature question.');
   }
   if (resultType === 'file_uploaded' && fileFields.length === 0) {
-    errors.push('Types with result type "file_uploaded" must include a file upload field.');
+    errors.push('A file upload form needs a File upload question.');
   }
 
   return { ok: errors.length === 0, errors };
