@@ -121,6 +121,11 @@ export interface CreateBookingResponse {
   message?: string;
   /** True when the booking was created with a card hold requested (link sent). */
   card_hold_requested?: boolean;
+  /**
+   * With a `payment_url`: whether the link could be sent (web QA BKG-A-F9). False when the client has
+   * no email or phone, so the screen shows the link to open or copy. Absent from older servers.
+   */
+  payment_link_sent?: boolean;
   /** Unmet non-blocking compliance requirements, surfaced on the confirmation. */
   compliance_warnings?: ComplianceBookingWarning[];
   /** With `override_availability`: the engine's reasons in plain words (web #187). */

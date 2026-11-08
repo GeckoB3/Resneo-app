@@ -85,6 +85,23 @@ function validate(hours: OpeningHours): string | null {
   return null;
 }
 
+/**
+ * True when no day has an open period. Saving that closes the business to guests and to the
+ * team's booking form; it does not hand back to the calendar hours, so it is confirmed first
+ * (QA SCH-F4, web parity with OpeningHoursSection).
+ */
+function isClosedEveryDay(hours: OpeningHours): boolean {
+  return WEEKDAY_KEYS.every((key) => {
+    const day = hours[key];
+    return !day || !('periods' in day) || day.periods.length === 0;
+  });
+}
+
+const CLOSED_EVERY_DAY_MESSAGE =
+  'You will be closed every day. Nobody can book online and your team’s booking form will show no times.';
+const CLOSED_EVERY_DAY_ADVICE =
+  'Your business is now closed every day, so nobody can book online and your team’s booking form shows no times. Tick the days you trade and save again to reopen.';
+
 /** Business hours — weekly opening-hours editor (admin) / read-only view (staff). */
 export default function BusinessHoursScreen() {
   const { venue, isLoading, refetch } = useVenueContext();
@@ -128,6 +145,8 @@ export default function BusinessHoursScreen() {
   // a ConfirmSheet and re-save with `acknowledge: true`. (Alert.alert's confirm
   // is a no-op on web, so this uses the Sheet — web parity with window.confirm.)
   const [ackConfirm, setAckConfirm] = useState<{ message: string } | null>(null);
+  /** "Close every day?": the week about to be saved has no open day (QA SCH-F4). */
+  const [closedConfirm, setClosedConfirm] = useState(false);
 
   useEffect(() => {
     if (venue && draft === null) {
@@ -144,14 +163,18 @@ export default function BusinessHoursScreen() {
     hapticSuccess();
     setSaved(true);
     if (draft) {
-      setAdvice(describeVenueWeeklyMismatch(rosterQuery.data?.practitioners ?? [], draft));
+      setAdvice(
+        isClosedEveryDay(draft)
+          ? CLOSED_EVERY_DAY_ADVICE
+          : describeVenueWeeklyMismatch(rosterQuery.data?.practitioners ?? [], draft),
+      );
     }
     // Auto-clear the success message after 2500 ms so it doesn't linger indefinitely.
     if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
     savedTimerRef.current = setTimeout(() => setSaved(false), 2500);
   }
 
-  async function handleSave() {
+  async function handleSave(closedEveryDayConfirmed = false) {
     if (!draft) return;
     setError(null);
     setSaved(false);
@@ -159,6 +182,11 @@ export default function BusinessHoursScreen() {
     if (validation) {
       setError(validation);
       hapticWarning();
+      return;
+    }
+    if (!closedEveryDayConfirmed && isClosedEveryDay(draft)) {
+      hapticWarning();
+      setClosedConfirm(true);
       return;
     }
     try {
@@ -306,6 +334,21 @@ export default function BusinessHoursScreen() {
           />
         </View>
       ) : null}
+
+      {/* "Close every day?": a week with no open day (QA SCH-F4). */}
+      <ConfirmSheet
+        visible={closedConfirm}
+        title="Close every day?"
+        message={CLOSED_EVERY_DAY_MESSAGE}
+        confirmLabel="Save anyway"
+        destructive
+        loading={update.isPending}
+        onConfirm={() => {
+          setClosedConfirm(false);
+          void handleSave(true);
+        }}
+        onClose={() => setClosedConfirm(false)}
+      />
 
       {/* "Save anyway?" — orphan-bookings confirmation (409 requires_confirmation). */}
       <ConfirmSheet

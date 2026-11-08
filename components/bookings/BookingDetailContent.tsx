@@ -62,6 +62,8 @@ import { calendarDateInTimeZone, formatDayHeading } from '@/lib/dates/venue-date
 import { canMarkNoShowForSlot, clampNoShowGraceMinutes } from '@/lib/booking/no-show-grace';
 import { ACTION_COLORS, primaryActionColors } from '@/lib/booking/booking-action-colors';
 import { bookingSourceLabel } from '@/lib/booking/booking-source-label';
+import { cancelNoticeLine, laneCancellationPolicy } from '@/lib/booking/cancel-notice-line';
+import { useCommunicationPolicies } from '@/lib/queries/useCommunications';
 import { useAcceptUnpaidGuard } from '@/components/bookings/AcceptUnpaidSheet';
 import {
   resolveAppointmentVisit,
@@ -634,6 +636,12 @@ export function BookingDetailContent({
     (l) => l.status !== 'Cancelled' && l.booking_id !== booking.id && l.venue_id !== booking.venue_id,
   );
   /**
+   * The business's cancellation message setting, read only for a visit across businesses, where the
+   * cancel prompt says whether the client will be told what is cancelled and what stays (web QA
+   * BKG-B-F13). A partner's booking follows the partner's setting, which this login cannot read.
+   */
+  const cancellationPolicies = useCommunicationPolicies({ enabled: otherPartLines.length > 0 && !linked });
+  /**
    * Cancel on one service of a visit with more than one live service asks which
    * (split-visit plan 7.7, G17): just this service, or every service the client
    * has with this business on the visit. Each answer is its own button, so the
@@ -938,6 +946,8 @@ export function BookingDetailContent({
       visit: visitEdit,
       // A partner's booking is modified against the partner's catalogue.
       ownerVenueId: linked?.venueId ?? null,
+      // The version the sheet opens on: a colleague's change since is refused, not undone (X-F2).
+      updatedAt: booking.updated_at ?? null,
     });
 
   const primaryAction = actions.find((a) => a.kind === 'primary');
@@ -1518,6 +1528,8 @@ export function BookingDetailContent({
                         classInstanceId: booking.class_instance_id ?? '',
                         partySize: booking.party_size ?? 1,
                         ownerVenueId: linked?.venueId ?? null,
+                        // The version this sheet opens on (web QA X-F2).
+                        updatedAt: booking.updated_at ?? null,
                       })
                     }
                   />
@@ -1537,6 +1549,7 @@ export function BookingDetailContent({
                         date: booking.booking_date,
                         time: booking.booking_time,
                         durationMinutes: rowDurationMinutes,
+                        updatedAt: booking.updated_at ?? null,
                       })
                     }
                   />
@@ -1557,6 +1570,7 @@ export function BookingDetailContent({
                         keepLength: isAppointmentBooking && !isTable,
                         visit: visitEdit,
                         linkedVisitId: booking.linked_visit_id ?? null,
+                        updatedAt: booking.updated_at ?? null,
                       })
                     }
                   />
@@ -1786,7 +1800,17 @@ export function BookingDetailContent({
                 <Text variant="bodySmall" testID="cancel-keeps-other-parts" style={styles.cancelKeeps}>
                   {`${guestName} keeps ${otherPartLines
                     .map((l) => `${l.service_name}${l.person_name ? ` with ${l.person_name}` : ''} at ${l.venue_name}`)
-                    .join(', ')}. They will be told what is cancelled and what stays.`}
+                    .join(', ')}. ${cancelNoticeLine({
+                    policy: linked
+                      ? null
+                      : laneCancellationPolicy(
+                          cancellationPolicies.data,
+                          isTableReservationBooking(booking) ? 'table' : 'appointments_other',
+                        ),
+                    guestEmail: booking.guest?.email ?? booking.guest_email ?? null,
+                    guestPhone: booking.guest?.phone ?? null,
+                    contactsHidden: booking.contacts_hidden === true,
+                  })}`}
                 </Text>
               ) : null}
               {cancelChoiceOpen &&

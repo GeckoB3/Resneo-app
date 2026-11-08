@@ -91,3 +91,10 @@ describe('lane policy defaults match web', () => {
     }
   });
 });
+
+describe('deposit payment reminder timing (web QA 2026-11-08 COM-F6)', () => {
+  it('counts hours after the booking is made, up to 23, as the job now reads them', () => {
+    const def = MESSAGE_DEFS.find((d) => d.key === 'deposit_payment_reminder');
+    expect(def?.timing).toEqual({ field: 'hoursBefore', label: 'after booking', default: 2, max: 23 });
+  });
+});

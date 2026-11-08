@@ -73,7 +73,7 @@ export function BookingDetailBody({ booking, visit }: Props) {
             DEPOSIT
           </Text>
           <Text variant="body" style={styles.gap}>
-            {formatPence(booking.deposit_amount_pence)}{' '}
+            {formatPence(booking.deposit_amount_pence, booking.venue_currency ?? 'GBP')}{' '}
             {booking.deposit_paid ? 'paid' : 'not yet paid'}
           </Text>
         </Card>

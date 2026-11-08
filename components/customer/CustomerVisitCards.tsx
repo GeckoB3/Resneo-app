@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { customerBookingState } from '@/lib/booking/customer-booking-state';
 import { formatDayHeading } from '@/lib/dates/venue-dates';
+import { formatPence } from '@/lib/format';
 import type { CustomerVisit, CustomerVisitService } from '@/lib/queries/useCustomerVisit';
 import { spacing } from '@/theme/index';
 
@@ -127,7 +128,7 @@ export function VisitContactsCard({ visit }: { visit: CustomerVisit }) {
           <Text variant="bodyMedium">{business.name}</Text>
           {many && business.payments ? (
             <Text variant="bodySmall" tone="secondary" testID={`visit-business-payments-${business.id}`}>
-              {paymentsLine(business.payments)}
+              {paymentsLine(business.payments, business.currency)}
             </Text>
           ) : null}
           {many && business.address ? (
@@ -157,9 +158,15 @@ export function VisitContactsCard({ visit }: { visit: CustomerVisit }) {
   );
 }
 
-/** "Paid £10.00.", "Paid £10.00. Refunded £10.00." or "Nothing paid online." */
-export function paymentsLine(payments: { paid_pence: number; refunded_pence: number }): string {
-  const pounds = (pence: number) => `£${(pence / 100).toFixed(2)}`;
+/**
+ * "Paid £10.00.", "Paid £10.00. Refunded £10.00." or "Nothing paid online.", in the business's own
+ * currency (QA 2026-11-08 DEVICE-F13: always pounds before).
+ */
+export function paymentsLine(
+  payments: { paid_pence: number; refunded_pence: number },
+  currency?: string | null,
+): string {
+  const pounds = (pence: number) => formatPence(pence, currency ?? 'GBP') ?? '';
   const parts = [
     payments.paid_pence > 0 ? `Paid ${pounds(payments.paid_pence)}.` : null,
     payments.refunded_pence > 0 ? `Refunded ${pounds(payments.refunded_pence)}.` : null,

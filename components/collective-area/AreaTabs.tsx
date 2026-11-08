@@ -15,12 +15,15 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Chip } from '@/components/ui/Chip';
 import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
+import { Input } from '@/components/ui/Input';
+import { Sheet } from '@/components/ui/Sheet';
 import { DatePickerField } from '@/components/ui/DatePickerField';
 import { Segmented } from '@/components/ui/Segmented';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { areaCopy } from '@/lib/collective-area/copy';
 import { invitedVenueStatus } from '@/lib/collective-area/invite-links';
+import { removeEndsCollective } from '@/lib/collective-area/remove-ends-collective';
 import {
   groupStatus,
   type CollectiveCalendarGroup,
@@ -88,6 +91,16 @@ export function VenuesPanel({
   const [error, setError] = useState<string | null>(null);
   /** Inviting any venue, in its own sheet here (web `CollectiveInvitePanel`, 2026-10-28). */
   const [inviting, setInviting] = useState(false);
+  /** The collective's name, typed to confirm a Remove that ends it (web QA 2026-11-08 COL-F21). */
+  const [typedName, setTypedName] = useState('');
+  // Removing the last other venue ends the collective: say so and ask for its name, as Leave and
+  // End the collective do, instead of ending it on one tap.
+  const removeEnds = asking?.kind === 'remove' && removeEndsCollective(venues, asking.venue.venue_id);
+  const typedMatches = typedName.trim().toLowerCase() === collectiveName.trim().toLowerCase();
+  const closeAsk = () => {
+    setAsking(null);
+    setTypedName('');
+  };
 
   const ordered = [...venues].sort((a, b) =>
     a.is_host === b.is_host
@@ -306,22 +319,63 @@ export function VenuesPanel({
       />
 
       <ConfirmSheet
-        visible={asking !== null}
+        visible={asking !== null && !removeEnds}
         title={sheet?.title ?? ''}
         message={sheet?.message}
         confirmLabel={sheet?.confirm}
         cancelLabel="Go back"
         destructive={sheet?.destructive ?? true}
-        onClose={() => setAsking(null)}
+        onClose={closeAsk}
         onConfirm={() => {
           const target = asking;
-          setAsking(null);
+          closeAsk();
           if (!target) return;
           if (target.kind === 'host') run({ action: 'offer_host', venueId: target.venue.venue_id });
           else if (target.kind === 'cancel_move') run({ action: 'cancel_host_transfer' });
           else run({ action: 'remove', venueId: target.venue.venue_id });
         }}
       />
+
+      <Sheet visible={removeEnds} onClose={closeAsk} keyboardAvoidance="overlay">
+        <View style={styles.stack}>
+          <Text variant="subheading">{sheet?.title ?? ''}</Text>
+          <Text variant="bodySmall" tone="secondary">
+            {sheet?.message ?? ''}
+          </Text>
+          <Text variant="bodySmall" tone="danger">
+            {areaCopy('ov.venues.removeEnds', { venue, collective: collectiveName })}
+          </Text>
+          <Input
+            label={areaCopy('dissolve.typeToConfirm', { collective: collectiveName })}
+            value={typedName}
+            onChangeText={setTypedName}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <Button
+            label={areaCopy('ov.venues.removeEndsConfirm', { collective: collectiveName })}
+            variant="danger"
+            fullWidth
+            disabled={!typedMatches || patch.isPending}
+            onPress={() => {
+              const target = asking;
+              closeAsk();
+              if (!target) return;
+              setError(null);
+              // The collective is gone, so leave its area as End the collective does.
+              patch.mutate(
+                { action: 'remove', venueId: target.venue.venue_id },
+                {
+                  onSuccess: () => onEnded(),
+                  onError: (err) =>
+                    setError(err instanceof ApiError ? err.message : 'That did not go through. Please try again.'),
+                },
+              );
+            }}
+          />
+          <Button label="Go back" variant="secondary" fullWidth onPress={closeAsk} />
+        </View>
+      </Sheet>
     </View>
   );
 }

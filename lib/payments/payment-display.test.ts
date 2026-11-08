@@ -8,6 +8,7 @@ import {
   canRefundInPerson,
   canTakeInPersonPayment,
   checkChargeAmount,
+  largeChargeQuestion,
   otherVisitLineNote,
   paymentMethodLabel,
   pendingCardPayments,
@@ -17,6 +18,7 @@ import {
   refundablePayments,
   remainingAfterPayment,
   visitPaymentNote,
+  wholeBalanceChargeNeedsConfirm,
 } from '@/lib/payments/payment-display';
 import type { BookingDetail, BookingPaymentRow, VisitPayment } from '@/types/booking-detail';
 
@@ -254,6 +256,18 @@ describe('checkChargeAmount', () => {
     });
     // A part payment of that balance is still capped — the route would reject it.
     expect(checkChargeAmount('1100.00', 120_000).valid).toBe(false);
+  });
+
+  it('asks before a whole balance above the cap is charged (web PAY-A-F19)', () => {
+    // Blank (or left as seeded) means the whole balance: above the cap it is confirmed.
+    expect(wholeBalanceChargeNeedsConfirm(null, 124_000)).toBe(true);
+    expect(wholeBalanceChargeNeedsConfirm(undefined, 124_000)).toBe(true);
+    // At the cap, or a typed amount, no question.
+    expect(wholeBalanceChargeNeedsConfirm(null, MAX_IN_PERSON_PENCE)).toBe(false);
+    expect(wholeBalanceChargeNeedsConfirm(50_000, 124_000)).toBe(false);
+    expect(wholeBalanceChargeNeedsConfirm(null, null)).toBe(false);
+    expect(largeChargeQuestion(124_000, '4242')).toBe('Charge £1,240.00 to the card ending 4242?');
+    expect(largeChargeQuestion(124_000, null)).toBe('Charge £1,240.00 to this card?');
   });
 
   it('reports over-balance before the cap, because that is the more useful message', () => {

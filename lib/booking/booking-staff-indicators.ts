@@ -106,6 +106,9 @@ export function canShowConfirmStaffAttendanceConfirmationAction(
 ): boolean {
   if (row.source === 'walk-in') return false;
   if (isAttendanceConfirmed(row)) return false;
+  // Not while Pending: Accept is the way forward there, and a Confirm beside it was refused for an
+  // unpaid deposit (web QA 2026-11-08 BKG-A-F8).
+  if (row.status === 'Pending') return false;
   return !ATTENDANCE_ACTION_EXCLUDED.has(row.status);
 }
 

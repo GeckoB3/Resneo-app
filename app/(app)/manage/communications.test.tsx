@@ -16,8 +16,9 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
 // Stack.Screen reads a navigator route via useRoute — stub it to render nothing.
-// The Light-tier SMS banner reads the billing status (the subscription, not Connect).
-jest.mock('@/lib/queries/useBillingStatus', () => ({ useBillingStatus: () => ({ data: undefined }) }));
+// The Light-tier SMS banner reads the billing status (whether a card is on file, not Connect).
+let mockBillingStatus: { stripe_subscription_id: string | null; has_default_payment_method: boolean } | undefined;
+jest.mock('@/lib/queries/useBillingStatus', () => ({ useBillingStatus: () => ({ data: mockBillingStatus }) }));
 jest.mock('expo-router', () => ({
   Stack: { Screen: () => null },
 }));
@@ -120,6 +121,7 @@ async function toggle(node: Parameters<typeof fireEvent>[0], value: boolean) {
 }
 
 beforeEach(() => {
+  mockBillingStatus = undefined;
   mockUpdateVenueAsync.mockClear();
   mockRefetchVenue.mockClear();
   mockVenue = {
@@ -334,5 +336,36 @@ describe('Communications — Google review request', () => {
     );
     await press(() => screen.getByText('Save changes'));
     expect(mockUpdateVenueAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe('Communications: texts on Light with no card on file (QA 2026-11-08 COM-F25)', () => {
+  it('says texts are not being sent when a subscribed Light venue has no card', async () => {
+    mockVenue.pricing_tier = 'light';
+    mockBillingStatus = { stripe_subscription_id: 'sub_1', has_default_payment_method: false };
+
+    await render(<CommunicationsScreen />);
+
+    expect(screen.getByText('Texts are not being sent')).toBeTruthy();
+  });
+
+  it('shows no banner once a card is on file', async () => {
+    mockVenue.pricing_tier = 'light';
+    mockBillingStatus = { stripe_subscription_id: null, has_default_payment_method: true };
+
+    await render(<CommunicationsScreen />);
+
+    expect(screen.queryByText('Texts are not being sent')).toBeNull();
+  });
+});
+
+describe('Communications: no switches that do nothing (QA 2026-11-08 COM-F9)', () => {
+  it('no longer offers the Staff alerts that nothing ever sent', async () => {
+    await render(<CommunicationsScreen />);
+
+    expect(screen.queryByText('Staff alerts')).toBeNull();
+    expect(screen.queryByText('Daily schedule email')).toBeNull();
+    expect(screen.queryByText('New booking alerts')).toBeNull();
+    expect(screen.queryByText('Cancellation alerts')).toBeNull();
   });
 });

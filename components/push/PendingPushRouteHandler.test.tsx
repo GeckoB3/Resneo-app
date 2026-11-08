@@ -149,4 +149,17 @@ describe('PendingPushRouteHandler', () => {
 
     expect(mockPush).toHaveBeenCalledTimes(1);
   });
+  it.each([
+    [{ kind: 'plan', venueId: 'venue-2' } as const, '/manage/plan'],
+    [{ kind: 'today', venueId: 'venue-2' } as const, '/today'],
+  ])('switches to the site, then opens %j (COM-F9 billing and daily summary pushes)', async (route, href) => {
+    mockSwitchSiteForPush.mockImplementation(async () => true);
+    setPendingPushRoute(route);
+    await act(async () => {
+      render(<PendingPushRouteHandler />);
+    });
+    expect(mockSwitchSiteForPush).toHaveBeenCalledWith('venue-2');
+    expect(mockDismissAll).toHaveBeenCalledTimes(1);
+    expect(mockPush).toHaveBeenCalledWith(href);
+  });
 });

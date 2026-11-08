@@ -15,6 +15,8 @@ export interface CreditProduct {
   venue_id: string;
   credits_count: number | null;
   price_pence: number | null;
+  /** The currency the venue charges in; absent means pounds. */
+  currency?: string | null;
 }
 
 type Props = {
@@ -55,7 +57,7 @@ export function BuyCreditsSection({ products, venues }: Props) {
             {packLine(product)}
           </Text>
           <Button
-            label={product.price_pence ? `Buy for ${formatPence(product.price_pence)}` : 'Buy'}
+            label={product.price_pence ? `Buy for ${formatPence(product.price_pence, product.currency ?? 'GBP')}` : 'Buy'}
             loading={purchase.isPending}
             onPress={() =>
               purchase.mutate(

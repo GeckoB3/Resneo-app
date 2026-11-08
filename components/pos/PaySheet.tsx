@@ -51,6 +51,7 @@ import { useClientStoredValue } from '@/lib/queries/usePos';
 import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { PosBootstrap, PosPaymentType, PosSale, PosSavedCard } from '@/types/pos';
+import { currencySymbol } from '@/lib/format';
 
 /**
  * Taking payment on a sale in the app (UX spec §3.18, §3.19, §13.3): the amount to pay now (the
@@ -301,7 +302,7 @@ function PaySheetBody({
                 inputMode="decimal"
                 leftIcon={
                   <Text variant="bodyMedium" tone="muted" style={styles.amountInput}>
-                    £
+                    {currencySymbol()}
                   </Text>
                 }
                 style={styles.amountInput}

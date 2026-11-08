@@ -124,7 +124,7 @@ import {
   sanitizeBookingStartTimes,
 } from '@/lib/appointments/booking-interval';
 import { getWebUrl } from '@/lib/env';
-import { formatPence, formatPositivePence, parsePoundsToPence, penceToPoundsInput } from '@/lib/format';
+import { currencySymbol, formatPence, formatPositivePence, parsePoundsToPence, penceToPoundsInput } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAddonGroups } from '@/lib/queries/useAddonGroups';
@@ -1741,7 +1741,7 @@ export default function ServicesScreen() {
     // Card hold (spec 6.2): every editor requires the fee to be at least £1 —
     // a zero-fee card hold must be impossible to configure.
     if (paymentReq === 'card_hold' && !(depositPence != null && depositPence >= 100)) {
-      setError('Enter a no-show fee of at least £1'); return;
+      setError(`Enter a no-show fee of at least ${currencySymbol()}1`); return;
     }
     // Full online payment: a single offering needs a base price > 0; with options,
     // buildVariantsPayload already enforced a price > 0 on every active option.
@@ -3323,7 +3323,7 @@ export default function ServicesScreen() {
               <View style={styles.moneyRow}>
                 {!usesVariants ? (
                   <View style={styles.moneyField}>
-                    <Input label="Price (£)" value={price} onChangeText={setPrice} keyboardType="decimal-pad" />
+                    <Input label={`Price (${currencySymbol()})`} value={price} onChangeText={setPrice} keyboardType="decimal-pad" />
                   </View>
                 ) : null}
                 {paymentReq === 'deposit' || isCardHoldSelected ? (
@@ -3332,17 +3332,17 @@ export default function ServicesScreen() {
                       label={
                         isCardHoldSelected
                           ? usesVariants
-                            ? 'Default no-show fee (£)'
-                            : 'No-show fee (£)'
+                            ? `Default no-show fee (${currencySymbol()})`
+                            : `No-show fee (${currencySymbol()})`
                           : usesVariants
-                            ? 'Default deposit (£)'
-                            : 'Deposit (£)'
+                            ? `Default deposit (${currencySymbol()})`
+                            : `Deposit (${currencySymbol()})`
                       }
                       helper={
                         isCardHoldSelected
                           ? usesVariants
-                            ? 'Used when an option leaves its fee blank. Must be at least £1.'
-                            : 'The no-show fee must be at least £1.'
+                            ? `Used when an option leaves its fee blank. Must be at least ${currencySymbol()}1.`
+                            : `The no-show fee must be at least ${currencySymbol()}1.`
                           : usesVariants
                             ? 'Used when an option leaves its deposit blank.'
                             : undefined

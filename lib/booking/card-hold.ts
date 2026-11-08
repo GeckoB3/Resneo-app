@@ -12,13 +12,15 @@
  * charge gate, §7.6/D6 staff toggle. No em-dashes anywhere in this copy.
  */
 
+import { formatPence } from '@/lib/format';
+
 /* ------------------------------------------------------------------ */
 /* Fee formatting (card-hold-terms.ts)                                 */
 /* ------------------------------------------------------------------ */
 
-/** £X.XX from pence, e.g. 2500 -> "£25.00". */
+/** £X.XX from pence, e.g. 2500 -> "£25.00" ("€25.00" for a euro business). */
 export function formatCardHoldFeePence(feePence: number): string {
-  return `£${(Number(feePence) / 100).toFixed(2)}`;
+  return formatPence(Number(feePence)) ?? '';
 }
 
 /* ------------------------------------------------------------------ */
@@ -380,9 +382,16 @@ export const STAFF_CARD_HOLD_TOGGLE_SUBLABEL_ON = `On: the guest gets a link to 
 /** Sublabel while the switch is OFF (the default since web #187): what leaving it off means. */
 export const STAFF_CARD_HOLD_TOGGLE_SUBLABEL_OFF =
   'Off: no card is taken, so a no-show cannot be charged.';
+/**
+ * Sublabel while the switch is ON for a walk-in (web QA 2026-11-08 BKG-A-F9): a walk-in is booked
+ * straight away with the card request open, and is never cancelled for a missing card.
+ */
+export const STAFF_CARD_HOLD_TOGGLE_SUBLABEL_ON_WALK_IN =
+  'On: the guest gets a link to add their card, charged only if they do not show. A walk-in is booked straight away and is not cancelled if no card is added.';
 /** The sublabel for the switch's current state, so staff can see what each position does. */
-export function staffCardHoldToggleSublabel(checked: boolean): string {
-  return checked ? STAFF_CARD_HOLD_TOGGLE_SUBLABEL_ON : STAFF_CARD_HOLD_TOGGLE_SUBLABEL_OFF;
+export function staffCardHoldToggleSublabel(checked: boolean, walkIn = false): string {
+  if (!checked) return STAFF_CARD_HOLD_TOGGLE_SUBLABEL_OFF;
+  return walkIn ? STAFF_CARD_HOLD_TOGGLE_SUBLABEL_ON_WALK_IN : STAFF_CARD_HOLD_TOGGLE_SUBLABEL_ON;
 }
 
 /** Success toast when the booking was created with a hold requested (§7.6, ASCII hyphen). */

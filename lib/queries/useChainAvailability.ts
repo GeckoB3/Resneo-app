@@ -33,6 +33,8 @@ export function chainAvailabilityPath(params: {
   date: string;
   practitionerId: string;
   chain: readonly ServiceChainSegmentParam[];
+  /** A new staff booking's source; `phone` holds the times to the guest's day rules (SCH-F15). */
+  source?: 'phone' | 'walk-in' | null;
 }): string {
   const search = new URLSearchParams({ venue_id: params.venueId, date: params.date });
   if (params.practitionerId === ANY_AVAILABLE_PRACTITIONER_ID) {
@@ -42,6 +44,7 @@ export function chainAvailabilityPath(params: {
   }
   search.set('services', serialiseServiceChainParam(params.chain));
   search.set('staff', '1');
+  if (params.source) search.set('source', params.source);
   return `/api/booking/availability?${search.toString()}`;
 }
 
@@ -50,6 +53,7 @@ export function useChainAvailability({
   date,
   practitionerId,
   chain,
+  source = null,
   enabled = true,
 }: {
   venueId: string | null | undefined;
@@ -57,6 +61,7 @@ export function useChainAvailability({
   /** A real practitioner id, or ANY_AVAILABLE_PRACTITIONER_ID to pool. */
   practitionerId: string | null | undefined;
   chain: readonly ServiceChainSegmentParam[];
+  source?: 'phone' | 'walk-in' | null;
   enabled?: boolean;
 }) {
   const accessToken = useAccessToken();
@@ -77,6 +82,7 @@ export function useChainAvailability({
       date ?? null,
       practitionerId ?? null,
       chainKey,
+      ...(source ? [source] : []),
     ] as const,
     enabled: queryEnabled,
     queryFn: async (): Promise<AppointmentAvailabilityResponse> => {
@@ -84,7 +90,7 @@ export function useChainAvailability({
         throw new Error('Missing chain availability parameters');
       }
       return apiFetch<AppointmentAvailabilityResponse>(
-        chainAvailabilityPath({ venueId, date, practitionerId, chain }),
+        chainAvailabilityPath({ venueId, date, practitionerId, chain, source }),
         { accessToken },
       );
     },

@@ -11,7 +11,7 @@
  * @see types/reports.ts (`ReportByModelRow`)
  * @see _reference/Resneo/src/app/api/venue/reports/route.ts (`report_by_booking_model`)
  */
-import { formatPence } from '@/lib/format';
+import { currencySymbol, formatPence } from '@/lib/format';
 import { calendarFileTag } from '@/lib/reports/report-calendar';
 import type { ReportByModelRow } from '@/types/reports';
 
@@ -87,7 +87,7 @@ export function buildModelBreakdownCsvRows(
     'Completed',
     'Cancelled',
     'Checked in',
-    'Deposits collected (£)',
+    `Deposits collected (${currencySymbol()})`,
   ];
   const body = visibleModelRows(rows).map((row) => [
     modelRowLabel(row),

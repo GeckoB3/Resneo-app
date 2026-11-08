@@ -203,6 +203,7 @@ export function GroupBookingFlow({
     variantId: draftVariant?.id ?? null,
     addonIds: draftAddonIds,
     ownerVenueId,
+    source,
     enabled: step === 'date' && !!draftService,
   });
   const availableDates = monthQuery.data ? new Set(monthQuery.data.available_dates) : null;
@@ -722,6 +723,7 @@ export function GroupBookingFlow({
         {chrome}
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         <AddonsStep
+          serviceName={draftService?.serviceName}
           groups={draftAddonGroups}
           value={draftAddonIds}
           onChange={setDraftAddonIds}
@@ -776,6 +778,7 @@ export function GroupBookingFlow({
           serviceId={draftService.serviceId}
           variantId={draftVariant?.id ?? null}
           venueId={venueId}
+          source={source}
           timeZone={timeZone}
           groupBusy={groupBusy}
           groupDurationMinutes={draftDurationMinutes}
@@ -867,6 +870,7 @@ export function GroupBookingFlow({
 
           {showCardHoldToggle ? (
             <StaffCardHoldToggle
+              walkIn={source === 'walk-in'}
               checked={requireCardHold}
               onChange={setRequireCardHold}
               feePence={groupCardHoldPence}

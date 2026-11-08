@@ -44,6 +44,11 @@ export interface VisitSchedulePatchInput {
    * `{ code: 'stale_visit' }`.
    */
   known_booking_ids?: string[];
+  /**
+   * Each service's `updated_at` as the sheet opened it, by booking id (web QA X-F2). A save is
+   * refused with 412 `stale_booking` when any has changed since; an older server ignores it.
+   */
+  expected_versions?: Record<string, string>;
   allow_manual_overlap?: boolean;
   /**
    * Staff saw that the change puts the client in two places (a service of the
@@ -212,6 +217,8 @@ export interface VisitServicesPatchInput {
    * request is refused with 412 rather than applied.
    */
   known_booking_ids: string[];
+  /** As on the schedule payload: each service's version when the sheet opened (web QA X-F2). */
+  expected_versions?: Record<string, string>;
   /** The visit's schedule, when the same edit moves it. */
   booking_date?: string;
   booking_time?: string;

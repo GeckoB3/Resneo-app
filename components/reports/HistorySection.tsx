@@ -28,7 +28,7 @@ import {
   formatMonthLabel,
   getMonthRangeFromDate,
 } from '@/lib/dates/venue-dates';
-import { formatPence } from '@/lib/format';
+import { currencySymbol, formatPence } from '@/lib/format';
 import { hapticTap } from '@/lib/haptics';
 import {
   bucketHistory,
@@ -201,7 +201,7 @@ export function HistorySection({
   const exportHistory = useCallback(async () => {
     if (!days.length) return;
     const result = await buildAndShareCsv(`history-${from}-${to}.csv`, [
-      ['Date', bookingsWord, coversBookedLabel, coversSeenLabel, 'No-shows', 'Deposits collected (£)'],
+      ['Date', bookingsWord, coversBookedLabel, coversSeenLabel, 'No-shows', `Deposits collected (${currencySymbol()})`],
       ...days.map((day) => [
         day.date,
         String(day.bookings),
@@ -227,7 +227,7 @@ export function HistorySection({
   const exportClients = useCallback(async () => {
     if (!clients.length) return;
     const result = await buildAndShareCsv('client-lifetime-value.csv', [
-      ['Client', `Total ${bookingsWord.toLowerCase()}`, 'Visits', 'No-shows', 'Lifetime deposits (£)', 'Last visit'],
+      ['Client', `Total ${bookingsWord.toLowerCase()}`, 'Visits', 'No-shows', `Lifetime deposits (${currencySymbol()})`, 'Last visit'],
       ...clients.map((guest) => [
         [guest.first_name, guest.last_name].filter(Boolean).join(' ') || 'Anonymous',
         String(guest.total_bookings),

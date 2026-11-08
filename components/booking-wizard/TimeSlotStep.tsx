@@ -27,6 +27,11 @@ import type { AppointmentSlot } from '@/types/appointment-availability';
 import { ANY_AVAILABLE_PRACTITIONER_ID } from '@/types/appointment-catalog';
 
 type TimeSlotStepProps = {
+  /**
+   * How the booking is being taken. `phone` holds the times to the guest's date rules, as the save
+   * is (web QA 2026-11-08 SCH-F15); the server says why when a rule rules the date out.
+   */
+  source?: 'phone' | 'walk-in' | null;
   date: string;
   serviceId: string;
   /** Real practitioner id, or ANY_AVAILABLE_PRACTITIONER_ID for pooled slots. */
@@ -186,6 +191,7 @@ export function TimeSlotStep({
   groupDurationMinutes = 0,
   earliestStart = null,
   chain = null,
+  source = null,
 }: TimeSlotStepProps) {
   const { colors } = useTheme();
   const isAnyAvailable = practitionerId === ANY_AVAILABLE_PRACTITIONER_ID;
@@ -200,6 +206,7 @@ export function TimeSlotStep({
     variantId,
     addonIds,
     durationMinutes,
+    source,
     enabled: !isAnyAvailable && !isChain,
   });
   const pooledQuery = useAnyPractitionerAvailability({
@@ -210,6 +217,7 @@ export function TimeSlotStep({
     variantId,
     addonIds,
     durationMinutes,
+    source,
     enabled: isAnyAvailable && !isChain,
   });
   // The chain route pools server-side for "any available" (only the people who
@@ -219,6 +227,7 @@ export function TimeSlotStep({
     date,
     practitionerId,
     chain: chain ?? [],
+    source,
     enabled: isChain,
   });
 
@@ -331,6 +340,13 @@ export function TimeSlotStep({
       : singleQuery.isFetching;
   const isError = isChain ? chainQuery.isError : isAnyAvailable ? pooledQuery.isError : singleQuery.isError;
   const errorValue = isChain ? chainQuery.error : isAnyAvailable ? pooledQuery.error : singleQuery.error;
+  /** The server's reason a booking rule rules this date out (SCH-F15), else null. */
+  const unavailableReason =
+    (isChain
+      ? chainQuery.data?.unavailable_reason
+      : isAnyAvailable
+        ? pooledQuery.unavailableReason
+        : singleQuery.data?.unavailable_reason) ?? null;
   const retry = isChain
     ? () => void chainQuery.refetch()
     : isAnyAvailable
@@ -394,7 +410,10 @@ export function TimeSlotStep({
         <View style={styles.emptyWrap}>
           <EmptyState
             title="No times available"
-            message="There are no open slots on this date. Pick another day, or add the guest to the waitlist."
+            message={
+              unavailableReason ??
+              'There are no open slots on this date. Pick another day, or add the guest to the waitlist.'
+            }
           />
           <Button
             label="Join waitlist for this date"

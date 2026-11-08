@@ -47,6 +47,8 @@ export interface BookingFormVenue {
   /** How the service picker lists services once the venue has categories (`booking_page_config.services_layout`). */
   servicesLayout: ServicesLayout;
   ownerVenueId: string | null;
+  /** The signed-in business (own venue), whatever the form books into (DEVICE-F4). */
+  signedInVenueId?: string | null;
   /** Linked profile still loading (own venue is never loading here). */
   isLoading: boolean;
   /** Link does not grant create permission (403) — the form must be blocked. */
@@ -81,6 +83,7 @@ export function useBookingFormVenue(): BookingFormVenue {
       isCollective: false,
       servicesLayout: resolveServicesLayout(venue?.booking_page_config),
       ownerVenueId: null,
+      signedInVenueId: venue?.id ?? null,
       isLoading: venueLoading,
       isForbidden: false,
       error: null,
@@ -131,6 +134,7 @@ export function useBookingFormVenue(): BookingFormVenue {
       profileVenue.booking_page_config as { services_layout?: unknown } | null | undefined,
     ),
     ownerVenueId,
+    signedInVenueId: venue?.id ?? null,
     isLoading: profile.isLoading,
     isForbidden,
     error: otherError,

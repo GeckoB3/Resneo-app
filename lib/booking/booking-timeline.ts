@@ -1,5 +1,7 @@
 import { format, parseISO } from 'date-fns';
 
+import { formatPence } from '@/lib/format';
+
 /**
  * Booking activity timeline — mirrors web
  * `_reference/reserve-ni/src/lib/booking/format-booking-timeline-event.ts`.
@@ -104,7 +106,7 @@ export function shouldShowBookingTimelineEvent(event: BookingTimelineEventRow): 
 /** "2500" -> "£25.00" for timeline detail lines. */
 function poundsFromPence(value: unknown): string | null {
   if (typeof value !== 'number' || !Number.isFinite(value)) return null;
-  return `£${(value / 100).toFixed(2)}`;
+  return formatPence(value) ?? '';
 }
 
 const CARD_HOLD_RELEASE_REASON_LABELS: Record<string, string> = {

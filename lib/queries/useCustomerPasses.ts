@@ -81,6 +81,8 @@ export interface CreditProduct {
   venue_id: string;
   credits_count: number | null;
   price_pence: number | null;
+  /** The currency the venue charges in; absent means pounds. */
+  currency?: string | null;
 }
 
 interface CreditsResponse {

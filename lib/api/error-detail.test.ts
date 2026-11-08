@@ -84,6 +84,26 @@ describe('getApiErrorMessage', () => {
     );
   });
 
+  it('shows the venue settings lock refusal as the server words it (web ACC-F7 / X-F10)', () => {
+    const ended =
+      'Your plan has ended, so you can update your name, contact details and address, but not how you take bookings, until you resubscribe.';
+    expect(
+      getApiErrorMessage(
+        { error: ended, code: 'VENUE_SUBSCRIPTION_EXPIRED', locked_fields: ['slug'] },
+        403,
+      ),
+    ).toBe(ended);
+    const pastDue =
+      'Your last payment did not go through, so you can update your name, contact details and address, but not how you take bookings, until the payment method is updated under Settings, then Plan.';
+    expect(
+      getApiErrorMessage({ error: pastDue, code: 'VENUE_PAST_DUE', locked_fields: ['timezone'] }, 403),
+    ).toBe(pastDue);
+    // Any other locked write keeps the app's own line.
+    expect(
+      getApiErrorMessage({ error: 'Your subscription has ended.', code: 'VENUE_SUBSCRIPTION_EXPIRED' }, 403),
+    ).toBe('Subscription ended. Resubscribe on the web dashboard to edit bookings.');
+  });
+
   it('still prefers the billing codes over any detail', () => {
     expect(
       getApiErrorMessage(

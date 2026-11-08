@@ -10,7 +10,13 @@ import {
   servicesCountLabel,
 } from '@/lib/booking/customer-visit-list';
 import { formatDayHeading } from '@/lib/dates/venue-dates';
-import { balancePenceFor, venueNameFor, type CustomerBooking, type CustomerHome } from '@/lib/queries/useCustomerHome';
+import {
+  balancePenceFor,
+  venueCurrencyFor,
+  venueNameFor,
+  type CustomerBooking,
+  type CustomerHome,
+} from '@/lib/queries/useCustomerHome';
 import { formatPence } from '@/lib/format';
 import { spacing } from '@/theme/index';
 
@@ -62,7 +68,7 @@ export function CustomerBookingRow({ booking, home, onPress, visitRows }: Props)
               a phone call to the venue.
             */
             <Text variant="caption" tone="secondary">
-              {formatPence(owed)} to pay
+              {formatPence(owed, venueCurrencyFor(home, booking.venue_id))} to pay
             </Text>
           ) : null}
         </View>
@@ -116,7 +122,7 @@ function VisitRow({
             </Text>
           ) : owed > 0 ? (
             <Text variant="caption" tone="secondary">
-              {formatPence(owed)} to pay
+              {formatPence(owed, venueCurrencyFor(home, rows[0]!.venue_id))} to pay
             </Text>
           ) : null}
         </View>

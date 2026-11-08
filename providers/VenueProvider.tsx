@@ -6,6 +6,7 @@ import {
 } from 'react';
 
 import { mergeVenueTerminology } from '@/lib/booking/terminology';
+import { setActiveVenueCurrency } from '@/lib/format';
 import { useVenue } from '@/lib/queries/useVenue';
 import type {
   BookingModel,
@@ -52,6 +53,9 @@ export function VenueProvider({ children }: VenueProviderProps) {
   const { data, isLoading, isError, error, refetch } = useVenue();
 
   const value = useMemo<VenueContextValue>(() => {
+    // Money on staff screens reads in the business's own currency (QA 2026-11-08 DEVICE-F13).
+    // Set here, in the same render that hands the venue down, so no child sees the old one.
+    setActiveVenueCurrency(data?.currency ?? null);
     // Resolved against the venue's own booking model, so an appointments venue
     // never inherits restaurant wording — and a venue that changed model since
     // signup does not keep serving the words of the one it left.

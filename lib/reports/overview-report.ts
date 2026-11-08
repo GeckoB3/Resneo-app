@@ -8,6 +8,7 @@
  * Pure: no React and no I/O, so each report can be pinned by a test.
  */
 import { bookingStatusDisplayLabel } from '@/lib/booking/infer-booking-row-model';
+import { currencySymbol } from '@/lib/format';
 import { calendarFileTag } from '@/lib/reports/report-calendar';
 import { isUnifiedSchedulingVenue } from '@/lib/venue/venue-experience';
 import type {
@@ -267,7 +268,7 @@ export function buildReport7Csv(
       ...(addons && addons.total_pence > 0
         ? [
             [],
-            ['Add-on', 'Group', bookingPlural, 'Revenue (pence)', 'Revenue (£)', 'Total minutes'],
+            ['Add-on', 'Group', bookingPlural, 'Revenue (pence)', `Revenue (${currencySymbol()})`, 'Total minutes'],
             ...addons.top_addons.map((row) => [
               row.addon_name_snapshot,
               row.addon_group_name_snapshot ?? '',
@@ -278,7 +279,7 @@ export function buildReport7Csv(
             ]),
             [],
             ['Add-on total revenue (pence)', String(addons.total_pence)],
-            ['Add-on total revenue (£)', pounds(addons.total_pence)],
+            [`Add-on total revenue (${currencySymbol()})`, pounds(addons.total_pence)],
             [`${bookingPlural} with add-ons`, String(addons.bookings_with_addons)],
           ]
         : []),
@@ -295,7 +296,7 @@ export function buildEventTicketTiersCsv(
   return {
     filename: `report-event-ticket-tiers${calendarFileTag(range.calendar)}-${range.from}-${range.to}.csv`,
     rows: [
-      ['Ticket type', 'Tickets sold', 'Bookings', 'Revenue (£)'],
+      ['Ticket type', 'Tickets sold', 'Bookings', `Revenue (${currencySymbol()})`],
       ...rows.map((row) => [
         row.ticket_type_label,
         String(row.tickets_sold),

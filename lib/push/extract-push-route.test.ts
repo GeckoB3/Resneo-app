@@ -171,3 +171,24 @@ describe('a new online order (POS app step 5)', () => {
     });
   });
 });
+
+describe('the staff Billing & account and Daily summary pushes (web QA 2026-11-08 COM-F9)', () => {
+  it.each(['billing_payment_failed', 'billing_plan_ended'])('opens the plan screen for %s, keeping the site', (type) => {
+    expect(extractPushRoute({ type, venue_id: 'venue-1', venue_name: 'Aura Hair Studio' })).toEqual({
+      kind: 'plan',
+      venueId: 'venue-1',
+    });
+  });
+
+  it('opens Today for the daily summary, keeping the site', () => {
+    expect(extractPushRoute({ type: 'daily_summary', venue_id: 'venue-1', date: '2026-11-09' })).toEqual({
+      kind: 'today',
+      venueId: 'venue-1',
+    });
+  });
+
+  it('still opens them when the push names no site', () => {
+    expect(extractPushRoute({ type: 'daily_summary' })).toEqual({ kind: 'today', venueId: null });
+    expect(extractPushRoute({ type: 'billing_payment_failed' })).toEqual({ kind: 'plan', venueId: null });
+  });
+});

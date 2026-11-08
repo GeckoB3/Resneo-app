@@ -414,9 +414,17 @@ export default function PlanScreen() {
 
   // --- Derived data (billing/status wins; venue bootstrap is the fallback) ---
   const pricingTier = billing?.pricing_tier ?? venue.pricing_tier;
-  const planStatus: PlanStatus = billing?.plan_status ?? (venue.plan_status as PlanStatus) ?? null;
+  const storedPlanStatus: PlanStatus = billing?.plan_status ?? (venue.plan_status as PlanStatus) ?? null;
   const periodStart = billing?.subscription_current_period_start;
   const periodEnd = billing?.subscription_current_period_end;
+  // Web parity (QA 2026-11-08 ACC-F3): a cancellation whose paid period has ended has ended, even
+  // while the stored status still says 'cancelling' (Stripe's webhook flips it late, or never).
+  // Without this an ended plan read "You keep access until" a date months past, with Keep my plan.
+  const storedPeriodEndMs = periodEnd ? Date.parse(periodEnd) : Number.NaN;
+  const planStatus: PlanStatus =
+    storedPlanStatus === 'cancelling' && Number.isFinite(storedPeriodEndMs) && storedPeriodEndMs <= nowMs
+      ? 'cancelled'
+      : storedPlanStatus;
   const billingQuote = billing?.billing_quote ?? null;
   const calendarCount = billing?.calendar_count ?? null;
   const calendarLimit = planCalendarLimit(pricingTier);

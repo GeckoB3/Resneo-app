@@ -67,6 +67,8 @@ export interface CustomerBookingDetail {
   resource_name: string | null;
   deposit_paid: boolean;
   deposit_amount_pence: number | null;
+  /** Set only for a business that charges in euros; absent means pounds. */
+  venue_currency?: 'EUR';
   cancellation_deadline: string | null;
   refund_notice_hours: number;
   guest_attendance_confirmed_at: string | null;

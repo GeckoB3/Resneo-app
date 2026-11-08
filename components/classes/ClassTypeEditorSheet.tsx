@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/Input';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
-import { parsePoundsToPence, penceToPoundsInput } from '@/lib/format';
+import { currencySymbol, parsePoundsToPence, penceToPoundsInput } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useCreateClassType, useUpdateClassType } from '@/lib/queries/useClassesManage';
 import { useCreateHostCalendar } from '@/lib/queries/usePractitioners';
@@ -239,10 +239,10 @@ export function ClassTypeEditorSheet({
     // just has to be £1 to £150.
     if (paymentReq === 'card_hold') {
       if (!(depositPence != null && depositPence >= 100)) {
-        setError('No-show fee must be at least £1 per person.'); return;
+        setError(`No-show fee must be at least ${currencySymbol()}1 per person.`); return;
       }
       if (depositPence > 15000) {
-        setError('No-show fee cannot exceed £150 per person.'); return;
+        setError(`No-show fee cannot exceed ${currencySymbol()}150 per person.`); return;
       }
     }
 
@@ -581,7 +581,7 @@ export function ClassTypeEditorSheet({
           <View style={styles.row}>
             <View style={styles.field}>
               <Input
-                label="Price per person (£)"
+                label={`Price per person (${currencySymbol()})`}
                 value={price}
                 onChangeText={setPrice}
                 keyboardType="decimal-pad"
@@ -590,8 +590,8 @@ export function ClassTypeEditorSheet({
             {paymentReq === 'deposit' || paymentReq === 'card_hold' ? (
               <View style={styles.field}>
                 <Input
-                  label={paymentReq === 'card_hold' ? 'No-show fee per person (£)' : 'Deposit (£)'}
-                  helper={paymentReq === 'card_hold' ? '£1 to £150 per person.' : undefined}
+                  label={paymentReq === 'card_hold' ? `No-show fee per person (${currencySymbol()})` : `Deposit (${currencySymbol()})`}
+                  helper={paymentReq === 'card_hold' ? `${currencySymbol()}1 to ${currencySymbol()}150 per person.` : undefined}
                   value={deposit}
                   onChangeText={setDeposit}
                   keyboardType="decimal-pad"

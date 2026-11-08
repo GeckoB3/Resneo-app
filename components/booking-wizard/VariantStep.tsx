@@ -5,6 +5,7 @@ import { StaffDurationControl } from '@/components/booking-wizard/StaffDurationC
 import { Button } from '@/components/ui/Button';
 import { PressableScale } from '@/components/ui/PressableScale';
 import { Text } from '@/components/ui/Text';
+import { formatPence } from '@/lib/format';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { AppointmentCatalogVariant } from '@/types/appointment-catalog';
@@ -85,7 +86,7 @@ export function VariantStep({
                   <Text variant="bodyMedium">{variant.name}</Text>
                   {variant.price_pence != null ? (
                     <Text variant="caption" tone="muted">
-                      £{(variant.price_pence / 100).toFixed(2)}
+                      {formatPence(variant.price_pence)}
                     </Text>
                   ) : null}
                   {variant.description ? (

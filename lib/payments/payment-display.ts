@@ -512,6 +512,26 @@ export function pendingCardState(args: {
  */
 export const MAX_IN_PERSON_PENCE = 100_000;
 
+/**
+ * PAY-A-F19 (owner, 2026-11-08): taking the whole balance (no typed amount) above the cap is not
+ * refused, because a real package can cost more than 1,000. It is confirmed first, once the card
+ * is read, so a large charge never goes through on one tap. A typed amount above the cap stays
+ * refused by {@link checkChargeAmount}.
+ */
+export function wholeBalanceChargeNeedsConfirm(
+  typedAmountPence: number | null | undefined,
+  chargePence: number | null | undefined,
+): boolean {
+  return typedAmountPence == null && chargePence != null && chargePence > MAX_IN_PERSON_PENCE;
+}
+
+/** "Charge £1,240.00 to the card ending 4242?", in the business's currency. */
+export function largeChargeQuestion(amountPence: number, last4: string | null | undefined): string {
+  const amount = formatPence(amountPence);
+  const digits = last4?.trim();
+  return digits ? `Charge ${amount} to the card ending ${digits}?` : `Charge ${amount} to this card?`;
+}
+
 /** Verdict on the amount staff typed into the Take payment sheet. */
 export interface ChargeAmountCheck {
   /** Send as `amount_pence`; null means omit it and let the server take the full balance. */

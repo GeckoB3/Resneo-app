@@ -16,6 +16,8 @@ import {
 import { MIN_CORE_DURATION_MINUTES } from '@/lib/booking/booking-core-duration';
 import { visitOverlapRefusal } from '@/lib/booking/visit-overlaps';
 import { visitScheduleRequest } from '@/lib/booking/visit-schedule-request';
+import { expectedVisitVersionsField, isStaleBookingError } from '@/lib/booking/stale-booking';
+import { StaleBookingNotice } from '@/components/bookings/StaleBookingNotice';
 import { formatDayHeading } from '@/lib/dates/venue-dates';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useRescheduleBooking } from '@/lib/queries/useBookingMutations';
@@ -54,6 +56,12 @@ export type RescheduleTarget = {
    * and staff who may write every part can move them all together.
    */
   linkedVisitId?: string | null;
+  /**
+   * The booking's `updated_at` when the sheet opened (the target is set once, at open). The move
+   * sends it back and the server refuses it (412 `stale_booking`) when someone changed the booking
+   * since (web QA X-F2). Absent (the calendar's drag): nothing is sent.
+   */
+  updatedAt?: string | null;
 };
 
 type RescheduleSheetProps = {
@@ -105,6 +113,8 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
   const [duration, setDuration] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [complianceError, setComplianceError] = useState<string | null>(null);
+  /** The move was refused because someone else changed the booking since the sheet opened (X-F2). */
+  const [staleBooking, setStaleBooking] = useState(false);
   const [seededId, setSeededId] = useState<string | null>(null);
   /**
    * A visit move refused because it puts the client in two places (split-visit
@@ -130,6 +140,7 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
     setDuration(target.durationMinutes ?? null);
     setError(null);
     setComplianceError(null);
+    setStaleBooking(false);
     setVisitOverlap(null);
     setMoveAllBusinesses(false);
   }, [target?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -195,11 +206,13 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
           allow_during_breaks: true,
           // Staff were told this puts the client in two places and saved again (G13).
           ...(overlapNote ? { acknowledge_visit_overlap: true } : {}),
+          ...expectedVisitVersionsField(target.id, target.updatedAt),
         });
       } else {
         await mutation.mutateAsync({
           date,
           time: `${minutesToTime(minutes)}:00`,
+          expectedUpdatedAt: target.updatedAt ?? null,
           // Only send the duration when it changed: table bookings have a lower
           // server-side cap, so an untouched duration must not be re-asserted.
           // An appointment sends its end instead, or the server would give it
@@ -216,6 +229,10 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
       onClose();
     } catch (e) {
       hapticWarning();
+      if (isStaleBookingError(e)) {
+        setStaleBooking(true);
+        return;
+      }
       // One client in two places: say where; the same move saved again keeps it.
       const overlap = visit ? visitOverlapRefusal(e) : null;
       if (overlap) {
@@ -352,6 +369,7 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
                 </Text>
               ) : null}
 
+              {staleBooking ? <StaleBookingNotice bookingId={target?.id} onRefreshed={onClose} /> : null}
               {error && !(overlapNote && error === visitOverlap?.note) ? (
                 <Text variant="bodySmall" tone="danger">
                   {error}

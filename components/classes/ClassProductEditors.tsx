@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/Input';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
-import { penceToPoundsInput } from '@/lib/format';
+import { currencySymbol, penceToPoundsInput } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
   courseStateToPayload,
@@ -242,7 +242,7 @@ export function CreditEditorSheet({
           keyboardType="number-pad"
         />
         <Input
-          label="Price (£)"
+          label={`Price (${currencySymbol()})`}
           required
           value={state.price}
           onChangeText={(price) => setState((s) => ({ ...s, price }))}
@@ -411,7 +411,7 @@ export function CourseEditorSheet({
           multiline
         />
         <Input
-          label="Course price (£)"
+          label={`Course price (${currencySymbol()})`}
           value={state.price}
           onChangeText={(price) => setState((s) => ({ ...s, price }))}
           keyboardType="decimal-pad"
@@ -577,7 +577,7 @@ export function MembershipEditorSheet({
   const saving = create.isPending || update.isPending;
   // An active membership needs billing: a recurring price + interval, OR a
   // manual Stripe price id, OR (on edit) an existing connected price.
-  const hasRecurring = Number(state.recurring_price.trim().replace('£', '')) > 0;
+  const hasRecurring = Number(state.recurring_price.trim().replace(/^[£€]/, '')) > 0;
   const hasManual = state.stripe_price_id.trim().length > 0;
   const hadPrice = target?.mode === 'edit' && Boolean(target.product.stripe_price_id);
   const valid =
@@ -636,7 +636,7 @@ export function MembershipEditorSheet({
             or leave blank and paste a manual Price ID below.
           </Text>
           <Input
-            label="Price (£ / period)"
+            label={`Price (${currencySymbol()} / period)`}
             value={state.recurring_price}
             onChangeText={(recurring_price) => setState((s) => ({ ...s, recurring_price }))}
             keyboardType="decimal-pad"

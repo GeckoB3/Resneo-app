@@ -41,7 +41,7 @@ import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { StatTile } from '@/components/ui/StatTile';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
-import { formatPence } from '@/lib/format';
+import { currencySymbol, formatPence } from '@/lib/format';
 import { hapticTap } from '@/lib/haptics';
 import { useBookedRevenue } from '@/lib/queries/useBookedRevenue';
 import { countsOtherKinds, unpricedNote } from '@/lib/reports/booked-revenue-copy';
@@ -74,10 +74,10 @@ import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { BookedRevenueGrain, BookedRevenueVenue } from '@/types/reports';
 
-const money = (pence: number): string => formatPence(pence) ?? `£${(pence / 100).toFixed(2)}`;
+const money = (pence: number): string => formatPence(pence) ?? `${currencySymbol()}${(pence / 100).toFixed(2)}`;
 
 /** A zero reads faintly in the table, as on the web. */
-const moneyCell = (pence: number): string => (pence === 0 ? '£0' : money(pence));
+const moneyCell = (pence: number): string => (pence === 0 ? `${currencySymbol()}0` : money(pence));
 
 function ymdToLocalNoon(ymd: string): Date {
   const [y, m, d] = ymd.split('-').map(Number);

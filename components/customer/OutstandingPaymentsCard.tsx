@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { formatPence } from '@/lib/format';
-import { balancePenceFor, venueNameFor, type CustomerHome } from '@/lib/queries/useCustomerHome';
+import { balancePenceFor, venueCurrencyFor, venueNameFor, type CustomerHome } from '@/lib/queries/useCustomerHome';
 import { spacing } from '@/theme/index';
 
 type Props = { home: CustomerHome };
@@ -39,7 +39,7 @@ export function OutstandingPaymentsCard({ home }: Props) {
           <Text variant="body" style={styles.name}>
             {venueNameFor(home, booking.venue_id)}
           </Text>
-          <Text variant="body">{formatPence(pence)}</Text>
+          <Text variant="body">{formatPence(pence, venueCurrencyFor(home, booking.venue_id))}</Text>
         </View>
       ))}
       <Text variant="bodySmall" tone="secondary" style={styles.note}>

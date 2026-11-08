@@ -35,9 +35,10 @@ export function useNotificationSettings() {
  * GET /api/venue/communication-policies — per-message guest-communication
  * policies (the web "Guest communications" section).
  */
-export function useCommunicationPolicies() {
+export function useCommunicationPolicies(options?: { enabled?: boolean }) {
   const accessToken = useAccessToken();
-  const enabled = isBackendConfigured() && accessToken !== null;
+  // `enabled: false` holds the read until a screen needs it (the cancel prompt, web QA BKG-B-F13).
+  const enabled = isBackendConfigured() && accessToken !== null && options?.enabled !== false;
 
   return useQuery({
     queryKey: queryKeys.communications.policies(accessToken),

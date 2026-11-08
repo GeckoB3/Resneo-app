@@ -46,7 +46,11 @@ export type PendingPushRoute =
   | { kind: 'posTill'; sessionId: string | null; venueId: string | null }
   /** A new online order (`shop_order_new`), or the Orders list when the push names none. */
   | { kind: 'posOrder'; orderId: string; venueId: string | null }
-  | { kind: 'posOrders'; venueId: string | null };
+  | { kind: 'posOrders'; venueId: string | null }
+  /** "Billing & account" (`billing_payment_failed`, `billing_plan_ended`): the site's plan screen. */
+  | { kind: 'plan'; venueId: string | null }
+  /** "Daily summary" (`daily_summary`): the site's Today screen. */
+  | { kind: 'today'; venueId: string | null };
 
 let pendingRoute: PendingPushRoute | null = null;
 const subscribers = new Set<() => void>();

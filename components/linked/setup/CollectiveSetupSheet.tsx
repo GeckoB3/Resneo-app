@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { getWebUrl } from '@/lib/env';
-import { formatPence } from '@/lib/format';
+import { currencySymbol, formatPence } from '@/lib/format';
 import { formatVenueList, setupCopy } from '@/lib/linked/setup-copy';
 import { areaCopy } from '@/lib/collective-area/copy';
 import type { BulkOp, CollectiveCalendarGroup } from '@/lib/collective-area/model';
@@ -406,7 +406,7 @@ export function CollectiveSetupSheet({
             services.map((s) => {
               const already = onPage(s);
               const matches = sameNames[s.id] ?? [];
-              const price = s.price_pence != null ? (formatPence(s.price_pence) ?? `£${(s.price_pence / 100).toFixed(2)}`) : null;
+              const price = s.price_pence != null ? (formatPence(s.price_pence) ?? '') : null;
               return (
                 <ChoiceRow
                   key={s.id}
@@ -440,7 +440,7 @@ export function CollectiveSetupSheet({
             <View style={[styles.infoCard, { borderColor: colors.brandBorder, borderWidth: 1 }]}>
               <Input label={setupCopy('finish.services.add.name')} value={newName} maxLength={200} autoFocus onChangeText={setNewName} />
               <Input label={setupCopy('finish.services.add.duration')} value={newMinutes} keyboardType="number-pad" onChangeText={setNewMinutes} />
-              <Input label={`${setupCopy('finish.services.add.price')} (£)`} value={newPrice} keyboardType="decimal-pad" placeholder="0.00" onChangeText={setNewPrice} />
+              <Input label={`${setupCopy('finish.services.add.price')} (${currencySymbol()})`} value={newPrice} keyboardType="decimal-pad" placeholder="0.00" onChangeText={setNewPrice} />
               <View style={styles.badges}>
                 <Button
                   label={busy === 'adding' ? setupCopy('finish.services.add.adding') : setupCopy('finish.services.add.cta')}
@@ -664,7 +664,7 @@ function MemberServicesChooser({
         group.services.map((s) => {
           const key = venueServiceKey(group.venue_id, s.id);
           const joinsHost = !s.on_page ? hostNames.get(s.name.trim().toLowerCase()) : undefined;
-          const price = s.price_pence != null ? (formatPence(s.price_pence) ?? `£${(s.price_pence / 100).toFixed(2)}`) : null;
+          const price = s.price_pence != null ? (formatPence(s.price_pence) ?? '') : null;
           // A ticked host service of the same name wins: theirs joins it. Otherwise the page service
           // it would join, if one is on the page already.
           const joins = joinsHost

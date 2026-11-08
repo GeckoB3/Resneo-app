@@ -553,6 +553,8 @@ export const queryKeys = {
       addonsKey?: string | null,
       durationMinutes?: number | null,
       excludeBookingId?: string | null,
+      /** Staff booking source (`phone` / `walk-in`, SCH-F15); only in the key when sent. */
+      source?: string | null,
     ) =>
       [
         ...queryKeys.appointments.all(),
@@ -566,6 +568,7 @@ export const queryKeys = {
         addonsKey ?? null,
         durationMinutes ?? null,
         excludeBookingId ?? null,
+        ...(source ? [source] : []),
       ] as const,
     monthAvailability: (
       accessToken?: string | null,

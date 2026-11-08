@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
+import { groupedByBusiness, practitionerBusinessLine } from '@/lib/booking/collective-business-line';
 import { hapticSelect } from '@/lib/haptics';
 import { spacing } from '@/theme/index';
 import {
@@ -18,6 +19,8 @@ import {
 type StaffRow = {
   id: string;
   name: string;
+  /** On a collective: the business this person works for (DEVICE-F4). */
+  business?: string | null;
   caption: string | null;
   /** `null` for the pooled "Any available" row. */
   value: AppointmentCatalogPractitioner | null;
@@ -113,11 +116,13 @@ export function StaffPickerStep({
     });
   }
 
-  for (const practitioner of practitioners) {
+  // On a collective each business's team reads together, under its business's name.
+  for (const practitioner of groupedByBusiness(practitioners, (p) => p.owning_venue_id)) {
     const count = practitioner.services.length;
     rows.push({
       id: practitioner.id,
       name: practitioner.name,
+      business: practitionerBusinessLine(practitioner),
       caption: `${count} service${count === 1 ? '' : 's'}`,
       value: practitioner,
     });
@@ -166,10 +171,15 @@ export function StaffPickerStep({
                 style={styles.row}
                 accessibilityRole="button"
                 accessibilityState={{ selected: isSelected }}
-                accessibilityLabel={`${item.name}${item.caption ? `, ${item.caption}` : ''}`}>
+                accessibilityLabel={`${item.name}${item.business ? `, ${item.business}` : ''}${item.caption ? `, ${item.caption}` : ''}`}>
                 <Avatar name={item.value === null ? '?' : item.name} size={36} />
                 <View style={styles.rowText}>
                   <Text variant="bodyMedium">{item.name}</Text>
+                  {item.business ? (
+                    <Text variant="caption" tone="secondary" testID={`staff-business-${item.id}`}>
+                      {item.business}
+                    </Text>
+                  ) : null}
                   {item.caption ? (
                     <Text variant="caption" tone="muted">
                       {item.caption}

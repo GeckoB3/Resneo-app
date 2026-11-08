@@ -59,6 +59,17 @@ export function isCardPaymentFailure(e: unknown): e is Error & CardPaymentFailur
   return e instanceof Error && typeof (e as Partial<CardPaymentFailure>).outcome === 'string';
 }
 
+/**
+ * Staff answered "Not now" when asked to confirm a large whole-balance charge (web PAY-A-F19): the
+ * card was read but nothing was charged, and the PaymentIntent is cancelled. Not a failure.
+ */
+export class ChargeNotConfirmedError extends Error {
+  constructor() {
+    super('Nothing was charged.');
+    this.name = 'ChargeNotConfirmedError';
+  }
+}
+
 /** A card payment's receipt (checklist 5.10): approved or not. */
 export type CardReceipt = {
   venueName: string | null;

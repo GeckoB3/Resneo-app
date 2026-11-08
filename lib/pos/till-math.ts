@@ -48,7 +48,7 @@ export type DenominationDraft = Record<string, string>;
 
 /** Whole pence from typed money ("12.50", "12"), or null when it is not money. */
 export function moneyToPence(text: string): number | null {
-  const t = text.trim().replace(/^£/, '').replace(/,/g, '');
+  const t = text.trim().replace(/^[£€]/, '').replace(/,/g, '');
   if (!t) return null;
   if (!/^\d+(\.\d{1,2})?$/.test(t)) return null;
   return Math.round(Number(t) * 100);

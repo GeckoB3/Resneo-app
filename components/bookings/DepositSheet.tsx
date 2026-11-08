@@ -20,7 +20,7 @@ import {
   type CardHoldUiState,
 } from '@/lib/booking/card-hold';
 import { hasSettleableDeposit } from '@/lib/booking/booking-staff-indicators';
-import { formatPositivePence } from '@/lib/format';
+import { currencySymbol, formatPositivePence } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useBookingDeposit, type DepositAction } from '@/lib/queries/useBookingMutations';
 import { spacing } from '@/theme/index';
@@ -50,7 +50,7 @@ function penceToPoundsInput(pence: number): string {
 
 /** Parse the amount input to pence; null when not a usable number. */
 function parsePoundsInputToPence(value: string): number | null {
-  const trimmed = value.trim().replace(/^£/, '');
+  const trimmed = value.trim().replace(/^[£€]/, '');
   if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) return null;
   const pounds = Number(trimmed);
   if (!Number.isFinite(pounds)) return null;
@@ -71,6 +71,8 @@ export function DepositSheet({ target, onClose }: DepositSheetProps) {
   // Two-step confirms — Alert.alert is a no-op on react-native-web.
   const [refundArmed, setRefundArmed] = useState(false);
   const [releaseArmed, setReleaseArmed] = useState(false);
+  // Record cash takes money on one tap otherwise (web QA PAY-A-F8): confirm it with the amount.
+  const [cashArmed, setCashArmed] = useState(false);
   // Charge no-show fee: in-sheet amount step (never a second stacked sheet).
   const [chargeMode, setChargeMode] = useState(false);
   const [amountInput, setAmountInput] = useState('');
@@ -87,6 +89,7 @@ export function DepositSheet({ target, onClose }: DepositSheetProps) {
     setError(null);
     setRefundArmed(false);
     setReleaseArmed(false);
+    setCashArmed(false);
     setChargeMode(false);
     setAmountInput(target.cardHold?.feePence ? penceToPoundsInput(target.cardHold.feePence) : '');
   }, [target?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -114,6 +117,16 @@ export function DepositSheet({ target, onClose }: DepositSheetProps) {
     }
     setRefundArmed(false);
     void run('refund');
+  }
+
+  function confirmCash() {
+    if (!cashArmed) {
+      hapticWarning();
+      setCashArmed(true);
+      return;
+    }
+    setCashArmed(false);
+    void run('record_cash');
   }
 
   function confirmRelease() {
@@ -162,7 +175,7 @@ export function DepositSheet({ target, onClose }: DepositSheetProps) {
               </View>
 
               <Input
-                label="Amount to charge (£)"
+                label={`Amount to charge (${currencySymbol()})`}
                 value={amountInput}
                 onChangeText={setAmountInput}
                 keyboardType="decimal-pad"
@@ -351,9 +364,15 @@ export function DepositSheet({ target, onClose }: DepositSheetProps) {
                       fullWidth
                     />
                     <Button
-                      label="Record cash payment"
+                      label={
+                        cashArmed
+                          ? amount
+                            ? `Tap to confirm ${amount} cash`
+                            : 'Tap to confirm cash payment'
+                          : 'Record cash payment'
+                      }
                       variant="secondary"
-                      onPress={() => void run('record_cash')}
+                      onPress={confirmCash}
                       loading={pending === 'record_cash'}
                       disabled={pending !== null}
                       fullWidth
@@ -379,6 +398,12 @@ export function DepositSheet({ target, onClose }: DepositSheetProps) {
                   />
                 ) : null}
               </View>
+
+              {cashArmed ? (
+                <Text variant="caption" tone="muted">
+                  {`This records ${amount || 'the deposit'} as paid in cash by ${target.guestName}. If the booking was waiting for it, the booking is confirmed and they get their confirmation.`}
+                </Text>
+              ) : null}
 
               {error ? (
                 <Text variant="bodySmall" tone="danger">

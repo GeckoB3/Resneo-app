@@ -14,7 +14,7 @@ import { Text } from '@/components/ui/Text';
 import { TimePickerField } from '@/components/ui/TimePickerField';
 import { ApiError, isApiErrorBody } from '@/lib/api/client';
 import { calendarDateInTimeZone } from '@/lib/dates/venue-dates';
-import { parsePoundsToPence, penceToPoundsInput } from '@/lib/format';
+import { currencySymbol, parsePoundsToPence, penceToPoundsInput } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useCreateEvent, useUpdateEvent } from '@/lib/queries/useEventsManage';
 import { useCreateHostCalendar, usePractitioners } from '@/lib/queries/usePractitioners';
@@ -394,7 +394,7 @@ export function EventEditorSheet({ target, onClose, onSaved }: EventEditorSheetP
     }
     // Card hold (spec 6.2): the per-person no-show fee must be at least £1.
     if (paymentReq === 'card_hold' && !(depositPence != null && depositPence >= 100)) {
-      setError('No-show fee must be at least £1 per person.'); return;
+      setError(`No-show fee must be at least ${currencySymbol()}1 per person.`); return;
     }
 
     // Non-admins must place a new event on a calendar they control — the server
@@ -669,7 +669,7 @@ export function EventEditorSheet({ target, onClose, onSaved }: EventEditorSheetP
               <View style={styles.row}>
                 <View style={styles.field}>
                   <Input
-                    label="Price (£)"
+                    label={`Price (${currencySymbol()})`}
                     value={ticket.price}
                     onChangeText={(v) => setTicket(ticket.key, { price: v })}
                     keyboardType="decimal-pad"
@@ -865,8 +865,8 @@ export function EventEditorSheet({ target, onClose, onSaved }: EventEditorSheetP
           })}
           {paymentReq === 'deposit' || paymentReq === 'card_hold' ? (
             <Input
-              label={paymentReq === 'card_hold' ? 'No-show fee per person (£)' : 'Deposit (£)'}
-              helper={paymentReq === 'card_hold' ? 'The no-show fee must be at least £1.' : undefined}
+              label={paymentReq === 'card_hold' ? `No-show fee per person (${currencySymbol()})` : `Deposit (${currencySymbol()})`}
+              helper={paymentReq === 'card_hold' ? `The no-show fee must be at least ${currencySymbol()}1.` : undefined}
               value={deposit}
               onChangeText={setDeposit}
               keyboardType="decimal-pad"

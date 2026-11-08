@@ -135,9 +135,16 @@ function ReferralRow({ row, isFirst }: { row: ReferralRowForUi; isFirst: boolean
         </View>
         {/* A sentence, as the web shows, never the raw `void_reason` code. */}
         {explanation ? (
-          <Text variant="caption" color={colors.danger} style={styles.voidReason}>
-            {explanation}
-          </Text>
+          row.status === 'credited' ? (
+            // A held credit is waiting its turn, not a problem (COM-F10): muted, as on the web.
+            <Text variant="caption" tone="muted" style={styles.voidReason}>
+              {explanation}
+            </Text>
+          ) : (
+            <Text variant="caption" color={colors.danger} style={styles.voidReason}>
+              {explanation}
+            </Text>
+          )
         ) : null}
       </View>
     </View>

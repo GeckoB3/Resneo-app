@@ -23,6 +23,13 @@ import {
 import { MIN_CORE_DURATION_MINUTES } from '@/lib/booking/booking-core-duration';
 import { bookingModificationNotifyOutcome } from '@/lib/booking/modification-notify-result';
 import { explainModificationRefusal } from '@/lib/booking/modification-refusal';
+import {
+  bookingVersionOf,
+  expectedVersionField,
+  expectedVisitVersionsField,
+  isStaleBookingError,
+} from '@/lib/booking/stale-booking';
+import { StaleBookingNotice } from '@/components/bookings/StaleBookingNotice';
 import { accessRefusalMessage } from '@/lib/roles/roles';
 import {
   defaultAddedServiceCalendar,
@@ -101,6 +108,11 @@ export type ModifyBookingTarget = {
    * separate endpoint the app does not surface yet (R15-4).
    */
   visit?: VisitEditTarget | null;
+  /**
+   * The booking's `updated_at` when the sheet opened. The save sends it back, and the server
+   * refuses it (412 `stale_booking`) when someone changed the booking since (web QA X-F2).
+   */
+  updatedAt?: string | null;
 };
 
 type ModifyBookingSheetProps = {
@@ -300,6 +312,9 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     result: { state: 'idle' },
   });
   const [error, setError] = useState<string | null>(null);
+  /** The version the sheet opened on (X-F2), and whether the save was refused as out of date. */
+  const [openedVersion, setOpenedVersion] = useState<string | null>(null);
+  const [staleBooking, setStaleBooking] = useState(false);
   const [seededId, setSeededId] = useState<string | null>(null);
   const checkSeq = useRef(0);
   const [mode, setMode] = useState<Mode>('form');
@@ -425,6 +440,8 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     }
     if (target.id === seededId) return;
     setSeededId(target.id);
+    setOpenedVersion(bookingVersionOf(target.updatedAt));
+    setStaleBooking(false);
     setServiceId(target.serviceId);
     setVariantId(target.serviceVariantId);
     setPractitionerId(target.practitionerId);
@@ -1648,6 +1665,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
           await visitServices.mutateAsync({
             ...visitServicesRequestBody(),
             ...acknowledgeOverlap,
+            ...expectedVisitVersionsField(target.id, openedVersion),
             ...(visitScheduleTouched ? { defer_modification_guest_notification: true } : {}),
           });
           hapticSuccess();
@@ -1662,6 +1680,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
         await visitSchedule.mutateAsync({
           ...visitScheduleRequestBody(),
           ...acknowledgeOverlap,
+          ...expectedVisitVersionsField(target.id, openedVersion),
           // Staff editing a visit by hand have decided where it goes.
           allow_outside_hours: true,
           allow_during_breaks: true,
@@ -1678,6 +1697,11 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
         onClose();
       } catch (e) {
         hapticWarning();
+        // Someone else changed the visit since the sheet opened (X-F2).
+        if (isStaleBookingError(e)) {
+          setStaleBooking(true);
+          return;
+        }
         // The visit changed since the check and now puts the client in two
         // places: say where, and the next Save keeps it, as the message says.
         const overlap = visitOverlapRefusal(e);
@@ -1695,6 +1719,8 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     if (!serviceId) return;
     try {
       await modify.mutateAsync({
+        // The version the sheet opened on: a colleague's change since is refused, not undone (X-F2).
+        ...expectedVersionField(openedVersion),
         booking_date: date,
         booking_time: `${minutesToTime(minutes)}:00`,
         ...(reassignedPractitionerId ? { practitioner_id: reassignedPractitionerId } : {}),
@@ -1726,6 +1752,10 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
       onClose();
     } catch (e) {
       hapticWarning();
+      if (isStaleBookingError(e)) {
+        setStaleBooking(true);
+        return;
+      }
       const message = e instanceof ApiError ? e.message : null;
       setError(accessRefusalMessage(e) ?? explainRefusal(message) ?? message ?? 'Could not save changes. Try again.');
     }
@@ -2739,6 +2769,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
             </Text>
           ) : null}
 
+          {staleBooking ? <StaleBookingNotice bookingId={target?.id} onRefreshed={onClose} /> : null}
           {error ? (
             <Text variant="bodySmall" tone="danger">
               {error}

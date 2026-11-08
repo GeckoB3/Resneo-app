@@ -24,6 +24,7 @@ export function useMonthAvailability({
   addonIds,
   durationMinutes,
   ownerVenueId,
+  source = null,
   enabled = true,
 }: {
   serviceId: string | null | undefined;
@@ -39,6 +40,11 @@ export function useMonthAvailability({
   durationMinutes?: number | null;
   /** Linked owner venue — scopes the month calendar to a linked venue. */
   ownerVenueId?: string | null;
+  /**
+   * A new staff booking's source: `phone` greys the dates the guest's rules rule out, as the save
+   * refuses them (web QA 2026-11-08 SCH-F15). Moves send none.
+   */
+  source?: 'phone' | 'walk-in' | null;
   enabled?: boolean;
 }) {
   const accessToken = useAccessToken();
@@ -73,6 +79,7 @@ export function useMonthAvailability({
         durationMinutes ?? null,
       ),
       ownerVenueId ?? null,
+      ...(source ? [source] : []),
     ] as const,
     enabled: queryEnabled,
     queryFn: async (): Promise<MonthAvailabilityResponse> => {
@@ -89,6 +96,7 @@ export function useMonthAvailability({
       if (variantId) search.set('variant_id', variantId);
       if (durationMinutes != null) search.set('duration_minutes', String(durationMinutes));
       if (ownerVenueId) search.set('owner_venue_id', ownerVenueId);
+      if (source) search.set('source', source);
       for (const id of addonIds ?? []) {
         search.append('addon_ids', id);
       }

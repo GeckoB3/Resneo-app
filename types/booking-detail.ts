@@ -138,6 +138,12 @@ export interface BookingDetailAddon {
 export interface BookingDetail extends ContactsHiddenFlag {
   id: string;
   status: BookingStatus;
+  /**
+   * The row's version (the full GET spreads the booking row). The staff edit sheets send it back
+   * as `expected_updated_at`, so a sheet opened before a colleague's change cannot quietly undo it
+   * (web QA X-F2). Absent from older servers.
+   */
+  updated_at?: string | null;
   booking_date: string;
   /** HH:mm from API (full GET normalises to 5 chars). */
   booking_time: string;

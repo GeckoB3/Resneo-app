@@ -182,6 +182,8 @@ export const AREA_COPY = {
   "names.todo.member": "Another business in {collective} is also called \"{name}\". Choose the name staff there will see for yours, so nobody books the wrong one.",
   "names.join": "Another business in {collective} is also called \"{venue}\". Choose the name staff there will see for yours. You can also do this later on Manage Collective.",
   "ov.venues.remove": "Remove",
+  "ov.venues.removeEnds": "{collective} needs at least two venues, so removing {venue} ends {collective}. The {collective} page stops taking bookings straight away, and every venue keeps its services, calendars, clients and bookings.",
+  "ov.venues.removeEndsConfirm": "Remove and end {collective}",
   "ov.venues.removeMessage": "{venue} stops being part of {collective}. Its copies of your services become its own, and bookings already made are not changed.",
   "ov.venues.removeTitle": "Remove {venue} from the collective?",
   "svc.cal.chip.buffer": "Custom buffer {minutes} min",

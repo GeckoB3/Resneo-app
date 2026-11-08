@@ -285,7 +285,7 @@ function formatFromPrice(row: ServiceRow): string | null {
   if (row.fromPricePence == null) {
     return null;
   }
-  const amount = `£${(row.fromPricePence / 100).toFixed(2)}`;
+  const amount = formatPence(row.fromPricePence) ?? '';
   return row.multiplePractitioners || row.optionPricesVary ? `from ${amount}` : amount;
 }
 

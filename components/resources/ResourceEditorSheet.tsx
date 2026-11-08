@@ -21,7 +21,7 @@ import { Input } from '@/components/ui/Input';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
-import { parsePoundsToPence, penceToPoundsInput } from '@/lib/format';
+import { currencySymbol, parsePoundsToPence, penceToPoundsInput } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useCreateHostCalendar } from '@/lib/queries/usePractitioners';
 import {
@@ -446,7 +446,7 @@ export function ResourceEditorSheet({
     // Card hold (spec 6.2): no price relationship — the flat no-show fee just
     // has to be at least £1.
     if (paymentReq === 'card_hold' && !(depositPence != null && depositPence >= 100)) {
-      setError('No-show fee must be at least £1.'); return;
+      setError(`No-show fee must be at least ${currencySymbol()}1.`); return;
     }
 
     // Every weekly range + amended exception must end after it starts (the API
@@ -763,7 +763,7 @@ export function ResourceEditorSheet({
           {/* Pricing & payment */}
           <Text variant="overline" tone="muted">Pricing &amp; payment</Text>
           <Input
-            label="Price per slot (£)"
+            label={`Price per slot (${currencySymbol()})`}
             helper="Leave blank for free."
             value={price}
             onChangeText={setPrice}
@@ -803,8 +803,8 @@ export function ResourceEditorSheet({
           })}
           {paymentReq === 'deposit' || paymentReq === 'card_hold' ? (
             <Input
-              label={paymentReq === 'card_hold' ? 'No-show fee (£)' : 'Deposit (£)'}
-              helper={paymentReq === 'card_hold' ? 'The no-show fee must be at least £1.' : undefined}
+              label={paymentReq === 'card_hold' ? `No-show fee (${currencySymbol()})` : `Deposit (${currencySymbol()})`}
+              helper={paymentReq === 'card_hold' ? `The no-show fee must be at least ${currencySymbol()}1.` : undefined}
               value={deposit}
               onChangeText={setDeposit}
               keyboardType="decimal-pad"

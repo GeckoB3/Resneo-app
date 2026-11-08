@@ -13,7 +13,7 @@
  *
  * jest hoists mock factories above imports, so closed-over vars are `mock*`.
  */
-import { render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen } from '@testing-library/react-native';
 
 import { DepositSheet, type DepositTarget } from './DepositSheet';
 
@@ -32,6 +32,7 @@ jest.mock('@/components/ui/Sheet', () => {
 jest.mock('@/lib/haptics', () => ({
   hapticSuccess: jest.fn(),
   hapticWarning: jest.fn(),
+  hapticTap: jest.fn(),
 }));
 
 const mockDeposit = jest.fn();
@@ -111,5 +112,21 @@ describe('DepositSheet — which actions are offered', () => {
   it('never fires a deposit action just by opening', async () => {
     await render(<DepositSheet target={target({ status: 'Not Required' })} onClose={onClose} />);
     expect(mockDeposit).not.toHaveBeenCalled();
+  });
+});
+
+describe('DepositSheet: Record cash asks before it records (web QA PAY-A-F8)', () => {
+  it('needs a second tap that names the amount, and records nothing on the first', async () => {
+    await render(<DepositSheet target={target({ status: 'Pending', amountPence: 1000 })} onClose={onClose} />);
+    await fireEvent.press(screen.getByText('Record cash payment'));
+    expect(mockDeposit).not.toHaveBeenCalled();
+    expect(screen.getByText('Tap to confirm £10.00 cash')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'This records £10.00 as paid in cash by Alex Rivera. If the booking was waiting for it, the booking is confirmed and they get their confirmation.',
+      ),
+    ).toBeTruthy();
+    await fireEvent.press(screen.getByText('Tap to confirm £10.00 cash'));
+    expect(mockDeposit).toHaveBeenCalledWith({ action: 'record_cash' });
   });
 });

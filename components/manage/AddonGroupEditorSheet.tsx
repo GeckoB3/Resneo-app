@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/Input';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
-import { parsePoundsToPence, penceToPoundsInput } from '@/lib/format';
+import { currencySymbol, parsePoundsToPence, penceToPoundsInput } from '@/lib/format';
 import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
   useCreateAddonGroup,
@@ -685,7 +685,7 @@ export function AddonGroupEditorSheet({
                         {addon.name.trim() || 'New add-on'}
                       </Text>
                       <Text variant="caption" tone="muted">
-                        {addon.price.trim() ? `£${addon.price.trim()}` : 'Free'}
+                        {addon.price.trim() ? `${currencySymbol()}${addon.price.trim()}` : 'Free'}
                         {Number(addon.duration) > 0 ? ` · +${addon.duration} min` : ''}
                         {!addon.isActive ? ' · Inactive' : ''}
                       </Text>
@@ -713,7 +713,7 @@ export function AddonGroupEditorSheet({
                       <View style={styles.twoCol}>
                         <View style={styles.col}>
                           <Input
-                            label="Extra price (£)"
+                            label={`Extra price (${currencySymbol()})`}
                             value={addon.price}
                             onChangeText={(v) => patchAddon(addon.key, { price: v })}
                             keyboardType="decimal-pad"
@@ -730,7 +730,7 @@ export function AddonGroupEditorSheet({
                         </View>
                       </View>
                       <Input
-                        label="Cost to business (£)"
+                        label={`Cost to business (${currencySymbol()})`}
                         helper="Optional. Used in reports, never shown to clients."
                         value={addon.cost}
                         onChangeText={(v) => patchAddon(addon.key, { cost: v })}

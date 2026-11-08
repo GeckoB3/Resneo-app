@@ -112,7 +112,10 @@ describe('showAttendanceConfirmedSupplementPill', () => {
 describe('canShowConfirmStaffAttendanceConfirmationAction', () => {
   it('offers confirm when nobody has confirmed yet on an actionable status', () => {
     expect(canShowConfirmStaffAttendanceConfirmationAction({ status: 'Booked' })).toBe(true);
-    expect(canShowConfirmStaffAttendanceConfirmationAction({ status: 'Pending' })).toBe(true);
+  });
+
+  it('does not offer confirm while Pending: Accept is the way forward (web QA BKG-A-F8)', () => {
+    expect(canShowConfirmStaffAttendanceConfirmationAction({ status: 'Pending' })).toBe(false);
   });
 
   it('never offers confirm for walk-ins', () => {

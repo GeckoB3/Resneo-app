@@ -59,7 +59,7 @@ export function PaymentHistorySection() {
                 {payment.purpose ? ` · ${payment.purpose.replace(/_/g, ' ')}` : ''}
               </Text>
             </View>
-            <Text variant="body">{formatPence(payment.amount_pence)}</Text>
+            <Text variant="body">{formatPence(payment.amount_pence, payment.currency ?? 'GBP')}</Text>
           </View>
         ))
       )}

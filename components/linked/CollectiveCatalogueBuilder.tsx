@@ -22,6 +22,7 @@ import {
   type SyncBadgeTone,
 } from '@/lib/linked/service-sync-view';
 import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
+import { formatPence } from '@/lib/format';
 import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -35,7 +36,7 @@ import type {
 } from '@/types/collectives';
 
 function fmtPrice(p: number | null): string {
-  return p == null ? 'No price' : `£${(p / 100).toFixed(2)}`;
+  return p == null ? 'No price' : (formatPence(p) ?? '');
 }
 function fmtDuration(m: number | null): string {
   return m == null ? 'No length' : `${m} min`;
@@ -352,7 +353,7 @@ function VenueServicesPicker({
                       const checked = selected.has(key);
                       const meta = [
                         s.durationMinutes != null ? `${s.durationMinutes} min` : null,
-                        s.pricePence != null ? `£${(s.pricePence / 100).toFixed(2)}` : null,
+                        s.pricePence != null ? formatPence(s.pricePence) : null,
                       ]
                         .filter(Boolean)
                         .join(' · ');

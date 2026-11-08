@@ -6,8 +6,10 @@ import {
   cardOutcomeOf,
   cardPaymentError,
   cardSummaryOf,
+  ChargeNotConfirmedError,
   type CardSummary,
 } from '@/lib/payments/card-outcome';
+import { wholeBalanceChargeNeedsConfirm } from '@/lib/payments/payment-display';
 import { recordFailedCardAttempt } from '@/lib/payments/failed-attempts';
 import {
   getTerminalSdk,
@@ -111,6 +113,13 @@ export function useTakePayment(bookingId: string) {
        * the sheet can move from "hold the card" to "processing" (Apple 5.8).
        */
       onCardRead?: () => void;
+      /**
+       * Web PAY-A-F19 (owner, 2026-11-08): asked once the card is read and before it is charged,
+       * when no amount was typed and the balance the server resolved is above the 1,000 cap.
+       * Resolve true to charge; false cancels the PaymentIntent and throws
+       * `ChargeNotConfirmedError`, with nothing taken.
+       */
+      confirmLargeCharge?: (info: { amountPence: number; card: CardSummary | null }) => Promise<boolean>;
     }): Promise<{ amountPence: number; paymentIntentId: string; card: CardSummary | null }> => {
       // Staff-facing: this surfaces raw in the payment sheet, so it must read as
       // something a salon can act on rather than as an internal token error.
@@ -208,6 +217,32 @@ export function useTakePayment(bookingId: string) {
           collected?.error,
           terminalErrorMessage(collected?.error, 'The card was not read.'),
         );
+      }
+
+      // 3a. The whole balance above the cap is confirmed with the card in hand, before anything
+      // is charged. The amount asked about is the server's, not the sheet's snapshot.
+      if (input.confirmLargeCharge && wholeBalanceChargeNeedsConfirm(input.amountPence, charge.amount_pence)) {
+        const go = await input.confirmLargeCharge({
+          amountPence: charge.amount_pence,
+          card: cardSummaryOf(collected.paymentIntent),
+        });
+        if (!go) {
+          // Nothing was charged: silence this device's "still going through" warning and cancel
+          // the PaymentIntent so the pending ledger row clears for everyone.
+          recordFailedCardAttempt({
+            bookingId,
+            paymentIntentId: charge.payment_intent_id,
+            amountPence: charge.amount_pence,
+            startedAtMs,
+            failedAtMs: Date.now(),
+          });
+          void cancelBalancePaymentIntent({
+            bookingId,
+            accessToken,
+            paymentIntentId: charge.payment_intent_id,
+          });
+          throw new ChargeNotConfirmedError();
+        }
       }
       input.onCardRead?.();
 

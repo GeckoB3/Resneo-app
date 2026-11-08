@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/Input';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
-import { penceToPoundsInput } from '@/lib/format';
+import { currencySymbol, penceToPoundsInput } from '@/lib/format';
 import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useUpdateServiceOverride } from '@/lib/queries/useUpdateServiceOverride';
 import {
@@ -263,7 +263,7 @@ export function StaffServiceOverrideSheet({
 
           {flags.price ? (
             <Input
-              label="Price (£)"
+              label={`Price (${currencySymbol()})`}
               value={price}
               onChangeText={setPrice}
               keyboardType="decimal-pad"
@@ -278,7 +278,7 @@ export function StaffServiceOverrideSheet({
               </View>
               {requireDeposit ? (
                 <Input
-                  label="Deposit (£)"
+                  label={`Deposit (${currencySymbol()})`}
                   value={deposit}
                   onChangeText={setDeposit}
                   keyboardType="decimal-pad"

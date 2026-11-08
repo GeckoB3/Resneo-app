@@ -28,6 +28,11 @@ export interface ApiErrorBody {
   affected_count?: number;
   /** A small sample of the affected bookings for the confirm copy. */
   affected_bookings?: unknown;
+  /**
+   * Set on the billing lock's 403 from PATCH /api/venue (web ACC-F7 / X-F10): the settings a
+   * lapsed or past-due business tried to change that stay locked until the plan is sorted out.
+   */
+  locked_fields?: string[];
 }
 
 export function isApiErrorBody(body: unknown): body is ApiErrorBody {
@@ -101,6 +106,15 @@ export function zodDetailMessage(details: unknown): string | null {
 
 export function getApiErrorMessage(body: unknown, status: number): string {
   if (isApiErrorBody(body)) {
+    // PATCH /api/venue while the bill locks the business (web ACC-F7 / X-F10): its name, contact
+    // details and address still save, and the refusal says which settings are locked in words
+    // written for a settings screen. The generic lines below talk about editing bookings.
+    if (
+      (body.code === 'VENUE_PAST_DUE' || body.code === 'VENUE_SUBSCRIPTION_EXPIRED') &&
+      Array.isArray(body.locked_fields)
+    ) {
+      return body.error;
+    }
     if (body.code === 'VENUE_PAST_DUE') {
       return 'Billing is past due. Update payment on the web dashboard to edit bookings.';
     }

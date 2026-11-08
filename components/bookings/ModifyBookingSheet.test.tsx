@@ -523,6 +523,45 @@ describe('ModifyBookingSheet', () => {
     });
   });
 
+  /** Web QA X-F2: a sheet opened before a colleague's change must not quietly undo it. */
+  it('sends the version the sheet opened on, and says so plainly when the booking changed since', async () => {
+    const { ApiError } = require('@/lib/api/client');
+    mockModify.mockRejectedValueOnce(
+      new ApiError('Someone changed this booking after you opened it.', 412, { error: 'x', code: 'stale_booking' }),
+    );
+    jest.useFakeTimers();
+    try {
+      const { QueryClient, QueryClientProvider } = require('@tanstack/react-query');
+      await render(
+        <QueryClientProvider client={new QueryClient()}>
+          <ModifyBookingSheet target={{ ...TARGET, updatedAt: '2026-11-08T10:00:00+00:00' }} onClose={onClose} />
+        </QueryClientProvider>,
+      );
+      await moveAndSave();
+      expect(mockModify).toHaveBeenCalledWith(
+        expect.objectContaining({ expected_updated_at: '2026-11-08T10:00:00+00:00' }),
+      );
+      expect(
+        screen.getByText('Someone else changed this booking. Refresh to see their change, then try again.'),
+      ).toBeTruthy();
+      expect(screen.getByText('Refresh')).toBeTruthy();
+      expect(onClose).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('sends no version when the sheet was opened without one (as before)', async () => {
+    jest.useFakeTimers();
+    try {
+      await render(<ModifyBookingSheet target={TARGET} onClose={onClose} />);
+      await moveAndSave();
+      expect(mockModify.mock.calls[0]?.[0]).not.toHaveProperty('expected_updated_at');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   /** Roles plan A2 (§5.11): a View only person changing someone else's booking. */
   it("shows the View only refusal in the server's words", async () => {
     const { ApiError } = require('@/lib/api/client');

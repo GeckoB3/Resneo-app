@@ -12,6 +12,9 @@ import { act, fireEvent, render, screen } from '@testing-library/react-native';
 /** The other businesses' services of a visit across businesses (web split-visit plan 7.7). */
 let mockPartnerLines: Map<string, unknown[]> = new Map();
 jest.mock('@/lib/queries/useVisitPartnerLines', () => ({ useVisitPartnerLines: () => mockPartnerLines }));
+/** The business's message settings, as GET /api/venue/communication-policies answers (web QA BKG-B-F13). */
+let mockPolicies: unknown = undefined;
+jest.mock('@/lib/queries/useCommunications', () => ({ useCommunicationPolicies: () => ({ data: mockPolicies }) }));
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn() }));
 jest.mock('expo-secure-store', () => ({
@@ -188,7 +191,8 @@ describe('BookingDetailContent: cancelling one service of a visit (G17)', () => 
 });
 
 describe('BookingDetailContent: cancelling your part of a visit across businesses (7.7, D9)', () => {
-  const KEEPS = 'Ada Lovelace keeps Gel Manicure with Bea at SV Nails. They will be told what is cancelled and what stays.';
+  // Until the setting is known, nothing is promised (web QA BKG-B-F13).
+  const KEEPS = 'Ada Lovelace keeps Gel Manicure with Bea at SV Nails. Make sure they know what is cancelled and what stays.';
   const line = (over: Record<string, unknown>) => ({
     booking_id: 'bk_gel',
     linked_visit_id: 'lv_1',
@@ -240,6 +244,21 @@ describe('BookingDetailContent: cancelling your part of a visit across businesse
     expect(screen.getByText(KEEPS)).toBeTruthy();
     await press('Tap to confirm');
     expect(onStatusChange).toHaveBeenCalledWith('Cancelled');
+  });
+
+  it("says the client is not told when the business's cancellation message is off (web QA BKG-B-F13)", async () => {
+    mockPolicies = { appointments_other: { cancellation_confirmation: { enabled: false, channels: ['email'] } } };
+    try {
+      await renderDetail(jest.fn(), { linked_visit_id: 'lv_1', venue_id: 'v_studio' });
+      await press('Cancel booking');
+      expect(
+        screen.getByText(
+          'Ada Lovelace keeps Gel Manicure with Bea at SV Nails. Cancellation messages are switched off, so tell them yourself.',
+        ),
+      ).toBeTruthy();
+    } finally {
+      mockPolicies = undefined;
+    }
   });
 
   it('says nothing for a visit within one business', async () => {

@@ -9,13 +9,14 @@ import { Input } from '@/components/ui/Input';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
-import { formatPence, formatPositivePence, penceToPoundsInput } from '@/lib/format';
+import { currencySymbol, formatPence, formatPositivePence, penceToPoundsInput } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { newPaymentAttemptId } from '@/lib/payments/attempt-id';
 import { useBluetoothReader } from '@/lib/payments/bluetoothReader';
 import {
   cardOutcomeHeading,
   cardReceiptText,
+  ChargeNotConfirmedError,
   isCardPaymentFailure,
   type CardReceipt,
   type CardSummary,
@@ -24,6 +25,7 @@ import { notifyCardPaymentNotApproved } from '@/lib/payments/card-outcome-notifi
 import { loadLastMethod, rememberLastMethod } from '@/lib/payments/last-method';
 import {
   checkChargeAmount,
+  largeChargeQuestion,
   otherVisitLineNote,
   paymentMethodLabel,
   pendingCardPayments,
@@ -553,7 +555,7 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
         {mode === 'menu' ? (
           <>
             <Input
-              label={balanceKnown ? 'Amount (£)' : 'Amount to charge (£)'}
+              label={balanceKnown ? `Amount (${currencySymbol()})` : `Amount to charge (${currencySymbol()})`}
               helper={
                 balanceKnown
                   ? 'Leave as is to take the full balance, or change it to take part of it.'
@@ -900,7 +902,7 @@ function PendingCardNotice({
  * payment, shown as its own step (Apple 5.8) rather than leaving "hold the card"
  * on screen after the card has gone.
  */
-type CardStage = 'idle' | 'preparing' | 'collecting' | 'processing' | 'success' | 'error';
+type CardStage = 'idle' | 'preparing' | 'collecting' | 'confirming' | 'processing' | 'success' | 'error';
 
 /** Apple's Tap to Pay symbol on the button (5.5). iOS only; SF Symbols. */
 function TapToPayIcon() {
@@ -959,6 +961,15 @@ function CardCollectSection({
   const [showEducation, setShowEducation] = useState(false);
   /** The channel of the last failed attempt, so Retry repeats the same one. */
   const [lastTried, setLastTried] = useState<InPersonReaderType | null>(null);
+  /**
+   * Web PAY-A-F19 (owner, 2026-11-08): the whole balance above the 1,000 cap is asked about once
+   * the card is read, before it is charged ("Charge £1,240.00 to the card ending 4242?").
+   */
+  const [largeCharge, setLargeCharge] = useState<{ amountPence: number; card: CardSummary | null } | null>(null);
+  /** Answers the question above; held in a ref so leaving the sheet can answer "no". */
+  const largeChargeAnswer = useRef<((go: boolean) => void) | null>(null);
+  /** A neutral line after staff said "Not now": nothing was charged. */
+  const [notice, setNotice] = useState<string | null>(null);
   /** Ref (not state) so the unmount cleanup below reads the CURRENT value. */
   const collectingRef = useRef(false);
   /**
@@ -980,6 +991,9 @@ function CardCollectSection({
   // staff press Close, press Back, or the sheet itself closes.
   useEffect(
     () => () => {
+      // A large charge still waiting for its answer is not taken: the hook cancels it.
+      largeChargeAnswer.current?.(false);
+      largeChargeAnswer.current = null;
       if (collectingRef.current) void cancelCollection();
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- cleanup must run only on unmount
@@ -1066,6 +1080,13 @@ function CardCollectSection({
     setMessage(null);
   }
 
+  function answerLargeCharge(go: boolean) {
+    const answer = largeChargeAnswer.current;
+    largeChargeAnswer.current = null;
+    setLargeCharge(null);
+    answer?.(go);
+  }
+
   async function collect(kind: InPersonReaderType) {
     if (startingRef.current) return;
     startingRef.current = true;
@@ -1074,6 +1095,7 @@ function CardCollectSection({
     const superseded = () => attemptRef.current !== attempt;
     try {
       setMessage(null);
+      setNotice(null);
       setFailed(null);
       setJustTurnedOn(false);
       setShowEducation(false);
@@ -1144,6 +1166,17 @@ function CardCollectSection({
           onCardRead: () => {
             if (!superseded()) setStage('processing');
           },
+          // The whole balance above the cap: ask before it is charged (PAY-A-F19).
+          confirmLargeCharge: (info) =>
+            new Promise<boolean>((resolve) => {
+              if (superseded()) {
+                resolve(false);
+                return;
+              }
+              largeChargeAnswer.current = resolve;
+              setLargeCharge(info);
+              setStage('confirming');
+            }),
         });
         // Reported even when this attempt was superseded. Cancel races the card:
         // if the money moved, staff must be told, whatever they pressed a moment
@@ -1163,6 +1196,13 @@ function CardCollectSection({
         // went wrong. A superseded failure is the cancel completing, not an error.
         if (superseded()) return;
         collectingRef.current = false;
+        if (e instanceof ChargeNotConfirmedError) {
+          // Staff said "Not now": the card was read but nothing was taken. Back to the
+          // collect buttons, with no error.
+          setStage('idle');
+          setNotice('Nothing was charged.');
+          return;
+        }
         hapticWarning();
         setStage('error');
         setMessage(
@@ -1203,6 +1243,7 @@ function CardCollectSection({
   const busy =
     stage === 'preparing' ||
     stage === 'collecting' ||
+    stage === 'confirming' ||
     stage === 'processing' ||
     bluetooth.status === 'connecting' ||
     bluetooth.status === 'updating';
@@ -1215,6 +1256,23 @@ function CardCollectSection({
    * state: `collectPaymentMethod` waits for a card indefinitely.
    */
   const canCancelAttempt = stage === 'preparing' || stage === 'collecting';
+
+  // The question about a large charge replaces every other control until it is answered.
+  if (stage === 'confirming' && largeCharge) {
+    const amountLabel = formatPence(largeCharge.amountPence) ?? 'the amount';
+    return (
+      <View style={styles.notice} testID="large-charge-confirm">
+        <Text variant="bodyMedium">{largeChargeQuestion(largeCharge.amountPence, largeCharge.card?.last4)}</Text>
+        <Text variant="bodySmall" tone="muted">
+          {`This is the whole balance for ${guestName}. Nothing is taken until you choose.`}
+        </Text>
+        <View style={styles.buttons}>
+          <Button label={`Charge ${amountLabel}`} onPress={() => answerLargeCharge(true)} fullWidth />
+          <Button label="Not now" variant="secondary" onPress={() => answerLargeCharge(false)} fullWidth />
+        </View>
+      </View>
+    );
+  }
 
   return (
     <>
@@ -1277,6 +1335,12 @@ function CardCollectSection({
       {message ? (
         <Text variant="bodySmall" tone="danger">
           {message}
+        </Text>
+      ) : null}
+
+      {notice ? (
+        <Text variant="bodySmall" tone="muted">
+          {notice}
         </Text>
       ) : null}
 

@@ -64,4 +64,9 @@ export interface AppointmentAvailabilityResponse {
   date: string;
   venue_id: string;
   practitioners: AppointmentAvailabilityPractitioner[];
+  /**
+   * Staff lookups only: why the date has no times when a booking rule rules it out ("Cut can be
+   * booked up to 90 days ahead, so this date is too far away. ..."), web QA 2026-11-08 SCH-F15.
+   */
+  unavailable_reason?: string;
 }

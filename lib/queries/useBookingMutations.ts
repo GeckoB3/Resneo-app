@@ -3,6 +3,7 @@ import { useMutation, useQueryClient, type QueryKey } from '@tanstack/react-quer
 import { apiFetch } from '@/lib/api/client';
 import { invalidateAppointmentAvailability } from '@/lib/queries/invalidateAvailability';
 import { bookingStatusPatchBody, type CancelScope } from '@/lib/booking/cancel-scope';
+import { expectedVersionField } from '@/lib/booking/stale-booking';
 import type { BookingModificationNotifyResult } from '@/lib/booking/modification-notify-result';
 import type { VisitOverlap } from '@/lib/booking/visit-overlaps';
 import { queryKeys } from '@/lib/queries/keys';
@@ -249,6 +250,11 @@ export function useRescheduleBooking(bookingId: string) {
        * minutes (the calendar drag sends one for the same reason).
        */
       endTime?: string;
+      /**
+       * The booking's `updated_at` when the sheet opened (web QA X-F2): the server refuses the
+       * move with 412 `stale_booking` when someone changed the booking since.
+       */
+      expectedUpdatedAt?: string | null;
     }): Promise<BookingDetail> => {
       if (!accessToken) {
         throw new Error('Missing access token');
@@ -257,6 +263,7 @@ export function useRescheduleBooking(bookingId: string) {
         accessToken,
         method: 'PATCH',
         body: JSON.stringify({
+          ...expectedVersionField(input.expectedUpdatedAt),
           booking_date: input.date,
           booking_time: input.time,
           // Staff picked this time deliberately via the stepper sheet, so allow
@@ -294,12 +301,19 @@ export function useMoveClassBooking(bookingId: string) {
   const accessToken = useAccessToken();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (targetClassInstanceId: string): Promise<BookingDetail> => {
+    mutationFn: async (
+      input: string | { targetClassInstanceId: string; expectedUpdatedAt?: string | null },
+    ): Promise<BookingDetail> => {
       if (!accessToken) throw new Error('Missing access token');
+      // A bare id is the older call shape; the object adds the version the sheet opened on (X-F2).
+      const target = typeof input === 'string' ? { targetClassInstanceId: input } : input;
       return apiFetch<BookingDetail>(`/api/venue/bookings/${bookingId}`, {
         accessToken,
         method: 'PATCH',
-        body: JSON.stringify({ target_class_instance_id: targetClassInstanceId }),
+        body: JSON.stringify({
+          target_class_instance_id: target.targetClassInstanceId,
+          ...expectedVersionField('expectedUpdatedAt' in target ? target.expectedUpdatedAt : null),
+        }),
       });
     },
     onSuccess: (data) => {
@@ -324,6 +338,8 @@ export function useMoveResourceBooking(bookingId: string) {
       date: string;
       time: string;
       durationMinutes: number;
+      /** The booking's version when the sheet opened (web QA X-F2). */
+      expectedUpdatedAt?: string | null;
     }): Promise<BookingDetail> => {
       if (!accessToken) throw new Error('Missing access token');
       return apiFetch<BookingDetail>(`/api/venue/bookings/${bookingId}`, {
@@ -333,6 +349,7 @@ export function useMoveResourceBooking(bookingId: string) {
           booking_date: input.date,
           booking_time: `${input.time.slice(0, 5)}:00`,
           duration_minutes: input.durationMinutes,
+          ...expectedVersionField(input.expectedUpdatedAt),
         }),
       });
     },
@@ -447,6 +464,11 @@ export interface ModifyAppointmentInput {
   booking_date: string;
   /** HH:mm:ss */
   booking_time: string;
+  /**
+   * The booking's `updated_at` when the sheet opened (web QA X-F2). The server refuses the save
+   * with 412 `stale_booking` when someone changed the booking since; an older server ignores it.
+   */
+  expected_updated_at?: string;
   /**
    * Target calendar — **send only on a real reassign** (R16-1).
    *

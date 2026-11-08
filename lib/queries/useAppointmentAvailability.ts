@@ -25,8 +25,16 @@ type UseAppointmentAvailabilityParams = {
   durationMinutes?: number | null;
   /** Modify flows: free the booking's own slot so it stays selectable. */
   excludeBookingId?: string | null;
+  /**
+   * A new staff booking's source. `phone` holds the list to the guest's date rules, as the save is
+   * (web QA 2026-11-08 SCH-F15: the list showed times the save then refused). Moves send none.
+   */
+  source?: StaffBookingSource | null;
   enabled?: boolean;
 };
+
+/** How a staff booking was taken, as the create routes and the time lookups take it. */
+export type StaffBookingSource = 'phone' | 'walk-in';
 
 function availabilityPath(params: {
   date: string;
@@ -37,6 +45,7 @@ function availabilityPath(params: {
   addonIds?: string[];
   durationMinutes?: number | null;
   excludeBookingId?: string | null;
+  source?: StaffBookingSource | null;
 }): string {
   const search = new URLSearchParams({
     date: params.date,
@@ -47,6 +56,7 @@ function availabilityPath(params: {
   if (params.variantId) search.set('variant_id', params.variantId);
   if (params.durationMinutes != null) search.set('duration_minutes', String(params.durationMinutes));
   if (params.excludeBookingId) search.set('exclude_booking_id', params.excludeBookingId);
+  if (params.source) search.set('source', params.source);
   for (const id of params.addonIds ?? []) {
     search.append('addon_ids', id);
   }
@@ -68,6 +78,7 @@ export function useAppointmentAvailability({
   addonIds,
   durationMinutes,
   excludeBookingId,
+  source = null,
   enabled = true,
 }: UseAppointmentAvailabilityParams) {
   const accessToken = useAccessToken();
@@ -90,6 +101,7 @@ export function useAppointmentAvailability({
       addonsKey,
       durationMinutes,
       excludeBookingId,
+      source,
     ),
     enabled: queryEnabled,
     queryFn: async (): Promise<AppointmentAvailabilityResponse> => {
@@ -106,6 +118,7 @@ export function useAppointmentAvailability({
           addonIds,
           durationMinutes,
           excludeBookingId,
+          source,
         }),
         { accessToken },
       );
@@ -152,6 +165,7 @@ export function useAnyPractitionerAvailability({
   variantId,
   addonIds,
   durationMinutes,
+  source = null,
   enabled = true,
 }: {
   date: string | null | undefined;
@@ -161,6 +175,8 @@ export function useAnyPractitionerAvailability({
   variantId?: string | null;
   addonIds?: string[];
   durationMinutes?: number | null;
+  /** See {@link UseAppointmentAvailabilityParams.source}. */
+  source?: StaffBookingSource | null;
   enabled?: boolean;
 }) {
   const accessToken = useAccessToken();
@@ -179,6 +195,8 @@ export function useAnyPractitionerAvailability({
         variantId,
         addonsKey,
         durationMinutes,
+        null,
+        source,
       ),
       enabled: baseEnabled,
       queryFn: async (): Promise<AppointmentAvailabilityResponse> => {
@@ -194,6 +212,7 @@ export function useAnyPractitionerAvailability({
             variantId,
             addonIds,
             durationMinutes,
+            source,
           }),
           { accessToken },
         );
@@ -227,6 +246,8 @@ export function useAnyPractitionerAvailability({
     error,
     /** Practitioners whose availability could not be read; 0 when all loaded. */
     unavailableCount,
+    /** Why the date has no times, when a booking rule rules it out (the same for every calendar). */
+    unavailableReason: results.find((r) => r.data?.unavailable_reason)?.data?.unavailable_reason ?? null,
     refetch: () => results.forEach((r) => void r.refetch()),
   };
 }

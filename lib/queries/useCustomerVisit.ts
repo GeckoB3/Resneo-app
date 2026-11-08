@@ -45,6 +45,8 @@ export interface CustomerVisitBusiness {
   address: string | null;
   /** What this business took for its own services, and refunded (6.5); absent from older servers. */
   payments?: { paid_pence: number; refunded_pence: number };
+  /** The currency those payments are in; absent means pounds. */
+  currency?: 'GBP' | 'EUR';
 }
 
 export interface CustomerVisitActionState {

@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ComplianceWarningNotice } from '@/components/compliance/ComplianceWarningNotice';
+import { StaffPaymentLinkLines } from '@/components/booking-wizard/StaffPaymentLinkLines';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Segmented } from '@/components/ui/Segmented';
@@ -11,7 +12,6 @@ import { PressableScale } from '@/components/ui/PressableScale';
 import { ApiError } from '@/lib/api/client';
 import { accessRefusalMessage } from '@/lib/roles/roles';
 import {
-  STAFF_CARD_HOLD_LINK_SENT_LINE,
   STAFF_CARD_HOLD_TOGGLE_LABEL,
   staffCardHoldToggleSublabel,
   resolveStaffEntityCardHold,
@@ -188,6 +188,10 @@ interface Confirmation {
   /** Card hold requested at create (§7.6): shows the card-request notice. */
   card_hold_requested?: boolean;
   card_hold_fee_pence?: number | null;
+  /** False when the client has no email or phone, so the link was not sent (web QA BKG-A-F9). */
+  payment_link_sent?: boolean;
+  /** A walk-in: booked straight away, never cancelled for a missing card (web QA BKG-A-F9). */
+  walk_in?: boolean;
   compliance_warnings?: ComplianceBookingWarning[];
 }
 
@@ -269,6 +273,8 @@ export function BookingFlowConfirm({
           // a `payment_url` is the deposit request, as the web's card reads it.
           card_hold_requested: response.card_hold_requested,
           card_hold_fee_pence: staffCardHold?.feePence ?? null,
+          payment_link_sent: response.payment_link_sent,
+          walk_in: source === 'walk-in',
           compliance_warnings: response.compliance_warnings,
         });
       },
@@ -331,14 +337,12 @@ export function BookingFlowConfirm({
                   ? ` · ${staffCardHoldFeeLine(confirmation.card_hold_fee_pence).toLowerCase()}`
                   : ''}
               </Text>
-              <Text variant="caption" tone="muted">
-                {STAFF_CARD_HOLD_LINK_SENT_LINE} No payment is taken.
-              </Text>
-              {confirmation.payment_url ? (
-                <Text variant="caption" tone="muted">
-                  If card details are not added within 24 hours, the booking will be auto-cancelled.
-                </Text>
-              ) : null}
+              <StaffPaymentLinkLines
+                cardHold
+                paymentUrl={confirmation.payment_url}
+                linkSent={confirmation.payment_link_sent}
+                walkIn={Boolean(confirmation.walk_in)}
+              />
             </View>
           ) : confirmation.payment_url ||
             (confirmation.requires_deposit &&
@@ -351,14 +355,12 @@ export function BookingFlowConfirm({
                   : 'Deposit requested'}
               </Text>
               {confirmation.payment_url ? (
-                <>
-                  <Text variant="caption" tone="muted">
-                    A deposit payment link has been sent to the guest.
-                  </Text>
-                  <Text variant="caption" tone="muted">
-                    If deposit is not paid within 24 hours, the booking will be auto-cancelled.
-                  </Text>
-                </>
+                <StaffPaymentLinkLines
+                  cardHold={false}
+                  paymentUrl={confirmation.payment_url}
+                  linkSent={confirmation.payment_link_sent}
+                  walkIn={Boolean(confirmation.walk_in)}
+                />
               ) : null}
             </View>
           ) : null}
@@ -447,7 +449,7 @@ export function BookingFlowConfirm({
         <Pressable
           accessibilityRole="checkbox"
           accessibilityState={{ checked: requireCardHold }}
-          accessibilityLabel={`${STAFF_CARD_HOLD_TOGGLE_LABEL}. ${staffCardHoldToggleSublabel(requireCardHold)}`}
+          accessibilityLabel={`${STAFF_CARD_HOLD_TOGGLE_LABEL}. ${staffCardHoldToggleSublabel(requireCardHold, source === 'walk-in')}`}
           onPress={() => setRequireCardHold((prev) => !prev)}
           style={({ pressed }) => [
             styles.depositToggle,
@@ -472,7 +474,7 @@ export function BookingFlowConfirm({
           <View style={styles.depositToggleLabel}>
             <Text variant="bodyMedium">{STAFF_CARD_HOLD_TOGGLE_LABEL}</Text>
             <Text variant="caption" tone="muted">
-              {staffCardHoldToggleSublabel(requireCardHold)}
+              {staffCardHoldToggleSublabel(requireCardHold, source === 'walk-in')}
             </Text>
           </View>
         </Pressable>

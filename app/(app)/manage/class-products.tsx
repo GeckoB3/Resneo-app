@@ -313,7 +313,7 @@ export default function ClassProductsScreen() {
             />
             <Stat
               label="Class checkout (30 days)"
-              value={formatPence(reportsQuery.data.checkout_amount_pence_30d) ?? '£0.00'}
+              value={formatPence(reportsQuery.data.checkout_amount_pence_30d) ?? ''}
             />
           </View>
         ) : null}

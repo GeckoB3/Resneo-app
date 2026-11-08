@@ -46,6 +46,10 @@ const takePaymentDefault = async (_input: {
   amountPence?: number;
   readerType?: string;
   onCardRead?: () => void;
+  confirmLargeCharge?: (info: {
+    amountPence: number;
+    card: { brand: string | null; last4: string | null } | null;
+  }) => Promise<boolean>;
 }): Promise<{
   amountPence: number;
   paymentIntentId?: string;
@@ -178,6 +182,7 @@ jest.mock('@/lib/payments/card-outcome-notification', () => ({
 }));
 
 import { TakePaymentSheet, type TakePaymentTarget } from '@/components/bookings/TakePaymentSheet';
+import { ChargeNotConfirmedError } from '@/lib/payments/card-outcome';
 import { CONFIRM_ARM_MS } from '@/lib/ui/confirm-arm';
 import {
   recordFailedCardAttempt,
@@ -628,6 +633,80 @@ describe('card collection', () => {
     await press('Retry');
 
     expect(mockTakePayment).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * Web PAY-A-F19 (owner, 2026-11-08): a blank amount charges the whole balance with no cap, so above
+ * 1,000 the sheet asks once the card is read: "Charge £1,240.00 to the card ending 4242?".
+ */
+describe('a whole balance above the cap', () => {
+  /** Stands in for the hook: reads the card, asks, then charges or stops as told. */
+  function askAndCharge(answers: boolean[]) {
+    mockTakePayment.mockImplementation(async (input) => {
+      const go = await input.confirmLargeCharge!({
+        amountPence: 124_000,
+        card: { brand: 'visa', last4: '4242' },
+      });
+      answers.push(go);
+      if (!go) throw new ChargeNotConfirmedError();
+      input.onCardRead?.();
+      return { amountPence: 124_000 };
+    });
+  }
+
+  it('asks with the amount and the card before charging, and charges on yes', async () => {
+    const answers: boolean[] = [];
+    askAndCharge(answers);
+    await render(
+      <TakePaymentSheet target={target({ balanceDuePence: 124_000 })} onClose={jest.fn()} />,
+    );
+    await press('Card payment');
+    await press('Tap to Pay on iPhone');
+
+    // The whole balance: no amount is sent, and the question waits for an answer.
+    expect(mockTakePayment.mock.calls[0][0].amountPence).toBeUndefined();
+    expect(screen.getByText('Charge £1,240.00 to the card ending 4242?')).toBeTruthy();
+    expect(screen.getByText('Not now')).toBeTruthy();
+    expect(answers).toEqual([]);
+
+    await press('Charge £1,240.00');
+
+    expect(answers).toEqual([true]);
+    expect(screen.getByText('£1,240.00 collected')).toBeTruthy();
+  });
+
+  it('takes nothing on "Not now", and says so without an error', async () => {
+    const answers: boolean[] = [];
+    askAndCharge(answers);
+    await render(
+      <TakePaymentSheet target={target({ balanceDuePence: 124_000 })} onClose={jest.fn()} />,
+    );
+    await press('Card payment');
+    await press('Tap to Pay on iPhone');
+    await press('Not now');
+
+    expect(answers).toEqual([false]);
+    expect(screen.getByText('Nothing was charged.')).toBeTruthy();
+    expect(screen.queryByText('Payment not completed')).toBeNull();
+    expect(screen.queryByText(/collected/)).toBeNull();
+    // Back on the collect buttons, ready to try again.
+    expect(screen.getByText('Tap to Pay on iPhone')).toBeTruthy();
+  });
+
+  it('answers "no" for staff who leave the sheet while it is asking', async () => {
+    const answers: boolean[] = [];
+    askAndCharge(answers);
+    const view = await render(
+      <TakePaymentSheet target={target({ balanceDuePence: 124_000 })} onClose={jest.fn()} />,
+    );
+    await press('Card payment');
+    await press('Tap to Pay on iPhone');
+    await act(async () => {
+      view.unmount();
+    });
+
+    expect(answers).toEqual([false]);
   });
 });
 

@@ -76,6 +76,23 @@ export function extractPushRoute(
     return { kind: 'posOrder', orderId, venueId: firstString([data['venue_id']]) };
   }
 
+  /*
+    Staff "Billing & account" (web QA 2026-11-08 COM-F9): `{ type: 'billing_payment_failed' |
+    'billing_plan_ended', venue_id, venue_name }`. The push says to update the card or resubscribe
+    under Plan, so the tap opens that site's plan screen.
+  */
+  if (data['type'] === 'billing_payment_failed' || data['type'] === 'billing_plan_ended') {
+    return { kind: 'plan', venueId: firstString([data['venue_id']]) };
+  }
+
+  /*
+    Staff "Daily summary" (COM-F9): `{ type: 'daily_summary', venue_id, venue_name, date }`, the
+    morning count of the day's bookings. The tap opens that site's Today screen.
+  */
+  if (data['type'] === 'daily_summary') {
+    return { kind: 'today', venueId: firstString([data['venue_id']]) };
+  }
+
   if (data['type'] === 'waitlist_offer') {
     const url = firstString([data['url']]);
     if (url && isSafeHttpsUrl(url)) return { kind: 'url', url };

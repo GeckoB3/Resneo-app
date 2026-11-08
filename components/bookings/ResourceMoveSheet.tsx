@@ -15,6 +15,8 @@ import { formatDurationMinutes } from '@/lib/format';
 import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useResourceOptions } from '@/lib/queries/useBookableOfferings';
 import { useMoveResourceBooking } from '@/lib/queries/useBookingMutations';
+import { isStaleBookingError } from '@/lib/booking/stale-booking';
+import { StaleBookingNotice } from '@/components/bookings/StaleBookingNotice';
 import { useStaffResourceDay, useStaffResourceMonth } from '@/lib/queries/useBookingMoveOptions';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
@@ -30,6 +32,8 @@ export type ResourceMoveTarget = {
   date: string;
   time: string;
   durationMinutes: number | null;
+  /** The booking's `updated_at` when the sheet opened; the move sends it back (web QA X-F2). */
+  updatedAt?: string | null;
 };
 
 /**
@@ -61,11 +65,14 @@ export function ResourceMoveSheet({
   const [monthAnchor, setMonthAnchor] = useState<string>(today);
   const [time, setTime] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** The move was refused because someone else changed the booking since the sheet opened (X-F2). */
+  const [staleBooking, setStaleBooking] = useState(false);
 
   // Seed from the booking each time a different one opens (render-time reset,
   // no effect, so the first paint is already right).
   if (target && seededFor !== target.bookingId) {
     setSeededFor(target.bookingId);
+    setStaleBooking(false);
     setMode('form');
     setDuration(target.durationMinutes);
     setDate(target.date);
@@ -136,12 +143,21 @@ export function ResourceMoveSheet({
     if (!canSave || !date || !time || !duration) return;
     setError(null);
     try {
-      await move.mutateAsync({ date, time, durationMinutes: duration });
+      await move.mutateAsync({
+        date,
+        time,
+        durationMinutes: duration,
+        expectedUpdatedAt: target?.updatedAt ?? null,
+      });
       hapticSuccess();
       toast.success('Booking moved.');
       close();
     } catch (e) {
       hapticWarning();
+      if (isStaleBookingError(e)) {
+        setStaleBooking(true);
+        return;
+      }
       setError(e instanceof ApiError ? e.message : 'Could not move the booking.');
     }
   }
@@ -263,6 +279,7 @@ export function ResourceMoveSheet({
             )}
           </ScrollView>
 
+          {staleBooking ? <StaleBookingNotice bookingId={target?.bookingId} onRefreshed={close} /> : null}
           {error ? (
             <Text variant="bodySmall" color={colors.danger}>
               {error}

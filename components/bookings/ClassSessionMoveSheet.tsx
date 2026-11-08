@@ -11,6 +11,8 @@ import { ApiError } from '@/lib/api/client';
 import { calendarDateInTimeZone, formatDayHeading } from '@/lib/dates/venue-dates';
 import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useMoveClassBooking } from '@/lib/queries/useBookingMutations';
+import { isStaleBookingError } from '@/lib/booking/stale-booking';
+import { StaleBookingNotice } from '@/components/bookings/StaleBookingNotice';
 import { useStaffClassSessions } from '@/lib/queries/useBookingMoveOptions';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
@@ -25,6 +27,8 @@ export type ClassMoveTarget = {
   partySize: number;
   /** A linked venue's booking: its sessions are read from that venue. */
   ownerVenueId?: string | null;
+  /** The booking's `updated_at` when the sheet opened; the move sends it back (web QA X-F2). */
+  updatedAt?: string | null;
 };
 
 /**
@@ -54,6 +58,8 @@ export function ClassSessionMoveSheet({
   const move = useMoveClassBooking(target?.bookingId ?? '');
   const [chosen, setChosen] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** The move was refused because someone else changed the booking since the sheet opened (X-F2). */
+  const [staleBooking, setStaleBooking] = useState(false);
 
   const instances = sessions.data?.instances;
   const current = useMemo(
@@ -92,6 +98,7 @@ export function ClassSessionMoveSheet({
   const close = () => {
     setChosen(null);
     setError(null);
+    setStaleBooking(false);
     onClose();
   };
 
@@ -99,12 +106,19 @@ export function ClassSessionMoveSheet({
     if (!chosen || !target) return;
     setError(null);
     try {
-      await move.mutateAsync(chosen);
+      // The version the sheet opened on goes with the move when it is known (X-F2).
+      await move.mutateAsync(
+        target.updatedAt ? { targetClassInstanceId: chosen, expectedUpdatedAt: target.updatedAt } : chosen,
+      );
       hapticSuccess();
       toast.success('Booking moved to the new session.');
       close();
     } catch (e) {
       hapticWarning();
+      if (isStaleBookingError(e)) {
+        setStaleBooking(true);
+        return;
+      }
       setError(e instanceof ApiError ? e.message : 'Could not move the booking.');
     }
   }
@@ -184,6 +198,7 @@ export function ClassSessionMoveSheet({
           </ScrollView>
         )}
 
+        {staleBooking ? <StaleBookingNotice bookingId={target?.bookingId} onRefreshed={close} /> : null}
         {error ? (
           <Text variant="bodySmall" color={colors.danger}>
             {error}

@@ -47,6 +47,7 @@ import { ApiError, apiFetch } from '@/lib/api/client';
 import { clientsScreenTitle } from '@/lib/booking/terminology';
 import { hiddenByIdentityScopeCopy } from '@/lib/guests/identity-scope';
 import { csvCellQuoted } from '@/lib/csv/csv-cell';
+import { currencySymbol } from '@/lib/format';
 import { formatPhoneForDisplay } from '@/lib/phone/e164';
 import { buildAndShareCsv } from '@/lib/reports/csv-export';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
@@ -701,7 +702,7 @@ export default function ClientsScreen() {
         'Total bookings',
         'Upcoming',
         'Cancelled',
-        'Paid deposits (£)',
+        `Paid deposits (${currencySymbol()})`,
         'Marketing consent',
         'Marketing opt-out',
         ...activeFields.map((f) => `CF: ${f.field_name}`),

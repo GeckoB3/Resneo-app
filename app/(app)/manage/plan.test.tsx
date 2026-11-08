@@ -28,6 +28,7 @@ jest.mock('@/providers/VenueProvider', () => ({
 }));
 
 const mockUseBillingStatus = jest.fn();
+let mockBillingData: Record<string, unknown> | null = null;
 const mockPortal = jest.fn();
 const mockConnectMutate = jest.fn();
 const mockRefetchStripe = jest.fn();
@@ -39,7 +40,9 @@ jest.mock('@/lib/queries/useBillingStatus', () => {
     useBillingStatus: (enabled: boolean) => {
       mockUseBillingStatus(enabled);
       return {
-        data: enabled ? { plan_status: 'active', pricing_tier: 'plus', stripe_subscription_id: 'sub_1' } : undefined,
+        data: enabled
+          ? (mockBillingData ?? { plan_status: 'active', pricing_tier: 'plus', stripe_subscription_id: 'sub_1' })
+          : undefined,
         isLoading: false,
         isError: false,
         refetch: jest.fn(),
@@ -88,6 +91,7 @@ const BASE = {
 };
 
 beforeEach(() => {
+  mockBillingData = null;
   mockUseBillingStatus.mockClear();
   mockDeleteSheet.mockClear();
   mockPortal.mockClear();
@@ -194,5 +198,50 @@ describe('connecting Stripe from the app (owner, 2026-10-22)', () => {
     );
     expect(mockRefetchStripe).toHaveBeenCalled();
     expect(screen.getByText('That link to Stripe expired. Tap the button again to get a new one.')).toBeTruthy();
+  });
+});
+
+/**
+ * QA 2026-11-08 ACC-F3 (web parity): Light 2's plan is stored "cancelling" with a period that ended
+ * on 13 August. The plan screen read "You keep access to your current plan until 13 Aug 2026" with
+ * Keep my plan. A cancellation whose paid period has ended now reads as ended.
+ */
+describe('a cancellation whose paid period has ended', () => {
+  const OWNER = {
+    ...BASE,
+    current_user_role: 'admin',
+    current_user_role_key: 'owner',
+    current_user_is_owner: true,
+    current_user_permissions: {},
+    current_user_billing_payouts_admins: true,
+  };
+
+  it('reads as ended, with Resubscribe, not "keep access until" and Keep my plan', async () => {
+    mockVenue = OWNER;
+    mockBillingData = {
+      plan_status: 'cancelling',
+      pricing_tier: 'light',
+      stripe_subscription_id: 'sub_1',
+      subscription_current_period_end: '2026-08-13T10:00:00.000Z',
+    };
+    await render(<PlanScreen />);
+    expect(screen.getByText('Your subscription has ended')).toBeTruthy();
+    expect(screen.getByText('Resubscribe')).toBeTruthy();
+    expect(screen.queryByText('Keep my plan')).toBeNull();
+    expect(screen.queryByText(/You keep access to your current plan/)).toBeNull();
+    expect(screen.queryByText('Change plan section')).toBeNull();
+  });
+
+  it('a cancellation with time left still offers Keep my plan', async () => {
+    mockVenue = OWNER;
+    mockBillingData = {
+      plan_status: 'cancelling',
+      pricing_tier: 'light',
+      stripe_subscription_id: 'sub_1',
+      subscription_current_period_end: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+    };
+    await render(<PlanScreen />);
+    expect(screen.getByText('Keep my plan')).toBeTruthy();
+    expect(screen.queryByText('Your subscription has ended')).toBeNull();
   });
 });

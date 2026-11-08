@@ -18,6 +18,8 @@ function pushVenueId(route: PendingPushRoute): string | null {
     case 'posTill':
     case 'posOrder':
     case 'posOrders':
+    case 'plan':
+    case 'today':
       return route.venueId ?? null;
     default:
       return null;
@@ -73,6 +75,18 @@ export function PendingPushRouteHandler(): null {
         // A new online order (POS app step 5) opens the order; the screen checks the venue.
         const venue = route.venueId ? `?venue=${encodeURIComponent(route.venueId)}` : '';
         router.push((route.kind === 'posOrder' ? `/orders/${route.orderId}${venue}` : '/orders') as Href);
+        return;
+      }
+
+      if (route.kind === 'plan') {
+        // A failed ResNeo payment or an ended plan (COM-F9): the plan screen is where it is fixed.
+        router.push('/manage/plan' as Href);
+        return;
+      }
+
+      if (route.kind === 'today') {
+        // The morning summary of the day's bookings (COM-F9).
+        router.push('/today' as Href);
         return;
       }
 

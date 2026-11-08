@@ -22,8 +22,11 @@ export type MessageDef = {
   label: string;
   description: string;
   allowedChannels: MessageChannel[];
-  /** Timing-controlled messages: hours before start / after end. */
-  timing?: { field: 'hoursBefore' | 'hoursAfter'; label: string; default: number };
+  /**
+   * Timing-controlled messages: hours before start / after end. `max` caps the stepper below a
+   * week (the deposit reminder, read as hours after the booking is made, stops at 23).
+   */
+  timing?: { field: 'hoursBefore' | 'hoursAfter'; label: string; default: number; max?: number };
   defaultEnabled: boolean;
   defaultChannels: MessageChannel[];
   /**
@@ -82,9 +85,12 @@ export const MESSAGE_DEFS: MessageDef[] = [
   {
     key: 'deposit_payment_reminder',
     label: 'Deposit payment reminder',
-    description: 'Reminder for unpaid deposit bookings before they are released',
+    description:
+      'Reminds the client to pay when a deposit on a phone booking is still unpaid. Unpaid bookings are released 24 hours after they are made',
     allowedChannels: ['email', 'sms'],
-    timing: { field: 'hoursBefore', label: 'before release', default: 2 },
+    // Web QA 2026-11-08 COM-F6: the job reads these hours (stored as `hoursBefore`) as hours
+    // after the booking is made, at most 23, so the reminder always goes before the release.
+    timing: { field: 'hoursBefore', label: 'after booking', default: 2, max: 23 },
     defaultEnabled: true,
     // Email as well as SMS. SMS is stripped for venues without the entitlement
     // (web's `isSmsAllowed` in policy-resolver), so an SMS-only default left those

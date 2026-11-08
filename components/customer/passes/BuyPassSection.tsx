@@ -16,6 +16,8 @@ export interface BuyableProduct {
   venue_id: string;
   /** Absent for a membership, whose recurring price lives in Stripe. */
   price_pence?: number | null;
+  /** The currency the venue charges in; absent means pounds. */
+  currency?: string | null;
 }
 
 type Props = {
@@ -100,7 +102,7 @@ export function BuyPassSection({ heading, kind, products, venues, note }: Props)
 
 /** Names the price when there is one, and does not pretend otherwise. */
 function buyLabel(product: BuyableProduct): string {
-  return product.price_pence ? `Buy for ${formatPence(product.price_pence)}` : 'Buy';
+  return product.price_pence ? `Buy for ${formatPence(product.price_pence, product.currency ?? 'GBP')}` : 'Buy';
 }
 
 const styles = StyleSheet.create({

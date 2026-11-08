@@ -5,6 +5,8 @@ import { Avatar } from '@/components/ui/Avatar';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { DOES_NOT_USUALLY_OFFER } from '@/lib/booking/availability-override';
+import { groupedByBusiness, practitionerBusinessLine } from '@/lib/booking/collective-business-line';
+import { formatPence } from '@/lib/format';
 import { hapticSelect } from '@/lib/haptics';
 import { spacing } from '@/theme/index';
 import {
@@ -77,12 +79,16 @@ type PractitionerRow = {
   durationMinutes: number | null;
   /** Override catalogue only: false when this person is not assigned the service. */
   assigned?: boolean;
+  /** On a collective: the business this person works for (DEVICE-F4). */
+  business?: string | null;
+  /** On a collective: that business's id, to keep its team together. */
+  businessId?: string | null;
   option: AppointmentServiceOption;
 };
 
 function formatPrice(row: Pick<PractitionerRow, 'pricePence' | 'priceIsFrom'>): string | null {
   if (row.pricePence == null) return null;
-  const amount = `£${(row.pricePence / 100).toFixed(2)}`;
+  const amount = formatPence(row.pricePence) ?? '';
   // Lower case, as the service step writes its "from" prices.
   return row.priceIsFrom ? `from ${amount}` : amount;
 }
@@ -178,6 +184,8 @@ export function PractitionerStep({
         // A visit's length depends on its buffers and processing: the times step says it.
         durationMinutes: null,
         assigned: service.assigned,
+        business: practitionerBusinessLine(practitioner),
+        businessId: practitioner.owning_venue_id ?? null,
         option,
       });
       continue;
@@ -190,9 +198,19 @@ export function PractitionerStep({
       priceIsFrom: optionFrom != null,
       durationMinutes: service.duration_minutes,
       assigned: service.assigned,
+      business: practitionerBusinessLine(practitioner),
+      businessId: practitioner.owning_venue_id ?? null,
       option,
     });
   }
+  // On a collective each business's team reads together, "Any available" staying first.
+  const listed = [
+    ...rows.filter((r) => r.isAnyAvailable),
+    ...groupedByBusiness(
+      rows.filter((r) => !r.isAnyAvailable),
+      (r) => r.businessId,
+    ),
+  ];
 
   return (
     <View style={styles.container}>
@@ -202,7 +220,7 @@ export function PractitionerStep({
       </Text>
 
       <FlatList
-        data={rows}
+        data={listed}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
         ItemSeparatorComponent={Separator}
@@ -219,10 +237,15 @@ export function PractitionerStep({
               <View
                 style={styles.row}
                 accessibilityRole="button"
-                accessibilityLabel={`${item.name}${caption ? `, ${caption}` : ''}`}>
+                accessibilityLabel={`${item.name}${item.business ? `, ${item.business}` : ''}${caption ? `, ${caption}` : ''}`}>
                 <Avatar name={item.isAnyAvailable ? '?' : item.name} size={36} />
                 <View style={styles.rowText}>
                   <Text variant="bodyMedium">{item.name}</Text>
+                  {item.business ? (
+                    <Text variant="caption" tone="secondary" testID={`practitioner-business-${item.id}`}>
+                      {item.business}
+                    </Text>
+                  ) : null}
                   {caption ? (
                     <Text variant="caption" tone="muted">
                       {caption}

@@ -1,10 +1,41 @@
 import {
+  currencySymbol,
   formatDurationMinutes,
   formatPence,
   formatPositivePence,
+  getActiveVenueCurrency,
   parsePoundsToPence,
   penceToPoundsInput,
+  setActiveVenueCurrency,
 } from '@/lib/format';
+
+/** QA 2026-11-08 DEVICE-F13: the app showed pounds to euro businesses and their clients. */
+describe('money in the business currency', () => {
+  afterEach(() => setActiveVenueCurrency(null));
+
+  it('formats in the currency named, any case', () => {
+    expect(formatPence(1250, 'EUR')).toBe('€12.50');
+    expect(formatPence(1250, 'eur')).toBe('€12.50');
+    expect(formatPence(1250, 'GBP')).toBe('£12.50');
+    expect(formatPositivePence(500, 'EUR')).toBe('€5.00');
+  });
+
+  it("follows the signed-in business's currency when none is named", () => {
+    setActiveVenueCurrency('EUR');
+    expect(getActiveVenueCurrency()).toBe('EUR');
+    expect(formatPence(1250)).toBe('€12.50');
+    expect(currencySymbol()).toBe('€');
+    // A named currency still wins (a client's booking at another business).
+    expect(formatPence(1250, 'GBP')).toBe('£12.50');
+    setActiveVenueCurrency(null);
+    expect(formatPence(1250)).toBe('£12.50');
+    expect(currencySymbol()).toBe('£');
+  });
+
+  it('parses a typed euro amount', () => {
+    expect(parsePoundsToPence('€12.50')).toBe(1250);
+  });
+});
 
 describe('formatPence', () => {
   it('formats pence as GBP currency', () => {

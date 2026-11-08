@@ -4,6 +4,7 @@ import { Badge, StatusPill } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
+import { formatPence } from '@/lib/format';
 import type { ResourceDayBookingRow, ResourceListItem } from '@/lib/queries/useResources';
 import { minTouchTarget, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -31,7 +32,7 @@ function depositLabel(row: ResourceDayBookingRow): string | null {
   if (row.deposit_status === 'Charged') return 'No-show fee charged';
   const amount =
     row.deposit_amount_pence != null && row.deposit_amount_pence > 0
-      ? ` £${(row.deposit_amount_pence / 100).toFixed(2)}`
+      ? ` ${formatPence(row.deposit_amount_pence) ?? ''}`
       : '';
   return `Deposit${amount} · ${row.deposit_status}`;
 }

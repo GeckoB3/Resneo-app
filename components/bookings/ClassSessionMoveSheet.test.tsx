@@ -50,15 +50,21 @@ jest.mock('@/lib/queries/useBookingMoveOptions', () => ({
   }),
 }));
 const mockMove = jest.fn();
+const mockInvalidate = jest.fn();
 jest.mock('@/lib/queries/useBookingMutations', () => ({
   useMoveClassBooking: () => ({ mutateAsync: mockMove, isPending: false }),
+  invalidateBookingCaches: (...args: unknown[]) => mockInvalidate(...args),
 }));
+jest.mock('@/lib/queries/useAccessToken', () => ({ useAccessToken: () => 'token' }));
+
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { ClassSessionMoveSheet } from '@/components/bookings/ClassSessionMoveSheet';
 
 const TARGET = { bookingId: 'bk-1', guestName: 'Combined Tester', classInstanceId: 'cur', partySize: 2 };
 
 beforeEach(() => {
+  mockInvalidate.mockReset();
   mockMove.mockReset();
   mockMove.mockResolvedValue({});
   mockInstances = [
@@ -102,5 +108,42 @@ describe('ClassSessionMoveSheet', () => {
       fireEvent.press(screen.getByText('Move booking'));
     });
     expect(screen.getByText('That session just filled.')).toBeTruthy();
+  });
+
+  // Web QA X-F2: a sheet opened before a colleague's change must not quietly undo it.
+  it('sends the version the sheet opened on with the move', async () => {
+    await render(
+      <ClassSessionMoveSheet target={{ ...TARGET, updatedAt: '2026-11-08T10:00:00+00:00' }} onClose={jest.fn()} />,
+    );
+    await act(async () => {
+      fireEvent.press(screen.getByText(/09:00 · 10 of 10 places left/));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByText('Move booking'));
+    });
+    expect(mockMove).toHaveBeenCalledWith({ targetClassInstanceId: 'next', expectedUpdatedAt: '2026-11-08T10:00:00+00:00' });
+  });
+
+  it('on a stale_booking refusal says someone else changed it, and Refresh reloads and closes', async () => {
+    const { ApiError } = jest.requireActual('@/lib/api/client');
+    mockMove.mockRejectedValue(new ApiError('Someone changed this booking.', 412, { error: 'x', code: 'stale_booking' }));
+    const onClose = jest.fn();
+    await render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ClassSessionMoveSheet target={{ ...TARGET, updatedAt: 'v1' }} onClose={onClose} />
+      </QueryClientProvider>,
+    );
+    await act(async () => {
+      fireEvent.press(screen.getByText(/09:00 · 10 of 10 places left/));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByText('Move booking'));
+    });
+    expect(screen.getByText('Someone else changed this booking. Refresh to see their change, then try again.')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Refresh'));
+    });
+    expect(mockInvalidate).toHaveBeenCalledWith(expect.anything(), 'token', 'bk-1');
+    expect(onClose).toHaveBeenCalled();
   });
 });

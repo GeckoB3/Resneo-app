@@ -5,7 +5,7 @@ import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { formatDayHeading } from '@/lib/dates/venue-dates';
 import { formatPence } from '@/lib/format';
-import type { CustomerHome, CustomerVenueHistory } from '@/lib/queries/useCustomerHome';
+import { venueCurrencyFor, type CustomerHome, type CustomerVenueHistory } from '@/lib/queries/useCustomerHome';
 import { spacing } from '@/theme/index';
 
 type Props = { home: CustomerHome };
@@ -51,7 +51,7 @@ export function VenueHistorySection({ home }: Props) {
               somebody who paid in full that ResNeo had lost most of it.
             */
             <Text variant="caption" tone="muted">
-              {formatPence(entry.deposits_paid_minor)} in deposits paid
+              {formatPence(entry.deposits_paid_minor, venueCurrencyFor(home, entry.venue.id))} in deposits paid
             </Text>
           ) : null}
 

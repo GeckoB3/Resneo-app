@@ -21,6 +21,7 @@ import { registerCurrentDeviceForPush } from '@/lib/push/registerDevice';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { usePosEnabled } from '@/lib/queries/usePos';
 import { useVenue } from '@/lib/queries/useVenue';
+import { venueBillingPayoutsAdmins } from '@/lib/roles/roles';
 import {
   useNotificationPreferences,
   useUpdateNotificationPreferences,
@@ -42,19 +43,36 @@ const BOOKING_ROWS: ToggleRowConfig[] = [
   { key: 'new_booking', label: 'New bookings', description: 'When a booking is made online or by your team' },
   { key: 'cancellation', label: 'Cancellations', description: 'When a guest or staff member cancels' },
   { key: 'reschedule', label: 'Reschedules & changes', description: 'When a booking moves or is edited' },
-  { key: 'payment', label: 'Payments & deposits', description: 'Deposits paid, or a payment that failed' },
+  {
+    key: 'payment',
+    label: 'Unpaid deposits',
+    description: 'When a booking is cancelled because its deposit was not paid. These still come in quiet hours',
+  },
 ];
 
+/*
+ * Only switches something actually sends (web QA 2026-11-08 COM-F9). "Waitlist offers", "Reviews &
+ * feedback" and "Low SMS credit" are still hidden: nothing sends them. Their keys stay in the saved
+ * preferences, untouched. "Daily summary" and "Billing & account" have senders on the web since the
+ * owner's decision of 8 November 2026.
+ */
 const OPS_ROWS: ToggleRowConfig[] = [
   { key: 'no_show', label: 'No-show prompts', description: 'When a guest is overdue to arrive' },
-  { key: 'waitlist', label: 'Waitlist offers', description: 'When a slot opens for a waiting guest' },
-  { key: 'daily_summary', label: 'Daily summary', description: 'A morning rundown of the day’s bookings' },
+  {
+    key: 'daily_summary',
+    label: 'Daily summary',
+    description:
+      'Each morning, how many bookings you have today and when the first starts. Sent at 7:30am, or when your quiet hours end if they run past then',
+  },
 ];
 
+/** Only for the owner and admins with "Billing, payouts and admins": nobody else is sent it. */
 const ACCOUNT_ROWS: ToggleRowConfig[] = [
-  { key: 'review', label: 'Reviews & feedback', description: 'When a guest leaves a review' },
-  { key: 'low_sms_credit', label: 'Low SMS credit', description: 'Before your guest text reminders run out' },
-  { key: 'billing', label: 'Billing & account', description: 'Payment failures and subscription notices' },
+  {
+    key: 'billing',
+    label: 'Billing & account',
+    description: 'When a ResNeo payment fails or your plan ends. These still come in quiet hours',
+  },
 ];
 
 /** "9:00pm" from an HH:mm string. */
@@ -175,6 +193,7 @@ export default function NotificationPreferencesScreen() {
   const posEnabled = usePosEnabled();
   const venue = useVenue();
   const posRows = posPushRows({ shopEnabled: isShopEnabled(venue.data) });
+  const managesBilling = venueBillingPayoutsAdmins(venue.data);
   const updatePrefs = useUpdateNotificationPreferences();
 
   // Init synchronously so the effect never sets state on the unsupported path
@@ -342,10 +361,12 @@ export default function NotificationPreferencesScreen() {
             {renderToggleCard(OPS_ROWS)}
           </View>
 
-          <View style={styles.section}>
-            <SectionHeader title="Account" />
-            {renderToggleCard(ACCOUNT_ROWS)}
-          </View>
+          {managesBilling ? (
+            <View style={styles.section}>
+              <SectionHeader title="Account" />
+              {renderToggleCard(ACCOUNT_ROWS)}
+            </View>
+          ) : null}
 
           {posEnabled ? (
             <View style={styles.section}>
@@ -376,7 +397,7 @@ export default function NotificationPreferencesScreen() {
             <Card padded={false}>
               <ToggleRow
                 label="Pause overnight"
-                description={`Mute non-urgent alerts ${format12h(prefs.quiet_hours_start)}–${format12h(prefs.quiet_hours_end)}`}
+                description={`Mute alerts ${format12h(prefs.quiet_hours_start)}–${format12h(prefs.quiet_hours_end)}. ${managesBilling ? 'Unpaid deposit and billing alerts' : 'Unpaid deposit alerts'} still come through`}
                 value={prefs.quiet_hours_enabled}
                 isLast
                 onValueChange={(next) => toggle('quiet_hours_enabled', next)}

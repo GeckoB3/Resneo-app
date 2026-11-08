@@ -26,9 +26,19 @@ jest.mock('@/components/manage/OpeningHoursEditor', () => {
     }) => {
       mockSeededDrafts.push(value);
       return (
-        <Pressable onPress={() => onChange({ '1': { closed: true } })}>
-          <Text>edit-hours</Text>
-        </Pressable>
+        <>
+          <Pressable onPress={() => onChange({ ...value, '1': { periods: [{ open: '10:00', close: '17:00' }] } })}>
+            <Text>edit-hours</Text>
+          </Pressable>
+          {/* Every day unticked (QA SCH-F4). */}
+          <Pressable
+            onPress={() =>
+              onChange(Object.fromEntries(['0', '1', '2', '3', '4', '5', '6'].map((k) => [k, { closed: true }])))
+            }
+          >
+            <Text>close-all</Text>
+          </Pressable>
+        </>
       );
     },
   };
@@ -145,5 +155,35 @@ describe('Business hours — Save anyway? (409)', () => {
     await press(() => screen.getByText('Save anyway'));
     expect(mockUpdateMutateAsync).toHaveBeenCalledTimes(2);
     expect(mockUpdateMutateAsync.mock.calls[1][0].acknowledge).toBe(true);
+  });
+});
+
+describe('Business hours — closing every day (QA SCH-F4)', () => {
+  it('asks "Close every day?" before saving a week with no open day, and saves nothing on cancel', async () => {
+    mockUpdateMutateAsync.mockResolvedValue({ opening_hours: {} });
+    await render(<BusinessHoursScreen />);
+    await press(() => screen.getByText('close-all'));
+    await press(() => screen.getByText('Save opening hours'));
+    expect(screen.getByText('Close every day?')).toBeTruthy();
+    expect(mockUpdateMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('saves once confirmed, and says the business is now closed every day', async () => {
+    mockUpdateMutateAsync.mockResolvedValue({ opening_hours: {} });
+    await render(<BusinessHoursScreen />);
+    await press(() => screen.getByText('close-all'));
+    await press(() => screen.getByText('Save opening hours'));
+    await press(() => screen.getByText('Save anyway'));
+    expect(mockUpdateMutateAsync).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/Your business is now closed every day/)).toBeTruthy();
+  });
+
+  it('does not ask when a day is still open', async () => {
+    mockUpdateMutateAsync.mockResolvedValue({ opening_hours: {} });
+    await render(<BusinessHoursScreen />);
+    await press(() => screen.getByText('edit-hours'));
+    await press(() => screen.getByText('Save opening hours'));
+    expect(screen.queryByText('Close every day?')).toBeNull();
+    expect(mockUpdateMutateAsync).toHaveBeenCalledTimes(1);
   });
 });

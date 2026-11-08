@@ -386,9 +386,9 @@ export function useClassCommerceReports(enabled = true) {
 // for "all classes", and currency pinned to 'gbp'.
 // ---------------------------------------------------------------------------
 
-/** "12.50"/"£12.50" → pence; non-finite/negative → 0 (matches web). */
+/** "12.50"/"£12.50"/"€12.50" → pence; non-finite/negative → 0 (matches web). */
 export function poundsToPence(value: string): number {
-  const n = Number(String(value).trim().replace('£', ''));
+  const n = Number(String(value).trim().replace(/^[£€]/, ''));
   return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : 0;
 }
 

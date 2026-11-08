@@ -164,6 +164,36 @@ describe('Refer & Earn — data state', () => {
   });
 });
 
+describe('Refer & Earn — a credit held over the cap (web QA 2026-11-08 COM-F10)', () => {
+  it('says it is held and will be added by itself, as the web does', async () => {
+    setReferrals({
+      data: {
+        ...DATA,
+        referralsForUi: [
+          {
+            id: 'r3',
+            refereeName: 'Calm Studio',
+            status: 'credited',
+            // The web labels a held row "Held" (`load-dashboard.ts`).
+            statusLabel: 'Held',
+            rewardDisplay: '£20',
+            occurredAt: '2026-10-01T10:00:00.000Z',
+            voidReason: 'queued_over_cap',
+          },
+        ],
+      },
+    });
+    await render(<ReferEarnScreen />);
+    expect(screen.getByText('Held')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Held: you already had 6 credits waiting to be used on your bills when this one was earned. It is added to your account automatically, oldest first, once you have fewer than 6 waiting. We check each time you pay a ResNeo bill.',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Contact support/)).toBeNull();
+  });
+});
+
 describe('Refer & Earn — empty + credit-remaining-null', () => {
   it('shows "No referrals yet" and "None" for null credit remaining', async () => {
     setReferrals({

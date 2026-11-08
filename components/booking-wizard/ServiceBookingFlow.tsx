@@ -180,6 +180,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     isLinked,
     isCollective,
     servicesLayout,
+    signedInVenueId,
   } = useBookingFormVenue();
   // The phone picker's starting country (web parity: EUR venues → IE, else GB).
   const phoneDefaultCountry = defaultPhoneCountryForVenueCurrency(currency);
@@ -1303,6 +1304,29 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     [staffPick, staffFirstGroups, applyVisitPeople],
   );
 
+  /**
+   * On a collective, the one business the booking is made at when it is not the signed-in one
+   * (QA 2026-11-08 DEVICE-F4): staff booked, and created clients, at a partner without knowing. A
+   * visit across businesses names each business in its own block instead.
+   */
+  const bookedAtBusiness = useMemo(() => {
+    if (!isCollective || !selectedService) return null;
+    const practitioners = catalogQuery.data?.practitioners ?? [];
+    const segments = multiServiceSegments && multiServiceSegments.length > 1 ? multiServiceSegments : null;
+    const venueIds = segments
+      ? [...new Set(segments.map((s) => s.venueId).filter((v): v is string => Boolean(v)))]
+      : (() => {
+          const calendarId =
+            selectedService.practitionerId === ANY_AVAILABLE_PRACTITIONER_ID
+              ? selectedSlot?.practitioner_id
+              : selectedService.practitionerId;
+          const owner = practitioners.find((p) => p.id === calendarId)?.owning_venue_id;
+          return owner ? [owner] : [];
+        })();
+    if (venueIds.length !== 1 || venueIds[0] === signedInVenueId) return null;
+    return businessNameOf(venueIds[0]!);
+  }, [isCollective, selectedService, selectedSlot, multiServiceSegments, catalogQuery.data, signedInVenueId, businessNameOf]);
+
   /** A visit across businesses (only a collective's services span businesses): each with its money (7.1). */
   const visitParts = useMemo(
     () =>
@@ -1677,6 +1701,8 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     // A multi-service visit asks the month for one block of the whole span.
     durationMinutes: chainSpanForMonth ?? durationOverride,
     ownerVenueId,
+    // A phone booking's month greys the dates the guest's rules rule out, as its save does (SCH-F15).
+    source,
     // No availability calls at all with the override on: every date from today is open.
     enabled: activeKey === 'date' && !!selectedService && !availabilityOverride,
   });
@@ -1979,6 +2005,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           ) : (
             <AddonsStep
               key={`chain-addons-${chainCursor.index}`}
+              serviceName={extra.option.serviceName}
               groups={extra.option.addonGroups ?? []}
               value={extra.addonIds}
               onChange={(ids) => updateExtra({ addonIds: ids })}
@@ -2007,6 +2034,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
 
       {activeKey === 'addons' ? (
         <AddonsStep
+          serviceName={selectedService?.serviceName}
           groups={addonGroups}
           value={selectedAddonIds}
           onChange={setSelectedAddonIds}
@@ -2088,6 +2116,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
             variantId={selectedVariant?.id ?? null}
             venueId={venueId}
             chain={serviceChainParam}
+            source={source}
             startNow={source === 'walk-in' && selectedDate === today}
             onStartNow={startWalkInNow}
             timeZone={timeZone}
@@ -2143,6 +2172,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           staffNotes={calendarNotice.notes}
           noCardPayments={calendarNotice.noCards}
           businessParts={visitParts}
+          bookedAtBusiness={bookedAtBusiness}
           noCardVenueIds={calendarNotice.noCardVenueIds}
           returningGuest={returningGuest}
           phoneDefaultCountry={phoneDefaultCountry}

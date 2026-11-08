@@ -12,6 +12,11 @@ export type ReferralUiStatus = 'pending' | 'referee_signed_up' | 'credited' | 'f
  * enough (signed up, credited, pending).
  */
 export function explainReferralOutcome(status: ReferralUiStatus, voidReason: string | null): string | null {
+  if (status === 'credited' && voidReason === 'queued_over_cap') {
+    // Held over the cap of six (web QA 2026-11-08 COM-F10); released automatically when the
+    // referrer pays a ResNeo bill and is under the cap, after which the row reads "Credited".
+    return 'Held: you already had 6 credits waiting to be used on your bills when this one was earned. It is added to your account automatically, oldest first, once you have fewer than 6 waiting. We check each time you pay a ResNeo bill.';
+  }
   if (status === 'void') {
     switch (voidReason) {
       case 'self_referral_same_email_domain':

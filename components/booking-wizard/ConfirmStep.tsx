@@ -8,6 +8,7 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { AvailabilityOverrideWarnings } from '@/components/booking-wizard/AvailabilityOverrideControls';
 import { ComplianceWarningNotice } from '@/components/compliance/ComplianceWarningNotice';
+import { StaffPaymentLinkLines } from '@/components/booking-wizard/StaffPaymentLinkLines';
 import { HiddenContactValue } from '@/components/roles/HiddenContact';
 import {
   StaffCardHoldToggle,
@@ -29,7 +30,6 @@ import {
   type MultiServiceSegment,
 } from '@/lib/booking/multi-service-chain';
 import {
-  STAFF_CARD_HOLD_LINK_SENT_LINE,
   resolveStaffEntityCardHold,
   staffCardHoldFeeLine,
 } from '@/lib/booking/card-hold';
@@ -108,6 +108,12 @@ type ConfirmStepProps = {
   businessParts?: VisitBusinessPart[] | null;
   /** Businesses of the visit that cannot take card payments (collective staff notes). */
   noCardVenueIds?: readonly string[];
+  /**
+   * On a collective: the business the booking and the client record are made at, when it is not
+   * the signed-in one (QA 2026-11-08 DEVICE-F4: staff booked at a partner business without
+   * knowing). Shown on the review and the confirmation.
+   */
+  bookedAtBusiness?: string | null;
 };
 
 interface BookingConfirmation {
@@ -125,6 +131,10 @@ interface BookingConfirmation {
   /** Card hold requested at create (§7.6): the confirmation shows the card-request line. */
   card_hold_requested?: boolean;
   card_hold_fee_pence?: number | null;
+  /** False when the client has no email or phone, so the link was not sent (web QA BKG-A-F9). */
+  payment_link_sent?: boolean;
+  /** A walk-in: booked straight away, never cancelled for a missing card (web QA BKG-A-F9). */
+  walk_in?: boolean;
   cancellation_notice_hours?: number;
   compliance_warnings?: ComplianceBookingWarning[];
   /** With the override: the engine's reasons, repeated from the 201. */
@@ -189,16 +199,19 @@ function BookingConfirmationView({
   confirmation,
   onViewBooking,
   onBookAnother,
+  bookedAtBusiness = null,
 }: {
   confirmation: BookingConfirmation;
   onViewBooking: () => void;
   onBookAnother?: () => void;
+  bookedAtBusiness?: string | null;
 }) {
   const { colors } = useTheme();
   // A deposit or card link went to the guest, so the booking stays Pending
   // until they use it. Saying "confirmed" here was not true (web QA B-9).
-  const awaitingPayment = Boolean(confirmation.payment_url);
   const cardHold = Boolean(confirmation.card_hold_requested);
+  // A walk-in with a card hold is booked straight away with the card request open (web QA BKG-A-F9).
+  const awaitingPayment = Boolean(confirmation.payment_url) && !(cardHold && confirmation.walk_in);
   const linkedUrl = confirmation.linked_payment_url ?? null;
   const [copied, setCopied] = useState(false);
 
@@ -237,6 +250,7 @@ function BookingConfirmationView({
             {confirmation.practitioner_name}
           </Text>
         </View>
+        {bookedAtBusiness ? <SummaryRow label="Booked at" value={bookedAtBusiness} /> : null}
         <SummaryRow label="Guest" value={confirmation.guest_name} />
         <SummaryRow label="Date" value={confirmation.date_label} />
         <SummaryRow label="Time" value={confirmation.time_label} />
@@ -270,14 +284,12 @@ function BookingConfirmationView({
                 ? ` · ${staffCardHoldFeeLine(confirmation.card_hold_fee_pence).toLowerCase()}`
                 : ''}
             </Text>
-            <Text variant="caption" tone="muted">
-              {STAFF_CARD_HOLD_LINK_SENT_LINE} No payment is taken.
-            </Text>
-            {confirmation.payment_url ? (
-              <Text variant="caption" tone="muted">
-                If card details are not added within 24 hours, the booking will be auto-cancelled.
-              </Text>
-            ) : null}
+            <StaffPaymentLinkLines
+              cardHold
+              paymentUrl={confirmation.payment_url}
+              linkSent={confirmation.payment_link_sent}
+              walkIn={Boolean(confirmation.walk_in)}
+            />
           </View>
         ) : confirmation.requires_deposit || confirmation.payment_url ? (
           <View style={[styles.depositNotice, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -287,14 +299,12 @@ function BookingConfirmationView({
                 : 'Deposit requested'}
             </Text>
             {confirmation.payment_url ? (
-              <>
-                <Text variant="caption" tone="muted">
-                  A deposit payment link has been sent to the guest.
-                </Text>
-                <Text variant="caption" tone="muted">
-                  If deposit is not paid within 24 hours, the booking will be auto-cancelled.
-                </Text>
-              </>
+              <StaffPaymentLinkLines
+                cardHold={false}
+                paymentUrl={confirmation.payment_url}
+                linkSent={confirmation.payment_link_sent}
+                walkIn={Boolean(confirmation.walk_in)}
+              />
             ) : null}
           </View>
         ) : null}
@@ -350,6 +360,7 @@ export function ConfirmStep({
   multiServiceSegments = null,
   overrideAvailability = false,
   businessParts = null,
+  bookedAtBusiness = null,
   noCardVenueIds = [],
 }: ConfirmStepProps) {
   const { colors } = useTheme();
@@ -723,6 +734,7 @@ export function ConfirmStep({
             // (money IS taken there, so "no payment" copy would mislead).
             card_hold_requested: res.payment_mode === 'setup',
             card_hold_fee_pence: res.card_hold_fee_pence ?? null,
+            walk_in: source === 'walk-in',
             cancellation_notice_hours: res.cancellation_notice_hours,
             // Every segment's unmet requirements, merged by type (`required` first).
             compliance_warnings: res.compliance_warnings,
@@ -773,6 +785,8 @@ export function ConfirmStep({
           requires_deposit: Boolean(response.payment_url) && !response.card_hold_requested,
           card_hold_requested: response.card_hold_requested,
           card_hold_fee_pence: staffCardHold?.feePence ?? null,
+          payment_link_sent: response.payment_link_sent,
+          walk_in: source === 'walk-in',
           compliance_warnings: response.compliance_warnings,
           availability_override_warnings: response.availability_override_warnings,
           service_name: `${service.serviceName}${variant ? ` · ${variant.name}` : ''}`,
@@ -806,6 +820,7 @@ export function ConfirmStep({
         confirmation={confirmation}
         onViewBooking={() => onSuccess(confirmation.booking_id)}
         onBookAnother={onBookAnother}
+        bookedAtBusiness={bookedAtBusiness}
       />
     );
   }
@@ -843,6 +858,14 @@ export function ConfirmStep({
               </View>
             ))}
           </View>
+        ) : null}
+        {bookedAtBusiness ? (
+          <>
+            <SummaryRow label="Booked at" value={bookedAtBusiness} />
+            <Text variant="caption" tone="muted" testID="confirm-booked-at-note">
+              {`The booking and the client's details are saved at ${bookedAtBusiness}.`}
+            </Text>
+          </>
         ) : null}
         <SummaryRow label="Date" value={formatSummaryDate(date)} />
         {!isMultiService ? (
@@ -930,6 +953,7 @@ export function ConfirmStep({
                 <Text variant="label">{p.name}</Text>
                 {p.holdPence > 0 ? (
                   <StaffCardHoldToggle
+                    walkIn={source === 'walk-in'}
                     checked={Boolean(holdByVenue[p.venueId])}
                     onChange={(next) => setHoldByVenue((prev) => ({ ...prev, [p.venueId]: next }))}
                     feePence={p.holdPence}
@@ -950,6 +974,7 @@ export function ConfirmStep({
 
       {staffCardHold && !byBusiness ? (
         <StaffCardHoldToggle
+          walkIn={source === 'walk-in'}
           checked={requireCardHold}
           onChange={setRequireCardHold}
           feePence={staffCardHold.feePence}

@@ -127,13 +127,16 @@ export function StaffRequireChargeCheckbox({
 export function StaffCardHoldToggle({
   checked,
   onChange,
+  walkIn = false,
 }: {
   checked: boolean;
   onChange: (next: boolean) => void;
   /** Kept for callers; the fee is no longer shown under the toggle. */
   feePence?: number;
+  /** A walk-in: booked straight away, never cancelled for a missing card (web QA BKG-A-F9). */
+  walkIn?: boolean;
 }) {
-  const sublabel = staffCardHoldToggleSublabel(checked);
+  const sublabel = staffCardHoldToggleSublabel(checked, walkIn);
   return (
     <CheckRow
       checked={checked}

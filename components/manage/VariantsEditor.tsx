@@ -11,7 +11,7 @@ import {
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
-import { parsePoundsToPence, penceToPoundsInput } from '@/lib/format';
+import { currencySymbol, parsePoundsToPence, penceToPoundsInput } from '@/lib/format';
 import { hapticSelect } from '@/lib/haptics';
 import type { VariantWriteInput } from '@/lib/queries/useServicesManage';
 import { radius, spacing } from '@/theme/index';
@@ -130,7 +130,7 @@ export function buildVariantsPayload(
     if (paymentRequirement === 'card_hold' && draft.deposit.trim() && !(deposit != null && deposit >= 100)) {
       return {
         ok: false,
-        error: `Option "${name}": set a no-show fee of at least £1, or leave it blank to use the service fee.`,
+        error: `Option "${name}": set a no-show fee of at least ${currencySymbol()}1, or leave it blank to use the service fee.`,
         key: draft.key,
       };
     }
@@ -259,7 +259,7 @@ export function VariantsEditor({
                   </Text>
                   <Text variant="caption" tone="muted">
                     {draft.duration ? `${draft.duration} min` : 'Length not set'}
-                    {draft.price.trim() ? ` · £${draft.price.trim()}` : ''}
+                    {draft.price.trim() ? ` · ${currencySymbol()}${draft.price.trim()}` : ''}
                     {!draft.isActive ? ' · Inactive' : ''}
                   </Text>
                 </View>
@@ -346,7 +346,7 @@ export function VariantsEditor({
                 <View style={styles.moneyRow}>
                   <View style={styles.moneyField}>
                     <Input
-                      label="Price (£)"
+                      label={`Price (${currencySymbol()})`}
                       value={draft.price}
                       onChangeText={(price) => patchDraft(draft.key, { price })}
                       keyboardType="decimal-pad"
@@ -354,7 +354,7 @@ export function VariantsEditor({
                   </View>
                   <View style={styles.moneyField}>
                     <Input
-                      label={paymentRequirement === 'card_hold' ? 'No-show fee (£)' : 'Deposit (£)'}
+                      label={paymentRequirement === 'card_hold' ? `No-show fee (${currencySymbol()})` : `Deposit (${currencySymbol()})`}
                       helper={
                         paymentRequirement === 'deposit' || paymentRequirement === 'card_hold'
                           ? 'Blank = service default'

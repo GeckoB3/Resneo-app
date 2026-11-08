@@ -87,17 +87,20 @@ function HoursStepper({
   suffix,
   onChange,
   disabled = false,
+  max = 168,
 }: {
   value: number;
   suffix: string;
   onChange: (next: number) => void;
   disabled?: boolean;
+  /** The most hours the stepper allows (a week, unless the message says less). */
+  max?: number;
 }) {
   const { colors } = useTheme();
   const step = (delta: number) => {
     if (disabled) return;
     hapticSelect();
-    onChange(Math.min(168, Math.max(1, value + delta)));
+    onChange(Math.min(max, Math.max(1, value + delta)));
   };
   return (
     <View style={styles.hoursRow}>
@@ -262,6 +265,7 @@ function MessageCard({
             <HoursStepper
               value={timingValue}
               suffix={def.timing.label}
+              max={def.timing.max}
               disabled={!isAdmin}
               onChange={(v) => onChange({ ...policy, [def.timing!.field]: v })}
             />
@@ -331,10 +335,11 @@ function MessageCard({
                   onChangeText={(v) => onChange({ ...policy, smsCustomMessage: v || null })}
                   multiline
                   style={styles.multiline}
-                  maxLength={320}
+                  maxLength={160}
                   // Web QA F-1 (2026-09-23): the booking details come first and the
                   // venue's line is shortened to fit, rather than cutting the date and time.
-                  helper={`${(policy.smsCustomMessage ?? '').length}/320 characters. A text is one message long, so the booking details come first. If your line does not fit alongside them, it is shortened. Preview shows exactly what is sent.`}
+                  // QA 2026-11-08 COM-F3: the server caps the line at 160 characters.
+                  helper={`${(policy.smsCustomMessage ?? '').length}/160 characters. Your line goes first, but the booking details and any link are always sent in full. If your line does not fit alongside them, it is shortened. Preview shows exactly what is sent.`}
                 />
               ) : (
                 <Text variant="bodySmall" tone="muted">
@@ -539,17 +544,18 @@ function SmsLightBanner() {
   const { colors } = useTheme();
   return (
     <View
+      accessibilityRole="summary"
       style={[
         styles.infoBanner,
-        { backgroundColor: colors.infoSurface, borderColor: colors.brandBorder },
+        { backgroundColor: colors.warningSurface, borderColor: colors.warning },
       ]}>
-      <Text variant="label" style={{ color: colors.brand }}>
-        SMS on Appointments Light
+      <Text variant="label" style={{ color: colors.text }}>
+        Texts are not being sent
       </Text>
-      <Text variant="bodySmall" style={{ color: colors.brand, marginTop: spacing.xs }}>
-        {`${SMS_INCLUDED_LIGHT} SMS segments are included each month, then ${Math.round(
+      <Text variant="bodySmall" style={{ color: colors.text, marginTop: spacing.xs }}>
+        {`Your plan needs a card on file before texts can go out. Until you add one, clients get the email only, and each text that was skipped shows as not sent on the booking. Add a payment card under More, Plan & payments to start sending texts. ${SMS_INCLUDED_LIGHT} SMS segments are included each month, then ${Math.round(
           SMS_OVERAGE_GBP_PER_MESSAGE * 100,
-        )}p per segment beyond that. Add a payment card under More, Plan & payments to enable SMS sending.`}
+        )}p per segment beyond that.`}
       </Text>
     </View>
   );
@@ -604,16 +610,15 @@ export default function CommunicationsScreen() {
   // Checkout messages (web plan §4.23): only with Checkout on, from the venue's resolved flags.
   const posFeatures = posMessageFeatures(venue);
 
-  // SMS upsell banner: Appointments Light with no Stripe SUBSCRIPTION (web
-  // `CommunicationTemplatesSection`). It used to test the Connect account, which
-  // takes guests' payments and says nothing about the plan, so a venue paying
-  // for its plan without Connect saw it and one with Connect but no card did not.
+  // Light with no card on file for SMS: the server skips every text (and logs it as not sent), so
+  // say so (web `CommunicationTemplatesSection`, QA 2026-11-08 COM-F25). It used to test for a
+  // subscription, which hid it from a subscribed venue with no card, the case that drops texts.
   const isLightTier = venue?.pricing_tier === 'light';
   // The billing status needs the owner or an admin with "Billing, payouts and admins" (roles plan
   // §5.3); anyone else would only get a 403, so they do not ask and see no banner.
   const billingStatus = useBillingStatus(isAdmin && isLightTier && venueBillingPayoutsAdmins(venue));
   const showSmsLightBanner =
-    isLightTier && billingStatus.data != null && !billingStatus.data.stripe_subscription_id?.trim();
+    isLightTier && billingStatus.data != null && billingStatus.data.has_default_payment_method === false;
 
   const toast = useToast();
   const policiesQuery = useCommunicationPolicies();
@@ -680,14 +685,6 @@ export default function CommunicationsScreen() {
   const setPosSwitch = (key: PosMessageSwitchKey, enabled: boolean) => {
     hapticSelect();
     setPosDraft((current) => ({ ...parsePosMessageSwitches(current), [key]: { enabled } }));
-    setSaved(false);
-  };
-
-  const patchStaff = <K extends keyof VenueNotificationSettings>(
-    key: K,
-    value: VenueNotificationSettings[K],
-  ) => {
-    setStaffDraft((current) => (current ? { ...current, [key]: value } : current));
     setSaved(false);
   };
 
@@ -943,45 +940,12 @@ export default function CommunicationsScreen() {
           />
         ) : null}
 
-        {/* Staff alerts */}
-        <Card>
-          <Text variant="label">Staff alerts</Text>
-          <View style={styles.staffSection}>
-            <View style={styles.settingRow}>
-              <View style={styles.settingText}>
-                <Text variant="bodyMedium">Daily schedule email</Text>
-                <Text variant="caption" tone="muted">
-                  Each morning&apos;s appointments
-                </Text>
-              </View>
-              <Switch
-                value={staffDraft.daily_schedule_enabled}
-                disabled={!isAdmin}
-                onValueChange={(v) => patchStaff('daily_schedule_enabled', v)}
-              />
-            </View>
-            <View style={styles.settingRow}>
-              <View style={styles.settingText}>
-                <Text variant="bodyMedium">New booking alerts</Text>
-              </View>
-              <Switch
-                value={staffDraft.staff_new_booking_alert}
-                disabled={!isAdmin}
-                onValueChange={(v) => patchStaff('staff_new_booking_alert', v)}
-              />
-            </View>
-            <View style={styles.settingRow}>
-              <View style={styles.settingText}>
-                <Text variant="bodyMedium">Cancellation alerts</Text>
-              </View>
-              <Switch
-                value={staffDraft.staff_cancellation_alert}
-                disabled={!isAdmin}
-                onValueChange={(v) => patchStaff('staff_cancellation_alert', v)}
-              />
-            </View>
-          </View>
-        </Card>
+        {/*
+          The "Staff alerts" card (Daily schedule email, New booking alerts, Cancellation alerts)
+          is gone: the switches were saved and nothing ever read them, so owners believed they had
+          set up alerts they would never get (web QA 2026-11-08 COM-F9). Bring it back with its
+          senders. Team members choose their own pushes under More, Push notifications.
+        */}
 
         {/* Business notifications — "New booking alert" owner email (web parity) */}
         <OwnerAlertCard

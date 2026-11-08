@@ -15,6 +15,11 @@ type AddonsStepProps = {
   value: string[];
   onChange: (ids: string[]) => void;
   onContinue: () => void;
+  /**
+   * The service these extras belong to, shown under the heading as on the option step.
+   * With several services in one visit, a bare "Add-ons" did not say which one (2026-11-08).
+   */
+  serviceName?: string | null;
 };
 
 function extraLabel(pricePence: number, durationMinutes: number): string | null {
@@ -36,7 +41,7 @@ function requirementLabel(group: AppointmentCatalogAddonGroup['group']): string 
 }
 
 /** Step — select service add-ons (single/multi per group, min/max enforced). */
-export function AddonsStep({ groups, value, onChange, onContinue }: AddonsStepProps) {
+export function AddonsStep({ groups, value, onChange, onContinue, serviceName }: AddonsStepProps) {
   const { colors } = useTheme();
   const selected = useMemo(() => new Set(value), [value]);
 
@@ -73,6 +78,11 @@ export function AddonsStep({ groups, value, onChange, onContinue }: AddonsStepPr
   return (
     <View style={styles.container}>
       <Text variant="heading">Add-ons</Text>
+      {serviceName ? (
+        <Text variant="bodySmall" tone="muted">
+          {serviceName}
+        </Text>
+      ) : null}
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {groups.map((group) => (
           <View key={group.group.id} style={styles.group}>

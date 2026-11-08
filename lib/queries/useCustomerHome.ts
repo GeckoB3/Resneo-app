@@ -43,6 +43,8 @@ export interface CustomerBooking {
 export interface CustomerVenue {
   id: string;
   name: string;
+  /** The currency the venue charges in ('GBP' or 'EUR'); pounds when missing (older servers). */
+  currency?: string | null;
 }
 
 /**
@@ -121,6 +123,14 @@ export function useCustomerHome() {
 /** Venue name for a booking, falling back to a neutral word rather than an id. */
 export function venueNameFor(home: CustomerHome | undefined, venueId: string): string {
   return home?.venues.find((v) => v.id === venueId)?.name ?? 'your venue';
+}
+
+/**
+ * The currency a venue's amounts are shown in, from the hub's venue list (QA 2026-11-08
+ * DEVICE-F13: a client's amounts were all shown in pounds). Null means pounds.
+ */
+export function venueCurrencyFor(home: CustomerHome | undefined, venueId: string): string | null {
+  return home?.venues?.find((v) => v.id === venueId)?.currency ?? null;
 }
 
 /**

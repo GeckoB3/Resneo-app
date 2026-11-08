@@ -6,6 +6,7 @@ import {
   showBookingTypeBreakdown,
   visibleModelRows,
 } from '@/lib/reports/report-by-model';
+import { setActiveVenueCurrency } from '@/lib/format';
 import type { ReportByModelRow } from '@/types/reports';
 
 /**
@@ -128,6 +129,15 @@ describe('buildModelBreakdownCsvRows', () => {
       'Checked in',
       'Deposits collected (£)',
     ]);
+  });
+
+  it('labels the deposits column in the signed-in business currency (QA 2026-11-08 DEVICE-F13)', () => {
+    setActiveVenueCurrency('EUR');
+    try {
+      expect(buildModelBreakdownCsvRows([row()])[0]).toContain('Deposits collected (€)');
+    } finally {
+      setActiveVenueCurrency(null);
+    }
   });
 
   it('maps each visible row to string cells, cancelled before checked in', () => {
