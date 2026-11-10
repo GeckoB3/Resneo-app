@@ -84,3 +84,21 @@ describe('CardAccountScope', () => {
     expect(mockDisconnect).not.toHaveBeenCalled();
   });
 });
+
+describe('CardAccountScope when the old reader never lets go', () => {
+  it('still shows the card screens after a few seconds', async () => {
+    jest.useFakeTimers();
+    mockDisconnect.mockReturnValueOnce(new Promise(() => undefined));
+    const view = await render(
+      <LinkedVenueContext.Provider value={app(null)}>
+        <CardAccountScope ownerVenueId="light16">
+          <Probe />
+        </CardAccountScope>
+      </LinkedVenueContext.Provider>,
+    );
+    expect(view.queryByTestId('seen')).toBeNull();
+    await jest.advanceTimersByTimeAsync(4500);
+    await waitFor(() => expect(view.getByTestId('seen').props.children).toBe('light16'));
+    jest.useRealTimers();
+  });
+});

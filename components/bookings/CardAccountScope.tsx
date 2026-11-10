@@ -22,6 +22,9 @@ import { LinkedVenueContext } from '@/providers/LinkedVenueProvider';
  *
  * Must sit inside `TerminalProvider`, as the sections it wraps do.
  */
+/** How long to wait for the old reader to let go before showing the card screens anyway. */
+const DROP_READER_TIMEOUT_MS = 4000;
+
 export function CardAccountScope({ ownerVenueId, children }: { ownerVenueId: string | null; children: ReactNode }) {
   const linked = useContext(LinkedVenueContext);
   const appScope = linked?.ownerVenueId ?? null;
@@ -42,7 +45,10 @@ export function CardAccountScope({ ownerVenueId, children }: { ownerVenueId: str
       await terminal.clearCachedCredentials?.().catch(() => undefined);
     };
     setCardAccountOwner(ownerVenueId);
-    void drop().finally(() => {
+    // A reader that never answers must not leave the sheet blank: carry on after a few seconds
+    // (the reader hooks below time out and report their own errors).
+    const giveUp = new Promise<void>((resolve) => setTimeout(resolve, DROP_READER_TIMEOUT_MS));
+    void Promise.race([drop(), giveUp]).finally(() => {
       if (!cancelled) setReadyFor(ownerVenueId);
     });
     return () => {
