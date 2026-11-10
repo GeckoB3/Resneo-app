@@ -172,8 +172,10 @@ export function useTakePayment(bookingId: string) {
         error: StripeError | undefined,
         message: string,
         paymentIntent?: PaymentIntent.Type,
+        /** The card was never read, so nothing can have been taken: the intent is always abandoned. */
+        nothingTaken = false,
       ): never => {
-        if (isDefiniteCardFailure(error)) {
+        if (nothingTaken || isDefiniteCardFailure(error)) {
           recordFailedCardAttempt({
             bookingId,
             paymentIntentId: charge.payment_intent_id,
@@ -205,6 +207,8 @@ export function useTakePayment(bookingId: string) {
         return reportFailure(
           retrieved?.error,
           terminalErrorMessage(retrieved?.error, 'The payment could not be started.'),
+          undefined,
+          true,
         );
       }
 

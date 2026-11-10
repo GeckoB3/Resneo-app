@@ -1064,6 +1064,7 @@ export function BookingDetailContent({
     id: booking.id,
     guestName,
     ownerVenueName: linked?.venueName ?? null,
+    ownerVenueId: linked?.venueId ?? null,
     balanceDuePence: booking.balance_due_pence ?? null,
     visitPayment: booking.visit_payment ?? null,
     isAdmin,

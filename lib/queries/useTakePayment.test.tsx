@@ -248,6 +248,22 @@ describe('a card attempt this client watches fail', () => {
     );
   });
 
+  it('cancels the intent when the reader cannot find it, so no pending row is left behind', async () => {
+    // The reader was connected to another Stripe account ("No such payment_intent", Aura taking
+    // Light 16's payment): the card was never read, so nothing can have been taken.
+    mockApiFetch.mockResolvedValue(CHARGE);
+    mockRetrieve.mockResolvedValue({ error: { message: 'No such payment_intent: pi_1' } });
+
+    const { result } = await renderHook(() => useTakePayment('bk-1'), { wrapper: wrapper() });
+    await expect(result.current.mutateAsync({ attemptId: ATTEMPT })).rejects.toThrow();
+
+    expect(mockCollect).not.toHaveBeenCalled();
+    expect(mockApiFetch).toHaveBeenCalledWith(
+      '/api/venue/bookings/bk-1/charge',
+      expect.objectContaining({ body: JSON.stringify({ action: 'cancel', payment_intent_id: 'pi_1' }) }),
+    );
+  });
+
   it('does not ask the server to cancel an outcome it cannot vouch for', async () => {
     // The mirror of the ambiguous case above: if Stripe may have captured, the
     // app must not go and cancel the intent out from under a real payment.

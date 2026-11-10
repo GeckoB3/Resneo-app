@@ -6,6 +6,7 @@ import { TapToPayEducationContent } from '@/components/payments/TapToPayEducatio
 import { TapToPayProgress } from '@/components/payments/TapToPayProgress';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { CardAccountScope } from '@/components/bookings/CardAccountScope';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
@@ -86,6 +87,8 @@ export type TakePaymentTarget = {
    * its books, and a card goes to its account, so the sheet says whose it is (2026-11-05).
    */
   ownerVenueName?: string | null;
+  /** That business's id: a card for its booking is taken on ITS Stripe account, so the reader follows it. */
+  ownerVenueId?: string | null;
   /**
    * Outstanding balance; null = price unknown, staff must enter an amount
    * (§5.7). VISIT-scoped: on a multi-service visit this is the whole visit's
@@ -648,7 +651,9 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
         ) : null}
 
         {/* ── Card capture (SDK-gated) ────────────────────────────────── */}
-        {mode === 'card' && cardAvailable ? (
+        {(mode === 'card' || mode === 'pair') && cardAvailable ? (
+          <CardAccountScope ownerVenueId={target.ownerVenueId ?? null}>
+        {mode === 'card' ? (
           <CardCollectSection
             bookingId={target.id}
             amountPence={amountPence}
@@ -686,7 +691,7 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
         ) : null}
 
         {/* ── Bluetooth reader pairing (folded in, not a stacked sheet) ─ */}
-        {mode === 'pair' && cardAvailable ? (
+        {mode === 'pair' ? (
           <ReaderPairingSection
             onPaired={() => {
               setReaderType('bluetooth');
@@ -695,6 +700,8 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
             }}
             onBack={() => setMode('card')}
           />
+        ) : null}
+          </CardAccountScope>
         ) : null}
 
         {/* ── Record cash (confirm step) ──────────────────────────────── */}

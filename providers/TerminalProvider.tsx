@@ -12,6 +12,7 @@ import {
   type TerminalHookApi,
   type TerminalSdkModule,
 } from '@/lib/payments/terminal-sdk';
+import { getCardAccountOwner } from '@/lib/payments/card-account';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { onBeforeSiteChange } from '@/lib/sites/active-site';
 import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
@@ -81,7 +82,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
    * for the reader hooks.
    */
   const tokenProvider = useCallback(async (): Promise<string> => {
-    const res = await fetchConnectionToken({ accessToken, ownerVenueId: ownerVenueId ?? null });
+    const res = await fetchConnectionToken({ accessToken, ownerVenueId: getCardAccountOwner() ?? ownerVenueId ?? null });
     return res.secret;
   }, [accessToken, ownerVenueId]);
 
