@@ -207,6 +207,39 @@ describe('useTapToPayReader', () => {
     expect(mockApi.discoverReaders).not.toHaveBeenCalled();
   });
 
+  it("never reuses a phone reader connected for another business's account", async () => {
+    // The signed-in business warms the reader up...
+    discoverable = [PHONE];
+    const own = await renderHook(() => useTapToPayReader());
+    expect((await act(async () => own.result.current.connect())).ok).toBe(true);
+    mockApi.connectedReader = PHONE;
+    mockApi.connectReader.mockClear();
+
+    // ...then a payment on Light 16's booking needs the reader on Light 16's account.
+    mockOwnerVenueId = 'venue-light16';
+    const other = await renderHook(() => useTapToPayReader());
+    const res = await act(async () => other.result.current.connect());
+
+    expect(res.ok).toBe(true);
+    expect(mockApi.disconnectReader).toHaveBeenCalled();
+    expect(mockApi.connectReader).toHaveBeenCalledTimes(1);
+  });
+
+  it('reuses the reader again for the same account', async () => {
+    discoverable = [PHONE];
+    mockOwnerVenueId = 'venue-light16';
+    const first = await renderHook(() => useTapToPayReader());
+    expect((await act(async () => first.result.current.connect())).ok).toBe(true);
+    mockApi.connectedReader = PHONE;
+    mockApi.discoverReaders.mockClear();
+
+    const again = await renderHook(() => useTapToPayReader());
+    const res = await act(async () => again.result.current.connect());
+
+    expect(res).toEqual({ ok: true, error: null });
+    expect(mockApi.discoverReaders).not.toHaveBeenCalled();
+  });
+
   it('disconnects a Bluetooth reader before connecting the phone', async () => {
     mockApi.connectedReader = WISEPAD;
     discoverable = [PHONE];

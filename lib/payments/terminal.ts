@@ -142,7 +142,15 @@ const USE_SIMULATED = shouldSimulateCardReaders();
  * to Pay on iPhone" while the warm-up is still preparing must JOIN it, not start
  * a second discovery that the SDK refuses as busy.
  */
-let sharedConnect: { promise: Promise<TapToPayConnectResult> } | null = null;
+let sharedConnect: { promise: Promise<TapToPayConnectResult>; scope: string } | null = null;
+
+/**
+ * The account scope (`site:owner venue`) the phone's own reader was last connected for. A payment
+ * on another business's booking is taken on that business's Stripe account, so a reader connected
+ * for the signed-in business (the launch warm-up, say) must not be reused for it: the reader would
+ * not find the payment ("No such payment_intent").
+ */
+let connectedTapToPayScope: string | null = null;
 
 /**
  * Set by the terms event while a connect runs. The event is global (every
@@ -176,6 +184,7 @@ function markOsUpdateRequired(): void {
 /** Test seam: forget any connect left hanging by an earlier case. */
 export function __resetTapToPayConnectForTests(): void {
   sharedConnect = null;
+  connectedTapToPayScope = null;
   termsAcceptedDuringConnect = false;
   osUpdateRequired = false;
 }
@@ -383,8 +392,10 @@ export function useTapToPayReader(): UseTapToPayReader {
       // earlier payment; collecting through it after the staff member chose "Tap
       // to Pay on this phone" would use the wrong device and mislabel the ledger
       // row's reader_type.
+      // ...and only when it was connected for this same account (or by nothing this process tracked).
+      const scope = scopeRef.current;
       const existing = terminal.connectedReader;
-      if (existing?.deviceType === 'tapToPay') {
+      if (existing?.deviceType === 'tapToPay' && (connectedTapToPayScope === null || connectedTapToPayScope === scope)) {
         setStatus('ready');
         return { ok: true, error: null };
       }
@@ -399,7 +410,15 @@ export function useTapToPayReader(): UseTapToPayReader {
       // join it rather than starting a second one the SDK refuses as busy. Run a
       // fresh attempt afterwards only when this caller may do what that one was
       // not allowed to — show Apple's terms, or ask for a permission.
-      if (sharedConnect) {
+      // A connect running for another account is waited out, never joined: its reader is then
+      // replaced below.
+      let waitedForOtherAccount = false;
+      if (sharedConnect && sharedConnect.scope !== scope) {
+        setStatus('connecting');
+        await sharedConnect.promise.catch(() => undefined);
+        waitedForOtherAccount = true;
+      }
+      if (sharedConnect && sharedConnect.scope === scope) {
         setStatus('connecting');
         const joined = await sharedConnect.promise;
         const mayDoMore =
@@ -416,7 +435,9 @@ export function useTapToPayReader(): UseTapToPayReader {
         }
       }
 
-      if (existing) {
+      // After waiting out another account's connect, its reader may be connected even though this
+      // render's `connectedReader` predates it, so it is let go regardless.
+      if (existing || waitedForOtherAccount) {
         // Terminal holds one reader at a time, so free it before connecting ours.
         await terminal.disconnectReader().catch(() => {
           // If it was already gone, connecting below still works.
@@ -525,6 +546,7 @@ export function useTapToPayReader(): UseTapToPayReader {
             return failWithError(connected.error, 'Could not connect the card reader.');
           }
 
+          connectedTapToPayScope = scope;
           setStatus('ready');
           return termsAcceptedDuringConnect
             ? { ok: true, error: null, acceptedTerms: true }
@@ -536,7 +558,7 @@ export function useTapToPayReader(): UseTapToPayReader {
       };
 
       termsAcceptedDuringConnect = false;
-      const entry = { promise: attempt() };
+      const entry = { promise: attempt(), scope };
       sharedConnect = entry;
       ownedConnectRef.current = entry;
       try {

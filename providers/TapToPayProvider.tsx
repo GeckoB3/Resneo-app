@@ -16,6 +16,7 @@ import {
   useTapToPayReader,
   type TapToPayConnectResult,
 } from '@/lib/payments/terminal';
+import { getCardAccountOwner } from '@/lib/payments/card-account';
 import { getTerminalSdk } from '@/lib/payments/terminal-sdk';
 import { useChosenSiteId } from '@/lib/sites/active-site';
 import { showAppleTapToPayEducation } from '@/modules/tap-to-pay-education';
@@ -198,6 +199,9 @@ function TapToPayProviderIos({ children }: { children: ReactNode }) {
       const now = Date.now();
       if (!force && now - lastWarmUpRef.current < WARM_UP_MIN_INTERVAL_MS) return;
       if (terminalRef.current.connectedReader) return;
+      // A payment for another business is open and has the reader (CardAccountScope): warming up
+      // the signed-in business's reader now would take it from that payment.
+      if (getCardAccountOwner()) return;
       lastWarmUpRef.current = now;
       // `checkSupport` answers false for "unknown" too — either way, no warm-up.
       if (!(await readerRef.current.checkSupport())) return;
