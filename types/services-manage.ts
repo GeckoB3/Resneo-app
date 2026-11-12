@@ -120,6 +120,8 @@ export interface ManagedService {
   online_meeting_info?: string | null;
   variants?: AppointmentCatalogVariant[];
   addon_groups?: AppointmentCatalogAddonGroup[];
+  /** The follow-on groups asked after this service (follow-on plan 6.4). Absent on older servers. */
+  follow_on_groups?: import('@/types/follow-on-groups').ServiceFollowOnSummary[];
   /**
    * Present only at a venue in a shared-services collective (web W5/W12).
    * @see lib/services/collective-service.ts

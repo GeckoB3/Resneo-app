@@ -143,9 +143,31 @@ describe('MemberServiceSheet', () => {
     expect(screen.getByText('No description')).toBeTruthy();
     expect(screen.getByText('48 hours')).toBeTruthy();
     expect(screen.getByText('No options')).toBeTruthy();
+    expect(screen.getByText('No follow-on services')).toBeTruthy();
     // The online meeting fields are for online services only.
     expect(screen.queryByText('Link for your calendars')).toBeNull();
     expect(saveButton().props.accessibilityState?.disabled).toBe(true);
+  });
+
+  it("names the host's follow-on questions asked after this service (follow-on plan 6.4)", async () => {
+    await renderSheet(
+      <MemberServiceSheet
+        service={service({
+          follow_on_groups: [
+            { id: 'g-1', name: 'Cut after colour', required: true },
+            { id: 'g-2', name: 'Toner', required: false },
+          ],
+        })}
+        block={block()}
+        calendars={calendars}
+        currencySymbol="£"
+        complianceEnabled
+        onClose={jest.fn()}
+        onSaved={jest.fn()}
+      />,
+    );
+    expect(screen.getByText('Follow-on services:')).toBeTruthy();
+    expect(screen.getByText('Cut after colour (clients must choose one), Toner')).toBeTruthy();
   });
 
   it("sends only the member's fields, then asks before leaving bookings behind", async () => {

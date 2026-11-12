@@ -25,6 +25,12 @@ import {
   type AddonLink,
 } from '@/components/manage/AddonLinksEditor';
 import {
+  FollowOnGroupEditorSheet,
+  type FollowOnGroupEditorTarget,
+} from '@/components/manage/FollowOnGroupEditorSheet';
+import { FollowOnLinksEditor, linkedFollowOnIds } from '@/components/manage/FollowOnLinksEditor';
+import { FollowOnsTab } from '@/components/manage/FollowOnsTab';
+import {
   VariantsEditor,
   buildVariantsPayload,
   makeVariantDraft,
@@ -128,6 +134,8 @@ import { currencySymbol, formatPence, formatPositivePence, parsePoundsToPence, p
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAddonGroups } from '@/lib/queries/useAddonGroups';
+import { useFollowOnGroups } from '@/lib/queries/useFollowOnGroups';
+import { followOnServiceOptions } from '@/lib/follow-ons/service-options';
 import { useServicesSetupAvailability } from '@/lib/queries/useServicesSetup';
 import { currencySymbolFor, type SetupServiceForm } from '@/lib/services-setup/drafts';
 import { useVenueWideRequirementNames } from '@/lib/queries/useComplianceRequirements';
@@ -197,7 +205,7 @@ type EditTarget = {
   practitionerIds: string[];
 };
 
-type ActiveTab = 'services' | 'categories' | 'addons';
+type ActiveTab = 'services' | 'categories' | 'addons' | 'follow-ons';
 
 /** When a save went through, for its minute of Put it back (a read of the clock, never in render). */
 const saveClock = () => Date.now();
@@ -862,7 +870,8 @@ export default function ServicesScreen() {
   // every venue's services on Manage Collective now, so it goes there, on that venue's suggestions.
   // A server without that view still opens "Add from another venue" with it chosen, as before.
   const params = useLocalSearchParams<{ tab?: string; service?: string; setup?: string; add_from?: string }>();
-  const initialTab: ActiveTab = params.tab === 'addons' ? 'addons' : 'services';
+  const initialTab: ActiveTab =
+    params.tab === 'addons' ? 'addons' : params.tab === 'follow-ons' ? 'follow-ons' : 'services';
   const [activeTab, setActiveTab] = useState<ActiveTab>(initialTab);
   const [includeInactiveAddons, setIncludeInactiveAddons] = useState(false);
   // FlatList ref so a "Used by" jump (or the deep link) can scroll to the row.
@@ -874,6 +883,11 @@ export default function ServicesScreen() {
   // (or archived when bookings used it). Loading only the active ones meant any
   // save quietly removed the inactive options. The tab's switch filters its list.
   const addonGroupsQuery = useAddonGroups(true, true);
+  // Follow-on groups (follow-on plan 6.1, 6.3): the Follow-ons tab and the service form's card.
+  const followOnGroupsQuery = useFollowOnGroups();
+  const [followOnEditorTarget, setFollowOnEditorTarget] = useState<FollowOnGroupEditorTarget | null>(null);
+  // 'form': the service form opened the sheet, so its card follows the saved group.
+  const [followOnEditorContext, setFollowOnEditorContext] = useState<'form' | 'library'>('library');
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
@@ -1041,6 +1055,8 @@ export default function ServicesScreen() {
   const [variantDrafts, setVariantDrafts] = useState<DraftVariant[]>([]);
   const [expandedVariantKey, setExpandedVariantKey] = useState<string | null>(null);
   const [addonLinks, setAddonLinks] = useState<AddonLink[]>([]);
+  /** The follow-on groups asked after this service; null until changed, so a save leaves them alone. */
+  const [followOnIds, setFollowOnIds] = useState<string[] | null>(null);
 
   // Stripe-connected state for the deposit/full-payment warning (web parity).
   const setupStatus = useSetupStatus(isAdmin);
@@ -1081,6 +1097,11 @@ export default function ServicesScreen() {
     [query.data?.services, categoryFor],
   );
   const hasCategories = categories.length > 0;
+  /** The services as the follow-on screens show them, under their headings. */
+  const followOnServices = useMemo(
+    () => followOnServiceOptions(query.data?.services ?? [], categories),
+    [query.data?.services, categories],
+  );
   /** The heading a service sits under in this list (null = none / flat list). */
   const headingFor = useCallback(
     (service: ManagedService): string | null => {
@@ -1512,6 +1533,7 @@ export default function ServicesScreen() {
         .sort((a, b) => (a.link_sort_order ?? 0) - (b.link_sort_order ?? 0))
         .map((entry) => ({ id: entry.group.id, name: entry.group.name })),
     );
+    setFollowOnIds(null);
     setCollectiveCalendarsDiff(EMPTY_CALENDARS_DIFF);
     setValuesStep(null);
     setError(null);
@@ -1559,6 +1581,7 @@ export default function ServicesScreen() {
     setVariantDrafts([]);
     setExpandedVariantKey(null);
     setAddonLinks([]);
+    setFollowOnIds(null);
     setCollectiveCalendarsDiff(EMPTY_CALENDARS_DIFF);
     setValuesStep(null);
     setError(null);
@@ -1938,6 +1961,8 @@ export default function ServicesScreen() {
             addon_group_id: g.id,
             sort_order: index,
           })),
+          // Only once changed in the form (web parity): an untouched form never rewrites the links.
+          ...(followOnIds ? { follow_on_group_ids: followOnIds } : {}),
           ...(processingToSend !== undefined ? { processing_time_blocks: processingToSend } : {}),
           ...(customChanged
             ? {
@@ -2554,6 +2579,13 @@ export default function ServicesScreen() {
     addonLinks.length === 0
       ? 'None'
       : `${addonLinks.length} group${addonLinks.length === 1 ? '' : 's'}`;
+  const followOnLinkedCount = linkedFollowOnIds(
+    followOnIds,
+    editTarget?.id ?? null,
+    followOnGroupsQuery.data?.groups ?? [],
+  ).length;
+  const followOnSummary =
+    followOnLinkedCount === 0 ? 'None' : `${followOnLinkedCount} group${followOnLinkedCount === 1 ? '' : 's'}`;
 
   return (
     <Screen scroll={false} padded={false}>
@@ -2561,7 +2593,7 @@ export default function ServicesScreen() {
 
       {/* Tab bar */}
       <View style={[styles.tabBar, { borderBottomColor: colors.border }]}>
-        {(['services', 'categories', 'addons'] as ActiveTab[]).map((tab) => {
+        {(['services', 'categories', 'addons', 'follow-ons'] as ActiveTab[]).map((tab) => {
           const active = activeTab === tab;
           return (
             <Pressable
@@ -2573,7 +2605,13 @@ export default function ServicesScreen() {
               <Text
                 variant="label"
                 color={active ? colors.brand : colors.textSecondary}>
-                {tab === 'services' ? 'Services' : tab === 'categories' ? 'Categories' : 'Add-ons'}
+                {tab === 'services'
+                  ? 'Services'
+                  : tab === 'categories'
+                    ? 'Categories'
+                    : tab === 'addons'
+                      ? 'Add-ons'
+                      : 'Follow-ons'}
               </Text>
               {active ? (
                 <View style={[styles.tabUnderline, { backgroundColor: colors.brand }]} />
@@ -2853,6 +2891,49 @@ export default function ServicesScreen() {
           }}
         />
       ) : null}
+
+      {/* ---- Follow-ons tab ---- */}
+      {activeTab === 'follow-ons' ? (
+        <FollowOnsTab
+          isAdmin={isAdmin}
+          query={followOnGroupsQuery}
+          services={followOnServices}
+          onPressService={focusService}
+          onOpenAddons={() => setActiveTab('addons')}
+          onEdit={(group) => {
+            setFollowOnEditorContext('library');
+            setFollowOnEditorTarget({ mode: 'edit', group });
+          }}
+          onCreate={() => {
+            setFollowOnEditorContext('library');
+            setFollowOnEditorTarget({ mode: 'create' });
+          }}
+        />
+      ) : null}
+
+      {/* Follow-on group create/edit sheet: from the Follow-ons tab, or from a service's card. */}
+      <FollowOnGroupEditorSheet
+        target={followOnEditorTarget}
+        services={followOnServices}
+        onClose={() => setFollowOnEditorTarget(null)}
+        onSaved={(group, mode) => {
+          if (followOnEditorContext !== 'form') return;
+          const serviceId = editTarget?.id ?? null;
+          setFollowOnIds((current) => {
+            const linked = current ?? linkedFollowOnIds(null, serviceId, followOnGroupsQuery.data?.groups ?? []);
+            // A new group joins this service only if it kept this service ticked (or the service is new).
+            if (mode === 'create') {
+              return !serviceId || group.trigger_service_ids.includes(serviceId)
+                ? [...linked.filter((id) => id !== group.id), group.id]
+                : linked;
+            }
+            // Unticking this service inside the group takes the group off this service too.
+            return serviceId && !group.trigger_service_ids.includes(serviceId)
+              ? linked.filter((id) => id !== group.id)
+              : linked;
+          });
+        }}
+      />
 
       {/* Add-on group create/edit sheet — opened from the Add-ons tab (library) or
           inline from the service form (auto-links a newly created group). */}
@@ -3279,6 +3360,41 @@ export default function ServicesScreen() {
                     onEditGroup={(group, addons) => {
                       setAddonEditorContext('form');
                       setAddonGroupEditorTarget({ mode: 'edit', group, addons });
+                    }}
+                  />
+                </CollapsibleCard>
+
+                <CollapsibleCard
+                  title="Follow-on services"
+                  summary={followOnSummary}
+                  defaultExpanded={followOnLinkedCount > 0}>
+                  <FollowOnLinksEditor
+                    serviceId={editTarget?.id ?? null}
+                    value={followOnIds}
+                    onChange={setFollowOnIds}
+                    groups={followOnGroupsQuery.data?.groups ?? null}
+                    services={followOnServices}
+                    isLoading={followOnGroupsQuery.isLoading}
+                    error={followOnGroupsQuery.isError ? 'Failed to load follow-on groups' : null}
+                    onCreateGroup={() => {
+                      setFollowOnEditorContext('form');
+                      setFollowOnEditorTarget({
+                        mode: 'create',
+                        triggerServiceIds: editTarget ? [editTarget.id] : [],
+                      });
+                    }}
+                    onEditGroup={(group) => {
+                      setFollowOnEditorContext('form');
+                      // The form's own choice wins: a group linked here but not yet saved opens with this
+                      // service ticked.
+                      const sid = editTarget?.id;
+                      setFollowOnEditorTarget({
+                        mode: 'edit',
+                        group:
+                          sid && !group.trigger_service_ids.includes(sid)
+                            ? { ...group, trigger_service_ids: [...group.trigger_service_ids, sid] }
+                            : group,
+                      });
                     }}
                   />
                 </CollapsibleCard>

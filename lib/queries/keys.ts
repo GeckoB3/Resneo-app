@@ -214,6 +214,13 @@ export const queryKeys = {
       [...queryKeys.addonGroups.all(), keyScope(accessToken)] as const,
   },
 
+  /** GET /api/venue/follow-on-groups (follow-on plan 7.2). */
+  followOnGroups: {
+    all: () => [...queryKeys.all, 'followOnGroups'] as const,
+    list: (accessToken?: string | null) =>
+      [...queryKeys.followOnGroups.all(), keyScope(accessToken)] as const,
+  },
+
   reports: {
     all: () => [...queryKeys.all, 'reports'] as const,
     /**

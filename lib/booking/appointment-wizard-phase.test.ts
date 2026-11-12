@@ -5,7 +5,7 @@ import {
 
 describe('appointmentWizardPhase', () => {
   it('folds every choosing step into the first phase', () => {
-    for (const step of ['staff_pick', 'service', 'practitioner', 'variant', 'addons', 'chain_options']) {
+    for (const step of ['staff_pick', 'service', 'follow_on', 'practitioner', 'variant', 'addons', 'chain_options']) {
       expect(appointmentWizardPhase(step)).toBe(0);
     }
   });

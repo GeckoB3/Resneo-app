@@ -33,7 +33,10 @@ import {
 } from '@/lib/booking/visit-plan';
 import { chainAvailabilityPath } from '@/lib/queries/useChainAvailability';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
-import { ServicePickerStep } from '@/components/booking-wizard/ServicePickerStep';
+import { dedupeCatalogServices, ServicePickerStep } from '@/components/booking-wizard/ServicePickerStep';
+import { FollowOnStep, type FollowOnStepSection } from '@/components/booking-wizard/FollowOnStep';
+import { followOnQuestions, insertFollowOnPicks } from '@/lib/follow-ons/rules';
+import { formatPence } from '@/lib/format';
 import { StaffPickerStep } from '@/components/booking-wizard/StaffPickerStep';
 import { TimeSlotStep, venueLocalTime } from '@/components/booking-wizard/TimeSlotStep';
 import { AvailabilityOverrideToggle } from '@/components/booking-wizard/AvailabilityOverrideControls';
@@ -94,6 +97,7 @@ import {
 type StepKey =
   | 'staff_pick'
   | 'service'
+  | 'follow_on'
   | 'practitioner'
   | 'visit_people'
   | 'variant'
@@ -329,6 +333,21 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   const [visitPeople, setVisitPeople] = useState<StoredPersonChoice[] | null>(null);
   /** Staff-first: the people chosen before the one on screen, each with their services, in order (6.2). */
   const [staffFirstGroups, setStaffFirstGroups] = useState<StaffFirstGroup[]>([]);
+  /**
+   * The follow-on step (web follow-on plan 4.1): the visit's services when it opened (a staff-first
+   * visit's earlier people's first), this person's ticks, and where a rebook would have landed.
+   * Kept after the step so Back returns to it with the picks still ticked.
+   */
+  const [followOnBase, setFollowOnBase] = useState<{
+    mode: 'picker' | 'rebook';
+    ids: string[];
+    picks: ServicePick[];
+    rebookLandOn?: StepKey;
+  } | null>(null);
+  /** The picks on the follow-on step, by group. */
+  const [followOnPicks, setFollowOnPicks] = useState<Record<string, string[]>>({});
+  /** Staff-first: follow-on picks the chosen person does not do, ticked for the next person (4.3). */
+  const [carriedServiceIds, setCarriedServiceIds] = useState<string[]>([]);
   const accessToken = useAccessToken();
 
   // Practitioners able to perform the selected service — and, for a multi-service
@@ -462,6 +481,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     return [
       ...(isStaffFirst ? (['staff_pick'] as StepKey[]) : []),
       'service',
+      ...(followOnBase ? (['follow_on'] as StepKey[]) : []),
       ...(includePractitioner ? (['practitioner'] as StepKey[]) : []),
       ...(includeVisitPeople ? (['visit_people'] as StepKey[]) : []),
       ...(hasVariants ? (['variant'] as StepKey[]) : []),
@@ -482,6 +502,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     hasAddons,
     chainExtras,
     multiServiceSegments,
+    followOnBase,
   ]);
 
   // Pin the ordering the first time the venue is known — its feature flag is the
@@ -1304,6 +1325,74 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     [staffPick, staffFirstGroups, applyVisitPeople],
   );
 
+  const followOnGroups = useMemo(() => bookableCatalog?.follow_on_groups ?? [], [bookableCatalog]);
+
+  /**
+   * Whether a follow-on service can be booked in this flow (rule R2): someone the catalogue lists
+   * offers it, or, for a column tapped on the calendar, that person does.
+   */
+  const followOnBookable = useCallback(
+    (serviceId: string) =>
+      (bookableCatalog?.practitioners ?? []).some(
+        (p) =>
+          (isStaffFirst || !prefilledPractitionerId || p.id === prefilledPractitionerId) &&
+          p.services.some((svc) => svc.id === serviceId),
+      ),
+    [bookableCatalog, isStaffFirst, prefilledPractitionerId],
+  );
+
+  /**
+   * The visit with the picks in place (R5) and the questions to show, re-asked until it settles so
+   * a pick that raises its own question adds it (R6). A question already answered by a service
+   * ticked before the step is not shown (R8). As the web's `followOnState`.
+   */
+  const followOnState = useCallback(
+    (base: readonly string[], picks: Readonly<Record<string, readonly string[]>>) => {
+      let visit = [...base];
+      let questions = followOnQuestions({ groups: followOnGroups, visitServiceIds: visit, bookable: followOnBookable });
+      for (let round = 0; round < 6; round += 1) {
+        const list = questions.flatMap((q) =>
+          (picks[q.group.id] ?? [])
+            .filter((id) => !base.includes(id))
+            .map((serviceId) => ({ serviceId, afterServiceId: q.afterServiceId })),
+        );
+        const next = insertFollowOnPicks(base, list);
+        if (next.length === visit.length && next.every((id, k) => id === visit[k])) break;
+        visit = next;
+        questions = followOnQuestions({ groups: followOnGroups, visitServiceIds: visit, bookable: followOnBookable });
+      }
+      const nameOf = (id: string) =>
+        (bookableCatalog?.practitioners ?? []).flatMap((p) => p.services).find((svc) => svc.id === id)?.name ?? null;
+      const sections: FollowOnStepSection[] = questions
+        .filter((q) => !q.chosen.some((id) => base.includes(id)))
+        .map((q, index) => {
+          const picked = new Set(picks[q.group.id] ?? []);
+          return {
+            question: q,
+            options: q.group.offered_service_ids.filter(
+              (id) =>
+                !q.group.trigger_service_ids.includes(id) &&
+                ((picked.has(id) && visit.includes(id)) || q.choices.includes(id)),
+            ),
+            askedBecause: index === 0 ? null : nameOf(q.afterServiceId),
+          };
+        });
+      return { visit, sections };
+    },
+    [bookableCatalog, followOnBookable, followOnGroups],
+  );
+
+  /** A service picked on the follow-on step as a pick of the visit, as the list would have made it. */
+  const followOnPickOf = useCallback(
+    (serviceId: string): ServicePick | null => {
+      const row =
+        dedupeCatalogServices(bookableCatalog, serviceScopePractitionerId).find((r) => r.option.serviceId === serviceId) ??
+        dedupeCatalogServices(bookableCatalog).find((r) => r.option.serviceId === serviceId);
+      return row ? { option: row.option, durationOverride: null } : null;
+    },
+    [bookableCatalog, serviceScopePractitionerId],
+  );
+
   /**
    * On a collective, the one business the booking is made at when it is not the signed-in one
    * (QA 2026-11-08 DEVICE-F4): staff booked, and created clients, at a partner without knowing. A
@@ -1418,7 +1507,24 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
             // rebook variant didn't resolve; otherwise jump to date & time.
             const landOn: StepKey =
               (service.variants ?? []).length > 0 && !resolvedVariant ? 'variant' : 'date';
-            setCurrentStepKey(landOn);
+            // The venue's follow-on questions for the rebooked service first (web plan 4.1).
+            const asks = followOnQuestions({
+              groups: catalog.follow_on_groups ?? [],
+              visitServiceIds: [service.id],
+              bookable: (id) => catalog.practitioners.some((p) => p.services.some((svc) => svc.id === id)),
+            });
+            if (asks.some((q) => q.chosen.length === 0)) {
+              setFollowOnBase({
+                mode: 'rebook',
+                ids: [service.id],
+                picks: [{ option: serviceOption, durationOverride: null }],
+                rebookLandOn: landOn,
+              });
+              setFollowOnPicks({});
+              setCurrentStepKey('follow_on');
+            } else {
+              setCurrentStepKey(landOn);
+            }
           }
         } else {
           // Catalog still loading — re-run when it arrives (deps include
@@ -1462,7 +1568,93 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     setReturningGuest(true);
   }, [prefillGuestQuery.data, guestPrefilled, prefilledGuestId]);
 
+  /** On from the ticked services: the first leads and the rest follow, or a staff-first visit continues. */
+  function proceedFromPicks(picks: ServicePick[]) {
+    const [first, ...rest] = picks;
+    if (!first) return;
+    if (staffFirstGroups.length > 0) {
+      continueStaffFirstVisit(picks);
+      return;
+    }
+    // Remember the pills so "Change services" brings them back.
+    const overrides: Record<string, number> = {};
+    for (const p of picks) {
+      if (p.durationOverride != null) overrides[p.option.serviceId] = p.durationOverride;
+    }
+    setPendingOverrides(overrides);
+    chooseService(
+      first.option,
+      first.durationOverride,
+      rest.map((p) => ({
+        option: p.option,
+        variant: null,
+        addonIds: [],
+        durationOverride: p.durationOverride,
+      })),
+    );
+  }
+
+  /** Opens the follow-on step when the ticked services raise a question; true when it did. */
+  function maybeAskFollowOns(picks: ServicePick[]): boolean {
+    if (followOnGroups.length === 0) return false;
+    const ids = picks.map((p) => p.option.serviceId);
+    const base = isStaffFirst ? [...earlierVisitServiceIds, ...ids] : ids;
+    if (followOnState(base, {}).sections.length === 0) return false;
+    setFollowOnBase({ mode: 'picker', ids: base, picks });
+    setFollowOnPicks({});
+    goToStep('follow_on');
+    return true;
+  }
+
+  /** Continue (or Skip) on the follow-on step: the picks join the visit, each after its trigger (R5). */
+  function finishFollowOnStep(skip: boolean) {
+    if (!followOnBase) return;
+    const picksNow = skip ? {} : followOnPicks;
+    if (skip) setFollowOnPicks({});
+    const { visit } = followOnState(followOnBase.ids, picksNow);
+    const current = visit.filter((id) => !earlierVisitServiceIds.includes(id));
+    const pickOf = (id: string) => followOnBase.picks.find((p) => p.option.serviceId === id) ?? followOnPickOf(id);
+    const picks = current.map(pickOf).filter((p): p is ServicePick => p !== null);
+    if (followOnBase.mode === 'rebook') {
+      if (picks.length <= 1) {
+        goToStep(followOnBase.rebookLandOn ?? 'date');
+        return;
+      }
+      setPendingServiceIds(picks.map((p) => p.option.serviceId));
+      proceedFromPicks(picks);
+      return;
+    }
+    // Staff-first with a named person: a pick they do not do goes to the next person, through the
+    // same path as "Add a service with someone else" (web plan 4.3), ticked on their list.
+    if (isStaffFirst && staffPick?.kind === 'practitioner') {
+      const person = staffPick.practitioner;
+      const mine = picks.filter(
+        (p) => followOnBase.ids.includes(p.option.serviceId) || person.services.some((svc) => svc.id === p.option.serviceId),
+      );
+      const others = picks.filter((p) => !mine.includes(p));
+      if (others.length > 0 && mine.length > 0) {
+        setFollowOnBase(null);
+        setFollowOnPicks({});
+        setCarriedServiceIds(others.map((p) => p.option.serviceId));
+        addServiceWithSomeoneElse(mine);
+        return;
+      }
+    }
+    setPendingServiceIds(picks.map((p) => p.option.serviceId));
+    proceedFromPicks(picks);
+  }
+
   const handleBack = () => {
+    // The follow-on step: back to the services, as they were ticked.
+    if (currentStepKey === 'follow_on') {
+      if (followOnBase?.mode === 'picker') {
+        setPendingServiceIds(followOnBase.picks.map((p) => p.option.serviceId));
+      }
+      setFollowOnBase(null);
+      setFollowOnPicks({});
+      goToStep('service');
+      return;
+    }
     // Multi-service review → drop back to slot selection, discarding the chain
     // (web parity; replaces the step's own former "Back" control).
     if (currentStepKey === 'multi_service') {
@@ -1522,6 +1714,9 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
       setVisitPeople(null);
       setStaffFirstGroups([]);
       setStaffPick(null);
+      setFollowOnBase(null);
+      setFollowOnPicks({});
+      setCarriedServiceIds([]);
       setCurrentStepKey(isStaffFirst ? 'staff_pick' : 'service');
     },
     [isStaffFirst],
@@ -1628,6 +1823,9 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     setChainCursor(null);
     setVisitPeople(null);
     setStaffFirstGroups([]);
+    setFollowOnBase(null);
+    setFollowOnPicks({});
+    setCarriedServiceIds([]);
     setSelectedDate(calendarDateInTimeZone(new Date(), timeZone));
     setMonthAnchor(calendarDateInTimeZone(new Date(), timeZone));
     setSource(isWalkInIntent ? 'walk-in' : 'phone');
@@ -1659,6 +1857,8 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     // The service list is scoped to the chosen person, so it has nothing to show
     // until there is one.
     activeKey = 'staff_pick';
+  } else if (activeKey === 'follow_on') {
+    if (!followOnBase) activeKey = 'service';
   } else if (activeKey !== 'service' && activeKey !== 'staff_pick' && !selectedService) {
     activeKey = 'service';
   } else if (activeKey === 'confirm' && !selectedSlot) {
@@ -1823,7 +2023,15 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
             // under the previous one may survive.
             setStaffPick(practitioner ? { kind: 'practitioner', practitioner } : { kind: 'any' });
             setSelectedService(null);
-            setPendingServiceIds([]);
+            // Follow-on picks the previous person does not do arrive ticked, where this person does them.
+            setPendingServiceIds(
+              carriedServiceIds.filter(
+                (id) => !practitioner || practitioner.services.some((svc) => svc.id === id),
+              ),
+            );
+            setCarriedServiceIds([]);
+            setFollowOnBase(null);
+            setFollowOnPicks({});
             setPendingOverrides({});
             setChainExtras([]);
             setChainCursor(null);
@@ -1887,28 +2095,11 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
             setPendingOverrides({});
           }}
           onContinueSelection={(picks) => {
-            const [first, ...rest] = picks;
-            if (!first) return;
-            if (staffFirstGroups.length > 0) {
-              continueStaffFirstVisit(picks);
-              return;
-            }
-            // Remember the pills so "Change services" brings them back.
-            const overrides: Record<string, number> = {};
-            for (const p of picks) {
-              if (p.durationOverride != null) overrides[p.option.serviceId] = p.durationOverride;
-            }
-            setPendingOverrides(overrides);
-            chooseService(
-              first.option,
-              first.durationOverride,
-              rest.map((p) => ({
-                option: p.option,
-                variant: null,
-                addonIds: [],
-                durationOverride: p.durationOverride,
-              })),
-            );
+            if (!picks[0]) return;
+            // The venue's follow-on questions first (web follow-on plan 4.1), then on as before.
+            if (maybeAskFollowOns(picks)) return;
+            setFollowOnBase(null);
+            proceedFromPicks(picks);
           }}
           onSelect={(option, customDuration) => chooseService(option, customDuration, [])}
         />
@@ -1920,6 +2111,52 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           />
         </>
       ) : null}
+
+      {activeKey === 'follow_on' && followOnBase
+        ? (() => {
+            const { visit, sections } = followOnState(followOnBase.ids, followOnPicks);
+            const rows = dedupeCatalogServices(bookableCatalog);
+            const rowOf = (id: string) => rows.find((r) => r.option.serviceId === id);
+            const named = isStaffFirst && staffPick?.kind === 'practitioner' ? staffPick.practitioner : null;
+            return (
+              <FollowOnStep
+                sections={sections}
+                picks={followOnPicks}
+                onToggle={(groupId, serviceId, single) =>
+                  setFollowOnPicks((prev) => {
+                    const had = prev[groupId] ?? [];
+                    const next = had.includes(serviceId)
+                      ? had.filter((id) => id !== serviceId)
+                      : single
+                        ? [serviceId]
+                        : [...had, serviceId];
+                    return { ...prev, [groupId]: next };
+                  })
+                }
+                serviceCard={(serviceId) => {
+                  const row = rowOf(serviceId);
+                  const amount = row?.fromPricePence != null ? formatPence(row.fromPricePence) ?? '' : '';
+                  return {
+                    name: row?.option.serviceName ?? '',
+                    durationMinutes: row?.option.durationMinutes ?? null,
+                    priceLabel: amount && row && (row.multiplePractitioners || row.optionPricesVary) ? `from ${amount}` : amount,
+                    description: row?.option.description ?? null,
+                  };
+                }}
+                optionState={(serviceId) =>
+                  named && !named.services.some((svc) => svc.id === serviceId) ? { note: 'with someone else' } : {}
+                }
+                visitLabel={followOnBase.ids
+                  .map((id) => rowOf(id)?.option.serviceName)
+                  .filter(Boolean)
+                  .join(' · ')}
+                visitCount={visit.length}
+                onContinue={() => finishFollowOnStep(false)}
+                onSkip={() => finishFollowOnStep(true)}
+              />
+            );
+          })()
+        : null}
 
       {activeKey === 'practitioner' && selectedService ? (
         <PractitionerStep

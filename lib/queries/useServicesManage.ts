@@ -41,6 +41,11 @@ export interface AddonGroupLinkWriteInput {
 export interface ServiceRelationsFields {
   variants?: VariantWriteInput[];
   addon_group_links?: AddonGroupLinkWriteInput[];
+  /**
+   * The follow-on groups asked after this service, in order (follow-on plan 6.3). Admin only.
+   * Omitted, the links are left as they are, so an untouched form never rewrites them.
+   */
+  follow_on_group_ids?: string[];
 }
 
 /** POST body — the create input plus booking-start tuning and inline relations. */
@@ -52,6 +57,8 @@ function invalidateServices(queryClient: ReturnType<typeof useQueryClient>) {
   void queryClient.invalidateQueries({ queryKey: queryKeys.services.all() });
   // The public booking catalog mirrors service changes.
   void queryClient.invalidateQueries({ queryKey: queryKeys.appointments.all() });
+  // A service save can change which follow-on groups are asked after it.
+  void queryClient.invalidateQueries({ queryKey: queryKeys.followOnGroups.all() });
 }
 
 /** GET /api/venue/appointment-services — staff service list with variants + add-ons. */

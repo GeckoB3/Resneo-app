@@ -136,6 +136,25 @@ export interface AppointmentCatalogResponse {
    * categories returns `[]`.
    */
   categories?: ServiceCategoryRef[];
+  /**
+   * The venue's switched-on follow-on questions (web follow-on plan 7.2, additive 2026-11-12): after
+   * a trigger service is picked, offer these services as their own services in the visit. Service
+   * ids are the catalogue's own (page service ids on a collective). Older servers omit it.
+   */
+  follow_on_groups?: AppointmentCatalogFollowOnGroup[];
+}
+
+/** One follow-on question as the catalogue carries it. @see lib/follow-ons/rules.ts */
+export interface AppointmentCatalogFollowOnGroup {
+  id: string;
+  /** The question; null shows the default. */
+  prompt: string | null;
+  selection_type: 'single' | 'multi';
+  /** Online clients must pick one. Staff can always skip. */
+  required: boolean;
+  trigger_service_ids: string[];
+  /** In the order clients see them. */
+  offered_service_ids: string[];
 }
 
 /** Sentinel practitioner id for "any available" pooling — matches the web constant. */

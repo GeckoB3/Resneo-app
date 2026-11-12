@@ -184,6 +184,10 @@ export function MemberServiceSheet({
     .map((v) => v.name)
     .join(', ');
   const addOns = (service.addon_groups ?? []).map((g) => g.group.name).join(', ');
+  // The host's follow-on questions asked after this service (web MemberServiceView, follow-on plan 6.4).
+  const followOns = (service.follow_on_groups ?? [])
+    .map((g) => (g.required ? `${g.name} (clients must choose one)` : g.name))
+    .join(', ');
 
   const valuesCalendar = valuesCalendarId ? calendars.find((c) => c.id === valuesCalendarId) ?? null : null;
   if (valuesCalendar) {
@@ -398,6 +402,7 @@ export function MemberServiceSheet({
         />
         <Row label="Options" value={activeOptions || 'No options'} />
         <Row label="Add-ons" value={addOns || 'No add-ons'} />
+        <Row label="Follow-on services" value={followOns || 'No follow-on services'} />
         <Row label="Staff bookings only" value={retired ? 'Not bookable' : undefined} />
       </View>
     </StepShell>
