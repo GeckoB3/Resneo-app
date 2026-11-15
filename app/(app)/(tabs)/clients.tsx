@@ -5,7 +5,6 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
-  Linking,
   Platform,
   Pressable,
   RefreshControl,
@@ -70,6 +69,7 @@ import type {
   GuestListItem,
   GuestListResponse,
 } from '@/types/guest-list';
+import { useContactLinks } from '@/lib/phone/contact-links';
 
 const SEARCH_DEBOUNCE_MS = 280;
 const MIN_SEARCH_LENGTH = 2;
@@ -258,6 +258,7 @@ function GuestRowBase({
 const GuestRow = memo(GuestRowBase);
 
 export default function ClientsScreen() {
+  const contactLinks = useContactLinks();
   const router = useRouter();
   const queryClient = useQueryClient();
   const { colors } = useTheme();
@@ -542,14 +543,14 @@ export default function ClientsScreen() {
           label: 'Call',
           icon: { ios: 'phone.fill', android: 'call', web: 'call' },
           color: colors.success,
-          onPress: () => void Linking.openURL(`tel:${item.phone}`),
+          onPress: () => contactLinks.call(item.phone),
         });
         swipeActions.push({
           key: 'message',
           label: 'Text',
           icon: { ios: 'message.fill', android: 'sms', web: 'sms' },
           color: colors.brand,
-          onPress: () => void Linking.openURL(`sms:${item.phone}`),
+          onPress: () => contactLinks.text(item.phone),
         });
       }
 
@@ -582,6 +583,7 @@ export default function ClientsScreen() {
       colors.brand,
       colors.success,
       contactHidden,
+      contactLinks,
       selectionMode,
       selectedIds,
       handleRowPress,

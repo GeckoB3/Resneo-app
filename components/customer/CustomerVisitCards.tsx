@@ -1,4 +1,4 @@
-import { Linking, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { Badge, type BadgeTone } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -9,6 +9,7 @@ import { formatDayHeading } from '@/lib/dates/venue-dates';
 import { formatPence } from '@/lib/format';
 import type { CustomerVisit, CustomerVisitService } from '@/lib/queries/useCustomerVisit';
 import { spacing } from '@/theme/index';
+import { useContactLinks } from '@/lib/phone/contact-links';
 
 /**
  * The whole visit on the booking screen (web split-visit plan 6.5; G2, G5): the day, start to
@@ -108,6 +109,7 @@ function visitStatusLabel(visit: CustomerVisit): string {
  * business first, so the client knows whom to ring about a particular service.
  */
 export function VisitContactsCard({ visit }: { visit: CustomerVisit }) {
+  const contactLinks = useContactLinks();
   const many = visit.businesses.length > 1;
   // A visit across businesses lists every business, with what each took (web split-visit plan 6.5).
   const listed = many ? visit.businesses : visit.businesses.filter((b) => b.phone || b.email);
@@ -140,7 +142,7 @@ export function VisitContactsCard({ visit }: { visit: CustomerVisit }) {
             <Button
               label={`Call ${business.name}`}
               variant="secondary"
-              onPress={() => void Linking.openURL(`tel:${business.phone}`)}
+              onPress={() => contactLinks.call(business.phone)}
               style={styles.gap}
             />
           ) : null}
@@ -148,7 +150,7 @@ export function VisitContactsCard({ visit }: { visit: CustomerVisit }) {
             <Button
               label={`Email ${business.name}`}
               variant="secondary"
-              onPress={() => void Linking.openURL(`mailto:${business.email}`)}
+              onPress={() => contactLinks.email(business.email)}
               style={styles.gap}
             />
           ) : null}

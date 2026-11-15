@@ -2,7 +2,7 @@ import * as Clipboard from 'expo-clipboard';
 import { format, parseISO } from 'date-fns';
 import { useRouter, type Href } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 
 import { BookingNotesSection } from '@/components/bookings/BookingNotesSection';
@@ -134,6 +134,7 @@ import type { BookingDetail, BookingStatus } from '@/types/booking-detail';
 import type { BookingListRow } from '@/types/booking-list';
 import { CONFIRM_ARM_MS } from '@/lib/ui/confirm-arm';
 import { useVisitPartnerLines } from '@/lib/queries/useVisitPartnerLines';
+import { useContactLinks } from '@/lib/phone/contact-links';
 
 type SymbolName = SymbolViewProps['name'];
 
@@ -596,6 +597,7 @@ export function BookingDetailContent({
   onOpenedSale,
   onOpenedRecord,
 }: BookingDetailContentProps) {
+  const contactLinks = useContactLinks();
   const { colors } = useTheme();
   const router = useRouter();
   const toast = useToast();
@@ -1487,7 +1489,7 @@ export function BookingDetailContent({
                   icon={{ ios: 'phone.fill', android: 'call', web: 'call' }}
                   value={formatPhoneForDisplay(guestPhone)}
                   accessibilityLabel={`Call ${guestName}`}
-                  onPress={() => void Linking.openURL(`tel:${guestPhone.replace(/\s+/g, '')}`)}
+                  onPress={() => contactLinks.call(guestPhone)}
                 />
               ) : null}
               {guestEmail ? (
@@ -1495,7 +1497,7 @@ export function BookingDetailContent({
                   icon={{ ios: 'envelope.fill', android: 'mail', web: 'mail' }}
                   value={guestEmail}
                   accessibilityLabel={`Email ${guestName}`}
-                  onPress={() => void Linking.openURL(`mailto:${guestEmail}`)}
+                  onPress={() => contactLinks.email(guestEmail)}
                 />
               ) : null}
 
@@ -1508,14 +1510,14 @@ export function BookingDetailContent({
                   <QuickAction
                     icon={{ ios: 'phone.fill', android: 'call', web: 'call' }}
                     label="Call"
-                    onPress={() => void Linking.openURL(`tel:${guestPhone.replace(/\s+/g, '')}`)}
+                    onPress={() => contactLinks.call(guestPhone)}
                   />
                 ) : null}
                 {guestEmail ? (
                   <QuickAction
                     icon={{ ios: 'envelope.fill', android: 'mail', web: 'mail' }}
                     label="Email"
-                    onPress={() => void Linking.openURL(`mailto:${guestEmail}`)}
+                    onPress={() => contactLinks.email(guestEmail)}
                   />
                 ) : null}
                 {canReschedule && isClassBooking && booking.class_instance_id ? (

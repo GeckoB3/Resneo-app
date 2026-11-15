@@ -8,6 +8,7 @@ import { Text } from '@/components/ui/Text';
 import { spacing } from '@/theme/index';
 import type { CollectiveView } from '@/types/collectives';
 import type { OpeningHours } from '@/types/venue';
+import { useContactLinks } from '@/lib/phone/contact-links';
 
 /**
  * About: the contact details and opening hours the combined page shows
@@ -20,6 +21,7 @@ import type { OpeningHours } from '@/types/venue';
  * own venue account, in its own business hours, closures and calendar hours.
  */
 export function CombinedPageAboutSection({ collective }: { collective: CollectiveView }) {
+  const contactLinks = useContactLinks();
   const router = useRouter();
   const host =
     collective.members.find((m) => m.venueId === collective.hostVenueId)?.venueName ?? 'the host venue';
@@ -59,7 +61,7 @@ export function CombinedPageAboutSection({ collective }: { collective: Collectiv
         <Text variant="bodySmall" tone="secondary">
           {`What the combined page shows in its header and About tab. These are ${host}’s details: the combined page has none of its own.`}
         </Text>
-        {row('Phone', contact?.phone ?? null, contact?.phone ? () => void Linking.openURL(`tel:${contact.phone}`) : undefined)}
+        {row('Phone', contact?.phone ?? null, contact?.phone ? () => contactLinks.call(contact.phone) : undefined)}
         {row('Website', website, websiteHref ? () => void Linking.openURL(websiteHref) : undefined)}
         {row('Address', contact?.address ?? null)}
         <View style={styles.hours}>

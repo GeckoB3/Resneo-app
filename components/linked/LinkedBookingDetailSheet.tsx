@@ -1,6 +1,6 @@
 import { format, parseISO } from 'date-fns';
 import { useEffect, useMemo, useState } from 'react';
-import { Linking, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 
 import { minutesToTime, timeToMinutes } from '@/components/calendar/grid-layout';
@@ -33,6 +33,7 @@ import type {
   LinkedBookingStatus,
   LinkedVenueCalendar,
 } from '@/types/linked-venues';
+import { useContactLinks } from '@/lib/phone/contact-links';
 
 const BOOKING_STATUSES: LinkedBookingStatus[] = [
   'Pending',
@@ -113,6 +114,7 @@ export function LinkedBookingDetailSheet({
   /** Called after a successful edit/cancel so the host can refetch. */
   onSaved?: () => void;
 }) {
+  const contactLinks = useContactLinks();
   const { colors } = useTheme();
   const toast = useToast();
   const accessToken = useAccessToken();
@@ -298,21 +300,21 @@ export function LinkedBookingDetailSheet({
                       <QuickAction
                         icon={{ ios: 'phone.fill', android: 'call', web: 'call' }}
                         label="Call"
-                        onPress={() => void Linking.openURL(`tel:${guestPhone.replace(/\s+/g, '')}`)}
+                        onPress={() => contactLinks.call(guestPhone)}
                       />
                     ) : null}
                     {guestPhone ? (
                       <QuickAction
                         icon={{ ios: 'message.fill', android: 'sms', web: 'sms' }}
                         label="Text"
-                        onPress={() => void Linking.openURL(`sms:${guestPhone.replace(/\s+/g, '')}`)}
+                        onPress={() => contactLinks.text(guestPhone)}
                       />
                     ) : null}
                     {guestEmail ? (
                       <QuickAction
                         icon={{ ios: 'envelope.fill', android: 'mail', web: 'mail' }}
                         label="Email"
-                        onPress={() => void Linking.openURL(`mailto:${guestEmail}`)}
+                        onPress={() => contactLinks.email(guestEmail)}
                       />
                     ) : null}
                   </ScrollView>

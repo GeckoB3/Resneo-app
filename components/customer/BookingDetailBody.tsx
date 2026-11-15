@@ -10,6 +10,7 @@ import { formatPence } from '@/lib/format';
 import type { CustomerBookingDetail } from '@/lib/queries/useCustomerBookings';
 import type { CustomerVisit } from '@/lib/queries/useCustomerVisit';
 import { spacing } from '@/theme/index';
+import { useContactLinks } from '@/lib/phone/contact-links';
 
 type Props = {
   booking: CustomerBookingDetail;
@@ -29,6 +30,7 @@ type Props = {
  * address would send a mobile practitioner's client to the wrong place.
  */
 export function BookingDetailBody({ booking, visit }: Props) {
+  const contactLinks = useContactLinks();
   return (
     <View style={styles.stack}>
       {visit ? <VisitSummaryCard visit={visit} /> : <BookingSummaryCard booking={booking} />}
@@ -57,7 +59,7 @@ export function BookingDetailBody({ booking, visit }: Props) {
           <Button
             label="Call the venue"
             variant="secondary"
-            onPress={() => void Linking.openURL(`tel:${booking.venue_phone}`)}
+            onPress={() => contactLinks.call(booking.venue_phone)}
             style={styles.gap}
           />
         ) : null}
