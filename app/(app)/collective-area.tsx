@@ -25,11 +25,15 @@
  *   tab=venues         open the host's Venues tab (Manage combined page's pointer, CQ-10.4)
  *   tab=clients        open Clients: shared client lists (web 2026-11-15, the bell's link)
  *
+ * "What needs you" above the tabs also carries shared client lists (plan P7): a request to share,
+ * with Share now (then the Clients tab, and Bring together when the lists need it) and Not now, and
+ * the clients waiting to be checked. Hidden on the Clients tab, which shows the same rows itself.
+ *
  * A host whose collective has nothing on the page yet reads it from the collectives list, and opens
  * on Venues while it has no other venue, to invite one or end it (CQ-10.3).
  */
 import { Stack, useLocalSearchParams, useRouter, type Href } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
 import {
@@ -72,7 +76,13 @@ import {
   type CollectiveCalendarGroup,
 } from '@/lib/collective-area/model';
 import { clientSharingCopy } from '@/lib/collective-area/client-sharing-copy';
-import { useClientSharingStatus } from '@/lib/queries/useClientSharing';
+import { clientSharingTodos } from '@/lib/collective-area/client-sharing-lines';
+import {
+  useClientSharingStatus,
+  useClientSharingSummary,
+  useDismissClientSharing,
+  useSetClientSharing,
+} from '@/lib/queries/useClientSharing';
 import { useCollectiveRetry, useOwnCollectiveCalendars } from '@/lib/queries/useCollectiveArea';
 import { useCollectives } from '@/lib/queries/useCollectives';
 import { useManagedServices } from '@/lib/queries/useServicesManage';
@@ -219,6 +229,37 @@ function AreaBody({
   const sharing = useClientSharingStatus(collective.id);
   const showClientsTab = !sharing.isError && (collective.isHost || sharing.data?.offered === true);
   const [historyVenueId, setHistoryVenueId] = useState<string | null>(null);
+  // "What needs you": a request to share and clients to check (plan P7), from the venue summary.
+  const sharingSummary = useClientSharingSummary();
+  const setSharing = useSetClientSharing(collective.id);
+  const dismissSharing = useDismissClientSharing(collective.id);
+  /** Share now said yes and the lists need bringing together: the Clients tab opens the sheet once. */
+  const [openBringTogether, setOpenBringTogether] = useState(false);
+  const clearBringTogether = useCallback(() => setOpenBringTogether(false), []);
+  const sharingTodoRows = tab === 'clients' ? null : clientSharingTodos(sharingSummary.data, collective.id);
+  const sharingFail = (err: unknown) =>
+    toast.error(err instanceof ApiError ? err.message : clientSharingCopy('cs.error.generic'));
+  const sharingTodos = sharingTodoRows
+    ? {
+        ...sharingTodoRows,
+        sharing: setSharing.isPending,
+        dismissing: dismissSharing.isPending,
+        onShare: () =>
+          setSharing.mutate(
+            { share: true },
+            {
+              onSuccess: (data) => {
+                setHistoryVenueId(null);
+                setTab('clients');
+                if (data.needsBringTogether) setOpenBringTogether(true);
+              },
+              onError: sharingFail,
+            },
+          ),
+        onNotNow: () => dismissSharing.mutate('request', { onError: sharingFail }),
+        onCheck: () => router.push(`/client/check?collective=${collective.id}` as Href),
+      }
+    : null;
   const [servicesView, setServicesView] = useState<ServicesView>(
     oneParam(params.view) === 'venues' ? 'venues' : 'page',
   );
@@ -381,7 +422,7 @@ function AreaBody({
           {!collective.isHost ? <AdoptionRequestsCard collectiveId={collective.id} /> : null}
           {/* A venue invited to the collective held up by a link this one set to less than full
               access (web CollectiveLinkTodos, 2026-10-28). Nothing shows otherwise. */}
-          <LinkTodosCard />
+          <LinkTodosCard clientSharing={sharingTodos} />
 
           <Segmented<AreaTab>
             options={tabs}
@@ -502,7 +543,14 @@ function AreaBody({
             />
           ) : null}
 
-          {tab === 'clients' ? <ClientsPanel collectiveId={collective.id} isHost={collective.isHost} /> : null}
+          {tab === 'clients' ? (
+            <ClientsPanel
+              collectiveId={collective.id}
+              isHost={collective.isHost}
+              openBringTogether={openBringTogether}
+              onBringTogetherOpened={clearBringTogether}
+            />
+          ) : null}
 
           {tab === 'listings' ? (
             <ListingsPanel collectiveId={collective.id} collectiveName={collective.name} />

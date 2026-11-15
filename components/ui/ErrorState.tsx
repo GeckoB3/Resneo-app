@@ -8,12 +8,15 @@ type ErrorStateProps = {
   title?: string;
   message: string;
   onRetry?: () => void;
+  /** The retry button's words, when a feature keeps its own copy table. */
+  retryLabel?: string;
 };
 
 export function ErrorState({
   title = 'Something went wrong',
   message,
   onRetry,
+  retryLabel = 'Try again',
 }: ErrorStateProps) {
   return (
     <View style={styles.centered}>
@@ -23,7 +26,7 @@ export function ErrorState({
       <Text variant="bodySmall" tone="secondary" style={styles.center}>
         {message}
       </Text>
-      {onRetry ? <Button label="Try again" onPress={onRetry} variant="secondary" /> : null}
+      {onRetry ? <Button label={retryLabel} onPress={onRetry} variant="secondary" /> : null}
     </View>
   );
 }

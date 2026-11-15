@@ -11,7 +11,10 @@ import {
   JoinLinksChecklist,
   JoinMeansStep,
   JoinServicesStep,
+  JoinShareClientsBlock,
+  joinNeedsShareAnswer,
   JoinSummaryList,
+  type JoinShareAnswer,
 } from '@/components/linked/setup/JoinSteps';
 import { StepShell } from '@/components/linked/setup/StepShell';
 import { Button } from '@/components/ui/Button';
@@ -94,6 +97,8 @@ export function ReviewLinkRequestSheet({
    */
   const [joinedWith, setJoinedWith] = useState<{ preview: JoinPreview; draft: JoinDraft } | null>(null);
   const [pending, setPending] = useState<'accept' | 'decline' | null>(null);
+  /** Shared client lists (web 2026-11-15, D10): asked when the collective offers it, nothing preselected. */
+  const [shareClients, setShareClients] = useState<JoinShareAnswer>(null);
 
   const proposesJoin = Boolean(collective && collective.serviceModel === 'replicas');
   const previewQuery = useJoinPreview(proposesJoin ? collective?.id : null, { enabled: visible && proposesJoin });
@@ -116,6 +121,7 @@ export function ReviewLinkRequestSheet({
     setDone(null);
     setJoinedWith(null);
     setPending(null);
+    setShareClients(null);
   }, [visible, link]);
 
   useEffect(() => {
@@ -153,7 +159,14 @@ export function ReviewLinkRequestSheet({
         action: editing ? 'accept_with_changes' : 'accept',
         ...(editing ? { grants: { mine, theirs } } : {}),
         ...(join && collective && preview
-          ? { collective: { collective_id: collective.id, consent_version: preview.consent_version, ...joinChoicesFrom(preview, draft) } }
+          ? {
+              collective: {
+                collective_id: collective.id,
+                consent_version: preview.consent_version,
+                ...joinChoicesFrom(preview, draft),
+                ...(preview.client_sharing_offered && shareClients ? { share_clients: shareClients } : {}),
+              },
+            }
           : {}),
       },
       {
@@ -214,7 +227,9 @@ export function ReviewLinkRequestSheet({
       {onCheck ? (
         <Button
           label={busy && pending === 'accept' ? setupCopy('respond.cta.accepting') : joinable ? setupCopy('respond.cta.acceptJoin', { collective: collectiveName }) : setupCopy('respond.cta.accept')}
-          disabled={busy || !grantsValid || (joinable && !agreed)}
+          disabled={
+            busy || !grantsValid || (joinable && (!agreed || (preview ? joinNeedsShareAnswer(preview, shareClients) : false)))
+          }
           loading={pending === 'accept'}
           onPress={() => doRespond(joinable)}
         />
@@ -350,6 +365,7 @@ export function ReviewLinkRequestSheet({
                   </Text>
                 ) : null}
                 <JoinFormsSwitch preview={preview} draft={draft} onChange={setDraft} />
+                <JoinShareClientsBlock preview={preview} value={shareClients} onChange={setShareClients} />
                 <ChoiceRow
                   kind="checkbox"
                   selected={agreed}

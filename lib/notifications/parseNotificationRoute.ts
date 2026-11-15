@@ -19,6 +19,10 @@
  *   /dashboard/availability              →  { type: 'availability' }  (Calendar Availability; a
  *                                        collective calendar notice)
  *   /dashboard/settings?tab=booking-page →  { type: 'booking-page' }  (the address question, N38)
+ *   /dashboard/contacts?guest=<uuid>     →  { type: 'client', guestId }  (that client's screen; the
+ *                                        erased-client notice opens this venue's own record of the
+ *                                        client, web 2026-11-15. Without a usable guest id it opens
+ *                                        what its type names, as a notice with no link does)
  *   anything else                        →  null (no navigation)
  *
  * Collective notices (CQ-10.5, 2026-10-29) open the screen that answers them, by their `type`: the
@@ -51,6 +55,8 @@ export type NotificationRoute =
   | { type: 'availability' }
   | { type: 'booking-page' }
   | { type: 'collectives' }
+  /** One client's screen (`/client/[id]`). */
+  | { type: 'client'; guestId: string }
   | null;
 
 /** Invitations to a collective: answered on Venue collectives. */
@@ -83,6 +89,8 @@ const COLLECTIVE_NOTICE_ROUTES: Record<string, 'collective' | 'clients' | 'servi
   collective_removed: 'services',
   collective_link_ended: 'services',
 };
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const MANAGE_COLLECTIVE: NotificationRoute = { type: 'collective-area', view: null, venue: null, filter: null };
 
@@ -143,6 +151,14 @@ export function parseNotificationRoute(href: string | null | undefined, type?: s
       filter: queryValue(href, 'filter') === 'suggested' ? 'suggested' : null,
       ...(queryValue(href, 'tab') === 'clients' ? { tab: 'clients' as const } : {}),
     };
+  }
+
+  // One client (web `/dashboard/contacts?guest=<uuid>`): the erased-client notice opens this
+  // venue's own record of that client. `/dashboard/contacts` exactly, not `/contacts/check`.
+  if (/\/dashboard\/contacts(?:[?#]|$)/.test(href)) {
+    const guestId = queryValue(href, 'guest');
+    if (guestId && UUID.test(guestId)) return { type: 'client', guestId };
+    return type ? collectiveRouteByType(type) : null;
   }
 
   // The Services page; a member's suggestion carries the venue and service to add (N25).

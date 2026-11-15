@@ -13,6 +13,10 @@ export type ClientSharingState = 'undecided' | 'on' | 'not_now' | 'ended';
 export type ClientSharingVenueStatus =
   | 'sharing'
   | 'waiting'
+  /** They said yes and have not brought their list together yet. */
+  | 'waiting_start'
+  /** They share; this venue said yes and has not brought its list together yet. */
+  | 'waiting_you'
   | 'not_sharing'
   | 'paused'
   | 'left_out';
@@ -51,6 +55,11 @@ export interface ClientSharingStatusResponse {
   todo: { toCheck: number; changes: number };
   /** Host only: members that have not answered and could be asked. */
   undecidedCount: number;
+  /**
+   * Venues whose clients pass to another venue now (active or paused pair): the Remove and End
+   * wording says "sharing stops" only about these. Added 2026-11-15; missing from an older server.
+   */
+  sharingVenueIds?: string[];
 }
 
 /** POST .../client-sharing/preview: the Bring together numbers (§1A.2 step 4). */
@@ -138,6 +147,13 @@ export interface VenueClientSharingSummary {
   showNudge: boolean;
   toCheck: number;
   canManage: boolean;
+  /**
+   * Another venue asked this one to share and nobody here answered (P7 "What needs you" row).
+   * Owners and admins only, while offered and undecided. Added 2026-11-15; missing from an older server.
+   */
+  request?: { byVenueName: string; at: string } | null;
+  /** Venues whose clients pass to another venue now. Added 2026-11-15; missing from an older server. */
+  sharingVenueIds?: string[];
 }
 
 /** PUT .../client-sharing answers the status plus whether Bring together is needed. */

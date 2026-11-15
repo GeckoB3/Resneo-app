@@ -80,7 +80,7 @@ export function BringTogetherSheet({
           {clientSharingCopy('cs.start.title')}
         </Text>
         {preview.isPending ? (
-          <ActivityIndicator accessibilityLabel={clientSharingCopy('cs.start.title')} />
+          <ActivityIndicator accessibilityLabel={clientSharingCopy('cs.start.counting')} />
         ) : preview.isError ? (
           <Text variant="bodySmall" tone="danger">
             {preview.error instanceof ApiError ? preview.error.message : clientSharingCopy('cs.error.generic')}

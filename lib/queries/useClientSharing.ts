@@ -46,13 +46,21 @@ export function useClientSharingStatus(collectiveId: string | null, options: { p
   });
 }
 
-export function useClientSharingCheck(collectiveId: string | null) {
+/** Cards per page of Clients to check (the server allows up to 100). */
+export const CLIENT_CHECK_PAGE = 50;
+
+/** One page of Clients to check, from `offset`; `total` on the answer counts every card. */
+export function useClientSharingCheck(collectiveId: string | null, offset = 0) {
   const accessToken = useAccessToken();
   return useQuery({
-    queryKey: queryKeys.clientSharing.check(accessToken, collectiveId),
+    queryKey: queryKeys.clientSharing.check(accessToken, collectiveId, offset),
     enabled: isBackendConfigured() && accessToken !== null && Boolean(collectiveId),
     staleTime: 0,
-    queryFn: () => apiFetch<ClientSharingCheckResponse>(`${base(collectiveId!)}/check?limit=50`, { accessToken }),
+    queryFn: () =>
+      apiFetch<ClientSharingCheckResponse>(
+        `${base(collectiveId!)}/check?offset=${Math.max(0, offset)}&limit=${CLIENT_CHECK_PAGE}`,
+        { accessToken },
+      ),
   });
 }
 

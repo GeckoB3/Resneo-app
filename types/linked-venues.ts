@@ -152,6 +152,9 @@ export interface AcceptCollectiveWithLink {
   }[];
   own_service_choices?: { service_id: string; choice: 'ask' | 'park' }[];
   form_choices?: { host_type_id: string; choice: 'use_existing' | 'use_theirs'; my_type_id?: string }[];
+  turn_on_forms?: boolean;
+  /** The "Share client lists?" answer when the collective offers it (web 2026-11-15, D10). */
+  share_clients?: 'share' | 'not_now';
 }
 
 export interface RespondLinkPayload {

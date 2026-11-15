@@ -133,4 +133,19 @@ describe('parseNotificationRoute', () => {
       filter: null,
     });
   });
+
+  it("opens the client's own record for an erased-client notice (web 2026-11-15)", () => {
+    const guest = '3f2b8c4e-1a2b-4c3d-9e8f-0123456789ab';
+    expect(parseNotificationRoute(`/dashboard/contacts?guest=${guest}`, 'client_sharing_erased')).toEqual({
+      type: 'client',
+      guestId: guest,
+    });
+    // Without a usable guest id it opens what its type names, as a notice with no link does.
+    const clients = { type: 'collective-area', view: null, venue: null, filter: null, tab: 'clients' };
+    expect(parseNotificationRoute('/dashboard/contacts?guest=not-a-uuid', 'client_sharing_erased')).toEqual(clients);
+    expect(parseNotificationRoute('/dashboard/contacts', 'client_sharing_erased')).toEqual(clients);
+    expect(parseNotificationRoute('/dashboard/contacts?guest=nope')).toBeNull();
+    // Clients to check is not a client.
+    expect(parseNotificationRoute(`/dashboard/contacts/check?guest=${guest}`)).toBeNull();
+  });
 });

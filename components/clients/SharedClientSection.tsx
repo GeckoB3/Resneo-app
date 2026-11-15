@@ -21,16 +21,20 @@ import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
 import type { SharedGuestResponse } from '@/types/client-sharing';
 
-function shortDate(iso: string | null, withYear = false): string | null {
+/** "12 Nov 2025": always with the year, as the web reads it (a last visit can be years ago). */
+function shortDate(iso: string | null): string | null {
   if (!iso) return null;
   try {
-    return format(parseISO(iso), withYear ? 'd MMM yyyy' : 'd MMM');
+    return format(parseISO(iso), 'd MMM yyyy');
   } catch {
     return iso;
   }
 }
 
-/** The line under the name, or null. */
+/**
+ * The line under the name, or null: "Also a client of …" while other venues share this client,
+ * else "Shared while in … until …" for a copy kept after sharing ended.
+ */
 export function sharedClientLine(shared: SharedGuestResponse | undefined): string | null {
   if (!shared) return null;
   if (shared.alsoAt.length > 0) {
@@ -39,7 +43,7 @@ export function sharedClientLine(shared: SharedGuestResponse | undefined): strin
   if (shared.sharedUntil) {
     return clientSharingCopy('cs.contact.sharedUntil', {
       collective: shared.sharedUntil.collectiveName,
-      date: shortDate(shared.sharedUntil.date, true),
+      date: shortDate(shared.sharedUntil.date),
     });
   }
   return null;

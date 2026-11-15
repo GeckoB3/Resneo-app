@@ -54,9 +54,14 @@ export const CLIENT_SHARING_COPY = {
   'cs.tab.offerOff.title': 'Stop shared client lists for everyone?',
   'cs.tab.offerOff.body': 'Every venue stops sharing. Each venue keeps every client it has today.',
   'cs.tab.offerOff.confirm': 'Stop for everyone',
+  'cs.tab.hostHeading': 'Host',
+  'cs.tab.askConfirm.title': 'Ask every venue to share clients?',
+  'cs.tab.askConfirm.body': 'Each venue that has not answered gets a notice. Nobody shares until they say yes.',
+  'cs.tab.askConfirm.confirm': 'Ask them',
   'cs.state.sharing': 'Sharing',
   'cs.state.waiting': 'Waiting for {venue} to say yes',
   'cs.state.waitingYou': 'Waiting for you',
+  'cs.state.waitingStart': 'Waiting for {venue} to bring their list together',
   'cs.state.notSharing': 'Not sharing',
   'cs.state.paused': 'Paused for now. It starts again by itself.',
   'cs.state.leftOut': 'Not sharing (left out)',
@@ -74,6 +79,7 @@ export const CLIENT_SHARING_COPY = {
   'cs.start.confirm': 'Bring together',
   'cs.start.cancel': 'Cancel',
   'cs.start.nobody': 'Nobody else is sharing yet. Your clients are shared as soon as another venue says yes.',
+  'cs.start.counting': 'Counting your clients',
   'cs.progress.done': 'Done. Your list now has {count} clients.',
 
   // "What needs you" and the bell (§1A.2 step 0, P7).
@@ -144,6 +150,9 @@ export const CLIENT_SHARING_COPY = {
   'cs.check.field.customer_profile_notes': 'notes',
   'cs.check.field.dietary_preferences': 'dietary notes',
   'cs.check.decided': 'Someone at your collective already answered this one.',
+  'cs.check.adminOnly': 'Only owners and admins can check shared clients.',
+  'cs.check.back': 'Back to your clients',
+  'cs.check.paused': 'Sharing with this venue is paused, so this one can wait. It comes back when sharing starts again.',
 
   // Leaving, removing, ending, stopping (§1A.2 step 7).
   'cs.leave.paragraph':
@@ -183,6 +192,7 @@ export const CLIENT_SHARING_COPY = {
   'cs.notice.ended.body': 'You keep every client you already had.',
 
   'cs.error.generic': 'We could not save that. Please try again.',
+  'cs.error.retry': 'Try again',
 } as const;
 
 export type ClientSharingCopyId = keyof typeof CLIENT_SHARING_COPY;

@@ -72,7 +72,8 @@ describe('a shared client on the app', () => {
     await act(async () => {
       fireEvent.press(screen.getByText(clientSharingCopy('cs.contact.across')));
     });
-    expect(screen.getByText('5 visits · Last visit 3 Nov · 1 no-show')).toBeTruthy();
+    // The last visit carries its year, as on the web.
+    expect(screen.getByText('5 visits · Last visit 3 Nov 2026 · 1 no-show')).toBeTruthy();
     expect(screen.getByText('Had: Cut & Finish')).toBeTruthy();
   });
 
@@ -106,5 +107,16 @@ describe('a shared client on the app', () => {
         canSeparate: false,
       }),
     ).toBe('Shared while in Northside until 14 Nov 2026');
+  });
+
+  it('says where else they are a client before any copy kept from an earlier collective', () => {
+    expect(
+      sharedClientLine({
+        alsoAt: [{ venueId: 'l16', name: 'Light 16' }],
+        across: [],
+        sharedUntil: { collectiveName: 'Old Collective', date: '2025-11-12' },
+        canSeparate: false,
+      }),
+    ).toBe('Also a client of Light 16');
   });
 });

@@ -686,8 +686,8 @@ export const queryKeys = {
       [...queryKeys.clientSharing.all(), 'status', keyScope(accessToken), collectiveId ?? null] as const,
     summary: (accessToken?: string | null) =>
       [...queryKeys.clientSharing.all(), 'summary', keyScope(accessToken)] as const,
-    check: (accessToken?: string | null, collectiveId?: string | null) =>
-      [...queryKeys.clientSharing.all(), 'check', keyScope(accessToken), collectiveId ?? null] as const,
+    check: (accessToken?: string | null, collectiveId?: string | null, offset = 0) =>
+      [...queryKeys.clientSharing.all(), 'check', keyScope(accessToken), collectiveId ?? null, offset] as const,
     guest: (accessToken?: string | null, guestId?: string | null) =>
       [...queryKeys.clientSharing.all(), 'guest', keyScope(accessToken), guestId ?? null] as const,
   },

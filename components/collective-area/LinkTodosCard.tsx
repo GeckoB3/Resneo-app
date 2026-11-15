@@ -9,28 +9,93 @@
  * widens that, so it is shown here, at the top of Manage Collective, with "Change it in Linked
  * Accounts". Nothing else shows, and the card does not appear when there is nothing like that.
  * Shown to the host and to members alike.
+ *
+ * Shared client lists (plan P7, parity table): "What needs you" also carries the request to share
+ * ("Aura asked your collective to share clients.", Share now / Not now) and the clients waiting to
+ * be checked, with Check them. The screen works out the rows and what each button does.
  */
 import { useRouter, type Href } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Text } from '@/components/ui/Text';
+import { clientSharingCopy, formatClientCount } from '@/lib/collective-area/client-sharing-copy';
+import type { ClientSharingTodos } from '@/lib/collective-area/client-sharing-lines';
 import { areaCopy } from '@/lib/collective-area/copy';
 import { actionableLinkTodos, linkTodoText } from '@/lib/collective-area/invite-links';
 import { useLinkTodos } from '@/lib/queries/useCollectiveLinks';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
-export function LinkTodosCard() {
+/** The client-sharing rows and what their buttons do. */
+export interface ClientSharingTodoActions extends ClientSharingTodos {
+  onShare: () => void;
+  onNotNow: () => void;
+  onCheck: () => void;
+  sharing: boolean;
+  dismissing: boolean;
+}
+
+export function LinkTodosCard({ clientSharing = null }: { clientSharing?: ClientSharingTodoActions | null }) {
   const { colors } = useTheme();
   const router = useRouter();
   const query = useLinkTodos();
   const todos = actionableLinkTodos(query.data);
 
   // Nothing to show is the safe answer on a failed read: the invited venue's own sheet says what is in the way.
-  if (todos.length === 0) return null;
+  if (todos.length === 0 && !clientSharing) return null;
 
-  return (
+  const sharingCard = clientSharing ? (
+    <View
+      accessibilityLabel={areaCopy('ov.todo.heading')}
+      testID="client-sharing-todos"
+      style={[styles.card, { backgroundColor: colors.warningSurface, borderColor: colors.warning }]}
+    >
+      <Text variant="label">{areaCopy('ov.todo.heading')}</Text>
+      {clientSharing.askedBy ? (
+        <View style={styles.row}>
+          <Text variant="bodySmall">{clientSharingCopy('cs.todo.asked', { venue: clientSharing.askedBy })}</Text>
+          <View style={styles.buttons}>
+            <Button
+              label={clientSharingCopy('cs.todo.share')}
+              size="sm"
+              loading={clientSharing.sharing}
+              disabled={clientSharing.sharing || clientSharing.dismissing}
+              onPress={clientSharing.onShare}
+            />
+            <Button
+              label={clientSharingCopy('cs.todo.notNow')}
+              variant="secondary"
+              size="sm"
+              loading={clientSharing.dismissing}
+              disabled={clientSharing.sharing || clientSharing.dismissing}
+              onPress={clientSharing.onNotNow}
+            />
+          </View>
+        </View>
+      ) : null}
+      {clientSharing.toCheck > 0 ? (
+        <View style={styles.row}>
+          <Text variant="bodySmall">
+            {clientSharing.toCheck === 1
+              ? clientSharingCopy('cs.todo.checkOne')
+              : clientSharingCopy('cs.todo.check', { count: formatClientCount(clientSharing.toCheck) })}
+          </Text>
+          <Button
+            label={clientSharingCopy('cs.todo.open')}
+            variant="secondary"
+            size="sm"
+            style={styles.action}
+            onPress={clientSharing.onCheck}
+          />
+        </View>
+      ) : null}
+    </View>
+  ) : null;
+
+  if (todos.length === 0) return sharingCard;
+
+  const linkCard = (
     <View
       accessibilityLabel={areaCopy('ov.linkTodo.heading')}
       style={[styles.card, { backgroundColor: colors.warningSurface, borderColor: colors.warning }]}
@@ -51,10 +116,21 @@ export function LinkTodosCard() {
       ))}
     </View>
   );
+
+  return sharingCard ? (
+    <View style={styles.stack}>
+      {sharingCard}
+      {linkCard}
+    </View>
+  ) : (
+    linkCard
+  );
 }
 
 const styles = StyleSheet.create({
   card: { borderWidth: StyleSheet.hairlineWidth, borderRadius: radius.card, padding: spacing.md, gap: spacing.sm },
   row: { gap: spacing.xs },
   action: { alignSelf: 'flex-start' },
+  buttons: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  stack: { gap: spacing.md },
 });

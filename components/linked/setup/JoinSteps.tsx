@@ -4,6 +4,7 @@ import { ChoiceRow } from '@/components/linked/setup/ChoiceRow';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
 import { Text } from '@/components/ui/Text';
+import { clientSharingCopy } from '@/lib/collective-area/client-sharing-copy';
 import { allOwnAsked, joinOffersFormsSwitch, joinSummaryCounts, withAllOwn, type JoinDraft } from '@/lib/linked/join-choices';
 import { checklistLinks, joinLinkStateWords } from '@/lib/linked/join-links';
 import { setupCopy } from '@/lib/linked/setup-copy';
@@ -344,6 +345,50 @@ export function JoinFormsSwitch({
       summary={setupCopy(count === 1 ? 'join.formsSwitch.helpOne' : 'join.formsSwitch.help', { count })}
       onPress={() => onChange({ ...draft, turnOnForms: !draft.turnOnForms })}
     />
+  );
+}
+
+/** The "Share client lists?" answer: nothing is chosen until the venue picks one (web D10). */
+export type JoinShareAnswer = 'share' | 'not_now' | null;
+
+/** The collective offers shared client lists and the venue has not answered yet: Join waits (web `joinNeedsShareAnswer`). */
+export function joinNeedsShareAnswer(preview: JoinPreview, answer: JoinShareAnswer): boolean {
+  return preview.client_sharing_offered === true && !answer;
+}
+
+/**
+ * "Share client lists?" (web `JoinShareClientsBlock`; plan §1A.2 step 2, mockup board 3): one block
+ * on the last step of joining, shared by the join sheet and the review sheet. Nothing when the
+ * collective does not offer it.
+ */
+export function JoinShareClientsBlock({
+  preview,
+  value,
+  onChange,
+}: {
+  preview: JoinPreview;
+  value: JoinShareAnswer;
+  onChange: (next: 'share' | 'not_now') => void;
+}) {
+  if (!preview.client_sharing_offered) return null;
+  return (
+    <View style={styles.section} testID="join-share-clients">
+      <Text variant="bodyMedium" accessibilityRole="header">
+        {clientSharingCopy('cs.join.title')}
+      </Text>
+      <Text variant="bodySmall">{clientSharingCopy('cs.join.body1')}</Text>
+      <Text variant="bodySmall">{clientSharingCopy('cs.join.body2')}</Text>
+      <Text variant="caption" tone="secondary">
+        {clientSharingCopy('cs.safe')}
+      </Text>
+      <ChoiceRow selected={value === 'share'} title={clientSharingCopy('cs.join.share')} onPress={() => onChange('share')} />
+      <ChoiceRow selected={value === 'not_now'} title={clientSharingCopy('cs.join.notNow')} onPress={() => onChange('not_now')} />
+      {!value ? (
+        <Text variant="caption" tone="secondary">
+          {clientSharingCopy('cs.join.required')}
+        </Text>
+      ) : null}
+    </View>
   );
 }
 

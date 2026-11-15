@@ -7,9 +7,13 @@
  * decision anywhere in the collective wins: a card someone else answered is said so and leaves.
  *
  * Route param: collective=<id>. Owners and admins only, as on the web.
+ *
+ * The server sends a page of cards and `total` (every card): "n of total" counts them all, and
+ * skipping past the last card of a page loads the next page, wrapping to the first card only after
+ * the very last one.
  */
 import { Stack, useLocalSearchParams, useRouter, type Href } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
@@ -49,15 +53,15 @@ export function changeSentence(card: Extract<ClientSharingCard, { kind: 'change'
     return clientSharingCopy('cs.check.emailTaken', {
       venue: card.fromVenueName,
       name: card.guest.name,
-      value: card.newValue ?? clientSharingCopy('cs.check.blank'),
+      value: card.newValue || clientSharingCopy('cs.check.blank'),
     });
   }
   return clientSharingCopy('cs.check.change', {
     venue: card.fromVenueName,
     name: card.guest.name,
     field: FIELD_IDS[card.field] ? clientSharingCopy(FIELD_IDS[card.field]!) : card.field,
-    value: card.newValue ?? clientSharingCopy('cs.check.blank'),
-    current: card.currentValue ?? clientSharingCopy('cs.check.blank'),
+    value: card.newValue || clientSharingCopy('cs.check.blank'),
+    current: card.currentValue || clientSharingCopy('cs.check.blank'),
   });
 }
 
@@ -85,7 +89,9 @@ export default function ClientsToCheckScreen() {
   const { colors } = useTheme();
   const staffQuery = useStaffMe();
   const isAdmin = staffQuery.data?.staff?.role === 'admin';
-  const query = useClientSharingCheck(isAdmin ? collectiveId : null);
+  // The page of cards on screen: `offset` is where it starts in the whole list.
+  const [offset, setOffset] = useState(0);
+  const query = useClientSharingCheck(isAdmin ? collectiveId : null, offset);
   const decide = useDecideClientCard(collectiveId);
   const joinAll = useJoinAllLikely(collectiveId);
   const undo = useUndoJoinAll(collectiveId);
@@ -99,11 +105,25 @@ export default function ClientsToCheckScreen() {
     [query.data],
   );
 
+  // A later page emptied (its cards were answered elsewhere): go back to the first page.
+  const pageEmptied = offset > 0 && query.data !== undefined && query.data.cards.length === 0;
+  useEffect(() => {
+    if (!pageEmptied) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setOffset(0);
+    setIndex(0);
+  }, [pageEmptied]);
+
   if (!staffQuery.isLoading && !isAdmin) {
     return (
       <Screen>
         {header}
-        <EmptyState title="Admins only" message="Only venue admins can check shared clients." />
+        <EmptyState
+          title={clientSharingCopy('cs.check.title')}
+          message={clientSharingCopy('cs.check.adminOnly')}
+          actionLabel={clientSharingCopy('cs.check.back')}
+          onAction={() => (router.canGoBack() ? router.back() : router.replace('/clients' as Href))}
+        />
       </Screen>
     );
   }
@@ -130,20 +150,40 @@ export default function ClientsToCheckScreen() {
         <ErrorState
           message={query.error instanceof ApiError ? query.error.message : clientSharingCopy('cs.error.generic')}
           onRetry={() => void query.refetch()}
+          retryLabel={clientSharingCopy('cs.error.retry')}
         />
       </Screen>
     );
   }
 
-  const total = cards.length;
-  const at = total > 0 ? Math.min(index, total - 1) : 0;
+  const loaded = cards.length;
+  const at = loaded > 0 ? Math.min(index, loaded - 1) : 0;
   const card = cards[at] ?? null;
+  // Every card, not only this page's (an older answer without `total` counts the page).
+  const total = Math.max(query.data?.total ?? 0, offset + loaded);
+  const position = clientSharingCopy('cs.check.position', {
+    n: formatClientCount(offset + at + 1),
+    total: formatClientCount(total),
+  });
+
+  /** The next card: on this page, else the next page, else back to the very first card. */
+  const moveOn = () => {
+    if (at + 1 < loaded) {
+      setIndex(at + 1);
+    } else if (offset + loaded < total) {
+      setOffset(offset + loaded);
+      setIndex(0);
+    } else {
+      setOffset(0);
+      setIndex(0);
+    }
+  };
   const likelyCount = query.data?.likelyCount ?? 0;
   const undoBatch = query.data?.undo ?? null;
 
   const answer = (id: string, decision: ClientSharingDecision) => {
     if (decision === 'skip') {
-      setIndex(total > 0 ? (at + 1) % total : 0);
+      moveOn();
       return;
     }
     decide.mutate(
@@ -154,6 +194,12 @@ export default function ClientsToCheckScreen() {
           if (code === 'COLLECTIVE_CLIENT_CARD_DECIDED' || code === 'COLLECTIVE_CLIENT_CARD_NOT_FOUND') {
             toast.info(clientSharingCopy('cs.check.decided'));
             void query.refetch();
+            return;
+          }
+          if (code === 'COLLECTIVE_CLIENT_PAUSED') {
+            // Sharing with that venue is paused: this card waits, so move on to the next one.
+            toast.info(clientSharingCopy('cs.check.paused'));
+            moveOn();
             return;
           }
           toast.error(err instanceof ApiError ? err.message : clientSharingCopy('cs.error.generic'));
@@ -174,7 +220,7 @@ export default function ClientsToCheckScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         {likelyCount > 0 ? (
           <Button
-            label={clientSharingCopy('cs.check.joinAll', { count: likelyCount })}
+            label={clientSharingCopy('cs.check.joinAll', { count: formatClientCount(likelyCount) })}
             variant="secondary"
             onPress={() => setAskJoinAll(true)}
           />
@@ -182,7 +228,7 @@ export default function ClientsToCheckScreen() {
         {undoBatch ? (
           <View style={[styles.card, styles.row, { borderColor: colors.border, backgroundColor: colors.surfaceRaised }]}>
             <Text variant="bodySmall" style={styles.flex1}>
-              {clientSharingCopy('cs.check.joinAll.done', { count: undoBatch.count })}
+              {clientSharingCopy('cs.check.joinAll.done', { count: formatClientCount(undoBatch.count) })}
             </Text>
             <Button
               label={clientSharingCopy('cs.check.undo')}
@@ -206,7 +252,7 @@ export default function ClientsToCheckScreen() {
                 {clientSharingCopy('cs.check.question')}
               </Text>
               <Text variant="caption" tone="secondary">
-                {clientSharingCopy('cs.check.position', { n: at + 1, total })}
+                {position}
               </Text>
             </View>
             <PersonBox p={card.mine} />
@@ -242,7 +288,7 @@ export default function ClientsToCheckScreen() {
             style={[styles.card, { borderColor: colors.border, backgroundColor: colors.surfaceRaised }]}
           >
             <Text variant="caption" tone="secondary" style={styles.positionEnd}>
-              {clientSharingCopy('cs.check.position', { n: at + 1, total })}
+              {position}
             </Text>
             <Text variant="bodySmall">{changeSentence(card)}</Text>
             <View style={styles.row}>
@@ -268,6 +314,13 @@ export default function ClientsToCheckScreen() {
                 onPress={() => answer(card.id, 'keep_mine')}
               />
             </View>
+            <Button
+              label={clientSharingCopy('cs.check.skip')}
+              variant="ghost"
+              fullWidth
+              disabled={decide.isPending}
+              onPress={() => answer(card.id, 'skip')}
+            />
           </View>
         ) : (
           <View
@@ -275,7 +328,7 @@ export default function ClientsToCheckScreen() {
             style={[styles.card, { borderColor: colors.border, backgroundColor: colors.surfaceRaised }]}
           >
             <Text variant="caption" tone="secondary" style={styles.positionEnd}>
-              {clientSharingCopy('cs.check.position', { n: at + 1, total })}
+              {position}
             </Text>
             <Text variant="bodySmall">
               {clientSharingCopy('cs.check.twoHere', {
@@ -300,7 +353,7 @@ export default function ClientsToCheckScreen() {
 
       <ConfirmSheet
         visible={askJoinAll}
-        title={clientSharingCopy('cs.check.joinAll.title', { count: likelyCount })}
+        title={clientSharingCopy('cs.check.joinAll.title', { count: formatClientCount(likelyCount) })}
         message={clientSharingCopy('cs.check.joinAll.body')}
         confirmLabel={clientSharingCopy('cs.check.joinAll.confirm')}
         destructive={false}

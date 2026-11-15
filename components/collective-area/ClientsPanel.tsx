@@ -42,6 +42,10 @@ export function venueStatusWord(v: ClientSharingVenue): string {
       return clientSharingCopy('cs.state.sharing');
     case 'waiting':
       return clientSharingCopy('cs.state.waiting', { venue: v.name });
+    case 'waiting_start':
+      return clientSharingCopy('cs.state.waitingStart', { venue: v.name });
+    case 'waiting_you':
+      return clientSharingCopy('cs.state.waitingYou');
     case 'paused':
       return clientSharingCopy('cs.state.paused');
     case 'left_out':
@@ -60,14 +64,38 @@ export function countsLine(s: ClientSharingStatusResponse): string {
   });
 }
 
+/** The progress line: "almost done" in the last minute, else about how many minutes. */
+export function progressLine(progress: { minutesLeft: number }): string {
+  return progress.minutesLeft <= 1
+    ? clientSharingCopy('cs.tab.progressSoon')
+    : clientSharingCopy('cs.tab.progress', { minutes: progress.minutesLeft });
+}
+
 function openHelp() {
   const url = `${getWebUrl() || 'https://www.resneo.com'}${SHARED_CLIENTS_HELP_PATH}`;
   void WebBrowser.openBrowserAsync(url).catch(() => Linking.openURL(url).catch(() => undefined));
 }
 
-type Ask = { kind: 'stop' } | { kind: 'offerOff' } | { kind: 'exclude'; venue: ClientSharingVenue } | null;
+type Ask =
+  | { kind: 'stop' }
+  | { kind: 'offerOff' }
+  | { kind: 'askEveryone' }
+  | { kind: 'exclude'; venue: ClientSharingVenue }
+  | null;
 
-export function ClientsPanel({ collectiveId, isHost }: { collectiveId: string; isHost: boolean }) {
+export function ClientsPanel({
+  collectiveId,
+  isHost,
+  openBringTogether = false,
+  onBringTogetherOpened,
+}: {
+  collectiveId: string;
+  isHost: boolean;
+  /** Share now in "What needs you" said yes and the lists still need bringing together: open the sheet. */
+  openBringTogether?: boolean;
+  /** The sheet opened for `openBringTogether`; the screen clears its ask so it opens once. */
+  onBringTogetherOpened?: () => void;
+}) {
   const { colors, isDark } = useTheme();
   // Teal words on white need the dark teal for 4.5:1 contrast (the web's accent-700).
   const statusTeal = isDark ? colors.accent : accent[700];
@@ -80,27 +108,33 @@ export function ClientsPanel({ collectiveId, isHost }: { collectiveId: string; i
   const dismiss = useDismissClientSharing(collectiveId);
   const [ask, setAsk] = useState<Ask>(null);
   const [bringTogether, setBringTogether] = useState(false);
-  const [watchingProgress, setWatchingProgress] = useState(false);
-  const status = statusQuery.data;
-
-  // "Done. Your list now has N clients." once the lists this venue brought together are joined.
-  const sawProgress = useRef(false);
   useEffect(() => {
-    if (!watchingProgress || !status) return;
+    if (!openBringTogether) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setBringTogether(true);
+    onBringTogetherOpened?.();
+  }, [openBringTogether, onBringTogetherOpened]);
+  const status = statusQuery.data;
+  const updatedAt = statusQuery.dataUpdatedAt;
+
+  // "Done. Your list now has N clients." once lists finish coming together. Armed when this venue
+  // presses Bring together (the web sets `wasRunning` on start) or when a read shows progress, and
+  // fired by the first read after that with no progress. Reads older than the arming never count.
+  const armedAt = useRef<number | null>(null);
+  useEffect(() => {
+    if (!status) return;
     if (status.progress) {
-      sawProgress.current = true;
+      if (armedAt.current === null) armedAt.current = updatedAt - 1;
       return;
     }
-    if (sawProgress.current) {
-      sawProgress.current = false;
-      setWatchingProgress(false);
-      toast.success(
-        clientSharingCopy('cs.progress.done', {
-          count: formatClientCount(status.counts.here + status.counts.fromOthers),
-        }),
-      );
-    }
-  }, [status, watchingProgress, toast]);
+    if (armedAt.current === null || updatedAt <= armedAt.current) return;
+    armedAt.current = null;
+    toast.success(
+      clientSharingCopy('cs.progress.done', {
+        count: formatClientCount(status.counts.here + status.counts.fromOthers),
+      }),
+    );
+  }, [status, updatedAt, toast]);
 
   const fail = (err: unknown) =>
     toast.error(err instanceof ApiError ? err.message : clientSharingCopy('cs.error.generic'));
@@ -124,26 +158,36 @@ export function ClientsPanel({ collectiveId, isHost }: { collectiveId: string; i
           statusQuery.error instanceof ApiError ? statusQuery.error.message : clientSharingCopy('cs.error.generic')
         }
         onRetry={() => void statusQuery.refetch()}
+        retryLabel={clientSharingCopy('cs.error.retry')}
       />
     );
   }
 
   const me = status.me;
   const on = me.state === 'on';
+  const anyPending = setSharing.isPending || stop.isPending || dismiss.isPending || askEveryone.isPending;
   const toCheck = status.todo.toCheck + status.todo.changes;
   const cardStyle = [styles.card, { backgroundColor: colors.surfaceRaised, borderColor: colors.border }];
 
   return (
     <View style={styles.wrap}>
-      {me.request ? (
+      {me.request && !on ? (
         <View style={[styles.card, { backgroundColor: colors.accentSubtle, borderColor: colors.accent }]}>
           <Text variant="bodySmall">{clientSharingCopy('cs.todo.asked', { venue: me.request.byVenueName })}</Text>
           <View style={styles.rowButtons}>
-            <Button label={clientSharingCopy('cs.todo.share')} size="sm" loading={setSharing.isPending} onPress={turnOn} />
+            <Button
+              label={clientSharingCopy('cs.todo.share')}
+              size="sm"
+              loading={setSharing.isPending}
+              disabled={anyPending}
+              onPress={turnOn}
+            />
             <Button
               label={clientSharingCopy('cs.todo.notNow')}
               size="sm"
               variant="secondary"
+              loading={dismiss.isPending}
+              disabled={anyPending}
               onPress={() => dismiss.mutate('request', { onError: fail })}
             />
           </View>
@@ -153,7 +197,9 @@ export function ClientsPanel({ collectiveId, isHost }: { collectiveId: string; i
       {toCheck > 0 ? (
         <View style={[styles.card, styles.todo, { backgroundColor: colors.warningSurface, borderColor: colors.warning }]}>
           <Text variant="bodySmall">
-            {toCheck === 1 ? clientSharingCopy('cs.todo.checkOne') : clientSharingCopy('cs.todo.check', { count: toCheck })}
+            {toCheck === 1
+              ? clientSharingCopy('cs.todo.checkOne')
+              : clientSharingCopy('cs.todo.check', { count: formatClientCount(toCheck) })}
           </Text>
           <Button
             label={clientSharingCopy('cs.todo.open')}
@@ -166,6 +212,9 @@ export function ClientsPanel({ collectiveId, isHost }: { collectiveId: string; i
 
       {isHost ? (
         <View style={cardStyle}>
+          <Text variant="caption" tone="secondary" accessibilityRole="header" style={styles.hostHeading}>
+            {clientSharingCopy('cs.tab.hostHeading')}
+          </Text>
           <View style={styles.switchRow}>
             <Text variant="bodyMedium" style={styles.flex1}>
               {clientSharingCopy('cs.tab.offer')}
@@ -189,17 +238,8 @@ export function ClientsPanel({ collectiveId, isHost }: { collectiveId: string; i
               label={clientSharingCopy('cs.tab.askEveryone')}
               variant="secondary"
               loading={askEveryone.isPending}
-              onPress={() =>
-                askEveryone.mutate(undefined, {
-                  onSuccess: (res) =>
-                    toast.success(
-                      res.asked === 1
-                        ? clientSharingCopy('cs.tab.askedOne')
-                        : clientSharingCopy('cs.tab.asked', { count: res.asked }),
-                    ),
-                  onError: fail,
-                })
-              }
+              disabled={anyPending}
+              onPress={() => setAsk({ kind: 'askEveryone' })}
             />
           ) : null}
         </View>
@@ -231,7 +271,48 @@ export function ClientsPanel({ collectiveId, isHost }: { collectiveId: string; i
           </View>
 
           {on && !me.started ? (
-            <Button label={clientSharingCopy('cs.tab.bringTogether')} onPress={() => setBringTogether(true)} />
+            <View style={[styles.bringRow, { backgroundColor: colors.surface }]}>
+              <Text variant="bodySmall" style={styles.flex1}>
+                {clientSharingCopy('cs.join.body1')}
+              </Text>
+              <Button
+                label={clientSharingCopy('cs.tab.bringTogether')}
+                size="sm"
+                disabled={anyPending}
+                onPress={() => setBringTogether(true)}
+              />
+            </View>
+          ) : null}
+
+          {status.progress ? (
+            <View style={styles.progressWrap}>
+              <Text variant="bodySmall" accessibilityLiveRegion="polite">
+                {progressLine(status.progress)}
+              </Text>
+              <View
+                accessibilityRole="progressbar"
+                accessibilityLabel={clientSharingCopy('cs.tab.progressLabel', {
+                  done: formatClientCount(status.progress.done),
+                  total: formatClientCount(status.progress.total),
+                })}
+                accessibilityValue={{ min: 0, max: status.progress.total || 1, now: status.progress.done }}
+                style={[styles.track, { backgroundColor: colors.border }]}
+              >
+                <View
+                  style={[
+                    styles.bar,
+                    {
+                      backgroundColor: colors.accent,
+                      width: `${
+                        status.progress.total > 0
+                          ? Math.min(100, Math.round((status.progress.done / status.progress.total) * 100))
+                          : 5
+                      }%`,
+                    },
+                  ]}
+                />
+              </View>
+            </View>
           ) : null}
 
           {/* "Sharing with" only while this venue shares: otherwise it read as if it still did. */}
@@ -270,7 +351,7 @@ export function ClientsPanel({ collectiveId, isHost }: { collectiveId: string; i
                       {v.name}
                     </Text>
                     <Switch
-                      accessibilityLabel={v.name}
+                      accessibilityLabel={`${clientSharingCopy('cs.tab.changeWho')}: ${v.name}`}
                       value={!v.excluded}
                       disabled={setSharing.isPending || stop.isPending}
                       onValueChange={(next) =>
@@ -290,49 +371,26 @@ export function ClientsPanel({ collectiveId, isHost }: { collectiveId: string; i
             </CollapsibleCard>
           ) : null}
 
-          <View style={styles.switchRow}>
-            <View style={styles.flex1}>
-              <Text variant="bodySmall">{clientSharingCopy('cs.tab.askFirst')}</Text>
-              <Text variant="caption" tone="secondary">
-                {clientSharingCopy('cs.tab.askFirstHelp')}
-              </Text>
-            </View>
-            <Switch
-              accessibilityLabel={clientSharingCopy('cs.tab.askFirst')}
-              value={me.askFirst}
-              disabled={setSharing.isPending}
-              onValueChange={(next) => setSharing.mutate({ ask_first: next }, { onError: fail })}
-              trackColor={{ true: colors.brand, false: colors.border }}
-              thumbColor={colors.surfaceRaised}
-            />
-          </View>
-
-          {status.progress ? (
-            <View style={styles.progressWrap}>
-              <Text variant="bodySmall">
-                {clientSharingCopy('cs.tab.progress', { minutes: status.progress.minutesLeft })}
-              </Text>
-              <View
-                accessibilityRole="progressbar"
-                accessibilityLabel={clientSharingCopy('cs.tab.progressLabel', {
-                  done: formatClientCount(status.progress.done),
-                  total: formatClientCount(status.progress.total),
-                })}
-                accessibilityValue={{ min: 0, max: status.progress.total || 1, now: status.progress.done }}
-                style={[styles.track, { backgroundColor: colors.border }]}
-              >
-                <View
-                  style={[
-                    styles.bar,
-                    {
-                      backgroundColor: colors.accent,
-                      width: `${Math.min(100, Math.round((status.progress.done / Math.max(1, status.progress.total)) * 100))}%`,
-                    },
-                  ]}
-                />
+          {on ? (
+            <View style={styles.switchRow}>
+              <View style={styles.flex1}>
+                <Text variant="bodySmall">{clientSharingCopy('cs.tab.askFirst')}</Text>
+                <Text variant="caption" tone="secondary">
+                  {clientSharingCopy('cs.tab.askFirstHelp')}
+                </Text>
               </View>
+              <Switch
+                accessibilityLabel={clientSharingCopy('cs.tab.askFirst')}
+                value={me.askFirst}
+                disabled={setSharing.isPending}
+                onValueChange={(next) => setSharing.mutate({ ask_first: next }, { onError: fail })}
+                trackColor={{ true: colors.brand, false: colors.border }}
+                thumbColor={colors.surfaceRaised}
+              />
             </View>
-          ) : on ? (
+          ) : null}
+
+          {on && me.started ? (
             <View style={[styles.counts, { backgroundColor: colors.surface }]}>
               <Text variant="bodySmall">
                 {countsLine(status)}{' '}
@@ -343,11 +401,13 @@ export function ClientsPanel({ collectiveId, isHost }: { collectiveId: string; i
                 </Text>
               </Text>
             </View>
-          ) : (
+          ) : null}
+
+          {!on && me.state !== 'undecided' ? (
             <Text variant="bodySmall" tone="secondary">
               {clientSharingCopy('cs.tab.youAreOff')}
             </Text>
-          )}
+          ) : null}
 
           <Text variant="caption" tone="secondary">
             {clientSharingCopy('cs.whatShared')}
@@ -391,6 +451,31 @@ export function ClientsPanel({ collectiveId, isHost }: { collectiveId: string; i
         }}
       />
       <ConfirmSheet
+        visible={ask?.kind === 'askEveryone'}
+        title={clientSharingCopy('cs.tab.askConfirm.title')}
+        message={clientSharingCopy('cs.tab.askConfirm.body')}
+        confirmLabel={clientSharingCopy('cs.tab.askConfirm.confirm')}
+        destructive={false}
+        loading={askEveryone.isPending}
+        onClose={() => setAsk(null)}
+        onConfirm={() =>
+          askEveryone.mutate(undefined, {
+            onSuccess: (res) => {
+              setAsk(null);
+              toast.success(
+                res.asked === 1
+                  ? clientSharingCopy('cs.tab.askedOne')
+                  : clientSharingCopy('cs.tab.asked', { count: formatClientCount(res.asked) }),
+              );
+            },
+            onError: (err) => {
+              setAsk(null);
+              fail(err);
+            },
+          })
+        }
+      />
+      <ConfirmSheet
         visible={ask?.kind === 'offerOff'}
         title={clientSharingCopy('cs.tab.offerOff.title')}
         message={clientSharingCopy('cs.tab.offerOff.body')}
@@ -404,7 +489,9 @@ export function ClientsPanel({ collectiveId, isHost }: { collectiveId: string; i
         visible={bringTogether}
         onClose={() => setBringTogether(false)}
         onStarted={() => {
-          setWatchingProgress(true);
+          // Arm the "Done" message now, as the web does on start: a read that never caught the
+          // progress line (a small list finishes between polls) still ends with it.
+          armedAt.current = Date.now() - 1;
           void statusQuery.refetch();
         }}
       />
@@ -423,6 +510,15 @@ const styles = StyleSheet.create({
   venueRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, minHeight: 28 },
   venueStatus: { flexShrink: 1, textAlign: 'right', maxWidth: '60%' },
   counts: { borderRadius: radius.card, padding: spacing.sm },
+  bringRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    borderRadius: radius.card,
+    padding: spacing.sm,
+  },
+  hostHeading: { textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: '600' },
   progressWrap: { gap: spacing.xs },
   track: { height: 8, borderRadius: 8, overflow: 'hidden' },
   bar: { height: 8, borderRadius: 8 },

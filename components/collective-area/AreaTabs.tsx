@@ -153,7 +153,7 @@ export function VenuesPanel({
               title: areaCopy('ov.venues.removeTitle', { venue, collective: collectiveName }),
               message: [
                 areaCopy('ov.venues.removeMessage', { venue, collective: collectiveName }),
-                removeSharingLine(sharing.data, venue),
+                removeSharingLine(sharing.data, asking.venue.venue_id, venue),
               ]
                 .filter(Boolean)
                 .join(' '),

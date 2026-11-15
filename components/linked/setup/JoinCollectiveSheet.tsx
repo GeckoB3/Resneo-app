@@ -9,14 +9,16 @@ import {
   JoinLinksChecklist,
   JoinMeansStep,
   JoinServicesStep,
+  JoinShareClientsBlock,
+  joinNeedsShareAnswer,
   JoinSummaryList,
+  type JoinShareAnswer,
 } from '@/components/linked/setup/JoinSteps';
 import { StepShell } from '@/components/linked/setup/StepShell';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
-import { clientSharingCopy } from '@/lib/collective-area/client-sharing-copy';
 import { areaCopy } from '@/lib/collective-area/copy';
 import { COLLECTIVE_NAME_MAX, tidyCollectiveName } from '@/lib/collective-area/names';
 import {
@@ -85,7 +87,7 @@ export function JoinCollectiveSheet({
   /** What staff in the collective call this venue, asked only when another one has its name (web 2026-11-05). */
   const [nameInCollective, setNameInCollective] = useState('');
   /** Shared client lists (web 2026-11-15, D10): required when the collective offers it, nothing preselected. */
-  const [shareClients, setShareClients] = useState<'share' | 'not_now' | null>(null);
+  const [shareClients, setShareClients] = useState<JoinShareAnswer>(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -161,7 +163,7 @@ export function JoinCollectiveSheet({
       {step === 'check' ? (
         <Button
           label={setupCopy('join.confirm', { collective: name })}
-          disabled={busy || !agreed || !preview || Boolean(blocked) || (preview.client_sharing_offered === true && !shareClients)}
+          disabled={busy || !agreed || !preview || Boolean(blocked) || joinNeedsShareAnswer(preview, shareClients)}
           loading={busy}
           onPress={doJoin}
         />
@@ -234,33 +236,7 @@ export function JoinCollectiveSheet({
                   autoCorrect={false}
                 />
               ) : null}
-              {preview.client_sharing_offered ? (
-                <View style={styles.section} testID="join-share-clients">
-                  <Text variant="bodyMedium" accessibilityRole="header">
-                    {clientSharingCopy('cs.join.title')}
-                  </Text>
-                  <Text variant="bodySmall">{clientSharingCopy('cs.join.body1')}</Text>
-                  <Text variant="bodySmall">{clientSharingCopy('cs.join.body2')}</Text>
-                  <Text variant="caption" tone="secondary">
-                    {clientSharingCopy('cs.safe')}
-                  </Text>
-                  <ChoiceRow
-                    selected={shareClients === 'share'}
-                    title={clientSharingCopy('cs.join.share')}
-                    onPress={() => setShareClients('share')}
-                  />
-                  <ChoiceRow
-                    selected={shareClients === 'not_now'}
-                    title={clientSharingCopy('cs.join.notNow')}
-                    onPress={() => setShareClients('not_now')}
-                  />
-                  {!shareClients ? (
-                    <Text variant="caption" tone="secondary">
-                      {clientSharingCopy('cs.join.required')}
-                    </Text>
-                  ) : null}
-                </View>
-              ) : null}
+              <JoinShareClientsBlock preview={preview} value={shareClients} onChange={setShareClients} />
               <ChoiceRow
                 kind="checkbox"
                 selected={agreed}

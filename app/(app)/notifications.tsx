@@ -262,6 +262,9 @@ export default function NotificationsScreen() {
     } else if (route?.type === 'booking-page' && isAdmin) {
       // The address question (N38) → the Booking page screen.
       router.push('/manage/booking-page' as Href);
+    } else if (route?.type === 'client') {
+      // One client (the erased-client notice, web 2026-11-15) → that client's screen.
+      router.push(`/client/${encodeURIComponent(route.guestId)}` as Href);
     } else if (route?.type === 'availability') {
       // A collective calendar notice → Calendar Availability.
       router.push('/availability' as Href);

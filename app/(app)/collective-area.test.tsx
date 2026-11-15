@@ -11,13 +11,21 @@ import type { WaitingSuggestion } from '@/lib/queries/useCollectiveServiceTools'
 import type { CollectiveCandidate, InviteeLinkTodo } from '@/types/collectives';
 
 // A service's sheet opens on the grid; the real one needs the native gesture handler.
-// Shared client lists (web 2026-11-15): not what this file is about.
+// Shared client lists (web 2026-11-15): only "What needs you" reads them here (plan P7).
+let mockSharingSummary: unknown = undefined;
+const mockSetSharing = jest.fn();
+const mockDismissSharing = jest.fn();
 jest.mock('@/lib/queries/useClientSharing', () => ({
   useClientSharingStatus: () => ({ data: undefined, isError: false, isLoading: false, refetch: jest.fn() }),
-  useClientSharingSummary: () => ({ data: undefined }),
+  useClientSharingSummary: () => ({ data: mockSharingSummary }),
   useSharedGuest: () => ({ data: undefined }),
   useSeparateSharedGuest: () => ({ mutate: jest.fn(), isPending: false }),
-  useDismissClientSharing: () => ({ mutate: jest.fn(), isPending: false }),
+  useDismissClientSharing: () => ({ mutate: mockDismissSharing, isPending: false }),
+  useSetClientSharing: () => ({ mutate: mockSetSharing, isPending: false }),
+  useAskEveryoneToShare: () => ({ mutate: jest.fn(), isPending: false }),
+  useStopClientSharing: () => ({ mutate: jest.fn(), isPending: false }),
+  useClientSharingPreview: () => ({ mutate: jest.fn(), reset: jest.fn(), isPending: false, data: undefined }),
+  useStartClientSharing: () => ({ mutate: jest.fn(), isPending: false }),
 }));
 jest.mock('@/components/ui/Sheet', () => {
   const React = require('react');
@@ -120,6 +128,7 @@ const mockToast = { error: jest.fn(), success: jest.fn(), info: jest.fn() };
 jest.mock('@/providers/ToastProvider', () => ({ useToast: () => mockToast }));
 
 import { ApiError } from '@/lib/api/client';
+import { clientSharingCopy } from '@/lib/collective-area/client-sharing-copy';
 
 import CollectiveAreaScreen from './collective-area';
 
@@ -191,6 +200,7 @@ describe('CollectiveAreaScreen', () => {
     mockGroups = [];
     mockCollectives = [];
     mockLinkTodos = [];
+    mockSharingSummary = undefined;
     mockCandidates = [];
     mockSaveValues.mockReset();
     mockBulkSave.mockClear();
@@ -381,6 +391,7 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
     mockSuggestions = [];
     mockCollectives = [];
     mockLinkTodos = [];
+    mockSharingSummary = undefined;
     mockCandidates = [];
     mockGroups = [hostGroup];
     mockServices = [{ id: 's1', name: 'Balayage', collective: block('master') }];
@@ -694,6 +705,73 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
       fireEvent.press(screen.getByLabelText('Change it in Linked venues: Elm'));
     });
     expect(mockPush).toHaveBeenCalledWith('/linked-venues');
+  });
+
+  it('puts a request to share in What needs you, with Share now and Not now (plan P7)', async () => {
+    mockSharingSummary = {
+      collectiveId: 'col-1',
+      offered: true,
+      state: 'undecided',
+      started: false,
+      showNudge: false,
+      toCheck: 0,
+      canManage: true,
+      request: { byVenueName: 'Light 16', at: '2026-11-15T10:00:00Z' },
+      sharingVenueIds: [],
+    };
+    mockSetSharing.mockReset();
+    mockDismissSharing.mockReset();
+    await render(<CollectiveAreaScreen />);
+    expect(screen.getByText(clientSharingCopy('cs.todo.asked', { venue: 'Light 16' }))).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByText(clientSharingCopy('cs.todo.notNow')));
+    });
+    expect(mockDismissSharing.mock.calls[0][0]).toBe('request');
+    await act(async () => {
+      fireEvent.press(screen.getByText(clientSharingCopy('cs.todo.share')));
+    });
+    expect(mockSetSharing.mock.calls[0][0]).toEqual({ share: true });
+    // Saying yes opens the Clients tab, where the request is not repeated above the tabs.
+    await act(async () => {
+      mockSetSharing.mock.calls[0][1].onSuccess({ needsBringTogether: false });
+    });
+    expect(screen.queryByTestId('client-sharing-todos')).toBeNull();
+  });
+
+  it('puts clients to check in What needs you for owners and admins (plan P7)', async () => {
+    mockSharingSummary = {
+      collectiveId: 'col-1',
+      offered: true,
+      state: 'on',
+      started: true,
+      showNudge: false,
+      toCheck: 4,
+      canManage: true,
+      request: null,
+      sharingVenueIds: ['v-host'],
+    };
+    await render(<CollectiveAreaScreen />);
+    expect(screen.getByText(clientSharingCopy('cs.todo.check', { count: 4 }))).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByText(clientSharingCopy('cs.todo.open')));
+    });
+    expect(mockPush).toHaveBeenCalledWith('/client/check?collective=col-1');
+  });
+
+  it('says nothing about shared clients for another collective', async () => {
+    mockSharingSummary = {
+      collectiveId: 'col-other',
+      offered: true,
+      state: 'on',
+      started: true,
+      showNudge: false,
+      toCheck: 4,
+      canManage: true,
+      request: { byVenueName: 'Light 16', at: '2026-11-15T10:00:00Z' },
+      sharingVenueIds: [],
+    };
+    await render(<CollectiveAreaScreen />);
+    expect(screen.queryByTestId('client-sharing-todos')).toBeNull();
   });
 
   it('shows nothing under Venues joining when every link is made as they join', async () => {

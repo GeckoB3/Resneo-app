@@ -25,6 +25,8 @@ jest.mock('@/providers/ToastProvider', () => ({ useToast: () => mockToast }));
 type Call = { path: string; method: string; body: unknown };
 const mockCalls: Call[] = [];
 let mockStatus: Record<string, unknown> = {};
+/** What the status reads once Bring together has started. */
+let mockAfterStart: Record<string, unknown> | null = null;
 jest.mock('@/lib/api/client', () => ({
   ...jest.requireActual('@/lib/api/client'),
   apiFetch: (path: string, options: { method?: string; body?: string } = {}) => {
@@ -32,6 +34,22 @@ jest.mock('@/lib/api/client', () => ({
     mockCalls.push({ path, method, body: options.body ? JSON.parse(options.body) : undefined });
     if (path.endsWith('/ask')) return Promise.resolve({ ok: true, asked: 2 });
     if (path.endsWith('/stop')) return Promise.resolve({ ...mockStatus, kept: 12 });
+    if (path.endsWith('/preview')) {
+      return Promise.resolve({
+        here: 1240,
+        venueName: 'Aura',
+        others: [],
+        othersTotal: 0,
+        inBoth: 0,
+        toAdd: 0,
+        toCheck: 0,
+        nobody: true,
+      });
+    }
+    if (path.endsWith('/start')) {
+      if (mockAfterStart) mockStatus = mockAfterStart;
+      return Promise.resolve(mockStatus);
+    }
     return Promise.resolve(mockStatus);
   },
 }));
@@ -88,6 +106,7 @@ beforeEach(() => {
   mockPush.mockReset();
   Object.values(mockToast).forEach((f) => f.mockReset());
   mockStatus = status();
+  mockAfterStart = null;
 });
 
 describe('Clients tab (app)', () => {
@@ -119,15 +138,6 @@ describe('Clients tab (app)', () => {
     );
   });
 
-  it('lets the host ask everyone, and says how many were asked', async () => {
-    await renderPanel();
-    await act(async () => {
-      fireEvent.press(screen.getByText(clientSharingCopy('cs.tab.askEveryone')));
-    });
-    expect(mockCalls.some((c) => c.path.endsWith('/client-sharing/ask') && c.method === 'POST')).toBe(true);
-    expect(mockToast.success).toHaveBeenCalledWith(clientSharingCopy('cs.tab.asked', { count: 2 }));
-  });
-
   it('opens Bring together when saying yes needs it', async () => {
     mockStatus = status({ me: { ...status().me, state: 'not_now', started: false } });
     await renderPanel();
@@ -143,5 +153,117 @@ describe('Clients tab (app)', () => {
     mockStatus = status({ offered: false });
     await renderPanel(false);
     expect(screen.getByText(clientSharingCopy('cs.tab.notOffered'))).toBeTruthy();
+  });
+
+  it('words the two waiting states', async () => {
+    mockStatus = status({
+      venues: [
+        { venueId: 'l16', name: 'Light 16', status: 'waiting_start', excluded: false, isHost: false },
+        { venueId: 's3', name: 'Studio 3', status: 'waiting_you', excluded: false, isHost: false },
+      ],
+    });
+    await renderPanel();
+    expect(screen.getByText(clientSharingCopy('cs.state.waitingStart', { venue: 'Light 16' }))).toBeTruthy();
+    expect(screen.getByText(clientSharingCopy('cs.state.waitingYou'))).toBeTruthy();
+  });
+
+  it('says almost done in the last minute, and keeps the counts while lists come together', async () => {
+    mockStatus = status({ progress: { done: 90, total: 100, minutesLeft: 1 } });
+    await renderPanel();
+    expect(screen.getByText(clientSharingCopy('cs.tab.progressSoon'))).toBeTruthy();
+    expect(screen.getByText(new RegExp('1,240 clients here'))).toBeTruthy();
+  });
+
+  it('gives minutes while more than one is left', async () => {
+    mockStatus = status({ progress: { done: 10, total: 100, minutesLeft: 6 } });
+    await renderPanel();
+    expect(screen.getByText(clientSharingCopy('cs.tab.progress', { minutes: 6 }))).toBeTruthy();
+  });
+
+  it('shows Ask me first and the counts only while sharing, and nothing about being off while undecided', async () => {
+    mockStatus = status({ me: { ...status().me, state: 'undecided', started: false } });
+    await renderPanel();
+    expect(screen.queryByText(clientSharingCopy('cs.tab.askFirst'))).toBeNull();
+    expect(screen.queryByText(clientSharingCopy('cs.tab.youAreOff'))).toBeNull();
+    expect(screen.queryByText(new RegExp('clients here'))).toBeNull();
+  });
+
+  it('says You are not sharing after Not now', async () => {
+    mockStatus = status({ me: { ...status().me, state: 'not_now', started: false } });
+    await renderPanel();
+    expect(screen.getByText(clientSharingCopy('cs.tab.youAreOff'))).toBeTruthy();
+    expect(screen.queryByText(clientSharingCopy('cs.tab.askFirst'))).toBeNull();
+  });
+
+  it('explains Bring together beside its button, and hides the counts until it is done', async () => {
+    mockStatus = status({ me: { ...status().me, started: false } });
+    await renderPanel();
+    expect(screen.getByText(clientSharingCopy('cs.join.body1'))).toBeTruthy();
+    expect(screen.getByText(clientSharingCopy('cs.tab.bringTogether'))).toBeTruthy();
+    expect(screen.queryByText(new RegExp('clients here'))).toBeNull();
+  });
+
+  it('ends Bring together with Done, even when no read caught the progress line', async () => {
+    mockStatus = status({ me: { ...status().me, started: false } });
+    // A small list: done before any read sees the progress line.
+    mockAfterStart = status();
+    await renderPanel();
+    await act(async () => {
+      fireEvent.press(screen.getByText(clientSharingCopy('cs.tab.bringTogether')));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    const buttons = screen.getAllByText(clientSharingCopy('cs.start.confirm'));
+    await act(async () => {
+      fireEvent.press(buttons[buttons.length - 1]!);
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    });
+    expect(mockCalls.some((c) => c.path.endsWith('/start') && c.method === 'POST')).toBe(true);
+    expect(mockToast.success).toHaveBeenCalledWith(clientSharingCopy('cs.progress.done', { count: '1,550' }));
+  });
+
+  it('asks the host before asking everyone, and says how many were asked', async () => {
+    await renderPanel();
+    expect(screen.getByText(clientSharingCopy('cs.tab.hostHeading'))).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByText(clientSharingCopy('cs.tab.askEveryone')));
+    });
+    expect(screen.getByText(clientSharingCopy('cs.tab.askConfirm.title'))).toBeTruthy();
+    expect(mockCalls.some((c) => c.path.endsWith('/ask'))).toBe(false);
+    await act(async () => {
+      fireEvent.press(screen.getByText(clientSharingCopy('cs.tab.askConfirm.confirm')));
+    });
+    expect(mockCalls.some((c) => c.path.endsWith('/client-sharing/ask') && c.method === 'POST')).toBe(true);
+    expect(mockToast.success).toHaveBeenCalledWith(clientSharingCopy('cs.tab.asked', { count: 2 }));
+  });
+
+  it('names the venue on each switch under Change who you share with', async () => {
+    await renderPanel();
+    await act(async () => {
+      fireEvent.press(screen.getByText(clientSharingCopy('cs.tab.changeWho')));
+    });
+    expect(screen.getByLabelText(`${clientSharingCopy('cs.tab.changeWho')}: Light 16`)).toBeTruthy();
+    expect(screen.getByLabelText(`${clientSharingCopy('cs.tab.changeWho')}: Studio 3`)).toBeTruthy();
+  });
+
+  it('shows a request only while not sharing, and sends Not now', async () => {
+    mockStatus = status({
+      me: { ...status().me, state: 'undecided', started: false, request: { byVenueName: 'Light 16', at: '2026-11-15' } },
+    });
+    await renderPanel();
+    expect(screen.getByText(clientSharingCopy('cs.todo.asked', { venue: 'Light 16' }))).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByText(clientSharingCopy('cs.todo.notNow')));
+    });
+    expect(mockCalls.find((c) => c.path.endsWith('/dismiss'))?.body).toEqual({ what: 'request' });
+  });
+
+  it('does not show a request once this venue shares', async () => {
+    mockStatus = status({ me: { ...status().me, request: { byVenueName: 'Light 16', at: '2026-11-15' } } });
+    await renderPanel();
+    expect(screen.queryByText(clientSharingCopy('cs.todo.asked', { venue: 'Light 16' }))).toBeNull();
   });
 });
