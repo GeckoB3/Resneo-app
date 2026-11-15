@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { clientSharingCopy } from '@/lib/collective-area/client-sharing-copy';
 import { areaCopy } from '@/lib/collective-area/copy';
 import { COLLECTIVE_NAME_MAX, tidyCollectiveName } from '@/lib/collective-area/names';
 import {
@@ -83,6 +84,8 @@ export function JoinCollectiveSheet({
   const [joined, setJoined] = useState<{ preview: JoinPreview; draft: JoinDraft } | null>(null);
   /** What staff in the collective call this venue, asked only when another one has its name (web 2026-11-05). */
   const [nameInCollective, setNameInCollective] = useState('');
+  /** Shared client lists (web 2026-11-15, D10): required when the collective offers it, nothing preselected. */
+  const [shareClients, setShareClients] = useState<'share' | 'not_now' | null>(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -92,6 +95,7 @@ export function JoinCollectiveSheet({
     setError(null);
     setJoined(null);
     setNameInCollective('');
+    setShareClients(null);
   }, [visible]);
 
   useEffect(() => {
@@ -121,6 +125,7 @@ export function JoinCollectiveSheet({
           action: 'accept',
           consent_version: preview.consent_version,
           ...joinChoicesFrom(preview, draft),
+          ...(preview.client_sharing_offered && shareClients ? { share_clients: shareClients } : {}),
           ...(preview.name_shared && tidyCollectiveName(nameInCollective)
             ? { name_in_collective: tidyCollectiveName(nameInCollective) }
             : {}),
@@ -154,7 +159,12 @@ export function JoinCollectiveSheet({
       {index > 0 ? <Button label={setupCopy('join.back')} variant="secondary" disabled={busy} onPress={() => setStep(steps[index - 1]!)} /> : null}
       <Button label="Cancel" variant="ghost" disabled={busy} onPress={onClose} />
       {step === 'check' ? (
-        <Button label={setupCopy('join.confirm', { collective: name })} disabled={busy || !agreed || !preview || Boolean(blocked)} loading={busy} onPress={doJoin} />
+        <Button
+          label={setupCopy('join.confirm', { collective: name })}
+          disabled={busy || !agreed || !preview || Boolean(blocked) || (preview.client_sharing_offered === true && !shareClients)}
+          loading={busy}
+          onPress={doJoin}
+        />
       ) : (
         <Button label={setupCopy('join.next')} disabled={!preview || Boolean(blocked)} onPress={() => setStep(steps[index + 1]!)} />
       )}
@@ -223,6 +233,33 @@ export function JoinCollectiveSheet({
                   maxLength={COLLECTIVE_NAME_MAX}
                   autoCorrect={false}
                 />
+              ) : null}
+              {preview.client_sharing_offered ? (
+                <View style={styles.section} testID="join-share-clients">
+                  <Text variant="bodyMedium" accessibilityRole="header">
+                    {clientSharingCopy('cs.join.title')}
+                  </Text>
+                  <Text variant="bodySmall">{clientSharingCopy('cs.join.body1')}</Text>
+                  <Text variant="bodySmall">{clientSharingCopy('cs.join.body2')}</Text>
+                  <Text variant="caption" tone="secondary">
+                    {clientSharingCopy('cs.safe')}
+                  </Text>
+                  <ChoiceRow
+                    selected={shareClients === 'share'}
+                    title={clientSharingCopy('cs.join.share')}
+                    onPress={() => setShareClients('share')}
+                  />
+                  <ChoiceRow
+                    selected={shareClients === 'not_now'}
+                    title={clientSharingCopy('cs.join.notNow')}
+                    onPress={() => setShareClients('not_now')}
+                  />
+                  {!shareClients ? (
+                    <Text variant="caption" tone="secondary">
+                      {clientSharingCopy('cs.join.required')}
+                    </Text>
+                  ) : null}
+                </View>
               ) : null}
               <ChoiceRow
                 kind="checkbox"

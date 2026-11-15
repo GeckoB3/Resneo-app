@@ -7,6 +7,14 @@
  */
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
+// Shared client lists (web 2026-11-15): not what this file is about.
+jest.mock('@/lib/queries/useClientSharing', () => ({
+  useClientSharingStatus: () => ({ data: undefined, isError: false, isLoading: false, refetch: jest.fn() }),
+  useClientSharingSummary: () => ({ data: undefined }),
+  useSharedGuest: () => ({ data: undefined }),
+  useSeparateSharedGuest: () => ({ mutate: jest.fn(), isPending: false }),
+  useDismissClientSharing: () => ({ mutate: jest.fn(), isPending: false }),
+}));
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 jest.mock('expo-router', () => ({
   useLocalSearchParams: () => ({ id: 'g1' }),

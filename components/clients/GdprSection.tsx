@@ -1,3 +1,5 @@
+import { clientSharingCopy } from '@/lib/collective-area/client-sharing-copy';
+import { formatVenueList } from '@/lib/collective-area/copy';
 import { useState } from 'react';
 import { Share, StyleSheet, View } from 'react-native';
 
@@ -53,6 +55,8 @@ export function GdprSection({ guestId, guestName, onErased, bare = false }: Gdpr
   const [reasonAsked, setReasonAsked] = useState(false);
   const records = held.data?.treatment_records ?? 0;
   const alerts = held.data?.client_alerts ?? 0;
+  // Shared client lists (web 2026-11-15): the venues that keep their own record of this client.
+  const alsoHeldBy = held.data?.also_held_by ?? [];
   const needsReason = records > 0 || alerts > 0 || reasonAsked;
 
   async function handleExport() {
@@ -146,6 +150,17 @@ export function GdprSection({ guestId, guestName, onErased, bare = false }: Gdpr
                 This permanently anonymises {guestName}&apos;s personal data (name, email, phone,
                 notes). Their booking history is retained anonymously. This cannot be undone.
               </Text>
+              {alsoHeldBy.length > 0 ? (
+                <View
+                  testID="erase-also-held"
+                  style={[styles.held, { backgroundColor: colors.brandSubtle, borderColor: colors.brand }]}
+                >
+                  <Text variant="bodyMedium">
+                    {clientSharingCopy('cs.erase.also', { venues: formatVenueList(alsoHeldBy) })}
+                  </Text>
+                  <Text variant="bodySmall">{clientSharingCopy('cs.erase.alsoHelp')}</Text>
+                </View>
+              ) : null}
               {needsReason ? (
                 <View style={[styles.held, { backgroundColor: colors.warningSurface, borderColor: colors.warning }]}>
                   <Text variant="bodySmall">

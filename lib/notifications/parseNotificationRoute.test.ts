@@ -119,4 +119,18 @@ describe('parseNotificationRoute', () => {
     expect(parseNotificationRoute('/dashboard/appointment-services-old')).toBeNull();
     expect(parseNotificationRoute('/dashboard/reports')).toBeNull();
   });
+
+  it('opens Manage Collective on Clients for a shared client lists notice (web 2026-11-15)', () => {
+    const clients = { type: 'collective-area', view: null, venue: null, filter: null, tab: 'clients' };
+    expect(parseNotificationRoute('/dashboard/collective?tab=clients', 'client_sharing')).toEqual(clients);
+    expect(parseNotificationRoute(null, 'client_sharing_asked')).toEqual(clients);
+    expect(parseNotificationRoute(null, 'client_sharing_erased')).toEqual(clients);
+    // Without the tab, Manage Collective opens as before.
+    expect(parseNotificationRoute('/dashboard/collective')).toEqual({
+      type: 'collective-area',
+      view: null,
+      venue: null,
+      filter: null,
+    });
+  });
 });

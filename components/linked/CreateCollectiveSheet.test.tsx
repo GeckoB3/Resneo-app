@@ -224,6 +224,24 @@ describe('CreateCollectiveSheet', () => {
     expect(onOpen).toHaveBeenLastCalledWith('/collective-area');
   });
 
+  it('offers shared client lists, off by default, and sends the choice when switched on (web 2026-11-15)', async () => {
+    await render(sheet());
+    await toCheck();
+    const row = screen.getByLabelText('Share client lists');
+    expect(screen.getByText('Your venues see one client list. Nothing is deleted.')).toBeTruthy();
+    expect(row.props.value).toBe(false);
+    await act(async () => {
+      fireEvent(row, 'valueChange', true);
+    });
+    await press('Create and send invitations');
+    expect(mockCreate).toHaveBeenCalledWith({
+      name: 'Riverside',
+      slug: 'riverside',
+      inviteVenueIds: ['v-ok'],
+      share_clients: true,
+    });
+  });
+
   it('shows a refused address on the check step with the way back, and on the name step', async () => {
     mockCreateError = new ApiError('That booking-page address is already in use. Choose another.', 409, { field: 'slug' });
     await render(sheet());

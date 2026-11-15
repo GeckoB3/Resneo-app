@@ -64,6 +64,8 @@ export interface ClientAlert {
   created_at: string;
   removed_at?: string | null;
   removed_by_name?: string | null;
+  /** Collective client sharing: added at another venue sharing this client (absent from older servers). */
+  added_at_venue_name?: string | null;
 }
 
 /** GET /api/venue/treatment-records/[id]. */

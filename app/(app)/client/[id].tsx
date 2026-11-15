@@ -22,6 +22,7 @@ import { GdprSection } from '@/components/clients/GdprSection';
 import { GuestEditSheet, type GuestEditTarget } from '@/components/clients/GuestEditSheet';
 import { GuestTagEditor } from '@/components/clients/GuestTagEditor';
 import { TreatmentRecordsSection } from '@/components/clients/TreatmentRecordsSection';
+import { AcrossTheCollectiveCard, SharedClientLine } from '@/components/clients/SharedClientSection';
 import { ClientAlertsStrip } from '@/components/treatment-records/ClientAlertsStrip';
 import { HouseholdSection } from '@/components/clients/HouseholdSection';
 import { MarketingPreferencesCard } from '@/components/clients/MarketingPreferencesCard';
@@ -503,6 +504,8 @@ export default function ClientDetailScreen() {
                 {[formatPhoneForDisplay(phone), email].filter(Boolean).join('  ·  ')}
               </Text>
             ) : null}
+            {/* Shared client lists (web 2026-11-15): "Also a client of Light 16". */}
+            <SharedClientLine guestId={guestId} />
             {/* "4 appointments on file", in the venue's word for a booking. */}
             <Text variant="caption" tone="muted" numberOfLines={1}>
               {bookingsOnFile}
@@ -647,6 +650,9 @@ export default function ClientDetailScreen() {
           />
         ) : null}
       </CollapsibleCard>
+
+      {/* Across the collective (web 2026-11-15): the other venues' visits, read live. */}
+      <AcrossTheCollectiveCard guestId={guestId} />
     </View>
   );
 

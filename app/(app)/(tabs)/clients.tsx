@@ -22,6 +22,7 @@ import {
   BulkRemoveTagSheet,
   BulkTagSheet,
 } from '@/components/clients/BulkActionSheets';
+import { ClientSharingBanners } from '@/components/clients/ClientSharingBanners';
 import { ContactAzRail } from '@/components/clients/ContactAzRail';
 import { ContactFilterSheet, type ContactFilterState, DEFAULT_FILTER_STATE } from '@/components/clients/ContactFilterSheet';
 import { ContactLetterHeader } from '@/components/clients/ContactLetterHeader';
@@ -891,6 +892,8 @@ export default function ClientsScreen() {
     <Screen padded={false} bottomInset={false}>
       {/* Search box is rendered OUTSIDE the FlatList so its TextInput is never remounted. */}
       <View style={styles.header}>
+        {/* Shared client lists (web 2026-11-15): the nudge and the "clients to check" banner. */}
+        <ClientSharingBanners />
         <SearchBar
           value={searchInput}
           onChangeText={setSearchInput}

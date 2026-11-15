@@ -15,6 +15,8 @@
  * `LeaveCollectivePanel` is the content alone, for a sheet that is already open (the link sheets show
  * it in place rather than stacking a second sheet, which iOS can refuse to present).
  */
+import { leaveSharingParagraph } from '@/lib/collective-area/client-sharing-lines';
+import { useClientSharingStatus } from '@/lib/queries/useClientSharing';
 import { useRouter, type Href } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -86,6 +88,9 @@ export function LeaveCollectivePanel({
   const previewQuery = useLeavePreview(collective.id, active);
   const leave = useLeaveCollective(collective.id);
   const [error, setError] = useState<string | null>(null);
+  // Shared client lists (web 2026-11-15): what the venue keeps. Nothing when it does not share.
+  const sharing = useClientSharingStatus(active ? collective.id : null, { pollWhileRunning: false });
+  const sharingLine = leaveSharingParagraph(sharing.data);
 
   const preview = previewQuery.data ?? null;
   // 409: not on shared services, so there is no preview to give. Today's words, and leaving allowed.
@@ -148,6 +153,11 @@ export function LeaveCollectivePanel({
       ) : !loadError ? (
         <Text variant="bodySmall" tone="muted" accessibilityRole="progressbar">
           Loading...
+        </Text>
+      ) : null}
+      {sharingLine ? (
+        <Text variant="bodySmall" testID="leave-sharing-paragraph">
+          {sharingLine}
         </Text>
       ) : null}
       <View style={styles.actions}>

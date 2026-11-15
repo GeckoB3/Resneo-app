@@ -245,6 +245,7 @@ export default function NotificationsScreen() {
         route.view ? `view=${route.view}` : null,
         route.venue ? `venue=${encodeURIComponent(route.venue)}` : null,
         route.filter ? `filter=${route.filter}` : null,
+        route.tab ? `tab=${route.tab}` : null,
       ].filter(Boolean);
       router.push(`/collective-area${query.length > 0 ? `?${query.join('&')}` : ''}` as Href);
     } else if (route?.type === 'services' && isAdmin) {

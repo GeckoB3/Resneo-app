@@ -1,7 +1,7 @@
 import * as Clipboard from 'expo-clipboard';
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Linking, Pressable, StyleSheet, View, type TextInput } from 'react-native';
+import { Linking, Pressable, StyleSheet, Switch, View, type TextInput } from 'react-native';
 
 import { ChoiceRow } from '@/components/linked/setup/ChoiceRow';
 import { CollectiveChangesStep, CollectiveNameStep, collectiveNameStepReason, useCollectiveAddress } from '@/components/linked/setup/CreateSteps';
@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { clientSharingCopy } from '@/lib/collective-area/client-sharing-copy';
 import { areaCopy } from '@/lib/collective-area/copy';
 import { getWebUrl } from '@/lib/env';
 import { hapticSuccess } from '@/lib/haptics';
@@ -65,6 +66,8 @@ export function CreateCollectiveSheet({
   const address = useCollectiveAddress(name, visible);
   const [invited, setInvited] = useState<string[]>([]);
   const [acknowledged, setAcknowledged] = useState(false);
+  // Shared client lists (web 2026-11-15, plan §1A.2 step 1): off by default.
+  const [shareClients, setShareClients] = useState(false);
   const [error, setError] = useState<{ message: string; field: ErrorField | null } | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -78,6 +81,7 @@ export function CreateCollectiveSheet({
       address.reset();
       setInvited([]);
       setAcknowledged(false);
+      setShareClients(false);
       setError(null);
       setCopied(false);
     }
@@ -112,7 +116,7 @@ export function CreateCollectiveSheet({
   const handleCreate = () => {
     setError(null);
     create.mutate(
-      { name: name.trim(), slug: address.slug, inviteVenueIds: invited },
+      { name: name.trim(), slug: address.slug, inviteVenueIds: invited, ...(shareClients ? { share_clients: true } : {}) },
       {
         onSuccess: () => {
           setStep('done');
@@ -310,6 +314,22 @@ export function CreateCollectiveSheet({
               </View>
             ))}
           </View>
+          <View style={[styles.card, styles.shareRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={styles.flex1}>
+              <Text variant="label">{clientSharingCopy('cs.create.label')}</Text>
+              <Text variant="caption" tone="secondary">
+                {clientSharingCopy('cs.create.help')}
+              </Text>
+            </View>
+            <Switch
+              accessibilityLabel={clientSharingCopy('cs.create.label')}
+              value={shareClients}
+              disabled={busy}
+              onValueChange={setShareClients}
+              trackColor={{ true: colors.brand, false: colors.border }}
+              thumbColor={colors.surfaceRaised}
+            />
+          </View>
           <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Text variant="bodySmall">{setupCopy('create.check.notLive', { collective })}</Text>
           </View>
@@ -386,6 +406,7 @@ export function CreateCollectiveSheet({
 }
 
 const styles = StyleSheet.create({
+  shareRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   section: {
     gap: spacing.sm,
   },

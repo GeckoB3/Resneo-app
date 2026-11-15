@@ -241,6 +241,14 @@ export default function AppLayout() {
           title: 'Client',
         }}
       />
+      {/* Shared client lists (web 2026-11-15): the screen sets its own title, "Clients to check". */}
+      <Stack.Screen
+        name="client/check"
+        options={{
+          headerShown: true,
+          title: 'Clients to check',
+        }}
+      />
       <Stack.Screen
         name="staff-required"
         options={{

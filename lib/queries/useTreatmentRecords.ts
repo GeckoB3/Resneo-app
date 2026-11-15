@@ -337,14 +337,19 @@ export function useEraseHeldCounts(guestId: string | null, enabled = true) {
     queryKey: queryKeys.treatmentRecords.eraseCounts(accessToken, guestId),
     enabled: enabled && Boolean(guestId) && isBackendConfigured() && accessToken !== null,
     retry: false,
-    queryFn: async (): Promise<{ treatment_records: number; client_alerts: number } | null> => {
+    queryFn: async (): Promise<{ treatment_records: number; client_alerts: number; also_held_by: string[] } | null> => {
       if (!accessToken || !guestId) throw new Error('Missing client');
       try {
-        const out = await apiFetch<{ treatment_records?: number; client_alerts?: number }>(
+        const out = await apiFetch<{ treatment_records?: number; client_alerts?: number; also_held_by?: string[] }>(
           `/api/venue/gdpr/erase-guest?guest_id=${encodeURIComponent(guestId)}`,
           { accessToken },
         );
-        return { treatment_records: out.treatment_records ?? 0, client_alerts: out.client_alerts ?? 0 };
+        return {
+          treatment_records: out.treatment_records ?? 0,
+          client_alerts: out.client_alerts ?? 0,
+          // Shared client lists (web 2026-11-15): "Also held by Aura and Light 16." Absent on older servers.
+          also_held_by: Array.isArray(out.also_held_by) ? out.also_held_by : [],
+        };
       } catch {
         // An older server has no GET here; it still asks for a reason if one is needed.
         return null;

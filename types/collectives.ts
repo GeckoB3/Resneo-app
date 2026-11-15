@@ -240,6 +240,8 @@ export interface CreateCollectivePayload {
   serviceGrouping?: ServiceGrouping;
   allowAnyPractitioner?: boolean;
   inviteVenueIds: string[];
+  /** Shared client lists (web 2026-11-15): the Create row switched on. Older servers ignore it. */
+  share_clients?: boolean;
 }
 
 export interface UpdateCollectivePayload {
@@ -275,6 +277,8 @@ export interface CollectiveMemberActionPayload extends Partial<JoinChoices> {
   allowAnyPractitionerSubstitution?: boolean;
   displayOrder?: number;
   soloPageBehavior?: SoloPageBehavior;
+  /** `accept`: the "Share client lists?" answer when the collective offers it (web 2026-11-15, D10). */
+  share_clients?: 'share' | 'not_now';
 }
 
 export type CatalogueAction =
@@ -398,6 +402,11 @@ export interface JoinPreview {
    * should call it (web 2026-11-05). Absent on older servers.
    */
   name_shared?: boolean;
+  /**
+   * The collective offers shared client lists, so the last step asks "Share client lists?" and needs
+   * an answer (web 2026-11-15, D10). Absent on older servers.
+   */
+  client_sharing_offered?: boolean;
 }
 
 // ---------------------------------------------------------------------------

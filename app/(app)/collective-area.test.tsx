@@ -11,6 +11,14 @@ import type { WaitingSuggestion } from '@/lib/queries/useCollectiveServiceTools'
 import type { CollectiveCandidate, InviteeLinkTodo } from '@/types/collectives';
 
 // A service's sheet opens on the grid; the real one needs the native gesture handler.
+// Shared client lists (web 2026-11-15): not what this file is about.
+jest.mock('@/lib/queries/useClientSharing', () => ({
+  useClientSharingStatus: () => ({ data: undefined, isError: false, isLoading: false, refetch: jest.fn() }),
+  useClientSharingSummary: () => ({ data: undefined }),
+  useSharedGuest: () => ({ data: undefined }),
+  useSeparateSharedGuest: () => ({ mutate: jest.fn(), isPending: false }),
+  useDismissClientSharing: () => ({ mutate: jest.fn(), isPending: false }),
+}));
 jest.mock('@/components/ui/Sheet', () => {
   const React = require('react');
   const { View } = require('react-native');

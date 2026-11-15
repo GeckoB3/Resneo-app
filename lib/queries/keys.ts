@@ -678,4 +678,17 @@ export const queryKeys = {
     linkTodos: (accessToken?: string | null) =>
       [...queryKeys.collectives.all(), 'linkTodos', keyScope(accessToken)] as const,
   },
+
+  // Collective client sharing (web Docs/collective-client-sharing-plan.md §8).
+  clientSharing: {
+    all: () => [...queryKeys.all, 'clientSharing'] as const,
+    status: (accessToken?: string | null, collectiveId?: string | null) =>
+      [...queryKeys.clientSharing.all(), 'status', keyScope(accessToken), collectiveId ?? null] as const,
+    summary: (accessToken?: string | null) =>
+      [...queryKeys.clientSharing.all(), 'summary', keyScope(accessToken)] as const,
+    check: (accessToken?: string | null, collectiveId?: string | null) =>
+      [...queryKeys.clientSharing.all(), 'check', keyScope(accessToken), collectiveId ?? null] as const,
+    guest: (accessToken?: string | null, guestId?: string | null) =>
+      [...queryKeys.clientSharing.all(), 'guest', keyScope(accessToken), guestId ?? null] as const,
+  },
 } as const;

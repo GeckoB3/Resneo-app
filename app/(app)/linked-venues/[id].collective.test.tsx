@@ -12,6 +12,10 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { ApiError } from '@/lib/api/client';
 import type { AccountLinkView, LinkBreakPlan, LinkCollectiveHold, LinkGrant } from '@/types/linked-venues';
 
+// Shared client lists (web 2026-11-15): not what this file is about.
+jest.mock('@/lib/queries/useClientSharing', () => ({
+  useClientSharingStatus: () => ({ data: undefined, isError: false, isLoading: false, refetch: jest.fn() }),
+}));
 jest.mock('@/components/ui/Sheet', () => {
   const React = require('react');
   const { View } = require('react-native');

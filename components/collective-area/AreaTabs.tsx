@@ -23,7 +23,9 @@ import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { areaCopy } from '@/lib/collective-area/copy';
 import { invitedVenueStatus } from '@/lib/collective-area/invite-links';
+import { removeSharingLine } from '@/lib/collective-area/client-sharing-lines';
 import { removeEndsCollective } from '@/lib/collective-area/remove-ends-collective';
+import { useClientSharingStatus } from '@/lib/queries/useClientSharing';
 import {
   groupStatus,
   type CollectiveCalendarGroup,
@@ -85,6 +87,8 @@ export function VenuesPanel({
   const router = useRouter();
   const { colors } = useTheme();
   const patch = useCollectiveMembersPatch(collectiveId);
+  // Shared client lists (web 2026-11-15): removing a venue says who keeps what.
+  const sharing = useClientSharingStatus(collectiveId, { pollWhileRunning: false });
   const [asking, setAsking] = useState<Ask>(null);
   /** The business whose name in the collective the host is choosing (web 2026-11-05). */
   const [naming, setNaming] = useState<VenueRow | null>(null);
@@ -147,7 +151,12 @@ export function VenuesPanel({
             }
           : {
               title: areaCopy('ov.venues.removeTitle', { venue, collective: collectiveName }),
-              message: areaCopy('ov.venues.removeMessage', { venue, collective: collectiveName }),
+              message: [
+                areaCopy('ov.venues.removeMessage', { venue, collective: collectiveName }),
+                removeSharingLine(sharing.data, venue),
+              ]
+                .filter(Boolean)
+                .join(' '),
               confirm: areaCopy('ov.venues.remove'),
               destructive: true,
             };

@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/Input';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { clientSharingCopy } from '@/lib/collective-area/client-sharing-copy';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useAddClientAlert, useClientAlerts, useRemoveClientAlert } from '@/lib/queries/useTreatmentRecords';
 import { TR_COPY } from '@/lib/treatment-records/copy';
@@ -97,7 +98,15 @@ export function ClientAlertsSheet({ guestId, visible, onClose }: { guestId: stri
               <View style={styles.alertText}>
                 <Text variant="bodyMedium">{a.text}</Text>
                 <Text variant="caption" tone="muted">
-                  {[a.created_by_name, formatDay(a.created_at)].filter(Boolean).join(', ')}
+                  {[
+                    a.added_at_venue_name
+                      ? clientSharingCopy('cs.contact.alertFrom', { venue: a.added_at_venue_name })
+                      : null,
+                    a.created_by_name,
+                    formatDay(a.created_at),
+                  ]
+                    .filter(Boolean)
+                    .join(', ')}
                 </Text>
               </View>
               <Button

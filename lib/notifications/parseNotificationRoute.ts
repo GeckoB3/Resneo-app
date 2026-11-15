@@ -10,6 +10,7 @@
  *                                        Collective's every-venue view, or, on a server without
  *                                        it, opens "Add from another venue" as before)
  *   /dashboard/collective[?view=venues&venue=…&filter=suggested]  →  { type: 'collective-area' }
+ *   /dashboard/collective?tab=clients  →  { type: 'collective-area', tab: 'clients' }  (shared clients)
  *                                        (Manage Collective; a bell about curating the page or a
  *                                        member's suggestions opens every venue's services on that
  *                                        venue and filter, 2026-10-27)
@@ -43,6 +44,8 @@ export type NotificationRoute =
       view: 'venues' | null;
       venue: string | null;
       filter: 'suggested' | null;
+      /** 'clients' opens Clients: shared client lists (web 2026-11-15). Absent otherwise. */
+      tab?: 'clients';
     }
   | { type: 'commission-splits'; splitId: string | null }
   | { type: 'availability' }
@@ -57,7 +60,11 @@ const COLLECTIVE_INVITATION_TYPES = new Set(['collective_n1', 'collective_member
  * Where a collective notice opens when an older server sent it with the Linked Accounts link (web
  * `COLLECTIVE_NOTICE_HREFS` in `notification-center.ts`, 2026-10-29).
  */
-const COLLECTIVE_NOTICE_ROUTES: Record<string, 'collective' | 'services' | 'booking-page'> = {
+const COLLECTIVE_NOTICE_ROUTES: Record<string, 'collective' | 'clients' | 'services' | 'booking-page'> = {
+  // Shared client lists (web 2026-11-15): asked to share, sharing started or stopped, an erasure.
+  client_sharing: 'clients',
+  client_sharing_asked: 'clients',
+  client_sharing_erased: 'clients',
   collective_service_offered: 'collective',
   collective_joined: 'collective',
   collective_commercial_change: 'collective',
@@ -84,6 +91,7 @@ function collectiveRouteByType(type: string): NotificationRoute {
   if (COLLECTIVE_INVITATION_TYPES.has(type)) return { type: 'collectives' };
   const to = COLLECTIVE_NOTICE_ROUTES[type];
   if (to === 'collective') return MANAGE_COLLECTIVE;
+  if (to === 'clients') return { type: 'collective-area', view: null, venue: null, filter: null, tab: 'clients' };
   if (to === 'services') return { type: 'services', addFrom: null, service: null };
   if (to === 'booking-page') return { type: 'booking-page' };
   return null;
@@ -133,6 +141,7 @@ export function parseNotificationRoute(href: string | null | undefined, type?: s
       view: queryValue(href, 'view') === 'venues' ? 'venues' : null,
       venue: queryValue(href, 'venue'),
       filter: queryValue(href, 'filter') === 'suggested' ? 'suggested' : null,
+      ...(queryValue(href, 'tab') === 'clients' ? { tab: 'clients' as const } : {}),
     };
   }
 

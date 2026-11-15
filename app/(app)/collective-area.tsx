@@ -23,6 +23,7 @@
  *   venue=<id>         on that venue
  *   filter=suggested   on the suggestions waiting
  *   tab=venues         open the host's Venues tab (Manage combined page's pointer, CQ-10.4)
+ *   tab=clients        open Clients: shared client lists (web 2026-11-15, the bell's link)
  *
  * A host whose collective has nothing on the page yet reads it from the collectives list, and opens
  * on Venues while it has no other venue, to invite one or end it (CQ-10.3).
@@ -41,6 +42,7 @@ import {
   VenueHealthCards,
 } from '@/components/collective-area/AreaPieces';
 import { HistoryPanel, VenuesPanel, type VenueRow } from '@/components/collective-area/AreaTabs';
+import { ClientsPanel } from '@/components/collective-area/ClientsPanel';
 import { LinkTodosCard } from '@/components/collective-area/LinkTodosCard';
 import { ListingsPanel } from '@/components/collective-area/ListingsPanel';
 import { MemberSuggestPanel } from '@/components/collective-area/MemberSuggestPanel';
@@ -69,6 +71,8 @@ import {
   type AreaService,
   type CollectiveCalendarGroup,
 } from '@/lib/collective-area/model';
+import { clientSharingCopy } from '@/lib/collective-area/client-sharing-copy';
+import { useClientSharingStatus } from '@/lib/queries/useClientSharing';
 import { useCollectiveRetry, useOwnCollectiveCalendars } from '@/lib/queries/useCollectiveArea';
 import { useCollectives } from '@/lib/queries/useCollectives';
 import { useManagedServices } from '@/lib/queries/useServicesManage';
@@ -79,7 +83,7 @@ import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { CollectiveView } from '@/types/collectives';
 
-type AreaTab = 'services' | 'listings' | 'venues' | 'history';
+type AreaTab = 'services' | 'listings' | 'venues' | 'clients' | 'history';
 /** The host's two views of its services: what is on the page, and every venue's own (2026-10-27). */
 type ServicesView = 'page' | 'venues';
 
@@ -203,11 +207,17 @@ function AreaBody({
   // A host opens on Venues when asked, or while its collective has no other venue and nothing on the
   // page, as the web does (CQ-10.3).
   const [tab, setTab] = useState<AreaTab>(() =>
-    collective.isHost &&
-    (oneParam(params.tab) === 'venues' || (collective.noServices && (collective.activeMemberCount ?? 0) < 2))
-      ? 'venues'
-      : 'services',
+    oneParam(params.tab) === 'clients'
+      ? 'clients'
+      : collective.isHost &&
+          (oneParam(params.tab) === 'venues' || (collective.noServices && (collective.activeMemberCount ?? 0) < 2))
+        ? 'venues'
+        : 'services',
   );
+  // Shared client lists (web 2026-11-15): the Clients tab shows while the collective offers it,
+  // and always for the host, who offers it there. A server without the route shows no tab.
+  const sharing = useClientSharingStatus(collective.id);
+  const showClientsTab = !sharing.isError && (collective.isHost || sharing.data?.offered === true);
   const [historyVenueId, setHistoryVenueId] = useState<string | null>(null);
   const [servicesView, setServicesView] = useState<ServicesView>(
     oneParam(params.view) === 'venues' ? 'venues' : 'page',
@@ -301,6 +311,7 @@ function AreaBody({
     // 'Classes, events & resources' on the web; shorter so the tab stays readable on a phone.
     { value: 'listings', label: 'Classes & more' },
     ...(collective.isHost ? [{ value: 'venues' as const, label: areaCopy('ov.tab.venues') }] : []),
+    ...(showClientsTab || tab === 'clients' ? [{ value: 'clients' as const, label: clientSharingCopy('cs.tab.label') }] : []),
     { value: 'history', label: areaCopy('ov.tab.history') },
   ];
 
@@ -490,6 +501,8 @@ function AreaBody({
               onEnded={() => router.replace('/collectives' as Href)}
             />
           ) : null}
+
+          {tab === 'clients' ? <ClientsPanel collectiveId={collective.id} isHost={collective.isHost} /> : null}
 
           {tab === 'listings' ? (
             <ListingsPanel collectiveId={collective.id} collectiveName={collective.name} />

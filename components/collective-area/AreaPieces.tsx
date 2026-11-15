@@ -3,6 +3,8 @@
  * (`CollectivePills`, `CollectiveTodoStrip`, `CollectiveHostingControls` and the venue cards of
  * `CollectiveAreaClient`, 2026-09-17).
  */
+import { endSharingLine } from '@/lib/collective-area/client-sharing-lines';
+import { useClientSharingStatus } from '@/lib/queries/useClientSharing';
 import { useRouter, type Href } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Switch, View } from 'react-native';
@@ -570,6 +572,9 @@ export function EndCollectiveCard({
   const { colors } = useTheme();
   const dissolve = useDissolveCollective();
   const [open, setOpen] = useState(false);
+  // Shared client lists (web 2026-11-15): "Every venue keeps every client it holds today."
+  const sharing = useClientSharingStatus(open ? collectiveId : null, { pollWhileRunning: false });
+  const endLine = endSharingLine(sharing.data);
   const [typed, setTyped] = useState('');
   const [error, setError] = useState<string | null>(null);
   const matches = typed.trim().toLowerCase() === collectiveName.trim().toLowerCase();
@@ -599,6 +604,11 @@ export function EndCollectiveCard({
           <Text variant="bodySmall" tone="secondary">
             {areaCopy('dissolve.message', { collective: collectiveName })}
           </Text>
+          {endLine ? (
+            <Text variant="bodySmall" testID="end-sharing-line">
+              {endLine}
+            </Text>
+          ) : null}
           <Input
             label={areaCopy('dissolve.typeToConfirm', { collective: collectiveName })}
             value={typed}
