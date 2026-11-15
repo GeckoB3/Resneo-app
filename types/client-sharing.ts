@@ -89,7 +89,15 @@ export type ClientSharingCard =
   | {
       kind: 'match';
       id: string;
-      reason: 'same_email' | 'same_login' | 'same_phone_name' | 'same_phone' | 'same_name_email' | 'same_before';
+      reason:
+        | 'same_email'
+        | 'same_login'
+        | 'same_phone_name'
+        | 'same_phone'
+        | 'same_name_email'
+        | 'same_before'
+        /** The same phone and name, but a different email on each record (added 2026-11-15). */
+        | 'same_phone_name_other_email';
       certainty: 'certain' | 'likely';
       mine: ClientSharingPerson;
       theirs: ClientSharingPerson;
@@ -97,7 +105,11 @@ export type ClientSharingCard =
   | {
       kind: 'merge_first';
       id: string;
-      /** Two of the viewing venue's own records that match one person elsewhere. */
+      /**
+       * Two of the viewing venue's own records that match one person elsewhere. The venue says which
+       * one is that person (decision 'link_to' with its guest id) or neither ('keep_separate')
+       * (added 2026-11-15).
+       */
       mine: [ClientSharingPerson, ClientSharingPerson];
       theirs: ClientSharingPerson | null;
     }
@@ -116,7 +128,7 @@ export interface ClientSharingCheckResponse {
   cards: ClientSharingCard[];
   total: number;
   likelyCount: number;
-  /** A "Join all likely matches" that can still be undone. */
+  /** A "Link all likely matches" that can still be undone. */
   undo: { batchId: string; count: number; until: string } | null;
 }
 
@@ -159,4 +171,13 @@ export interface VenueClientSharingSummary {
 /** PUT .../client-sharing answers the status plus whether Bring together is needed. */
 export type ClientSharingPutResponse = ClientSharingStatusResponse & { needsBringTogether?: boolean };
 
-export type ClientSharingDecision = 'same_person' | 'different_people' | 'skip' | 'use_new' | 'keep_mine';
+export type ClientSharingDecision =
+  | 'same_person'
+  | 'different_people'
+  | 'skip'
+  | 'use_new'
+  | 'keep_mine'
+  /** A merge_first card: this one of the venue's two records is that person (send its `guest_id`). Added 2026-11-15. */
+  | 'link_to'
+  /** A merge_first card: neither of the venue's two records is that person. Added 2026-11-15. */
+  | 'keep_separate';

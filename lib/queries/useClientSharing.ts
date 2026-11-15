@@ -167,11 +167,12 @@ export function useDecideClientCard(collectiveId: string | null) {
   const accessToken = useAccessToken();
   const invalidate = useInvalidateSharing();
   return useMutation({
-    mutationFn: ({ cardId, decision }: { cardId: string; decision: ClientSharingDecision }) =>
+    /** `guestId` goes with 'link_to' only: which of the venue's two records is that person. */
+    mutationFn: ({ cardId, decision, guestId }: { cardId: string; decision: ClientSharingDecision; guestId?: string }) =>
       apiFetch<{ ok: true }>(`${base(collectiveId!)}/check/${cardId}`, {
         accessToken,
         method: 'POST',
-        body: JSON.stringify({ decision }),
+        body: JSON.stringify(decision === 'link_to' && guestId ? { decision, guest_id: guestId } : { decision }),
       }),
     onSettled: invalidate,
   });
@@ -186,6 +187,24 @@ export function useJoinAllLikely(collectiveId: string | null) {
         accessToken,
         method: 'POST',
         body: JSON.stringify({ action: 'join_all_likely' }),
+      }),
+    onSettled: invalidate,
+  });
+}
+
+/**
+ * "Keep all separate": every pending likely match is kept as two different people (at most 200 a
+ * request; `kept` says how many). There is no undo. Added 2026-11-15.
+ */
+export function useKeepAllSeparate(collectiveId: string | null) {
+  const accessToken = useAccessToken();
+  const invalidate = useInvalidateSharing();
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<{ ok: true; kept: number }>(`${base(collectiveId!)}/check`, {
+        accessToken,
+        method: 'POST',
+        body: JSON.stringify({ action: 'keep_all_separate' }),
       }),
     onSettled: invalidate,
   });

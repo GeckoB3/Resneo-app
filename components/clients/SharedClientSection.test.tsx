@@ -86,6 +86,9 @@ describe('a shared client on the app', () => {
       fireEvent.press(screen.getAllByText(clientSharingCopy('cs.contact.different'))[0]!);
     });
     expect(mockCalls.some((c) => c.method === 'POST')).toBe(false);
+    // The action reads "Unlink", and the sheet says what it does.
+    expect(clientSharingCopy('cs.contact.different')).toBe('Unlink');
+    expect(screen.getByText(clientSharingCopy('cs.contact.differentHelp', { venues: 'Light 16' }))).toBeTruthy();
     const confirm = screen.getAllByText(clientSharingCopy('cs.contact.different'));
     await act(async () => {
       fireEvent.press(confirm[confirm.length - 1]!);

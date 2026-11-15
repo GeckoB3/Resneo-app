@@ -1,10 +1,12 @@
 /**
  * Clients to check (web `/dashboard/contacts/check`; plan §1A.2 step 6, mockup board 6).
  *
- * One card at a time: "Is this the same person?" (Same person / Different people / Not sure, skip),
- * a change another venue made (Use new / Keep mine), or two of this venue's own records to merge
- * first. Join all likely matches answers the likely ones in one go, with Undo for 24 hours. The first
- * decision anywhere in the collective wins: a card someone else answered is said so and leaves.
+ * One card at a time: "Is this the same person?" (Link records / Keep separate / Not sure, skip),
+ * a change another venue made (Use new / Keep mine), or a person elsewhere who matches two of this
+ * venue's own records (Link to this one, on either record / Neither, keep separate; or merge the two
+ * here first). Link all likely matches answers the likely ones in one go, with Undo for 24 hours;
+ * Keep all separate answers them the other way, with no undo. The first decision anywhere in the
+ * collective wins: a card someone else answered is said so and leaves.
  *
  * Route param: collective=<id>. Owners and admins only, as on the web.
  *
@@ -14,7 +16,7 @@
  */
 import { Stack, useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
@@ -29,6 +31,7 @@ import {
   useClientSharingCheck,
   useDecideClientCard,
   useJoinAllLikely,
+  useKeepAllSeparate,
   useUndoJoinAll,
 } from '@/lib/queries/useClientSharing';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
@@ -94,10 +97,12 @@ export default function ClientsToCheckScreen() {
   const query = useClientSharingCheck(isAdmin ? collectiveId : null, offset);
   const decide = useDecideClientCard(collectiveId);
   const joinAll = useJoinAllLikely(collectiveId);
+  const keepAll = useKeepAllSeparate(collectiveId);
   const undo = useUndoJoinAll(collectiveId);
   // "Not sure, skip" moves on and the card stays in the list, as on the web ("2 of 38").
   const [index, setIndex] = useState(0);
   const [askJoinAll, setAskJoinAll] = useState(false);
+  const [askKeepAll, setAskKeepAll] = useState(false);
 
   const header = <Stack.Screen options={{ headerShown: true, title: clientSharingCopy('cs.check.title') }} />;
   const cards = useMemo(
@@ -181,13 +186,14 @@ export default function ClientsToCheckScreen() {
   const likelyCount = query.data?.likelyCount ?? 0;
   const undoBatch = query.data?.undo ?? null;
 
-  const answer = (id: string, decision: ClientSharingDecision) => {
+  /** `guestId` goes with 'link_to' only: which of this venue's two records is that person. */
+  const answer = (id: string, decision: ClientSharingDecision, guestId?: string) => {
     if (decision === 'skip') {
       moveOn();
       return;
     }
     decide.mutate(
-      { cardId: id, decision },
+      { cardId: id, decision, guestId },
       {
         onError: (err) => {
           const code = apiErrorCode(err);
@@ -219,11 +225,20 @@ export default function ClientsToCheckScreen() {
       {header}
       <ScrollView contentContainerStyle={styles.content}>
         {likelyCount > 0 ? (
-          <Button
-            label={clientSharingCopy('cs.check.joinAll', { count: formatClientCount(likelyCount) })}
-            variant="secondary"
-            onPress={() => setAskJoinAll(true)}
-          />
+          <View style={styles.actions}>
+            <Button
+              label={clientSharingCopy('cs.check.joinAll', { count: formatClientCount(likelyCount) })}
+              variant="secondary"
+              disabled={joinAll.isPending || keepAll.isPending}
+              onPress={() => setAskJoinAll(true)}
+            />
+            <Button
+              label={clientSharingCopy('cs.check.keepAll', { count: formatClientCount(likelyCount) })}
+              variant="secondary"
+              disabled={joinAll.isPending || keepAll.isPending}
+              onPress={() => setAskKeepAll(true)}
+            />
+          </View>
         ) : null}
         {undoBatch ? (
           <View style={[styles.card, styles.row, { borderColor: colors.border, backgroundColor: colors.surfaceRaised }]}>
@@ -281,6 +296,9 @@ export default function ClientsToCheckScreen() {
               disabled={decide.isPending}
               onPress={() => answer(card.id, 'skip')}
             />
+            <Text variant="caption" tone="secondary">
+              {clientSharingCopy('cs.check.linkHelp')}
+            </Text>
           </View>
         ) : card.kind === 'change' ? (
           <View
@@ -336,17 +354,54 @@ export default function ClientsToCheckScreen() {
                 venue: card.theirs?.venueName ?? card.mine[0].venueName,
               })}
             </Text>
-            <PersonBox p={card.mine[0]} />
-            <PersonBox p={card.mine[1]} />
+            {card.theirs ? <PersonBox p={card.theirs} /> : null}
+            {/* Which of your records is this person: one tap links it, and the other record is
+                remembered as someone else (web ClientsToCheck, 2026-11-15). */}
+            {card.mine.map((p) => (
+              <View key={p.guestId} style={styles.choice}>
+                <PersonBox p={p} />
+                <Button
+                  label={clientSharingCopy('cs.check.linkTo')}
+                  fullWidth
+                  loading={
+                    decide.isPending &&
+                    decide.variables?.decision === 'link_to' &&
+                    decide.variables.guestId === p.guestId
+                  }
+                  disabled={decide.isPending}
+                  onPress={() => answer(card.id, 'link_to', p.guestId)}
+                />
+              </View>
+            ))}
             <Button
-              label={clientSharingCopy('cs.check.mergeFirst')}
-              onPress={() => router.push(`/client/${card.mine[0].guestId}` as Href)}
+              label={clientSharingCopy('cs.check.neither')}
+              variant="secondary"
+              fullWidth
+              loading={decide.isPending && decide.variables?.decision === 'keep_separate'}
+              disabled={decide.isPending}
+              onPress={() => answer(card.id, 'keep_separate')}
             />
             <Button
               label={clientSharingCopy('cs.check.skip')}
               variant="ghost"
+              fullWidth
+              disabled={decide.isPending}
               onPress={() => answer(card.id, 'skip')}
             />
+            <Text variant="caption" tone="secondary">
+              {clientSharingCopy('cs.check.linkHelp')}
+            </Text>
+            {/* Two records here that are one person: merge them on the client's screen instead. */}
+            <Pressable
+              onPress={() => router.push(`/client/${card.mine[0].guestId}` as Href)}
+              accessibilityRole="link"
+              hitSlop={8}
+              style={styles.link}
+            >
+              <Text variant="bodySmall" tone="brand">
+                {clientSharingCopy('cs.check.mergeFirst')}
+              </Text>
+            </Pressable>
           </View>
         )}
       </ScrollView>
@@ -381,6 +436,35 @@ export default function ClientsToCheckScreen() {
           })
         }
       />
+
+      <ConfirmSheet
+        visible={askKeepAll}
+        title={clientSharingCopy('cs.check.keepAll.title', { count: formatClientCount(likelyCount) })}
+        message={clientSharingCopy('cs.check.keepAll.body')}
+        confirmLabel={clientSharingCopy('cs.check.keepAll.confirm')}
+        destructive={false}
+        loading={keepAll.isPending}
+        onClose={() => setAskKeepAll(false)}
+        onConfirm={() =>
+          keepAll.mutate(undefined, {
+            onSuccess: (res) => {
+              setAskKeepAll(false);
+              // At most 200 a request: say how many are left, so a second press does the rest.
+              const left = likelyCount - res.kept;
+              toast.success(
+                left > 0
+                  ? clientSharingCopy('cs.check.keepAll.partial', {
+                      count: formatClientCount(res.kept),
+                      left: formatClientCount(left),
+                    })
+                  : clientSharingCopy('cs.check.keepAll.done', { count: formatClientCount(res.kept) }),
+              );
+            },
+            onError: (err) =>
+              toast.error(err instanceof ApiError ? err.message : clientSharingCopy('cs.error.generic')),
+          })
+        }
+      />
     </Screen>
   );
 }
@@ -391,5 +475,8 @@ const styles = StyleSheet.create({
   card: { borderWidth: StyleSheet.hairlineWidth, borderRadius: radius.card, padding: spacing.md, gap: spacing.sm },
   person: { borderWidth: StyleSheet.hairlineWidth, borderRadius: radius.card, padding: spacing.sm, gap: spacing.xxs },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  actions: { gap: spacing.sm },
+  choice: { gap: spacing.xs },
+  link: { alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center' },
   flex1: { flex: 1 },
 });
