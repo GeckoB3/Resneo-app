@@ -69,6 +69,8 @@ import {
   computeRangeHeights,
   hourLabel,
   MIN_BLOCK_HEIGHT,
+  subHourLabel,
+  subHourLabelMinutes,
   minutesToTime,
   PX_PER_MINUTE,
   TAP_SNAP_MINUTES,
@@ -693,6 +695,8 @@ export function AllCalendarsDayGrid({
     () => Array.from({ length: endHour - startHour + 1 }, (_, i) => startHour + i),
     [startHour, endHour],
   );
+  /** Minutes past each hour that get a gutter label at this scale (15/30/45, or fewer when compact). */
+  const subMarks = useMemo(() => subHourLabelMinutes(pxPerMinute), [pxPerMinute]);
 
   const nowTop =
     nowMinutes != null && nowMinutes >= startHour * 60 && nowMinutes <= endHour * 60
@@ -729,6 +733,22 @@ export function AllCalendarsDayGrid({
                 {hourLabel(hour)}
               </Text>
             ))}
+            {/* :15, :30 and :45, where they fit (web parity 2026-11-18). */}
+            {hours.slice(0, -1).flatMap((hour) =>
+              subMarks.map((minute) => (
+                <Text
+                  key={`${hour}:${minute}`}
+                  variant="caption"
+                  tone="muted"
+                  style={[
+                    styles.gutterLabel,
+                    styles.subHourLabel,
+                    { top: ((hour - startHour) * 60 + minute) * pxPerMinute - 6 },
+                  ]}>
+                  {subHourLabel(hour, minute)}
+                </Text>
+              )),
+            )}
           </View>
         </View>
 
@@ -830,6 +850,18 @@ export function AllCalendarsDayGrid({
                             { top: 30 * pxPerMinute, backgroundColor: colors.border },
                           ]}
                         />
+                        {subMarks.includes(15)
+                          ? [15, 45].map((minute) => (
+                              <View
+                                key={minute}
+                                style={[
+                                  styles.halfHourLine,
+                                  styles.quarterHourLine,
+                                  { top: minute * pxPerMinute, backgroundColor: colors.border },
+                                ]}
+                              />
+                            ))
+                          : null}
                       </>
                     ) : null}
                   </View>
@@ -1504,6 +1536,12 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     fontVariant: ['tabular-nums'],
   },
+  /** :15, :30 and :45: smaller and lighter than the hour, so hours still lead. */
+  subHourLabel: {
+    fontSize: 10,
+    lineHeight: 12,
+    opacity: 0.8,
+  },
   headerRow: {
     flexDirection: 'row',
     // height is set on the element: HEADER_HEIGHT, plus a caption line if any.
@@ -1562,6 +1600,10 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: StyleSheet.hairlineWidth,
+  },
+  /** Fainter than the half hour, so the eye still counts in half hours. */
+  quarterHourLine: {
+    opacity: 0.55,
   },
   nowLine: {
     position: 'absolute',

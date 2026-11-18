@@ -17,6 +17,8 @@ import {
   computeGridBounds,
   computeRangeHeights,
   hourLabel,
+  subHourLabel,
+  subHourLabelMinutes,
   MIN_BLOCK_HEIGHT,
   minutesToTime,
   PX_PER_MINUTE,
@@ -733,6 +735,8 @@ export function CalendarDayGrid({
     () => Array.from({ length: endHour - startHour + 1 }, (_, i) => startHour + i),
     [startHour, endHour],
   );
+  /** Minutes past each hour that get a gutter label at this scale (15/30/45, or fewer when compact). */
+  const subMarks = useMemo(() => subHourLabelMinutes(pxPerMinute), [pxPerMinute]);
 
   const nowTop =
     nowMinutes != null && nowMinutes >= startHour * 60 && nowMinutes <= endHour * 60
@@ -902,6 +906,28 @@ export function CalendarDayGrid({
                       { top: 30 * pxPerMinute, backgroundColor: colors.border },
                     ]}
                   />
+                  {/* Quarter-hour lines and the :15 / :30 / :45 labels, where they fit. */}
+                  {subMarks.includes(15)
+                    ? [15, 45].map((minute) => (
+                        <View
+                          key={`q${minute}`}
+                          style={[
+                            styles.halfHourLine,
+                            styles.quarterHourLine,
+                            { top: minute * pxPerMinute, backgroundColor: colors.border },
+                          ]}
+                        />
+                      ))
+                    : null}
+                  {subMarks.map((minute) => (
+                    <Text
+                      key={`l${minute}`}
+                      variant="caption"
+                      tone="muted"
+                      style={[styles.subHourLabel, { top: minute * pxPerMinute - 6 }]}>
+                      {subHourLabel(hour, minute)}
+                    </Text>
+                  ))}
                 </>
               ) : null}
             </View>
@@ -1215,6 +1241,18 @@ const styles = StyleSheet.create({
     flex: 1,
     height: StyleSheet.hairlineWidth,
   },
+  /** :15, :30 and :45 in the gutter: smaller and lighter than the hour, so hours still lead. */
+  subHourLabel: {
+    position: 'absolute',
+    left: 0,
+    width: TIME_GUTTER_WIDTH,
+    paddingRight: spacing.sm,
+    textAlign: 'right',
+    fontSize: 10,
+    lineHeight: 12,
+    opacity: 0.8,
+    fontVariant: ['tabular-nums'],
+  },
   hourBand: {
     position: 'absolute',
     top: 0,
@@ -1227,6 +1265,10 @@ const styles = StyleSheet.create({
     left: TIME_GUTTER_WIDTH,
     right: 0,
     height: StyleSheet.hairlineWidth,
+  },
+  /** Fainter than the half hour, so the eye still counts in half hours. */
+  quarterHourLine: {
+    opacity: 0.55,
   },
   /**
    * A closure band fills its span exactly, so abutting bands (closed → on leave

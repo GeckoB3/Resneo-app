@@ -17,16 +17,11 @@ import { useTheme } from '@/theme/useTheme';
 // ---------------------------------------------------------------------------
 // Layout rules — how the bar arranges its text + quick actions at a given size.
 // Mirrors the web /dashboard/calendar bar design (PractitionerCalendarView +
-// CompactBookingActions): SHORT bars lay the name and a height-tracked action
-// row side by side so the name is never squeezed out; TALL bars stack text rows
-// above a bottom-right action tray.
+// BookingCardInfo): a ONE-LINE bar lays the name and a height-tracked button
+// side by side so the name is never squeezed out; taller bars stack text lines
+// from the top beside a bottom-right action tray.
 // ---------------------------------------------------------------------------
 
-/**
- * Bars shorter than this use the horizontal row layout (web parity: the card
- * switches to its compact treatment below 56px of content height).
- */
-const CORNER_MIN_HEIGHT = 56;
 /**
  * Hard minimum width reserved for the guest name in the row layout — the name
  * must never be squeezed out by buttons (web COMPACT_NAME_RESERVE_PX).
@@ -60,12 +55,6 @@ const TRAY_BUTTON_BUDGET_PX = 62;
 const TRAY_CHROME_PX = 12;
 
 /**
- * Reserved vertical space (px) below the text for the CORNER action tray. Must
- * track the tray's height (`bottom` offset + button {@link styles.trayBtn}
- * minHeight) so the bottom-anchored buttons never overlap the text above them.
- */
-const TRAY_HEIGHT = 24;
-/**
  * Below this bar height the quick actions are dropped entirely.
  *
  * A button has a hard 14px floor (its label's line box) and sits 2px off the
@@ -88,7 +77,7 @@ export type BlockLayout = {
    * 'corner' — tall bar: text rows above a bottom-right action tray.
    */
   mode: 'row' | 'corner';
-  /** Rows of text to show: 1 = name[·time], 2 = +service, 3 = +time, 4 = +status. */
+  /** Lines of text: 1 = "Name · Service", 2 = + service and time, 3 = each on its own line, 4 = + status. */
   rows: 1 | 2 | 3 | 4;
   /** How many quick-action buttons fit (0–2). */
   maxActions: 0 | 1 | 2;
@@ -103,6 +92,105 @@ export type BlockLayout = {
   nameFontSize: number;
 };
 
+// ---------------------------------------------------------------------------
+// Bar text (The Beauty Parlour, 2026-11-18, same rules as the web diary): one
+// type style, 12px on a 15px line, the client's name semibold and every other
+// line regular; one order, client, service, start to end time, then status;
+// text 4px from the top, except a bar with room for one line, which centres it.
+// ---------------------------------------------------------------------------
+
+/** One line of bar text. */
+export const BAR_LINE_PX = 15;
+/** Where the first line starts below the bar's top edge. */
+export const BAR_TEXT_TOP_PX = 4;
+/** A line holding the status chip or the "Waiting for card" pill. */
+const BAR_CHIP_LINE_PX = 20;
+/** Horizontal room a bar's text cannot use: the edge chrome, the glass edge and the paddings. */
+const BAR_TEXT_CHROME_PX = 16;
+/** Text width assumed when the parent does not know the bar's width (a phone's single column). */
+const DEFAULT_BAR_TEXT_PX = 300;
+/** Average advance of one character of 12px Inter: semibold for the name, regular for the rest. */
+const NAME_CHAR_PX = 6.9;
+const META_CHAR_PX = 6.3;
+/**
+ * The least room worth giving a service that cannot fit whole. A service may end in
+ * an ellipsis; a time is shown whole or not at all, because half a time reads as a
+ * wrong one.
+ */
+const MIN_SERVICE_PX = 48;
+
+/** Rough rendered width of a bar's text, for deciding what fits a line. */
+export function estimateBarTextPx(text: string, kind: 'name' | 'meta'): number {
+  return Math.ceil(Array.from(text).length * (kind === 'name' ? NAME_CHAR_PX : META_CHAR_PX));
+}
+
+/**
+ * A client's name shortened to first name and surname initial ("Alexandra F."), for a
+ * bar too narrow for the whole name: recognisable where "Alexandra Fitz…" is not.
+ */
+export function shortGuestName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return name.trim();
+  const initial = Array.from(parts[parts.length - 1]!)[0] ?? '';
+  return `${parts[0]} ${initial.toLocaleUpperCase()}.`;
+}
+
+/** What a bar writes, line by line. */
+export type BlockTextPlan = {
+  /** The client's name, shortened when the whole name will not fit its line. */
+  name: string;
+  /** A one-line bar only: what follows the name on its line (" · Service", " · Service · 10:00–10:15"). */
+  tail: string;
+  /** The lines under the name, in order. A line holds a service, a time, or a service then a time. */
+  lines: { service?: string; time?: string }[];
+};
+
+/**
+ * The words a bar writes for its height and width. One line: "Name · Service", then
+ * the start and end time if it fits whole. Two lines: the name, then the service and
+ * the time (the service gives way, the time is kept whole or left off). Three or more:
+ * the name, the service and the time, each on its own line.
+ *
+ * `lineWidthsPx[i]` is the text width of line `i` (0 = the name's line); a line beside
+ * the button tray is narrower. A missing entry takes the last one given.
+ */
+export function planBlockText(params: {
+  rows: number;
+  guestName: string;
+  serviceName?: string | null;
+  /** "HH:mm–HH:mm". */
+  timeLabel: string;
+  lineWidthsPx: number[];
+}): BlockTextPlan {
+  const { rows, guestName, timeLabel, lineWidthsPx } = params;
+  const service = params.serviceName?.trim() || '';
+  const widthOf = (line: number) =>
+    lineWidthsPx[Math.min(line, lineWidthsPx.length - 1)] ?? DEFAULT_BAR_TEXT_PX;
+  const fullName = guestName.trim();
+  const name =
+    estimateBarTextPx(fullName, 'name') > widthOf(0) ? shortGuestName(fullName) : fullName;
+  const nameWidth = estimateBarTextPx(name, 'name');
+
+  if (rows <= 1) {
+    let tail = service ? ` · ${service}` : '';
+    const withTime = `${tail} · ${timeLabel}`;
+    if (nameWidth + estimateBarTextPx(withTime, 'meta') <= widthOf(0)) tail = withTime;
+    return { name, tail, lines: [] };
+  }
+
+  if (rows === 2) {
+    if (!service) return { name, tail: '', lines: [{ time: timeLabel }] };
+    const room = widthOf(1) - estimateBarTextPx(` · ${timeLabel}`, 'meta');
+    return { name, tail: '', lines: [room >= MIN_SERVICE_PX ? { service, time: timeLabel } : { service }] };
+  }
+
+  return {
+    name,
+    tail: '',
+    lines: service ? [{ service }, { time: timeLabel }] : [{ time: timeLabel }],
+  };
+}
+
 function clampActions(n: number): BlockLayout['maxActions'] {
   return Math.max(0, Math.min(2, n)) as BlockLayout['maxActions'];
 }
@@ -110,15 +198,16 @@ function clampActions(n: number): BlockLayout['maxActions'] {
 /**
  * Decide the bar's layout from its height and the width available to it.
  *
- * SHORT bars (< {@link CORNER_MIN_HEIGHT}) mirror the web's compact bars: the
- * name and the action row are flex siblings, so the name always keeps at least
- * {@link NAME_RESERVE_PX} and yields the rest to buttons that are sized to the
- * bar's height — nothing ever overlaps or clips the name. Buttons that don't
- * fit the width budget are dropped (the caller keeps the TAIL of the action
- * list, so the primary transition survives, matching the web's omission rule).
+ * Lines come first (2026-11-18): a bar shows as many 15px lines as fit below its 4px
+ * top inset, and a line may run beside the button tray (that line is narrower, not
+ * gone). Two lines need 34px, three 49, and a fourth line, the status chip, 69.
  *
- * TALL bars keep the bottom-right corner tray; text rows are budgeted against
- * the tray's reserved height so a row never rides under the buttons.
+ * ONE-LINE bars use the row layout: "Name · Service" centred, beside a button sized
+ * to the bar's height, so nothing overlaps or clips the name.
+ *
+ * Taller bars keep the bottom-right corner tray. A bar of one or two lines keeps one
+ * button, the next step (the caller keeps the TAIL of the action list, so the primary
+ * transition survives, as on the web); taller bars keep both where the width allows.
  *
  * `widthPx` is the bar's true px width when the parent knows it (the
  * multi-calendar grid's columnWidth ÷ laneCount). When unknown (the
@@ -133,46 +222,44 @@ export function pickBlockLayout(params: {
   hasActions?: boolean;
 }): BlockLayout {
   const { height, laneCount, widthPx, hasActions = true } = params;
+  const widthKnown = widthPx != null && widthPx > 0;
+  const textLines = (lines: number) => BAR_TEXT_TOP_PX + lines * BAR_LINE_PX;
+  const rows: BlockLayout['rows'] =
+    height >= textLines(3) + BAR_CHIP_LINE_PX ? 4 : height >= textLines(3) ? 3 : height >= textLines(2) ? 2 : 1;
 
-  if (height < CORNER_MIN_HEIGHT) {
+  if (rows === 1) {
     const maxActions =
       !hasActions || height < ACTIONS_MIN_HEIGHT
         ? 0
-        : widthPx != null && widthPx > 0
-          ? clampActions(Math.floor((widthPx - ROW_CHROME_PX - NAME_RESERVE_PX) / ROW_PER_BUTTON_PX))
-          : laneCount > 1
-            ? 1
-            : 2;
+        : widthKnown
+          ? clampActions(Math.min(1, Math.floor((widthPx - ROW_CHROME_PX - NAME_RESERVE_PX) / ROW_PER_BUTTON_PX)))
+          : 1;
     return {
       mode: 'row',
-      rows: height >= 44 ? 2 : 1,
+      rows,
       maxActions,
       // Web parity: a hair shorter than the bar, floored so it never vanishes
       // and capped so it stays compact on the taller short bars. The inset keeps
       // the button clear of the bottom border — with `ACTIONS_MIN_HEIGHT` above,
       // the 14px floor can no longer exceed the space the bar actually has.
       buttonHeight: Math.max(14, Math.min(height - ROW_BUTTON_INSET, 22)),
-      nameFontSize: height < 24 ? 10 : height < 32 ? 12 : 13,
+      nameFontSize: height < BAR_LINE_PX ? 11 : 12,
     };
   }
 
-  const maxActions = !hasActions
-    ? 0
-    : widthPx != null && widthPx > 0
-      ? clampActions(Math.floor((widthPx - TRAY_CHROME_PX) / TRAY_BUTTON_BUDGET_PX))
-      : laneCount >= 3
-        ? 1
-        : 2;
-  // Text rows fit the space left above the tray (when one shows): name row
-  // ≈16px, meta rows ≈14px, the status chip ≈20px, plus card padding.
-  const avail = height - (maxActions > 0 ? TRAY_HEIGHT : 0);
-  const rows: BlockLayout['rows'] = avail >= 72 ? 4 : avail >= 50 ? 3 : avail >= 36 ? 2 : 1;
+  const widthBudget = widthKnown
+    ? clampActions(Math.floor((widthPx - TRAY_CHROME_PX) / TRAY_BUTTON_BUDGET_PX))
+    : laneCount >= 3
+      ? 1
+      : 2;
+  const maxActions = !hasActions ? 0 : rows === 2 ? clampActions(Math.min(1, widthBudget)) : widthBudget;
   return {
     mode: 'corner',
     rows,
     maxActions,
-    buttonHeight: 22,
-    nameFontSize: 13,
+    // A two-line bar's button is a little shorter, so it sits beside the second line.
+    buttonHeight: rows === 2 ? 20 : 22,
+    nameFontSize: 12,
   };
 }
 
@@ -474,13 +561,32 @@ export function AppointmentBlock({
   const trayInsetStyle = contentInset
     ? { bottom: 2 + Math.max(0, height - contentInset.top - contentInset.height) }
     : null;
-  const dotInsetStyle = contentInset ? { top: 3 + contentInset.top } : null;
   const trayActions = potentialActions.slice(
     Math.max(0, potentialActions.length - layout.maxActions),
   );
   // The pending case no longer needs its own clause: the buttons stay rendered
   // while a write is in flight, so there is no spinner to reserve a row for.
   const showTray = trayActions.length > 0;
+
+  // What fits each line. A line running beside the bottom-right tray is narrower by the
+  // tray's width; the name's line also gives up room to its markers (visit, paid, card,
+  // forms), which sit after the name so every name starts at the same edge.
+  const trayWidthPx =
+    trayActions.length * (layout.mode === 'row' ? ROW_PER_BUTTON_PX : TRAY_BUTTON_BUDGET_PX);
+  const barTextPx = (widthPx != null && widthPx > 0 ? widthPx : DEFAULT_BAR_TEXT_PX) - BAR_TEXT_CHROME_PX;
+  const showCardPill = waitingForCard && layout.rows >= 4;
+  const markerPx =
+    (visitChip ? 28 : 0) + (paid ? 16 : 0) + (waitingForCard && !showCardPill ? 16 : 0) + (complianceFlag ? 14 : 0);
+  const trayTopPx = contentHeight - 2 - layout.buttonHeight;
+  const besideTray = (line: number, lineHeight: number = BAR_LINE_PX) =>
+    showTray && layout.mode === 'corner' && BAR_TEXT_TOP_PX + line * BAR_LINE_PX + lineHeight > trayTopPx;
+  const lineWidthsPx =
+    layout.mode === 'row'
+      ? [barTextPx - trayWidthPx - markerPx]
+      : [0, 1, 2].map((line) => barTextPx - (line === 0 ? markerPx : 0) - (besideTray(line) ? trayWidthPx : 0));
+  const textPlan = planBlockText({ rows: layout.rows, guestName, serviceName, timeLabel, lineWidthsPx });
+  const trayClearance = (line: number, lineHeight?: number) =>
+    besideTray(line, lineHeight) ? { paddingRight: trayWidthPx } : null;
 
   function handleTrayAction(action: TrayAction) {
     if (action.kind === 'status') {
@@ -508,15 +614,41 @@ export function AppointmentBlock({
     }
   }
 
-  const subtleText = hexToRgba(palette.text, 0.82);
+  // 0.9: the details are regular weight now, so they need the stronger tone to read at 12px.
+  const subtleText = hexToRgba(palette.text, 0.9);
   const nameStyle = [
     styles.rowName,
     {
       color: palette.text,
       fontSize: layout.nameFontSize,
-      lineHeight: layout.nameFontSize + 3,
+      lineHeight: layout.nameFontSize >= 12 ? BAR_LINE_PX : 13,
     },
   ];
+  /** Markers after the name, in the same place on every bar (web parity). */
+  const nameMarkers = (
+    <>
+      {visitChip ? <VisitChip label={visitChip} color={palette.text} /> : null}
+      {paid ? <PaidGlyph color={subtleText} /> : null}
+      {waitingForCard && !showCardPill ? <WaitingCardGlyph color={subtleText} /> : null}
+      {complianceFlag ? <ComplianceFlagDot flag={complianceFlag} /> : null}
+    </>
+  );
+  /** `firstLine`: the line index the first of `lines` sits on, for the tray clearance; null = none. */
+  const renderPlanLines = (lines: BlockTextPlan['lines'], firstLine: number | null) =>
+    lines.map((line, i) => (
+      <View key={i} style={[styles.metaLine, firstLine == null ? null : trayClearance(firstLine + i)]}>
+        {line.service ? (
+          <Text numberOfLines={1} style={[styles.rowMeta, styles.metaShrink, { color: subtleText }]}>
+            {line.service}
+          </Text>
+        ) : null}
+        {line.time ? (
+          <Text numberOfLines={1} style={[styles.rowMeta, styles.metaFixed, { color: subtleText }]}>
+            {line.service ? ` · ${line.time}` : line.time}
+          </Text>
+        ) : null}
+      </View>
+    ));
 
   /**
    * The buttons stay put while a write is in flight — dimmed and inert, never
@@ -549,7 +681,7 @@ export function AppointmentBlock({
             // goes first); the label font + horizontal padding are identical
             // on every bar, so the button's WIDTH matches the normal-sized
             // buttons on taller bars (web rule).
-            layout.mode === 'row'
+            layout.buttonHeight < 22
               ? {
                   height: layout.buttonHeight,
                   minHeight: layout.buttonHeight,
@@ -648,20 +780,14 @@ export function AppointmentBlock({
         <View style={[styles.rowShell, squeezed && styles.contentSqueezed, insetStyle]}>
           <View style={styles.rowText} pointerEvents="none">
             <View style={styles.nameRow}>
-              {visitChip ? <VisitChip label={visitChip} color={palette.text} /> : null}
               <Text numberOfLines={1} style={[nameStyle, styles.nameFlex]}>
-                {guestName}
-                {trayActions.length === 0 ? ` · ${timeLabel.split('–')[0]}` : ''}
+                {textPlan.name}
+                {textPlan.tail ? (
+                  <Text style={[styles.inlineMeta, { color: subtleText }]}>{textPlan.tail}</Text>
+                ) : null}
               </Text>
-              {paid ? <PaidGlyph color={subtleText} /> : null}
-              {waitingForCard ? <WaitingCardGlyph color={subtleText} /> : null}
-              {complianceFlag ? <ComplianceFlagDot flag={complianceFlag} /> : null}
+              {nameMarkers}
             </View>
-            {layout.rows >= 2 ? (
-              <Text numberOfLines={1} style={[styles.rowMeta, { color: subtleText }]}>
-                {serviceName || timeLabel}
-              </Text>
-            ) : null}
           </View>
           {showTray ? (
             <View style={styles.rowTray} onStartShouldSetResponder={() => true}>
@@ -671,44 +797,20 @@ export function AppointmentBlock({
         </View>
       ) : (
         <>
-          {/* Paid + compliance markers — top-right corner. */}
-          {paid || complianceFlag || (waitingForCard && layout.rows < 3) ? (
-            <View style={[styles.complianceDot, dotInsetStyle]} pointerEvents="none">
-              {paid ? <PaidGlyph color={subtleText} /> : null}
-              {waitingForCard && layout.rows < 3 ? <WaitingCardGlyph color={subtleText} /> : null}
-              {complianceFlag ? <ComplianceFlagDot flag={complianceFlag} /> : null}
-            </View>
-          ) : null}
-
-          <View
-            style={[
-              styles.content,
-              squeezed && styles.contentSqueezed,
-              showTray && { paddingBottom: TRAY_HEIGHT },
-              insetStyle,
-            ]}
-            pointerEvents="none">
-            <View style={styles.nameRow}>
-              {visitChip ? <VisitChip label={visitChip} color={palette.text} /> : null}
+          <View style={[styles.content, squeezed && styles.contentSqueezed, insetStyle]} pointerEvents="none">
+            <View style={[styles.nameRow, trayClearance(0)]}>
               <Text numberOfLines={1} style={[nameStyle, styles.nameFlex]}>
-                {layout.rows === 1 ? `${guestName} · ${timeLabel.split('–')[0]}` : guestName}
+                {textPlan.name}
               </Text>
+              {nameMarkers}
             </View>
-            {layout.rows >= 2 ? (
-              // Service name is prioritised over the time text: the bar's
-              // position + height already encode when/how-long, so the service
-              // is the more useful second line on a compact (2-row) block.
-              <Text numberOfLines={1} style={[styles.rowMeta, { color: subtleText }]}>
-                {serviceName || timeLabel}
-              </Text>
-            ) : null}
-            {layout.rows >= 3 && serviceName ? (
-              <Text numberOfLines={1} style={[styles.rowMeta, { color: subtleText }]}>
-                {timeLabel}
-              </Text>
-            ) : null}
-            {waitingForCard && layout.rows >= 3 ? (
-              <View style={styles.statusChipRow} testID="waiting-card-pill">
+            {renderPlanLines(textPlan.lines, 1)}
+            {/* The fourth line: "Waiting for card" when the booking waits for one (the more
+                useful thing to say), otherwise the status. */}
+            {showCardPill ? (
+              <View
+                style={[styles.statusChipRow, trayClearance(1 + textPlan.lines.length, BAR_CHIP_LINE_PX)]}
+                testID="waiting-card-pill">
                 <View style={[styles.statusChip, { backgroundColor: hexToRgba('#FFFFFF', 0.9) }]}>
                   <Text numberOfLines={1} style={[styles.statusChipLabel, { color: '#92400E' }]}>
                     {WAITING_FOR_CARD_LABEL}
@@ -716,8 +818,8 @@ export function AppointmentBlock({
                 </View>
               </View>
             ) : null}
-            {layout.rows >= 4 ? (
-              <View style={styles.statusChipRow}>
+            {layout.rows >= 4 && !showCardPill ? (
+              <View style={[styles.statusChipRow, trayClearance(1 + textPlan.lines.length, BAR_CHIP_LINE_PX)]}>
                 <View style={[styles.statusChip, { backgroundColor: hexToRgba('#FFFFFF', 0.9) }]}>
                   <View style={[styles.statusChipDot, { backgroundColor: palette.accent }]} />
                   <Text numberOfLines={1} style={[styles.statusChipLabel, { color: palette.accent }]}>
@@ -744,6 +846,13 @@ export function AppointmentBlock({
       {segments?.map((segment, index) => {
         const rows = segmentLabelRows(segment.height);
         if (rows === 0) return null;
+        const segmentPlan = planBlockText({
+          rows,
+          guestName,
+          serviceName: segment.serviceName,
+          timeLabel: segment.timeLabel,
+          lineWidthsPx: [barTextPx],
+        });
         return (
           <View
             key={index}
@@ -758,20 +867,14 @@ export function AppointmentBlock({
               numberOfLines={1}
               style={[
                 styles.rowName,
-                { color: palette.text, fontSize: 12, lineHeight: 15 },
+                { color: palette.text, fontSize: 12, lineHeight: BAR_LINE_PX },
               ]}>
-              {rows === 1 ? `${guestName} · ${segment.serviceName || segment.timeLabel}` : guestName}
+              {segmentPlan.name}
+              {segmentPlan.tail ? (
+                <Text style={[styles.inlineMeta, { color: subtleText }]}>{segmentPlan.tail}</Text>
+              ) : null}
             </Text>
-            {rows >= 2 ? (
-              <Text numberOfLines={1} style={[styles.rowMeta, { color: subtleText }]}>
-                {segment.serviceName || segment.timeLabel}
-              </Text>
-            ) : null}
-            {rows >= 3 && segment.serviceName ? (
-              <Text numberOfLines={1} style={[styles.rowMeta, { color: subtleText }]}>
-                {segment.timeLabel}
-              </Text>
-            ) : null}
+            {renderPlanLines(segmentPlan.lines, null)}
           </View>
         );
       })}
@@ -832,15 +935,15 @@ export function AppointmentBlock({
 }
 
 /**
- * How many text rows a later service's block of service time can hold: the
- * name (with the service folded in) from 14px, name + service from 28px, name
- * + service + time from 42px. Below 14px nothing is written; the piece's
- * colour is the honest amount of information.
+ * How many text lines a later service's block of service time can hold, on the
+ * bar's 15px lines below a 3px inset: "Name · Service" from 15px, the name then
+ * the service and time from 33px, each on its own line from 48px. Below 15px
+ * nothing is written; the piece's colour is the honest amount of information.
  */
 export function segmentLabelRows(heightPx: number): 0 | 1 | 2 | 3 {
-  if (heightPx >= 42) return 3;
-  if (heightPx >= 28) return 2;
-  if (heightPx >= 14) return 1;
+  if (heightPx >= 3 + 3 * BAR_LINE_PX) return 3;
+  if (heightPx >= 3 + 2 * BAR_LINE_PX) return 2;
+  if (heightPx >= BAR_LINE_PX) return 1;
   return 0;
 }
 
@@ -885,7 +988,6 @@ const styles = StyleSheet.create({
     right: 0,
     paddingTop: 3,
     paddingHorizontal: 7,
-    gap: 1,
     overflow: 'hidden',
     zIndex: 2,
   },
@@ -959,17 +1061,6 @@ const styles = StyleSheet.create({
   },
   spineTop: { top: -1 },
   spineBottom: { bottom: -1 },
-  complianceDot: {
-    position: 'absolute',
-    top: 3,
-    right: 4,
-    zIndex: 1,
-    // Paid glyph and compliance dot can both be present; keep them side by side
-    // rather than stacked on top of each other.
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
   // ---- Row layout (short bars) ----
   rowShell: {
     flex: 1,
@@ -1011,10 +1102,9 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     minWidth: 0,
-    paddingTop: 2,
+    paddingTop: BAR_TEXT_TOP_PX,
     paddingBottom: 2,
     paddingHorizontal: 7,
-    gap: 1,
   },
   contentSqueezed: {
     paddingHorizontal: 4,
@@ -1022,11 +1112,28 @@ const styles = StyleSheet.create({
   rowName: {
     fontFamily: fonts.semibold,
   },
+  // One type style with the name: 12px on a 15px line (web parity, 2026-11-18).
   rowMeta: {
     fontFamily: fonts.regular,
-    fontSize: 11,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: BAR_LINE_PX,
     fontVariant: ['tabular-nums'],
+  },
+  /** The rest of a one-line bar after the name: same size, regular weight. */
+  inlineMeta: {
+    fontFamily: fonts.regular,
+  },
+  /** A line under the name: a service that may give way, then a time that never does. */
+  metaLine: {
+    flexDirection: 'row',
+    minWidth: 0,
+  },
+  metaShrink: {
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  metaFixed: {
+    flexShrink: 0,
   },
   statusChipRow: {
     flexDirection: 'row',
@@ -1060,9 +1167,9 @@ const styles = StyleSheet.create({
   },
   trayBtn: {
     // Taller than the label needs → a larger tap target. In the corner tray the
-    // extra height grows the button UPWARD (bottom-anchored); TRAY_HEIGHT
-    // reserves room so it never rides up over the text. Row-layout buttons
-    // override the height to track the bar (web compact parity).
+    // extra height grows the button UPWARD (bottom-anchored); text lines beside
+    // it keep clear by its width (`trayClearance`). Short bars override the
+    // height to track the bar (web compact parity).
     minHeight: 22,
     paddingHorizontal: 7,
     paddingVertical: 2,

@@ -18,6 +18,8 @@ import {
   computeRangeHeights,
   hourLabel,
   minutesToTime,
+  subHourLabel,
+  subHourLabelMinutes,
   timeToMinutes,
   type LaneInput,
 } from '@/components/calendar/grid-layout';
@@ -227,6 +229,29 @@ describe('hourLabel', () => {
     expect(hourLabel(0)).toBe('00:00');
     expect(hourLabel(8)).toBe('08:00');
     expect(hourLabel(20)).toBe('20:00');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// subHourLabelMinutes — which :15 / :30 / :45 labels fit at a scale.
+// ---------------------------------------------------------------------------
+describe('subHourLabelMinutes', () => {
+  it('labels every quarter hour at the normal scale', () => {
+    expect(subHourLabelMinutes(PX_PER_MINUTE)).toEqual([15, 30, 45]);
+  });
+
+  it('falls back to the half hour when compact squeezes a quarter hour below a legible gap', () => {
+    expect(subHourLabelMinutes(1.2)).toEqual([30]);
+    expect(subHourLabelMinutes(COMPACT_MIN_PX_PER_MINUTE)).toEqual([30]);
+  });
+
+  it('shows hours only when even the half hour would be too tight', () => {
+    expect(subHourLabelMinutes(0.5)).toEqual([]);
+  });
+
+  it('renders a zero-padded HH:MM label', () => {
+    expect(subHourLabel(9, 15)).toBe('09:15');
+    expect(subHourLabel(14, 45)).toBe('14:45');
   });
 });
 

@@ -2768,7 +2768,8 @@ export default function CalendarScreen() {
   // its leave or closures, which are not in the feed). It asks whether the
   // column has hours to show, not whether it is busy, so block time does not
   // count. Never a blank grid: if nobody works, every column stays.
-  const workingFilterOn = isWideDay && workingHoursOnly;
+  // A phone's "All" view takes it too (The Beauty Parlour, 2026-11-18), with its chip beside "All".
+  const workingFilterOn = (isWideDay || isAllView) && workingHoursOnly;
   // A linked venue becomes one column per calendar the partner shares, named
   // after the calendar (web §8.2: "Jenny", not "light2"), each with its own
   // template; see `linkedVenueColumns`.
@@ -3495,6 +3496,18 @@ export default function CalendarScreen() {
                             clearOwnerVenue();
                             setSelectedId(ALL_CALENDARS);
                           }
+                        }}
+                      />
+                    ) : null}
+                    {/* Everyone side by side, less the people not down to work
+                        (the wide view's chip, on a phone's "All" day). */}
+                    {isAllView && !isLinkedActive ? (
+                      <Chip
+                        label={anchor === today ? 'Working today' : 'Working this day'}
+                        selected={workingHoursOnly}
+                        onPress={() => {
+                          hapticSelect();
+                          setWorkingHoursOnly((value) => !value);
                         }}
                       />
                     ) : null}

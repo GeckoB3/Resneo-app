@@ -95,6 +95,30 @@ export function hourLabel(hour: number): string {
 }
 
 /**
+ * Smallest gap in px between two gutter labels before they touch: a sub-hour label
+ * is about 12px tall, so 22px leaves a clear line between them.
+ */
+export const SUB_HOUR_LABEL_MIN_GAP_PX = 22;
+
+/**
+ * Minutes past each hour that get their own gutter label (09:15, 09:30, 09:45), so
+ * staff can see exactly when an appointment ends without opening it (web parity,
+ * 2026-11-18). At the normal scale every quarter hour is labelled; compact mode can
+ * squeeze a quarter hour below a legible gap, so it falls back to the half hour, then
+ * to hours only.
+ */
+export function subHourLabelMinutes(pxPerMinute: number): number[] {
+  if (15 * pxPerMinute >= SUB_HOUR_LABEL_MIN_GAP_PX) return [15, 30, 45];
+  if (30 * pxPerMinute >= SUB_HOUR_LABEL_MIN_GAP_PX) return [30];
+  return [];
+}
+
+/** Gutter label for a minute past the hour, e.g. (9, 15) gives "09:15". */
+export function subHourLabel(hour: number, minute: number): string {
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+/**
  * Web-parity breakpoint for the multi-calendar column floor: Tailwind's `sm`
  * (640px window width), where the web switches from the phone column model to
  * the desktop 240px floor.
