@@ -50,6 +50,7 @@ import {
 } from '@/components/services/ServiceCustomAvailabilityEditor';
 import { BookingIntervalEditor } from '@/components/manage/BookingIntervalEditor';
 import { ServiceCategoriesManager } from '@/components/manage/ServiceCategoriesManager';
+import { ServiceOrderSheet } from '@/components/manage/ServiceOrderSheet';
 import { ComplianceRequirementsEditor } from '@/components/compliance/ComplianceRequirementsEditor';
 import {
   StaffServiceOverrideSheet,
@@ -92,6 +93,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Input } from '@/components/ui/Input';
 import { Screen } from '@/components/ui/Screen';
+import { SearchBar } from '@/components/ui/SearchBar';
 import { Sheet } from '@/components/ui/Sheet';
 import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
@@ -118,7 +120,9 @@ import {
 } from '@/lib/services/staff-only';
 import {
   compareByCategoryThenServiceOrder,
+  SERVICE_SEARCH_MIN_SERVICES,
   serviceCategoryLookup,
+  serviceMatchesSearch,
   UNCATEGORISED_GROUP_LABEL,
 } from '@/lib/booking/service-categories';
 import {
@@ -188,6 +192,7 @@ import { clearedValuesFrom, type ClearedCalendarValue, type ServiceSaveSync } fr
 import { staffMayCustomizeAny } from '@/lib/services/service-override';
 import { affectedCalendarIds, type ServiceRemovalMove } from '@/lib/services/service-removal';
 import { useServiceRemovalFlow } from '@/lib/services/useServiceRemovalFlow';
+import { groupServicesForOrdering } from '@/lib/services/service-order';
 import { TR_COPY } from '@/lib/treatment-records/copy';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
@@ -1097,6 +1102,25 @@ export default function ServicesScreen() {
     [query.data?.services, categoryFor],
   );
   const hasCategories = categories.length > 0;
+  // Search across a long menu (web parity 2026-11-18). Moving is off while a search is
+  // on, because a move swaps a service with its neighbour in the full list.
+  const [serviceSearch, setServiceSearch] = useState('');
+  const serviceSearchQuery = serviceSearch.trim();
+  const showServiceSearch = services.length >= SERVICE_SEARCH_MIN_SERVICES || serviceSearchQuery.length > 0;
+  const searchingServices = showServiceSearch && serviceSearchQuery.length > 0;
+  /** What the list draws: every service, or the ones matching the search. */
+  const shownServices = useMemo(
+    () =>
+      searchingServices
+        ? services.filter((s) =>
+            serviceMatchesSearch(
+              { name: s.name, description: s.description, category: categoryFor(s.category_id) },
+              serviceSearchQuery,
+            ),
+          )
+        : services,
+    [services, searchingServices, serviceSearchQuery, categoryFor],
+  );
   /** The services as the follow-on screens show them, under their headings. */
   const followOnServices = useMemo(
     () => followOnServiceOptions(query.data?.services ?? [], categories),
@@ -1124,6 +1148,8 @@ export default function ServicesScreen() {
     (serviceId: string) => {
       setActiveTab('services');
       setExpandedId(serviceId);
+      // The index below is in the full list, so a search would point it at the wrong row.
+      setServiceSearch('');
       const index = services.findIndex((s) => s.id === serviceId);
       if (index >= 0) {
         // viewPosition 0.1 keeps the expanded row near the top with a little gap.
@@ -1275,6 +1301,7 @@ export default function ServicesScreen() {
   /** Admins only, and only where the AI is configured (the web works this out in `page.tsx`). */
   const canUseAiSetup = isAdmin && aiSetup.offered === true;
   const [aiSetupOpen, setAiSetupOpen] = useState(false);
+  const [orderSheetOpen, setOrderSheetOpen] = useState(false);
   const setupRef = useRef<ServicesSetupHandle>(null);
   /**
    * "More settings" hands a draft to this screen's own Add service form. The setup's sheet steps
@@ -2458,6 +2485,20 @@ export default function ServicesScreen() {
     [services, reorderServices, toast, headingFor],
   );
 
+  // Drag-to-reorder (The Beauty Parlour, 2026-11-18): the same full-order save, from a
+  // sheet of draggable rows grouped under the same headings this list draws. A
+  // collective member's services follow the host's order, as on the web.
+  const canChangeOrder = isAdmin && !isMemberAdmin && services.length > 1;
+  const orderGroups = useMemo(() => groupServicesForOrdering(services, headingFor), [services, headingFor]);
+  const saveServiceOrder = useCallback(
+    (serviceIds: string[]) =>
+      reorderServices.mutateAsync(serviceIds).catch((e: unknown) => {
+        toast.error(e instanceof ApiError ? e.message : 'Could not save the new order.');
+        throw e;
+      }),
+    [reorderServices, toast],
+  );
+
   const renderServiceItem = useCallback<ListRenderItem<ManagedService>>(
     ({ item, index }) => {
       const isExpanded = expandedId === item.id;
@@ -2470,11 +2511,16 @@ export default function ServicesScreen() {
         isExpanded && (!isAdmin || managedByHost) ? offerCalendarsForService(item.id, managedByHost) : [];
       const canOverride =
         !isAdmin && isExpanded && staffMayCustomizeAny(item) && staffOffersService(item.id);
-      const orderIndex = isAdmin && isExpanded ? services.findIndex((s) => s.id === item.id) : -1;
+      // A collective member's services follow the host's order (web parity), and a search
+      // hides the neighbours a move would swap with, so moving is off for both.
+      const orderIndex =
+        isAdmin && isExpanded && !isMemberAdmin && !searchingServices
+          ? services.findIndex((s) => s.id === item.id)
+          : -1;
       // Category headings, drawn above the first service of each group. The list
       // stays one flat array so scrollToIndex / focusService keep their indices.
       const heading = headingFor(item);
-      const previous = index > 0 ? services[index - 1] : null;
+      const previous = index > 0 ? shownServices[index - 1] : null;
       const showHeading = heading !== null && (previous === null || headingFor(previous) !== heading);
       const canMoveUp =
         orderIndex > 0 && headingFor(services[orderIndex - 1]!) === heading;
@@ -2531,6 +2577,9 @@ export default function ServicesScreen() {
       handleToggleCalendar,
       handleOpenOverride,
       services,
+      shownServices,
+      isMemberAdmin,
+      searchingServices,
       handleMoveService,
       reorderServices.isPending,
       openServiceView,
@@ -2637,9 +2686,10 @@ export default function ServicesScreen() {
         ) : (
           <FlatList
             ref={listRef}
-            data={services}
+            data={shownServices}
             keyExtractor={keyExtractor}
             renderItem={renderServiceItem}
+            keyboardShouldPersistTaps="handled"
             contentContainerStyle={styles.content}
             // Rows are variable-height, so a scrollToIndex before the row has
             // rendered can fail — fall back to an approximate offset, then retry.
@@ -2806,10 +2856,42 @@ export default function ServicesScreen() {
                   <Text variant="bodySmall">{addFromDone}</Text>
                 </View>
               ) : null}
+              {canChangeOrder && !searchingServices ? (
+                <Button
+                  label="Change order"
+                  variant="secondary"
+                  fullWidth
+                  onPress={() => setOrderSheetOpen(true)}
+                  testID="services-change-order"
+                />
+              ) : null}
+              {showServiceSearch ? (
+                <SearchBar
+                  value={serviceSearch}
+                  onChangeText={setServiceSearch}
+                  placeholder="Search services"
+                  accessibilityLabel="Search services"
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  returnKeyType="search"
+                  testID="services-search"
+                />
+              ) : null}
+              {searchingServices && isAdmin && !isMemberAdmin && services.length > 1 ? (
+                <Text variant="caption" tone="muted">
+                  Clear the search to change the order of your services.
+                </Text>
+              ) : null}
               </View>
             }
             ListEmptyComponent={
-              canUseAiSetup ? (
+              searchingServices ? (
+                <View style={styles.stateWrap}>
+                  <Text variant="bodySmall" tone="muted" style={styles.searchEmpty}>
+                    {`No services match “${serviceSearchQuery}”.`}
+                  </Text>
+                </View>
+              ) : canUseAiSetup ? (
                 // Web: "Add your services in minutes" replaces "No services yet" where the AI is on.
                 <View style={styles.aiEmpty}>
                   <EmptyState
@@ -4043,6 +4125,14 @@ export default function ServicesScreen() {
           </View>
         </View>
       </Sheet>
+      {orderSheetOpen ? (
+        <ServiceOrderSheet
+          visible
+          groups={orderGroups}
+          onSave={saveServiceOrder}
+          onClose={() => setOrderSheetOpen(false)}
+        />
+      ) : null}
     </Screen>
   );
 }
@@ -4054,6 +4144,9 @@ export default function ServicesScreen() {
 const styles = StyleSheet.create({
   listHeader: {
     gap: spacing.sm,
+  },
+  searchEmpty: {
+    textAlign: 'center',
   },
   addFromDone: {
     borderWidth: 1,

@@ -58,6 +58,32 @@ jest.mock('react-native-safe-area-context', () => {
   };
 });
 
+// react-native-sortables (the Services "Change order" sheet) builds on reanimated's
+// worklet runtime, which the small reanimated mock below does not provide, so it
+// throws at import. Tests see a plain list: each item rendered in order, no drag.
+// eslint-disable-next-line no-undef
+jest.mock('react-native-sortables', () => {
+  // eslint-disable-next-line no-undef
+  const React = require('react');
+  // eslint-disable-next-line no-undef
+  const { View } = require('react-native');
+  const Grid = ({ data, renderItem, keyExtractor }) =>
+    React.createElement(
+      View,
+      { testID: 'sortable-grid' },
+      data.map((item, index) =>
+        React.createElement(
+          View,
+          { key: keyExtractor ? keyExtractor(item) : String(index) },
+          renderItem({ item, index }),
+        ),
+      ),
+    );
+  const Handle = ({ children }) => children;
+  const Sortable = { Grid, Flex: View, Handle, Layer: View, Touchable: View };
+  return { __esModule: true, default: Sortable, ...Sortable };
+});
+
 // react-native-reanimated's native part (worklets) is not initialized under
 // jest-expo, so importing any component that pulls it in (Button, Input, Sheet,
 // …) throws at module-load time. The library's own `/mock` entry transitively

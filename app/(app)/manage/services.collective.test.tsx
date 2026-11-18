@@ -840,3 +840,80 @@ describe("the other venues' prices and times in the host's form (2026-11-05)", (
     expect(lockCalls()).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Search and Change order on a long menu (The Beauty Parlour, 2026-11-18)
+// ---------------------------------------------------------------------------
+
+/** The host's own services, outside a collective, `count` of them. */
+function ownMenu(names: string[]) {
+  const response = servicesResponse();
+  const { collective: _c, ...base } = response.services[0]!;
+  mockServicesResponse = {
+    ...response,
+    services: names.map((name, index) => ({ ...base, id: `s${index + 1}`, name, sort_order: index })),
+    collective_calendars: undefined,
+  };
+}
+
+describe('a long services menu', () => {
+  const names = ['Balayage', 'Cut and finish', 'Gel polish', 'Brow tint', 'Lash lift', 'Full head colour'];
+
+  it('filters the list as you search, and hides Change order while searching', async () => {
+    ownMenu(names);
+    await renderTheScreen();
+    expect(await screen.findByText('Gel polish')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Change order' })).toBeTruthy();
+    await act(async () => {
+      fireEvent.changeText(screen.getByTestId('services-search'), 'gel');
+    });
+    expect(screen.getByText('Gel polish')).toBeTruthy();
+    expect(screen.queryByText('Balayage')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Change order' })).toBeNull();
+    expect(screen.getByText('Clear the search to change the order of your services.')).toBeTruthy();
+  });
+
+  it('says so when nothing matches', async () => {
+    ownMenu(names);
+    await renderTheScreen();
+    await screen.findByText('Gel polish');
+    await act(async () => {
+      fireEvent.changeText(screen.getByTestId('services-search'), 'pedicure');
+    });
+    expect(screen.getByText('No services match \u201cpedicure\u201d.')).toBeTruthy();
+  });
+
+  it('has no search box on a short menu', async () => {
+    ownMenu(names.slice(0, 3));
+    await renderTheScreen();
+    await screen.findByText('Gel polish');
+    expect(screen.queryByTestId('services-search')).toBeNull();
+  });
+
+  it('opens Change order with every service in a draggable list', async () => {
+    ownMenu(names);
+    await renderTheScreen();
+    await screen.findByText('Gel polish');
+    await pressName('Change order');
+    expect(screen.getByText('Press and hold a service, then drag it up or down. Clients see this order on your booking page.')).toBeTruthy();
+    expect(screen.getByLabelText('Lash lift. Press and hold, then drag to move.')).toBeTruthy();
+  });
+
+  it("offers no Change order or Move buttons to a collective member's admin", async () => {
+    const response = servicesResponse();
+    mockServicesResponse = {
+      ...response,
+      services: [
+        response.services[0],
+        { ...response.services[0], id: 's2', name: 'Gents cut' },
+      ].map((s) => ({ ...s, collective: { ...s!.collective, role: 'replica', venue_role: 'member' } })),
+      collective_calendars: undefined,
+    };
+    await renderTheScreen();
+    await act(async () => {
+      fireEvent.press(await screen.findByText('Gents cut'));
+    });
+    expect(screen.queryByRole('button', { name: 'Change order' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Move up' })).toBeNull();
+  });
+});
