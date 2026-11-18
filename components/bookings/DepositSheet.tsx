@@ -5,17 +5,21 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
-import { ApiError } from '@/lib/api/client';
+import { ChargeNoShowPanel } from '@/components/bookings/ChargeNoShowPanel';
+import { ApiError, isApiErrorBody } from '@/lib/api/client';
 import {
-  CARD_HOLD_CHARGE_ACTION_LABEL,
+  CARD_ADD_NOW_LABEL,
+  CARD_CONFIRM_WITHOUT_LABEL,
   CARD_HOLD_CHARGE_DIALOG_TITLE,
+  CARD_HOLD_CHARGE_FEES_LABEL,
   CARD_HOLD_REFUND_ACTION_LABEL,
   CARD_HOLD_RELEASE_ACTION_LABEL,
-  CARD_HOLD_RESEND_LINK_LABEL,
-  CARD_HOLD_WAIVE_LABEL,
+  CARD_SEND_REQUEST_LABEL,
+  CONFIRM_WITHOUT_CARD_UNDO_MS,
   cardHoldChargeConfirmLabel,
   cardHoldChargeDialogBody,
   cardHoldReleaseDialogBody,
+  confirmWithoutCardQuestion,
   formatCardHoldFeePence,
   type CardHoldUiState,
 } from '@/lib/booking/card-hold';
@@ -23,6 +27,11 @@ import { hasSettleableDeposit } from '@/lib/booking/booking-staff-indicators';
 import { currencySymbol, formatPositivePence } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useBookingDeposit, type DepositAction } from '@/lib/queries/useBookingMutations';
+import {
+  useConfirmWithoutCard,
+  useSendCardRequests,
+  useUndoConfirmWithoutCard,
+} from '@/lib/queries/useCardsOnFile';
 import { spacing } from '@/theme/index';
 
 export type DepositTarget = {
@@ -36,12 +45,23 @@ export type DepositTarget = {
    * release) — the §9.1 hiding rule.
    */
   cardHold?: CardHoldUiState | null;
+  /** The visit the no-show charge covers: `group_booking_id`, or the booking's own id. */
+  visitId?: string | null;
+  /** "Add card now" can open the desk screen (the booking has a client record of ours). */
+  canAddCard?: boolean;
 };
 
 type DepositSheetProps = {
   target: DepositTarget | null;
   onClose: () => void;
+  /** "Add card now": the parent closes this sheet and opens the desk screen (no stacked sheets). */
+  onAddCard?: () => void;
 };
+
+/** True for an older server's 404 with no API body: the route is not there yet. */
+function isMissingRoute(e: unknown): boolean {
+  return e instanceof ApiError && e.status === 404 && !isApiErrorBody(e.body);
+}
 
 /** Pounds string for the amount input, e.g. 2500 -> "25.00". */
 function penceToPoundsInput(pence: number): string {
@@ -62,8 +82,11 @@ function parsePoundsInputToPence(value: string): number | null {
  * For card-hold bookings it instead offers the card-aware actions (§9.2),
  * with the charge amount entry folded in as a mode step (no stacked sheets).
  */
-export function DepositSheet({ target, onClose }: DepositSheetProps) {
+export function DepositSheet({ target, onClose, onAddCard }: DepositSheetProps) {
   const mutation = useBookingDeposit(target?.id ?? '');
+  const sendRequests = useSendCardRequests();
+  const confirmWithout = useConfirmWithoutCard();
+  const undoConfirm = useUndoConfirmWithoutCard();
 
   const [pending, setPending] = useState<DepositAction | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -75,7 +98,14 @@ export function DepositSheet({ target, onClose }: DepositSheetProps) {
   const [cashArmed, setCashArmed] = useState(false);
   // Charge no-show fee: in-sheet amount step (never a second stacked sheet).
   const [chargeMode, setChargeMode] = useState(false);
+  // Charge no-show fees for the visit (card-on-file §6.8), drawn in this sheet.
+  const [visitChargeMode, setVisitChargeMode] = useState(false);
   const [amountInput, setAmountInput] = useState('');
+  // Confirm without a card asks first (plan §6.4), then offers Undo for 5 minutes.
+  const [confirmArmed, setConfirmArmed] = useState(false);
+  const [cardBusy, setCardBusy] = useState<'request' | 'confirm' | 'undo' | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [undo, setUndo] = useState<{ actionIds: string[]; until: number } | null>(null);
 
   useEffect(() => {
     if (!target) {
@@ -91,6 +121,11 @@ export function DepositSheet({ target, onClose }: DepositSheetProps) {
     setReleaseArmed(false);
     setCashArmed(false);
     setChargeMode(false);
+    setVisitChargeMode(false);
+    setConfirmArmed(false);
+    setCardBusy(null);
+    setNotice(null);
+    setUndo(null);
     setAmountInput(target.cardHold?.feePence ? penceToPoundsInput(target.cardHold.feePence) : '');
   }, [target?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -139,6 +174,98 @@ export function DepositSheet({ target, onClose }: DepositSheetProps) {
     void run('release_hold');
   }
 
+  // Undo is offered for 5 minutes, then the message stays without it until dismissed.
+  useEffect(() => {
+    if (!undo) return;
+    const left = undo.until - Date.now();
+    if (left <= 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- the undo window has already closed
+      setUndo(null);
+      return;
+    }
+    const timer = setTimeout(() => setUndo(null), left);
+    return () => clearTimeout(timer);
+  }, [undo]);
+
+  /** "Send card request" (plan §6.3): also turns Card not needed back to Waiting for card. */
+  async function sendCardRequest() {
+    if (!target) return;
+    setError(null);
+    setNotice(null);
+    setCardBusy('request');
+    try {
+      const result = await sendRequests.mutateAsync({ bookingIds: [target.id] });
+      hapticSuccess();
+      setNotice(result.message);
+    } catch (e) {
+      if (isMissingRoute(e)) {
+        // An older server: the deposit route's card request.
+        setCardBusy(null);
+        await run('send_payment_link');
+        return;
+      }
+      hapticWarning();
+      setError(e instanceof Error ? e.message : 'The card request could not be sent.');
+    } finally {
+      setCardBusy(null);
+    }
+  }
+
+  /** "Confirm without a card" (plan §4.8, C10): asks first, then Undo for 5 minutes. */
+  async function confirmWithoutCard() {
+    if (!target) return;
+    if (!confirmArmed) {
+      hapticWarning();
+      setConfirmArmed(true);
+      return;
+    }
+    setConfirmArmed(false);
+    setError(null);
+    setNotice(null);
+    setCardBusy('confirm');
+    try {
+      const result = await confirmWithout.mutateAsync({ bookingIds: [target.id] });
+      hapticSuccess();
+      setNotice(result.message);
+      if (result.actionIds.length > 0) {
+        const until = result.undoUntil ? Date.parse(result.undoUntil) : Number.NaN;
+        setUndo({
+          actionIds: result.actionIds,
+          until: Number.isFinite(until) ? until : Date.now() + CONFIRM_WITHOUT_CARD_UNDO_MS,
+        });
+      }
+    } catch (e) {
+      if (isMissingRoute(e)) {
+        // An older server: Waive is Confirm without a card there.
+        setCardBusy(null);
+        await run('waive');
+        return;
+      }
+      hapticWarning();
+      setError(e instanceof Error ? e.message : 'The booking could not be confirmed without a card.');
+    } finally {
+      setCardBusy(null);
+    }
+  }
+
+  async function undoConfirmWithoutCard() {
+    if (!undo) return;
+    setError(null);
+    setCardBusy('undo');
+    try {
+      await undoConfirm.mutateAsync(undo.actionIds);
+      hapticSuccess();
+      setUndo(null);
+      setNotice('Undone. The booking is waiting for a card again.');
+    } catch (e) {
+      hapticWarning();
+      setUndo(null);
+      setError(e instanceof Error ? e.message : 'This can no longer be undone.');
+    } finally {
+      setCardBusy(null);
+    }
+  }
+
   const amount = formatPositivePence(target?.amountPence);
   const hold = target?.cardHold ?? null;
 
@@ -149,10 +276,13 @@ export function DepositSheet({ target, onClose }: DepositSheetProps) {
   const amountPence = parsePoundsInputToPence(amountInput);
   const amountValid = amountPence != null && amountPence >= minPence && amountPence <= feePence;
 
+  const busy = pending !== null || cardBusy !== null;
+  const showAddCard = !!hold && hold.showAddCardNow && !!target?.canAddCard && !!onAddCard;
   const holdHasActions =
     !!hold &&
-    (hold.showResendLink ||
-      hold.showWaive ||
+    (hold.showSendCardRequest ||
+      hold.showConfirmWithoutCard ||
+      showAddCard ||
       hold.showChargeAction ||
       hold.showRefundAction ||
       hold.showReleaseAction);
@@ -161,12 +291,24 @@ export function DepositSheet({ target, onClose }: DepositSheetProps) {
     <Sheet visible={!!target} onClose={onClose}>
       {target && seededId === target.id ? (
         <View style={styles.body}>
-          {hold && chargeMode ? (
+          {hold && visitChargeMode ? (
+            <ChargeNoShowPanel
+              visitId={target.visitId || target.id}
+              bookingId={target.id}
+              onUnavailable={() => {
+                // An older server without the visit charge: the single-booking charge.
+                setVisitChargeMode(false);
+                setAmountInput(penceToPoundsInput(feePence));
+                setChargeMode(true);
+              }}
+              onBack={() => setVisitChargeMode(false)}
+            />
+          ) : hold && chargeMode ? (
             /* ── Charge no-show fee: amount entry step (§9.2 dialog) ── */
             <>
               <View style={styles.headerBlock}>
                 <Text variant="overline" tone="muted">
-                  Card hold
+                  Card
                 </Text>
                 <Text variant="title">{CARD_HOLD_CHARGE_DIALOG_TITLE}</Text>
                 <Text variant="bodySmall" tone="muted">
@@ -224,15 +366,15 @@ export function DepositSheet({ target, onClose }: DepositSheetProps) {
               </View>
             </>
           ) : hold ? (
-            /* ── Card-hold state + card-aware actions (§9.1/§9.2) ── */
+            /* ── Card section actions (card-on-file §6.3) ── */
             <>
               <View style={styles.headerBlock}>
                 <Text variant="overline" tone="muted">
-                  Card hold
+                  Card
                 </Text>
                 <Text variant="title">
                   {hold.pill?.label ??
-                    (hold.feePence ? formatCardHoldFeePence(hold.feePence) : 'Card hold')}
+                    (hold.feePence ? formatCardHoldFeePence(hold.feePence) : 'Card')}
                 </Text>
                 <Text variant="bodySmall" tone="muted">
                   {target.guestName}
@@ -249,37 +391,64 @@ export function DepositSheet({ target, onClose }: DepositSheetProps) {
                 </View>
               ) : null}
 
+              {notice ? (
+                <View style={styles.notice} accessibilityLiveRegion="polite" testID="card-notice">
+                  <Text variant="bodySmall" tone="success" accessibilityRole="alert">
+                    {notice}
+                  </Text>
+                  {undo ? (
+                    <Button
+                      label="Undo"
+                      variant="secondary"
+                      size="sm"
+                      onPress={() => void undoConfirmWithoutCard()}
+                      loading={cardBusy === 'undo'}
+                      disabled={busy}
+                    />
+                  ) : null}
+                </View>
+              ) : null}
+
               {holdHasActions ? (
                 <View style={styles.buttons}>
-                  {hold.showResendLink ? (
+                  {hold.showSendCardRequest ? (
                     <Button
-                      label={CARD_HOLD_RESEND_LINK_LABEL}
-                      onPress={() => void run('send_payment_link')}
-                      loading={pending === 'send_payment_link'}
-                      disabled={pending !== null}
+                      label={CARD_SEND_REQUEST_LABEL}
+                      onPress={() => void sendCardRequest()}
+                      loading={cardBusy === 'request' || pending === 'send_payment_link'}
+                      disabled={busy}
                       fullWidth
                     />
                   ) : null}
-                  {hold.showWaive ? (
+                  {showAddCard ? (
                     <Button
-                      label={CARD_HOLD_WAIVE_LABEL}
+                      label={CARD_ADD_NOW_LABEL}
                       variant="secondary"
-                      onPress={() => void run('waive')}
-                      loading={pending === 'waive'}
-                      disabled={pending !== null}
+                      onPress={() => onAddCard?.()}
+                      disabled={busy}
+                      fullWidth
+                    />
+                  ) : null}
+                  {hold.showConfirmWithoutCard ? (
+                    <Button
+                      label={confirmArmed ? confirmWithoutCardQuestion(1).confirmLabel : CARD_CONFIRM_WITHOUT_LABEL}
+                      variant="secondary"
+                      onPress={() => void confirmWithoutCard()}
+                      loading={cardBusy === 'confirm' || pending === 'waive'}
+                      disabled={busy}
                       fullWidth
                     />
                   ) : null}
                   {hold.showChargeAction && feePence > 0 ? (
                     <Button
-                      label={CARD_HOLD_CHARGE_ACTION_LABEL}
+                      label={CARD_HOLD_CHARGE_FEES_LABEL}
                       variant="danger"
                       onPress={() => {
                         setError(null);
-                        setAmountInput(penceToPoundsInput(feePence));
-                        setChargeMode(true);
+                        setNotice(null);
+                        setVisitChargeMode(true);
                       }}
-                      disabled={pending !== null}
+                      disabled={busy}
                       fullWidth
                     />
                   ) : null}
@@ -291,7 +460,7 @@ export function DepositSheet({ target, onClose }: DepositSheetProps) {
                       variant="danger"
                       onPress={confirmRefund}
                       loading={pending === 'refund'}
-                      disabled={pending !== null}
+                      disabled={busy}
                       fullWidth
                     />
                   ) : null}
@@ -303,13 +472,18 @@ export function DepositSheet({ target, onClose }: DepositSheetProps) {
                       variant="secondary"
                       onPress={confirmRelease}
                       loading={pending === 'release_hold'}
-                      disabled={pending !== null}
+                      disabled={busy}
                       fullWidth
                     />
                   ) : null}
                 </View>
               ) : null}
 
+              {confirmArmed ? (
+                <Text variant="caption" tone="muted">
+                  {confirmWithoutCardQuestion(1).body}
+                </Text>
+              ) : null}
               {releaseArmed ? (
                 <Text variant="caption" tone="muted">
                   {cardHoldReleaseDialogBody(target.guestName)}
@@ -317,8 +491,8 @@ export function DepositSheet({ target, onClose }: DepositSheetProps) {
               ) : null}
               {refundArmed ? (
                 <Text variant="caption" tone="muted">
-                  This refunds the charged no-show fee to {target.guestName}&apos;s card. The card
-                  hold ends and the fee cannot be charged again.
+                  This refunds the charged no-show fee to {target.guestName}&apos;s card. The fee
+                  cannot be charged again for this booking.
                 </Text>
               ) : null}
 
@@ -429,6 +603,9 @@ const styles = StyleSheet.create({
   },
   lines: {
     gap: spacing.xs,
+  },
+  notice: {
+    gap: spacing.sm,
   },
   buttons: {
     gap: spacing.sm,

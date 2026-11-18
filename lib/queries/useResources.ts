@@ -1,3 +1,4 @@
+import type { ApiCardState } from '@/lib/booking/card-hold';
 import { useQuery } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
@@ -92,6 +93,8 @@ export interface ResourceDayBookingRow {
   calendar_id?: string | null;
   /** Resolved label, e.g. the resource/service name ("Court 1"). */
   booking_item_name?: string | null;
+  /** Card on file (web card-on-file-plan §6.1): the booking's card state; absent from older servers. */
+  card_state?: ApiCardState | null;
 }
 
 interface ResourceDayBookingsResponse {

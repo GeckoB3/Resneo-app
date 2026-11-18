@@ -1,3 +1,5 @@
+import type { ApiCardState } from '@/lib/booking/card-hold';
+
 /**
  * Subset of a row from GET /api/venue/bookings/list (the route returns far
  * more; these are the fields the mobile list renders/filters on).
@@ -66,6 +68,11 @@ export interface BookingListRow {
   collective_id?: string | null;
   /** That collective's name ('Collective' when unknown); null when booked direct. */
   collective_name?: string | null;
+  /**
+   * Card on file (web card-on-file-plan §10): `protected`, `waiting`, `not_needed` or `charged` on a
+   * card-hold booking, null otherwise. Absent from older servers.
+   */
+  card_state?: ApiCardState | null;
 }
 
 export interface BookingsListResponse {

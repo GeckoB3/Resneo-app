@@ -123,37 +123,47 @@ describe('ConfirmStep: a visit across businesses', () => {
     expect(byBusiness.getByText('SV Nails')).toBeTruthy();
     // The single visit-wide toggles give way to the businesses' own.
     expect(screen.getAllByLabelText(/^Require deposit/)).toHaveLength(1);
-    expect(screen.getAllByLabelText(/^Card hold/)).toHaveLength(1);
+    // The card request switch is each business's own, on by default (card-on-file C2).
+    expect(screen.getAllByLabelText('Send a card request')).toHaveLength(1);
+    expect(screen.getByLabelText('Send a card request').props.value).toBe(true);
 
-    await act(async () => {
-      fireEvent.press(screen.getByLabelText(/^Card hold/));
-    });
     await act(async () => {
       fireEvent.press(screen.getByText('Create visit'));
     });
     const body = mockCreateMulti.mock.calls[0][0];
     expect(body.require_deposit_by_venue).toEqual({ 'v-studio': false, 'v-nails': false });
     expect(body.require_card_hold_by_venue).toEqual({ 'v-studio': false, 'v-nails': true });
+    // No tick on a visit across businesses.
+    expect(body.cancel_if_no_card).toBeUndefined();
     expect(body.services.map((s: { practitioner_id: string; start_time: string }) => [s.practitioner_id, s.start_time])).toEqual([
       ['p-steph', '10:00'],
       ['p-bea', '10:35'],
     ]);
   });
 
-  it('says only what is ticked is taken now, and the no-show fee only once a hold is ticked', async () => {
+  it('says only what is ticked is taken now, and the no-show fee the card line secures', async () => {
     // 2026-11-04 on the phone: "Pay now £30.00" sat beside an unticked "Require payment".
     await renderConfirm();
     expect(screen.queryByTestId('confirm-charge-now')).toBeNull();
-    expect(screen.queryByTestId('confirm-hold-now')).toBeNull();
+    // Every card-hold booking keeps its no-show fee, asked for or not (card-on-file §4.8).
+    expect(within(screen.getByTestId('confirm-hold-now')).getByText('£15.00')).toBeTruthy();
     await act(async () => {
       fireEvent.press(screen.getByLabelText(/^Require deposit/));
     });
     expect(within(screen.getByTestId('confirm-charge-now')).getByText('£10.00')).toBeTruthy();
     expect(within(screen.getByTestId('confirm-charge-now')).getByText('Deposit')).toBeTruthy();
+  });
+
+  it("turns one business's card request off: Card not needed there", async () => {
+    await renderConfirm();
     await act(async () => {
-      fireEvent.press(screen.getByLabelText(/^Card hold/));
+      fireEvent(screen.getByLabelText('Send a card request'), 'valueChange', false);
     });
-    expect(within(screen.getByTestId('confirm-hold-now')).getByText('£15.00')).toBeTruthy();
+    expect(screen.getByText('No card will be asked for. The booking shows Card not needed.')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Create visit'));
+    });
+    expect(mockCreateMulti.mock.calls[0][0].require_card_hold_by_venue).toEqual({ 'v-studio': false, 'v-nails': false });
   });
 
   it('offers nothing for a business that cannot take cards', async () => {

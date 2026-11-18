@@ -53,6 +53,11 @@ const WEB_LANE_DEFAULTS: Partial<Record<CommunicationMessageKey, WebDefault>> = 
   // Surfaced since 2026-09-23 (card-hold bookings), as on the web's screen.
   card_hold_request: { enabled: true, channels: ['email', 'sms'] },
   card_hold_payment_reminder: { enabled: true, channels: ['email', 'sms'], hoursBefore: 2 },
+  // Card on file (web card-on-file-plan §7, staging 2026-11-17): on, reminder both ways.
+  card_on_file_reminder: { enabled: true, channels: ['email', 'sms'] },
+  card_on_file_update: { enabled: true, channels: ['email'] },
+  card_on_file_stopped: { enabled: true, channels: ['email'] },
+  card_on_file_inactive: { enabled: true, channels: ['email'] },
   booking_modification: { enabled: true, channels: ['email'] },
   cancellation_confirmation: { enabled: true, channels: ['email'] },
   auto_cancel_notification: { enabled: true, channels: ['email', 'sms'] },

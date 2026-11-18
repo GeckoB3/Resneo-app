@@ -14,6 +14,7 @@ import { GreetingHeader } from '@/components/today/GreetingHeader';
 import { HeatmapWeek } from '@/components/today/HeatmapWeek';
 import { KpiGrid } from '@/components/today/KpiGrid';
 import { LowStockHomeCard } from '@/components/today/LowStockHomeCard';
+import { WaitingForCardHomeCard } from '@/components/today/WaitingForCardHomeCard';
 import { TillHomeCard } from '@/components/today/TillHomeCard';
 import { NewBookingsCard } from '@/components/reports/NewBookingsCard';
 import { CollectRequestsCard } from '@/components/pos/CollectRequests';
@@ -431,6 +432,9 @@ export default function TodayScreen() {
         {/* "Waiting for you": sales the web till sent to this phone (POS app step 2). Hidden when
             none wait, and at venues without POS. */}
         <CollectRequestsCard />
+
+        {/* Card on file (plan §6.5): upcoming bookings waiting for a card. Hidden when none. */}
+        <WaitingForCardHomeCard />
 
         {/* Setup checklist (admin-only; pinned pre-onboarding, dismissible after) */}
         <SetupChecklistCard />

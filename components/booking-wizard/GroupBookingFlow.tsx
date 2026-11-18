@@ -11,8 +11,16 @@ import { PractitionerStep } from '@/components/booking-wizard/PractitionerStep';
 import { ServicePickerStep } from '@/components/booking-wizard/ServicePickerStep';
 import { TimeSlotStep } from '@/components/booking-wizard/TimeSlotStep';
 import { VariantStep } from '@/components/booking-wizard/VariantStep';
+import { StaffAddCardSheet } from '@/components/booking-wizard/StaffAddCardSheet';
+import { staffCardConfirmationView } from '@/components/booking-wizard/StaffCardConfirmation';
 import {
-  StaffCardHoldToggle,
+  DEFAULT_STAFF_CARD_REQUEST,
+  staffCardRequestFields,
+  useStaffCardLookup,
+  type StaffCardRequestState,
+} from '@/components/booking-wizard/staff-card-request';
+import {
+  StaffCardRequestControls,
   StaffRequireChargeCheckbox,
 } from '@/components/booking-wizard/StaffChargeControls';
 import { WizardStepIndicator } from '@/components/booking-wizard/WizardStepIndicator';
@@ -42,6 +50,7 @@ import {
 import { formatPence } from '@/lib/format';
 import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { normalizePhone } from '@/lib/phone/normalize';
+import { parseStaffCreateCardOnFile, staffCancelIfNoCardAllowed } from '@/lib/booking/card-hold';
 import { accessRefusalMessage } from '@/lib/roles/roles';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
 import { useCreateGroupBooking } from '@/lib/queries/useCreateGroupBooking';
@@ -151,11 +160,13 @@ export function GroupBookingFlow({
   const [returningGuest, setReturningGuest] = useState(false);
   /**
    * Staff's money decisions for the whole group — one organiser, one call, one
-   * decision. Opt-in for the charge and opt-out for the hold, matching the two
-   * defaults `/api/booking/create-group` applies to an omitted field.
+   * decision. Opt-in for the charge. The card line (web card-on-file-plan §6.2):
+   * the organiser's card on file covers everyone; otherwise "Send a card
+   * request", on by default (C2), sent explicitly.
    */
   const [requireDeposit, setRequireDeposit] = useState(false);
-  const [requireCardHold, setRequireCardHold] = useState(false);
+  const [cardRequest, setCardRequest] = useState<StaffCardRequestState>(DEFAULT_STAFF_CARD_REQUEST);
+  const [addCardOpen, setAddCardOpen] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [complianceError, setComplianceError] = useState<string | null>(null);
 
@@ -183,6 +194,20 @@ export function GroupBookingFlow({
   const groupCharge = useMemo(() => resolveVisitChargeTotal(people), [people]);
   const groupCardHoldPence = useMemo(() => resolveVisitCardHoldTotal(people), [people]);
   const showCardHoldToggle = groupCardHoldPence > 0;
+  const cardLookup = useStaffCardLookup(organiser.guest_id, showCardHoldToggle);
+  const cardNotPossible = cardLookup.canTakeCards === false;
+  const cardTickAllowed =
+    source !== 'walk-in' &&
+    (staffCancelIfNoCardAllowed({ walkIn: false, email: organiser.email, phone: organiser.phone }) ||
+      Boolean(organiser.guest_id));
+  const cardFields = showCardHoldToggle
+    ? staffCardRequestFields(cardRequest, {
+        cardFound: cardLookup.card !== null,
+        tickAllowed: cardTickAllowed,
+        notPossible: cardNotPossible,
+      })
+    : null;
+  const leadName = [organiser.first_name.trim(), organiser.last_name.trim()].filter(Boolean).join(' ');
   // Walk-ins never collect (spec 2.8), so there is no decision to offer them.
   const showChargeCheckbox = groupCharge.amountPence > 0 && source !== 'walk-in';
 
@@ -347,7 +372,13 @@ export function GroupBookingFlow({
          */
         charges: {
           requireDeposit: showChargeCheckbox && requireDeposit,
-          ...(showCardHoldToggle ? { requireCardHold } : {}),
+          ...(cardFields
+            ? {
+                requireCardHold: cardFields.require_card_hold,
+                ...(cardFields.use_card_on_file === false ? { useCardOnFile: false } : {}),
+                ...(cardFields.cancel_if_no_card ? { cancelIfNoCard: true } : {}),
+              }
+            : {}),
         },
         // At-home attendees: thread the visit address collected on the organiser
         // step (buildGroupPayload drops empty fields via clientAddressPayloadFields).
@@ -379,8 +410,7 @@ export function GroupBookingFlow({
       collectClientAddress,
       showChargeCheckbox,
       requireDeposit,
-      showCardHoldToggle,
-      requireCardHold,
+      cardFields,
     ],
   );
 
@@ -415,6 +445,17 @@ export function GroupBookingFlow({
           // by compliance (web 2026-09-01): a venue's block_all rule arrives here
           // as a `required` warning, and it must not go unsaid.
           const { required, advisory } = splitComplianceWarnings(res.compliance_warnings);
+          // What the card line did (card-on-file-plan §6.2), said on the way to the booking.
+          const cardOnFile = parseStaffCreateCardOnFile(res.card_on_file);
+          const cardLine = cardOnFile
+            ? staffCardConfirmationView({
+                cardOnFile,
+                feePence: groupCardHoldPence,
+                sentTo: organiser.email.trim() || organiser.phone.trim() || null,
+                paymentUrl: res.payment_url ?? null,
+                linkSent: res.payment_link_sent,
+              }).lines[0]
+            : null;
           if (required.length > 0) {
             toast.error(
               `This venue requires ${required.join(', ')} for this booking. Capture the record in venue or send the form.`,
@@ -424,6 +465,8 @@ export function GroupBookingFlow({
             toast.info(`${advisory.join(', ')} not on file yet. Collect the record or send the form.`, {
               duration: 5000,
             });
+          } else if (cardLine) {
+            toast.info(cardLine, { duration: 5000 });
           }
           if (primary) onCreated(primary);
         },
@@ -869,13 +912,28 @@ export function GroupBookingFlow({
           </Card>
 
           {showCardHoldToggle ? (
-            <StaffCardHoldToggle
+            <StaffCardRequestControls
               walkIn={source === 'walk-in'}
-              checked={requireCardHold}
-              onChange={setRequireCardHold}
+              value={cardRequest}
+              onChange={setCardRequest}
               feePence={groupCardHoldPence}
+              foundCard={cardLookup.card}
+              group
+              leadName={leadName}
+              notPossible={cardNotPossible}
+              tickAllowed={cardTickAllowed}
+              onAddCardNow={organiser.guest_id && !cardNotPossible ? () => setAddCardOpen(true) : undefined}
             />
           ) : null}
+          <StaffAddCardSheet
+            open={addCardOpen}
+            onClose={() => setAddCardOpen(false)}
+            guestId={organiser.guest_id}
+            clientFirstName={organiser.first_name.trim()}
+            hasContact={Boolean(organiser.email.trim() || organiser.phone.trim() || organiser.guest_id)}
+            savesWith={cardLookup.addSavesWith}
+            onSaved={cardLookup.refresh}
+          />
 
           {showChargeCheckbox ? (
             <StaffRequireChargeCheckbox

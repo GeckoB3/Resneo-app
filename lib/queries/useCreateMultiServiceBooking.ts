@@ -37,6 +37,15 @@ export interface GroupedBookingResponse {
    */
   payment_mode?: 'payment' | 'setup' | 'payment_with_setup' | 'linked';
   card_hold_fee_pence?: number | null;
+  /** Card on file for a staff create (plan §10); absent from older servers. */
+  card_on_file?: unknown;
+  /**
+   * A staff create's client record (the lead business's), also for a client typed in as new, so
+   * the confirmation can offer "Add card now". Absent from public creates and older servers.
+   */
+  guest_id?: string;
+  /** With a card request link in `payment_url`: whether it could be sent to the client. */
+  payment_link_sent?: boolean;
   /**
    * A visit across businesses (web split-visit plan 8.4, 8.5): `payment_mode` is `'linked'` when
    * money is asked for anywhere, and a staff booking gets the visit's one pay link here (also in

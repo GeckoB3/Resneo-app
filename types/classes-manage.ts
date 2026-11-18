@@ -6,6 +6,7 @@
  * @see _reference/Resneo/src/app/api/venue/classes/route.ts (classTypeSchema)
  * @see _reference/Resneo/src/app/api/venue/class-instances/route.ts
  */
+import type { ApiCardState } from '@/lib/booking/card-hold';
 import type { ContactsHiddenFlag } from '@/types/staff';
 
 /** `'card_hold'` (web 2026-07): per-person no-show fee kept in `deposit_amount_pence` (spec D5). */
@@ -239,6 +240,8 @@ export interface ClassAttendee {
   guest_name: string;
   guest_email?: string | null;
   guest_phone?: string | null;
+  /** Card on file (web card-on-file-plan §6.1): the booking's card state; absent from older servers. */
+  card_state?: ApiCardState | null;
 }
 
 /** GET /api/venue/class-instances/[id]/attendees response. */

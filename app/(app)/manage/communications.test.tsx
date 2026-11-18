@@ -369,3 +369,13 @@ describe('Communications: no switches that do nothing (QA 2026-11-08 COM-F9)', (
     expect(screen.queryByText('Cancellation alerts')).toBeNull();
   });
 });
+
+describe('Communications: card on file messages (web card-on-file-plan §7)', () => {
+  it('lists the four new card messages after the card details reminder', async () => {
+    await render(<CommunicationsScreen />);
+    for (const label of ['Card details reminder (2 hours)', 'Card reminder', 'Card update request', 'Card stopped', 'Unused card notice']) {
+      expect(screen.getByText(label)).toBeTruthy();
+    }
+    expect(screen.getByText(/The card is saved for their future bookings with you/)).toBeTruthy();
+  });
+});

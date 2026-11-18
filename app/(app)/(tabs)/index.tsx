@@ -148,6 +148,7 @@ import {
 } from '@/lib/calendar/processing-gaps';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useCalendarGrid } from '@/lib/queries/useCalendarGrid';
+import { useBookingsRange } from '@/lib/queries/useBookingsRange';
 import { useComplianceBookingFlags } from '@/lib/queries/useCompliance';
 import {
   usePersistedCalendarPrefs,
@@ -987,7 +988,25 @@ export default function CalendarScreen() {
     return m;
   }, [linkedVenues]);
 
+  // Card on file (web card-on-file-plan §6.1): the grid route does not say which bookings wait
+  // for a card, so the list route is asked for just those (`card_state=waiting`) and their bars
+  // get the "Waiting for card" pill. An older server sends no `card_state`, so nothing is marked.
+  const waitingCardQuery = useBookingsRange({
+    from: range.from,
+    to: range.to,
+    cardState: 'waiting',
+    enabled: rosterCalendarIds.length > 0,
+  });
+  const waitingForCardIds = useMemo(
+    () =>
+      new Set(
+        (waitingCardQuery.data?.bookings ?? []).filter((b) => b.card_state === 'waiting').map((b) => b.id),
+      ),
+    [waitingCardQuery.data],
+  );
+
   const gridQuery = useCalendarGrid({
+    waitingForCardIds,
     // Every calendar of the roster, paused ones too: the grid serves any
     // calendar of the venue, and a paused one may still have bookings (R44-3).
     calendarIds: rosterCalendarIds,

@@ -1,9 +1,18 @@
 import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { ComplianceWarningNotice } from '@/components/compliance/ComplianceWarningNotice';
+import { StaffAddCardSheet } from '@/components/booking-wizard/StaffAddCardSheet';
+import { StaffCardConfirmation } from '@/components/booking-wizard/StaffCardConfirmation';
+import { StaffCardRequestControls } from '@/components/booking-wizard/StaffChargeControls';
 import { StaffPaymentLinkLines } from '@/components/booking-wizard/StaffPaymentLinkLines';
+import {
+  DEFAULT_STAFF_CARD_REQUEST,
+  staffCardRequestFields,
+  useStaffCardLookup,
+  type StaffCardRequestState,
+} from '@/components/booking-wizard/staff-card-request';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Segmented } from '@/components/ui/Segmented';
@@ -12,10 +21,12 @@ import { PressableScale } from '@/components/ui/PressableScale';
 import { ApiError } from '@/lib/api/client';
 import { accessRefusalMessage } from '@/lib/roles/roles';
 import {
-  STAFF_CARD_HOLD_TOGGLE_LABEL,
-  staffCardHoldToggleSublabel,
+  CARD_STATE_WAITING,
+  parseStaffCreateCardOnFile,
   resolveStaffEntityCardHold,
+  staffCancelIfNoCardAllowed,
   staffCardHoldFeeLine,
+  type StaffCreateCardOnFile,
 } from '@/lib/booking/card-hold';
 import { formatPence } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
@@ -152,10 +163,10 @@ type BookingFlowConfirmProps = {
   depositPence?: number | null;
   /**
    * The offering's resolved `payment_requirement`. When it is `card_hold` with
-   * a positive fee the "Require deposit" toggle is replaced by the "Card hold"
-   * toggle (off by default since web #187, as the server's omitted value is)
-   * (spec §7.6/D6, walk-ins included) and the payload carries
-   * `require_card_hold`.
+   * a positive fee the card line shows (web card-on-file-plan §6.2): a card on
+   * file found for the client, or "Send a card request" (on by default, C2),
+   * and the payload carries `require_card_hold` (plus `use_card_on_file` and
+   * `cancel_if_no_card` when chosen).
    */
   paymentRequirement?: string | null;
   /** Per-unit no-show fee in pence (per person for classes/events, flat otherwise). */
@@ -192,6 +203,11 @@ interface Confirmation {
   payment_link_sent?: boolean;
   /** A walk-in: booked straight away, never cancelled for a missing card (web QA BKG-A-F9). */
   walk_in?: boolean;
+  /** Card on file (web card-on-file-plan §10); absent from older servers. */
+  card_on_file?: StaffCreateCardOnFile | null;
+  cancel_if_no_card?: boolean;
+  /** The client's email, else phone: where a card request went. */
+  guest_contact?: string;
   compliance_warnings?: ComplianceBookingWarning[];
 }
 
@@ -238,9 +254,10 @@ export function BookingFlowConfirm({
   // for classes, events and resources (see the note where the toggle used to be),
   // so there is nothing here for staff to change.
   const requireDeposit = false;
-  // Card hold toggle (spec §7.6/D6): default ON (the entity requires it);
-  // staff may switch it off case by case. Walk-ins included.
-  const [requireCardHold, setRequireCardHold] = useState(false);
+  // The card line (web card-on-file-plan §6.2): "Send a card request" on by
+  // default (C2), the optional tick off. Walk-ins included, without the tick.
+  const [cardRequest, setCardRequest] = useState<StaffCardRequestState>(DEFAULT_STAFF_CARD_REQUEST);
+  const [addCardOpen, setAddCardOpen] = useState(false);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [complianceError, setComplianceError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -251,6 +268,23 @@ export function BookingFlowConfirm({
     units: cardHoldUnits,
   });
 
+  // Who the booking is for, as the payload names them (the flows own the guest step).
+  const guestPreview = buildPayload({ source, requireDeposit });
+  const cardLookup = useStaffCardLookup(guestPreview.guest_id, Boolean(staffCardHold));
+  const cardNotPossible = cardLookup.canTakeCards === false;
+  const cardTickAllowed =
+    source !== 'walk-in' &&
+    (staffCancelIfNoCardAllowed({ walkIn: false, email: guestPreview.email, phone: guestPreview.phone }) ||
+      Boolean(guestPreview.guest_id));
+  const cardFields = staffCardHold
+    ? staffCardRequestFields(cardRequest, {
+        cardFound: cardLookup.card !== null,
+        tickAllowed: cardTickAllowed,
+        notPossible: cardNotPossible,
+      })
+    : null;
+  const guestContact = guestPreview.email?.trim() || guestPreview.phone?.trim() || undefined;
+
   const hasDeposit = depositPence != null && depositPence > 0;
   const depositLabel = hasDeposit ? money(depositPence) : null;
 
@@ -259,9 +293,9 @@ export function BookingFlowConfirm({
     setSubmitError(null);
     const payload: CreateBookingPayload = {
       ...buildPayload({ source, requireDeposit }),
-      // The card-hold toggle rides its own flag, sent explicitly either way:
-      // since web #187 an omitted `require_card_hold` means NO hold.
-      ...(staffCardHold ? { require_card_hold: requireCardHold } : {}),
+      // The card line's fields, sent explicitly: an omitted `require_card_hold`
+      // keeps an older app's meaning (no card request) on the server.
+      ...(cardFields ?? {}),
     };
     createBooking.mutate(payload, {
       onSuccess: (response) => {
@@ -273,6 +307,9 @@ export function BookingFlowConfirm({
           // a `payment_url` is the deposit request, as the web's card reads it.
           card_hold_requested: response.card_hold_requested,
           card_hold_fee_pence: staffCardHold?.feePence ?? null,
+          card_on_file: parseStaffCreateCardOnFile(response.card_on_file),
+          cancel_if_no_card: Boolean(cardFields?.cancel_if_no_card),
+          guest_contact: guestContact,
           payment_link_sent: response.payment_link_sent,
           walk_in: source === 'walk-in',
           compliance_warnings: response.compliance_warnings,
@@ -329,12 +366,22 @@ export function BookingFlowConfirm({
           {rows.map((row) => (
             <SummaryRow key={row.label} label={row.label} value={row.value} />
           ))}
-          {confirmation.card_hold_requested ? (
+          {confirmation.card_on_file ? (
+            <StaffCardConfirmation
+              cardOnFile={confirmation.card_on_file}
+              feePence={confirmation.card_hold_fee_pence ?? null}
+              sentTo={confirmation.guest_contact ?? null}
+              paymentUrl={confirmation.payment_url ?? null}
+              linkSent={confirmation.payment_link_sent}
+              onAddCardNow={guestPreview.guest_id ? () => setAddCardOpen(true) : undefined}
+            />
+          ) : confirmation.card_hold_requested ? (
+            // An older server, which says only that a card request went.
             <View style={[styles.depositNotice, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <Text variant="bodySmall" tone="brand">
-                Card hold
+                {CARD_STATE_WAITING}
                 {confirmation.card_hold_fee_pence != null && confirmation.card_hold_fee_pence > 0
-                  ? ` · ${staffCardHoldFeeLine(confirmation.card_hold_fee_pence).toLowerCase()}`
+                  ? `. ${staffCardHoldFeeLine(confirmation.card_hold_fee_pence)}.`
                   : ''}
               </Text>
               <StaffPaymentLinkLines
@@ -342,6 +389,7 @@ export function BookingFlowConfirm({
                 paymentUrl={confirmation.payment_url}
                 linkSent={confirmation.payment_link_sent}
                 walkIn={Boolean(confirmation.walk_in)}
+                cancelIfNoCard={confirmation.cancel_if_no_card}
               />
             </View>
           ) : confirmation.payment_url ||
@@ -377,6 +425,16 @@ export function BookingFlowConfirm({
             <Button label="Book another" variant="secondary" fullWidth onPress={onBookAnother} />
           ) : null}
         </View>
+      <StaffAddCardSheet
+        open={addCardOpen}
+        onClose={() => setAddCardOpen(false)}
+        guestId={guestPreview.guest_id}
+        bookingId={confirmation.booking_id}
+        clientFirstName={guestPreview.first_name?.trim() ?? ''}
+        hasContact={Boolean(guestContact || guestPreview.guest_id)}
+        savesWith={cardLookup.addSavesWith}
+        onSaved={cardLookup.refresh}
+      />
       </ScrollView>
     );
   }
@@ -446,39 +504,27 @@ export function BookingFlowConfirm({
       )}
 
       {staffCardHold ? (
-        <Pressable
-          accessibilityRole="checkbox"
-          accessibilityState={{ checked: requireCardHold }}
-          accessibilityLabel={`${STAFF_CARD_HOLD_TOGGLE_LABEL}. ${staffCardHoldToggleSublabel(requireCardHold, source === 'walk-in')}`}
-          onPress={() => setRequireCardHold((prev) => !prev)}
-          style={({ pressed }) => [
-            styles.depositToggle,
-            {
-              backgroundColor: requireCardHold ? colors.surfaceRaised : colors.surface,
-              borderColor: requireCardHold ? colors.brand : colors.border,
-              opacity: pressed ? 0.9 : 1,
-            },
-          ]}>
-          <View
-            style={[
-              styles.check,
-              {
-                borderColor: requireCardHold ? colors.brand : colors.borderStrong,
-                backgroundColor: requireCardHold ? colors.brand : 'transparent',
-              },
-            ]}>
-            {requireCardHold ? (
-              <Text style={[styles.checkMark, { color: colors.onBrand }]}>✓</Text>
-            ) : null}
-          </View>
-          <View style={styles.depositToggleLabel}>
-            <Text variant="bodyMedium">{STAFF_CARD_HOLD_TOGGLE_LABEL}</Text>
-            <Text variant="caption" tone="muted">
-              {staffCardHoldToggleSublabel(requireCardHold, source === 'walk-in')}
-            </Text>
-          </View>
-        </Pressable>
+        <StaffCardRequestControls
+          walkIn={source === 'walk-in'}
+          value={cardRequest}
+          onChange={setCardRequest}
+          feePence={staffCardHold.feePence}
+          foundCard={cardLookup.card}
+          notPossible={cardNotPossible}
+          tickAllowed={cardTickAllowed}
+          onAddCardNow={guestPreview.guest_id && !cardNotPossible ? () => setAddCardOpen(true) : undefined}
+        />
       ) : null}
+      <StaffAddCardSheet
+        open={addCardOpen}
+        onClose={() => setAddCardOpen(false)}
+        guestId={guestPreview.guest_id}
+        bookingId={null}
+        clientFirstName={guestPreview.first_name?.trim() ?? ''}
+        hasContact={Boolean(guestContact || guestPreview.guest_id)}
+        savesWith={cardLookup.addSavesWith}
+        onSaved={cardLookup.refresh}
+      />
 
       {/* No "Require deposit" toggle here. This component is used ONLY by the
           class, event and resource flows, and the server honours `require_deposit`

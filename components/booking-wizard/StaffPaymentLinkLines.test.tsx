@@ -7,15 +7,25 @@ import { fireEvent, render, screen } from '@testing-library/react-native';
 jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(async () => true) }));
 
 import { StaffPaymentLinkLines, staffPaymentLinkLines } from '@/components/booking-wizard/StaffPaymentLinkLines';
-import { staffCardHoldToggleSublabel } from '@/lib/booking/card-hold';
+import { staffCancelIfNoCardAllowed, staffSendCardRequestLine } from '@/lib/booking/card-hold';
 
 describe('staffPaymentLinkLines', () => {
-  it('a phone booking whose link went: sent, and the 24-hour cancellation', () => {
+  it('a phone booking whose request went: sent, and no cancellation unless ticked (card on file §4.9)', () => {
     expect(staffPaymentLinkLines({ cardHold: true, paymentUrl: 'https://x/l', linkSent: true, walkIn: false })).toEqual({
-      sent: 'A card request link was sent to the guest. No payment is taken.',
-      cancel: 'If card details are not added within 24 hours, the booking will be auto-cancelled.',
+      sent: 'A card request was sent to the client. No payment is taken.',
+      cancel: null,
       showLink: false,
     });
+    expect(
+      staffPaymentLinkLines({ cardHold: true, paymentUrl: 'https://x/l', linkSent: true, walkIn: false, cancelIfNoCard: true })
+        .cancel,
+    ).toBe('If no card is added within 24 hours, the booking is cancelled.');
+  });
+
+  it('a deposit link still says the 24-hour cancellation', () => {
+    expect(staffPaymentLinkLines({ cardHold: false, paymentUrl: 'https://x/l', linkSent: true, walkIn: false }).cancel).toBe(
+      'If deposit is not paid within 24 hours, the booking will be auto-cancelled.',
+    );
   });
 
   it('a walk-in is never cancelled for a missing card', () => {
@@ -44,11 +54,11 @@ describe('staffPaymentLinkLines', () => {
   });
 });
 
-describe('the card hold switch for a walk-in', () => {
-  it('does not promise a cancellation the walk-in will never get', () => {
-    expect(staffCardHoldToggleSublabel(true, true)).toBe(
-      'On: the guest gets a link to add their card, charged only if they do not show. A walk-in is booked straight away and is not cancelled if no card is added.',
+describe('the card request switch for a walk-in', () => {
+  it('never offers or promises a cancellation for a walk-in', () => {
+    expect(staffSendCardRequestLine(true, true, true)).toBe(
+      "The booking is confirmed now. If the client doesn't add a card, it stays booked and shows Waiting for card.",
     );
-    expect(staffCardHoldToggleSublabel(true)).toContain('cancelled if no card is added within 24 hours');
+    expect(staffCancelIfNoCardAllowed({ walkIn: true, email: 'a@b.c' })).toBe(false);
   });
 });

@@ -204,6 +204,25 @@ export function VisitChip({ label, color }: { label: string; color: string }) {
   );
 }
 
+/**
+ * Card on file (web card-on-file-plan §6.1): the bar's only card marker, for a booking still
+ * waiting for a card. A glyph on a bar too short for words; the bar's own label says it to
+ * screen readers.
+ */
+export const WAITING_FOR_CARD_LABEL = 'Waiting for card';
+
+function WaitingCardGlyph({ color }: { color: string }) {
+  return (
+    <View testID="waiting-card-glyph" accessibilityLabel={WAITING_FOR_CARD_LABEL}>
+      <SymbolView
+        name={{ ios: 'creditcard', android: 'credit_card', web: 'credit_card' }}
+        tintColor={color}
+        size={12}
+      />
+    </View>
+  );
+}
+
 function PaidGlyph({ color }: { color: string }) {
   return (
     <SymbolView
@@ -315,6 +334,11 @@ type AppointmentBlockProps = {
    */
   paid?: boolean;
   /**
+   * Card on file (plan §6.1): the booking waits for a card. A tall bar says "Waiting for card"
+   * in a small pill; a short one shows a card glyph. Protected and Card not needed show nothing.
+   */
+  waitingForCard?: boolean;
+  /**
    * This bar rides inside another bar's processing gap (web #177). Since web
    * #184 it looks like any other booking (full lane, ordinary radius); the flag
    * only lifts it above its host.
@@ -404,6 +428,7 @@ export function AppointmentBlock({
   actionPending = false,
   complianceFlag,
   paid = false,
+  waitingForCard = false,
   pieces,
   segments,
   freeTaps,
@@ -564,7 +589,7 @@ export function AppointmentBlock({
       accessibilityRole="button"
       accessibilityLabel={`${timeLabel}, ${guestName}, ${serviceName}, ${statusLabel}${
         paid ? ', paid' : ''
-      }`}
+      }${waitingForCard ? `, ${WAITING_FOR_CARD_LABEL}` : ''}`}
       accessibilityHint="Tap to open. Touch and hold to move."
       onPress={() => onPress(id)}
       style={({ pressed }) => [styles.block, { opacity: pressed ? 0.85 : 1 }]}>
@@ -629,6 +654,7 @@ export function AppointmentBlock({
                 {trayActions.length === 0 ? ` · ${timeLabel.split('–')[0]}` : ''}
               </Text>
               {paid ? <PaidGlyph color={subtleText} /> : null}
+              {waitingForCard ? <WaitingCardGlyph color={subtleText} /> : null}
               {complianceFlag ? <ComplianceFlagDot flag={complianceFlag} /> : null}
             </View>
             {layout.rows >= 2 ? (
@@ -646,9 +672,10 @@ export function AppointmentBlock({
       ) : (
         <>
           {/* Paid + compliance markers — top-right corner. */}
-          {paid || complianceFlag ? (
+          {paid || complianceFlag || (waitingForCard && layout.rows < 3) ? (
             <View style={[styles.complianceDot, dotInsetStyle]} pointerEvents="none">
               {paid ? <PaidGlyph color={subtleText} /> : null}
+              {waitingForCard && layout.rows < 3 ? <WaitingCardGlyph color={subtleText} /> : null}
               {complianceFlag ? <ComplianceFlagDot flag={complianceFlag} /> : null}
             </View>
           ) : null}
@@ -679,6 +706,15 @@ export function AppointmentBlock({
               <Text numberOfLines={1} style={[styles.rowMeta, { color: subtleText }]}>
                 {timeLabel}
               </Text>
+            ) : null}
+            {waitingForCard && layout.rows >= 3 ? (
+              <View style={styles.statusChipRow} testID="waiting-card-pill">
+                <View style={[styles.statusChip, { backgroundColor: hexToRgba('#FFFFFF', 0.9) }]}>
+                  <Text numberOfLines={1} style={[styles.statusChipLabel, { color: '#92400E' }]}>
+                    {WAITING_FOR_CARD_LABEL}
+                  </Text>
+                </View>
+              </View>
             ) : null}
             {layout.rows >= 4 ? (
               <View style={styles.statusChipRow}>

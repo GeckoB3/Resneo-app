@@ -22,6 +22,8 @@ type ConfirmSheetProps = {
   destructive?: boolean;
   /** Show a spinner + disable the buttons while the action runs. */
   loading?: boolean;
+  /** Disable only the confirm button (there is nothing to confirm). */
+  confirmDisabled?: boolean;
   /** Called when the user confirms. */
   onConfirm: () => void;
   /** Called on Cancel, scrim tap, drag-dismiss or back press. */
@@ -42,6 +44,7 @@ export function ConfirmSheet({
   cancelLabel = 'Cancel',
   destructive = true,
   loading = false,
+  confirmDisabled = false,
   onConfirm,
   onClose,
 }: ConfirmSheetProps) {
@@ -67,6 +70,7 @@ export function ConfirmSheet({
             variant={destructive ? 'danger' : 'primary'}
             style={styles.flex1}
             loading={loading}
+            disabled={confirmDisabled}
             onPress={onConfirm}
           />
         </View>

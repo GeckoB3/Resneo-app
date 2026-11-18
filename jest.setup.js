@@ -27,6 +27,13 @@ jest.mock('expo-haptics', () => ({
   },
 }));
 
+// react-native-webview looks up its native module when it is imported, which fails under jest.
+// The card-on-file desk screen (components/cards/AddCardSheet.tsx) imports it, and every screen
+// that offers "Add card" imports that, so a plain stand-in is installed for every suite. A suite
+// can still mock it itself; its jest.mock takes precedence.
+// eslint-disable-next-line no-undef
+jest.mock('react-native-webview', () => ({ WebView: 'WebView' }));
+
 // There is no native provider under jest, so the real `useSafeAreaInsets`
 // throws "No safe area value available" for anything that renders a Screen or a
 // Sheet. A zero-inset default keeps those suites about their own behaviour;

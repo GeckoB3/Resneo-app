@@ -66,6 +66,13 @@ export interface CreateBookingPayload {
    */
   require_card_hold?: boolean;
   /**
+   * Card on file (web card-on-file-plan §6.2, §10): `false` is "Don't use the card for this
+   * booking". Omitted, a card on file found for the client always protects the booking.
+   */
+  use_card_on_file?: boolean;
+  /** "Cancel if no card is added within 24 hours" (§4.9): never for a walk-in. */
+  cancel_if_no_card?: boolean;
+  /**
    * The client already existed before this booking (staff picked a known
    * contact, or rebooked one). The server uses it for metrics only (P0.6
    * returning-client time-to-book); it does NOT link the booking to anyone.
@@ -121,6 +128,17 @@ export interface CreateBookingResponse {
   message?: string;
   /** True when the booking was created with a card hold requested (link sent). */
   card_hold_requested?: boolean;
+  /**
+   * Card on file (plan §10): `{ covered, state, brand, last4, found_by, found_by_label, kind,
+   * cancel_if_no_card_at }` for a card-hold booking. Absent from older servers; read it with
+   * `parseStaffCreateCardOnFile`.
+   */
+  card_on_file?: unknown;
+  /**
+   * The client record the booking was made for, also for a client typed in as new, so the
+   * confirmation can offer "Add card now". Absent from older servers.
+   */
+  guest_id?: string;
   /**
    * With a `payment_url`: whether the link could be sent (web QA BKG-A-F9). False when the client has
    * no email or phone, so the screen shows the link to open or copy. Absent from older servers.

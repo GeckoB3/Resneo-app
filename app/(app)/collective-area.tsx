@@ -24,6 +24,11 @@
  *   filter=suggested   on the suggestions waiting
  *   tab=venues         open the host's Venues tab (Manage combined page's pointer, CQ-10.4)
  *   tab=clients        open Clients: shared client lists (web 2026-11-15, the bell's link)
+ *   tab=settings       open Settings: every setting that applies to the collective (card-on-file
+ *                      plan §21, D27), as Booking settings' "See all collective settings" does
+ *
+ * The sections are one control (D28): the current section with a chevron, opening the list, since
+ * six tabs do not fit a phone.
  *
  * "What needs you" above the tabs also carries shared client lists (plan P7): a request to share,
  * with Share now (then the Clients tab, and Bring together when the lists need it) and Not now, and
@@ -49,6 +54,8 @@ import { HistoryPanel, VenuesPanel, type VenueRow } from '@/components/collectiv
 import { ClientsPanel } from '@/components/collective-area/ClientsPanel';
 import { LinkTodosCard } from '@/components/collective-area/LinkTodosCard';
 import { ListingsPanel } from '@/components/collective-area/ListingsPanel';
+import { SectionPicker } from '@/components/collective-area/SectionPicker';
+import { SettingsPanel } from '@/components/collective-area/SettingsPanel';
 import { MemberSuggestPanel } from '@/components/collective-area/MemberSuggestPanel';
 import { ServicesGridBar, ServicesGridList, useServicesGrid } from '@/components/collective-area/ServicesGrid';
 import { SuggestionsReviewCard } from '@/components/collective-area/SuggestionsReviewCard';
@@ -77,6 +84,7 @@ import {
 } from '@/lib/collective-area/model';
 import { clientSharingCopy } from '@/lib/collective-area/client-sharing-copy';
 import { clientSharingTodos } from '@/lib/collective-area/client-sharing-lines';
+import { settingsCopy } from '@/lib/collective-area/settings-copy';
 import {
   useClientSharingStatus,
   useClientSharingSummary,
@@ -93,7 +101,7 @@ import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { CollectiveView } from '@/types/collectives';
 
-type AreaTab = 'services' | 'listings' | 'venues' | 'clients' | 'history';
+type AreaTab = 'services' | 'listings' | 'venues' | 'clients' | 'history' | 'settings';
 /** The host's two views of its services: what is on the page, and every venue's own (2026-10-27). */
 type ServicesView = 'page' | 'venues';
 
@@ -219,7 +227,9 @@ function AreaBody({
   const [tab, setTab] = useState<AreaTab>(() =>
     oneParam(params.tab) === 'clients'
       ? 'clients'
-      : collective.isHost &&
+      : oneParam(params.tab) === 'settings'
+        ? 'settings'
+        : collective.isHost &&
           (oneParam(params.tab) === 'venues' || (collective.noServices && (collective.activeMemberCount ?? 0) < 2))
         ? 'venues'
         : 'services',
@@ -354,6 +364,8 @@ function AreaBody({
     ...(collective.isHost ? [{ value: 'venues' as const, label: areaCopy('ov.tab.venues') }] : []),
     ...(showClientsTab || tab === 'clients' ? [{ value: 'clients' as const, label: clientSharingCopy('cs.tab.label') }] : []),
     { value: 'history', label: areaCopy('ov.tab.history') },
+    // Every setting that applies to the collective (card-on-file plan §21, D27).
+    { value: 'settings', label: settingsCopy('set.tab') },
   ];
 
   const pendingHost = entry?.pendingHost ?? null;
@@ -424,7 +436,7 @@ function AreaBody({
               access (web CollectiveLinkTodos, 2026-10-28). Nothing shows otherwise. */}
           <LinkTodosCard clientSharing={sharingTodos} />
 
-          <Segmented<AreaTab>
+          <SectionPicker<AreaTab>
             options={tabs}
             value={tab}
             onChange={(next) => {
@@ -554,6 +566,16 @@ function AreaBody({
 
           {tab === 'listings' ? (
             <ListingsPanel collectiveId={collective.id} collectiveName={collective.name} />
+          ) : null}
+
+          {tab === 'settings' ? (
+            <SettingsPanel
+              collectiveId={collective.id}
+              onOpenClients={() => {
+                setHistoryVenueId(null);
+                setTab('clients');
+              }}
+            />
           ) : null}
 
           {tab === 'history' ? (

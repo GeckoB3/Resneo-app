@@ -4,6 +4,8 @@ import { Badge, StatusPill } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
+import { CardStatePill } from '@/components/bookings/CardStatePill';
+import { rowCardPill } from '@/lib/booking/card-list';
 import { formatPence } from '@/lib/format';
 import type { ResourceDayBookingRow, ResourceListItem } from '@/lib/queries/useResources';
 import { minTouchTarget, spacing } from '@/theme/index';
@@ -27,9 +29,8 @@ function isCancelled(status: string): boolean {
 /** "Deposit paid" / "Deposit pending" style caption, when the booking carries one. */
 function depositLabel(row: ResourceDayBookingRow): string | null {
   if (!row.deposit_status) return null;
-  // Card-hold states carry no deposit amount; label them by name (§9.1).
-  if (row.deposit_status === 'Card Held') return 'Card held';
-  if (row.deposit_status === 'Charged') return 'No-show fee charged';
+  // A card-hold booking shows its card pill instead (card-on-file plan §6.1).
+  if (rowCardPill(row)) return null;
   const amount =
     row.deposit_amount_pence != null && row.deposit_amount_pence > 0
       ? ` ${formatPence(row.deposit_amount_pence) ?? ''}`
@@ -125,7 +126,9 @@ export function ResourceDaySection({
             <Pressable
               key={booking.id}
               accessibilityRole="button"
-              accessibilityLabel={`${timeRangeLabel(booking)}, ${booking.guest_name}, ${booking.status}`}
+              accessibilityLabel={`${timeRangeLabel(booking)}, ${booking.guest_name}, ${booking.status}${
+                rowCardPill(booking) ? `, ${rowCardPill(booking)?.label}` : ''
+              }`}
               onPress={() => onPressBooking(booking.id)}
               style={({ pressed }) => [
                 styles.bookingRow,
@@ -150,7 +153,10 @@ export function ResourceDaySection({
                     </Text>
                   ) : null}
                 </View>
-                <StatusPill status={booking.status} />
+                <View style={styles.pills}>
+                  <CardStatePill row={booking} />
+                  <StatusPill status={booking.status} />
+                </View>
               </View>
             </Pressable>
           );
@@ -161,6 +167,14 @@ export function ResourceDaySection({
 }
 
 const styles = StyleSheet.create({
+  pills: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: spacing.xs,
+    flexShrink: 0,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

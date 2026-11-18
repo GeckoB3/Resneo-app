@@ -16,6 +16,8 @@ jest.mock('@/lib/queries/useClientSharing', () => ({
   useDismissClientSharing: () => ({ mutate: jest.fn(), isPending: false }),
 }));
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
+// The Card on file section has its own suite (and its desk sheet pulls in the WebView).
+jest.mock('@/components/clients/ClientCardOnFileSection', () => ({ ClientCardOnFileSection: () => null }));
 jest.mock('expo-router', () => ({
   useLocalSearchParams: () => ({ id: 'g1' }),
   useRouter: () => ({ push: jest.fn(), back: jest.fn(), replace: jest.fn() }),

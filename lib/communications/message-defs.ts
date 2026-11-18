@@ -106,19 +106,59 @@ export const MESSAGE_DEFS: MessageDef[] = [
   {
     key: 'card_hold_request',
     label: 'Card details request',
-    description: 'Asks the guest to add card details to secure a booking with a no-show fee',
+    description:
+      'Asks the client to add a card to secure their bookings with a no-show fee. The card is saved for their future bookings with you',
     allowedChannels: ['email', 'sms'],
     defaultEnabled: true,
     defaultChannels: ['email', 'sms'],
   },
   {
     key: 'card_hold_payment_reminder',
-    label: 'Card details reminder',
-    description: 'Reminder for bookings that still need card details added',
+    label: 'Card details reminder (2 hours)',
+    description:
+      'Sent 2 hours after a card request when you ticked "Cancel if no card is added within 24 hours" on the booking',
     allowedChannels: ['email', 'sms'],
     defaultEnabled: true,
     defaultChannels: ['email', 'sms'],
     hiddenHoursBefore: 2,
+  },
+  // Card on file (web card-on-file-plan §7, `CommunicationTemplatesSection`). Only sent for
+  // bookings with a card hold; on by default. The reminder goes both ways, like the card
+  // request; the others are email only.
+  {
+    key: 'card_on_file_reminder',
+    label: 'Card reminder',
+    description:
+      'Reminds the client to add a card: the morning after the request, and 3 days before the appointment. Never more than one card message a day',
+    allowedChannels: ['email', 'sms'],
+    defaultEnabled: true,
+    defaultChannels: ['email', 'sms'],
+  },
+  {
+    key: 'card_on_file_update',
+    label: 'Card update request',
+    description:
+      'Asks the client for a new card 14 days before their saved card expires, when it secures a booking after that date',
+    allowedChannels: ['email'],
+    defaultEnabled: true,
+    defaultChannels: ['email'],
+  },
+  {
+    key: 'card_on_file_stopped',
+    label: 'Card stopped',
+    description: 'Tells the client their saved card was stopped and which bookings now need a card',
+    allowedChannels: ['email'],
+    defaultEnabled: true,
+    defaultChannels: ['email'],
+  },
+  {
+    key: 'card_on_file_inactive',
+    label: 'Unused card notice',
+    description:
+      'Tells the client a month before a saved card they have not used for two years is deleted',
+    allowedChannels: ['email'],
+    defaultEnabled: true,
+    defaultChannels: ['email'],
   },
   {
     key: 'booking_modification',

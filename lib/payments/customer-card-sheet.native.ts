@@ -79,7 +79,9 @@ export async function presentCardSheet(args: {
 
     await initStripe({
       publishableKey,
-      stripeAccountId: ticket.stripe_account_id,
+      // An empty account id is a card on file, saved on the platform account
+      // (card-on-file-plan §4.2): no connected account at all.
+      stripeAccountId: ticket.stripe_account_id || undefined,
       urlScheme: 'resneo',
     });
 

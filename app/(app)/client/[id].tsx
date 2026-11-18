@@ -31,6 +31,7 @@ import { ClientPurchasesSection } from '@/components/clients/ClientPurchasesSect
 import { LoyaltyCardSection } from '@/components/clients/LoyaltyCardSection';
 import { StoredValueSection } from '@/components/clients/StoredValueSection';
 import { ClientSavedCardsSection } from '@/components/pos/SavedCards';
+import { ClientCardOnFileSection } from '@/components/clients/ClientCardOnFileSection';
 import { GuestMessageSheet, type GuestMessageTarget } from '@/components/messaging/GuestMessageSheet';
 import { HiddenContactValue } from '@/components/roles/HiddenContact';
 import { restrictedVisitLabels } from '@/lib/roles/roles';
@@ -705,6 +706,14 @@ export default function ClientDetailScreen() {
 
       {/* The loyalty card (Pass LC): only while the venue has loyalty cards on. */}
       <LoyaltyCardSection guestId={guestId} clientName={name} />
+
+      {/* Card on file (web card-on-file-plan §6.6): always shown; the card that protects this
+          client's bookings, Add card (desk screen, code or message) and, for admins, Remove card. */}
+      <ClientCardOnFileSection
+        guestId={guestId}
+        clientName={name}
+        hasContact={Boolean(guest.email?.trim() || guest.phone?.trim())}
+      />
 
       {/* Saved cards (POS app step 2): only at venues with Checkout and cards on file on; removing
           one at the client's request needs take_payment. */}

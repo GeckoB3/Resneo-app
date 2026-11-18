@@ -11,10 +11,20 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
+const mockPush = jest.fn();
 jest.mock('expo-router', () => ({
   Stack: { Screen: () => null },
-  useRouter: () => ({ push: jest.fn() }),
+  useRouter: () => ({ push: mockPush }),
 }));
+/** Render Sheet children inline (avoids gesture-handler/Modal): the change-for-everyone question. */
+jest.mock('@/components/ui/Sheet', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  return {
+    Sheet: ({ visible, children }: { visible: boolean; children: React.ReactNode }) =>
+      visible ? React.createElement(View, null, children) : null,
+  };
+});
 jest.mock('react-native-safe-area-context', () => {
   const React = require('react');
   const { View } = require('react-native');
@@ -33,8 +43,11 @@ jest.mock('@/providers/ToastProvider', () => ({ useToast: () => mockToast }));
 const mockUpdateFlagsAsync = jest.fn((patch?: unknown) => Promise.resolve({ resolved: patch, raw: patch }));
 const mockUpdateVenueAsync = jest.fn((_patch?: unknown) => Promise.resolve({}));
 let mockIsHost = false;
+const mockRefetchFlags = jest.fn();
+const mockRefetchVenue = jest.fn();
 jest.mock('@/lib/queries/useVenueSettings', () => ({
   useFeatureFlags: () => ({
+    refetch: mockRefetchFlags,
     data: {
       calendars: [
         { id: 'aaaaaaaa-0000-4000-8000-000000000001', name: 'Hana', venue_name: 'Host Venue' },
@@ -74,7 +87,7 @@ jest.mock('@/providers/VenueProvider', () => ({
       },
     },
     isLoading: false,
-    refetch: jest.fn(),
+    refetch: mockRefetchVenue,
   }),
 }));
 
@@ -84,6 +97,10 @@ beforeEach(() => {
   mockUpdateFlagsAsync.mockClear();
   mockUpdateVenueAsync.mockClear();
   mockToast.success.mockClear();
+  mockToast.error.mockClear();
+  mockPush.mockClear();
+  mockRefetchFlags.mockClear();
+  mockRefetchVenue.mockClear();
 });
 
 describe('Booking settings for a member of a live collective', () => {
@@ -145,8 +162,69 @@ describe('Booking settings for the host of a live collective', () => {
     await act(async () => {
       fireEvent(staffFirst, 'valueChange', false);
     });
+    // Asked first (card-on-file plan §21.3 item 3); nothing is saved until the host says yes.
+    expect(screen.getByText('This changes it for every business in Northside.')).toBeTruthy();
+    expect(mockUpdateFlagsAsync).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByText('Change for everyone'));
     expect(mockUpdateFlagsAsync).toHaveBeenCalledTimes(1);
-    expect(mockUpdateFlagsAsync.mock.calls[0][0]).toEqual(expect.objectContaining({ staff_first_booking_flow: false }));
+    // The save names the collective settings' version it read (§21.3 item 6).
+    expect(mockUpdateFlagsAsync.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ staff_first_booking_flow: false, booking_settings_version: 3 }),
+    );
     expect(await screen.findByText('Saved for Northside.')).toBeTruthy();
+  });
+
+  it('saves nothing when the host cancels the question', async () => {
+    await render(<BookingSettingsScreen />);
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Staff-first booking'), 'valueChange', false);
+    });
+    await fireEvent.press(screen.getByText('Cancel'));
+    expect(screen.queryByText('This changes it for every business in Northside.')).toBeNull();
+    expect(mockUpdateFlagsAsync).not.toHaveBeenCalled();
+  });
+
+  it('says someone else changed it, and reads the settings again, on a stale save', async () => {
+    const { ApiError } = jest.requireActual('@/lib/api/client');
+    mockUpdateFlagsAsync.mockImplementationOnce(() =>
+      Promise.reject(
+        new ApiError('Host Venue changed this a moment ago. Here is the current setting.', 412, {
+          error: 'Host Venue changed this a moment ago. Here is the current setting.',
+          code: 'COLLECTIVE_SETTINGS_CHANGED',
+          booking_settings_version: 4,
+        }),
+      ),
+    );
+    await render(<BookingSettingsScreen />);
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Staff-first booking'), 'valueChange', false);
+    });
+    await fireEvent.press(screen.getByText('Change for everyone'));
+    expect(await screen.findByText('Host Venue changed this a moment ago. Here is the current setting.')).toBeTruthy();
+    expect(mockRefetchFlags).toHaveBeenCalled();
+    expect(mockRefetchVenue).toHaveBeenCalled();
+    // The switch shows the collective's value again.
+    expect(screen.getByLabelText('Staff-first booking').props.value).toBe(true);
+  });
+
+  it('asks before changing sign-in for everyone, and sends the version', async () => {
+    await render(<BookingSettingsScreen />);
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Require sign-in to book'), 'valueChange', false);
+    });
+    await fireEvent.press(screen.getByText('Change for everyone'));
+    expect(mockUpdateVenueAsync).toHaveBeenCalledWith({
+      require_account_login_for_bookings: false,
+      booking_settings_version: 3,
+    });
+  });
+
+  it('links each collective row to every collective setting in one place', async () => {
+    await render(<BookingSettingsScreen />);
+    const links = screen.getAllByTestId('see-all-collective-settings');
+    // Sign-in and the four optional features the collective decides.
+    expect(links).toHaveLength(5);
+    await fireEvent.press(links[0]);
+    expect(mockPush).toHaveBeenCalledWith('/collective-area?tab=settings');
   });
 });

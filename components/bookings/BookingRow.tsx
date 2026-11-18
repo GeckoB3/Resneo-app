@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { CardStatePill } from '@/components/bookings/CardStatePill';
 import { ComplianceFlagDot } from '@/components/compliance/ComplianceFlagBadge';
 import { StatusPill } from '@/components/ui/Badge';
 import { Dot } from '@/components/ui/Dot';
@@ -18,6 +19,7 @@ import {
   showDepositFailedPill,
   showDepositPendingPill,
 } from '@/lib/booking/booking-staff-indicators';
+import { rowCardPill } from '@/lib/booking/card-list';
 import { bookingStatusDisplayLabel } from '@/lib/booking/infer-booking-row-model';
 import type { ComplianceBookingFlag } from '@/lib/queries/useCompliance';
 import { fonts, minTouchTarget, radius, spacing } from '@/theme/index';
@@ -91,7 +93,11 @@ function BookingRowBase({
   ]
     .filter(Boolean)
     .join(' · ');
-  const showDeposit = booking.deposit_status && !HIDDEN_DEPOSIT.has(booking.deposit_status);
+  // A card-hold booking says its card state in words (card-on-file plan §6.1) instead of the raw
+  // deposit status ("Pending", "Card Held", "Waived" meant nothing about the card).
+  const cardPill = rowCardPill(booking);
+  const showDeposit =
+    !cardPill && booking.deposit_status && !HIDDEN_DEPOSIT.has(booking.deposit_status);
   // Web parity: show the amount alongside the status on the pill when known
   // ("£20.00 · Paid"), falling back to the bare status when there's no figure.
   const depositAmount = formatPence(booking.deposit_amount_pence);
@@ -106,16 +112,16 @@ function BookingRowBase({
   const stripeColor = bookingStatusVisualForKey(bookingDisplayVisualKey(booking)).listStripeColor;
   // Supplement "Confirmed" pill when attendance is confirmed but lifecycle status isn't (web parity).
   const showConfirmedSupplement = showAttendanceConfirmedSupplementPill(booking);
-  const showDepositPending = showDepositPendingPill(booking);
+  const showDepositPending = !cardPill && showDepositPendingPill(booking);
   // A failed deposit was invisible in the app: a booking whose payment bounced
   // looked identical to one with no deposit at all. Red, and louder than
   // "Deposit due" — the money is not merely outstanding, an attempt failed.
   const showDepositFailed =
-    showDepositFailedPill(booking) && depositPillAppliesToStatus(booking.status);
+    !cardPill && showDepositFailedPill(booking) && depositPillAppliesToStatus(booking.status);
 
   return (
     <PressableScale
-      accessibilityLabel={`${formatTime(booking.booking_time)}, ${booking.guest_name}, ${bookingStatusDisplayLabel(booking.status, booking.booking_model === 'table_reservation')}${arrived ? ', arrived' : attendanceConfirmed ? ', confirmed' : ''}`}
+      accessibilityLabel={`${formatTime(booking.booking_time)}, ${booking.guest_name}, ${bookingStatusDisplayLabel(booking.status, booking.booking_model === 'table_reservation')}${arrived ? ', arrived' : attendanceConfirmed ? ', confirmed' : ''}${cardPill ? `, ${cardPill.label}` : ''}`}
       onPress={() => {
         if (selectionMode) {
           hapticSelect();
@@ -202,7 +208,9 @@ function BookingRowBase({
             isTableReservation={booking.booking_model === 'table_reservation'}
           />
         </View>
-        {showDepositFailed ? (
+        {cardPill ? (
+          <CardStatePill row={booking} />
+        ) : showDepositFailed ? (
           <View
             style={[styles.depositPill, { backgroundColor: colors.dangerSurface }]}
             accessibilityLabel="Deposit failed">

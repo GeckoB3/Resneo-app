@@ -97,6 +97,11 @@ it("uses the venue's word for its clients", async () => {
   expect(screen.getByText(/A card is only saved when the client agrees/)).toBeTruthy();
 });
 
+it('says till cards also protect bookings with the business (card on file plan §6.9)', async () => {
+  await show();
+  expect(await screen.findByText('Cards saved at the till also protect bookings with Studio.')).toBeTruthy();
+});
+
 it('turns cards on file on at the loaded version', async () => {
   await show();
   await screen.findByText('Save cards when clients agree');

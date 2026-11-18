@@ -72,6 +72,11 @@ export type CommunicationMessageKey =
   | 'deposit_payment_reminder'
   | 'card_hold_request'
   | 'card_hold_payment_reminder'
+  // Card on file (web card-on-file-plan §7): stored in the same policy map, previewed by the same route.
+  | 'card_on_file_reminder'
+  | 'card_on_file_update'
+  | 'card_on_file_stopped'
+  | 'card_on_file_inactive'
   | 'booking_modification'
   | 'cancellation_confirmation'
   | 'auto_cancel_notification'

@@ -201,7 +201,12 @@ export function formatBookingTimelineEvent(event: BookingTimelineEventRow): {
       const charged = poundsFromPence(payload?.charged_pence);
       return {
         title: 'No-show fee charged',
-        detail: charged ? `${charged} charged to the saved card` : undefined,
+        // paid_by_link: the client paid on the no-show fee payment link after a decline.
+        detail: charged
+          ? payload?.paid_by_link === true
+            ? `${charged} paid by the client through a payment link`
+            : `${charged} charged to the saved card`
+          : undefined,
       };
     }
 

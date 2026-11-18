@@ -1,6 +1,6 @@
 import { Stack, useRouter } from 'expo-router';
 import { COLLECTIVE_FLAG_ROWS, collectiveSettingsCopy, collectiveSettingsParams } from '@/lib/linked/collective-settings-copy';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Linking,
   Pressable,
@@ -15,13 +15,16 @@ import { BookingSettingsPayments } from '@/components/payments/InPersonPayments'
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { IconButton } from '@/components/ui/IconButton';
 import { Screen } from '@/components/ui/Screen';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { COLLECTIVE_SETTINGS_ROUTE, settingsCopy } from '@/lib/collective-area/settings-copy';
 import { hapticSuccess, hapticTap, hapticWarning } from '@/lib/haptics';
+import { isStaleCollectiveSave } from '@/lib/queries/useCollectiveSettings';
 import {
   useFeatureFlags,
   useUpdateFeatureFlags,
@@ -229,6 +232,56 @@ function waitlistModeFromRaw(raw: VenueFeatureFlagsRaw): WaitlistMode {
 // Sub-components
 // ---------------------------------------------------------------------------
 
+/**
+ * A host changing a collective setting from its own Booking settings is asked first (web
+ * card-on-file plan §21.3 item 3): "This changes it for every business in {collective}." The
+ * returned `ask` runs the change straight away when no question is needed.
+ */
+function useCollectiveChangeQuestion(collective: { name: string; is_host: boolean } | null) {
+  const [pending, setPending] = useState<(() => void) | null>(null);
+  const ask = (run: () => void, collectiveSetting: boolean) => {
+    if (collective?.is_host && collectiveSetting) {
+      setPending(() => run);
+      return;
+    }
+    run();
+  };
+  const sheet = (
+    <ConfirmSheet
+      visible={pending !== null}
+      title={settingsCopy('set.bs.confirmTitle')}
+      message={settingsCopy('set.bs.confirmBody', { collective: collective?.name ?? '' })}
+      confirmLabel={settingsCopy('set.bs.confirmYes')}
+      cancelLabel={settingsCopy('set.bs.confirmNo')}
+      destructive={false}
+      onClose={() => setPending(null)}
+      onConfirm={() => {
+        const run = pending;
+        setPending(null);
+        run?.();
+      }}
+    />
+  );
+  return { ask, sheet };
+}
+
+/** Under each collective row: where every collective setting is (§21.3 item 3). */
+function SeeAllCollectiveSettings() {
+  const router = useRouter();
+  return (
+    <Pressable
+      accessibilityRole="link"
+      onPress={() => router.push(COLLECTIVE_SETTINGS_ROUTE as Parameters<typeof router.push>[0])}
+      hitSlop={8}
+      style={styles.seeAll}
+      testID="see-all-collective-settings">
+      <Text variant="caption" tone="brand">
+        {settingsCopy('set.bs.seeAll')}
+      </Text>
+    </Pressable>
+  );
+}
+
 // SectionDivider was defined but is not currently used in the rendered tree.
 // Keeping it prefixed to satisfy the no-unused-vars rule without deleting the component.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -307,6 +360,10 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
   const collective = featureFlags.data?.collective ?? null;
   const collectiveParams = collective ? collectiveSettingsParams(collective) : null;
   const memberReadOnly = Boolean(collective && !collective.is_host);
+  const { refetch: refetchVenue } = useVenueContext();
+  const question = useCollectiveChangeQuestion(collective);
+  /** The calendar order asks once per visit: each up or down is its own save. */
+  const orderConfirmed = useRef(false);
   const [localResolved, setLocalResolved] =
     useState<ResolvedAppointmentsFeatureFlags>(resolvedFlags);
   const [localRaw, setLocalRaw] = useState<VenueFeatureFlagsRaw>(rawFlags);
@@ -381,7 +438,12 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
     setLocalResolved(nextResolved);
     setLocalRaw(patch);
     try {
-      const res = await updateFlags.mutateAsync(patch);
+      // A host's save names the collective settings' version it read (§21.3 item 6).
+      const res = await updateFlags.mutateAsync(
+        collective?.is_host && typeof collective.version === 'number'
+          ? ({ ...patch, booking_settings_version: collective.version } as VenueFeatureFlagsRaw)
+          : patch,
+      );
       if (res.resolved) {
         setLocalResolved(res.resolved as ResolvedAppointmentsFeatureFlags);
       }
@@ -405,7 +467,12 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
       // Revert optimistic update on error
       setLocalResolved(resolvedFlags);
       setLocalRaw(rawFlags);
-      if (e instanceof ApiError && e.message.includes('cannot be switched off')) {
+      if (isStaleCollectiveSave(e) && e instanceof ApiError) {
+        // Someone else saved first: say so and read the current settings again.
+        setError(e.message);
+        void featureFlags.refetch();
+        refetchVenue();
+      } else if (e instanceof ApiError && e.message.includes('cannot be switched off')) {
         setError(FORCED_ON_MESSAGE);
       } else {
         setError(e instanceof Error ? e.message : 'Could not save feature flag.');
@@ -417,6 +484,10 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
   function toggleFlag(key: AppointmentsFeatureFlagKey) {
     if (memberReadOnly && COLLECTIVE_FLAG_ROWS.has(key)) return;
     hapticTap();
+    question.ask(() => applyToggle(key), Boolean(collectiveParams && COLLECTIVE_FLAG_ROWS.has(key)));
+  }
+
+  function applyToggle(key: AppointmentsFeatureFlagKey) {
     const forCollective = Boolean(collectiveParams && COLLECTIVE_FLAG_ROWS.has(key));
     const nextEnabled = !localResolved[key];
     const patch: VenueFeatureFlagsRaw = { ...localRaw };
@@ -472,8 +543,10 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
   function saveAnyAvailableMode(mode: 'priority' | 'random') {
     if (memberReadOnly) return;
     hapticTap();
-    setAnyAvailableMode(mode);
-    void persistAnyAvailable(mode, order);
+    question.ask(() => {
+      setAnyAvailableMode(mode);
+      void persistAnyAvailable(mode, order);
+    }, Boolean(collectiveParams));
   }
 
   /** Swap a calendar with its neighbour (-1 up / +1 down) and persist. */
@@ -481,6 +554,13 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
     const target = index + direction;
     if (target < 0 || target >= orderedCalendars.length || memberReadOnly) return;
     hapticTap();
+    if (collectiveParams && !orderConfirmed.current) {
+      question.ask(() => {
+        orderConfirmed.current = true;
+        moveCalendar(index, direction);
+      }, true);
+      return;
+    }
     // orderedCalendars is the visible (filtered) order; rebuild `order` from it
     // so dropped ids stay dropped after the move.
     const prev = order;
@@ -498,6 +578,10 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
   function saveWaitlistMode(mode: WaitlistMode) {
     if (memberReadOnly) return;
     hapticTap();
+    question.ask(() => applyWaitlistMode(mode), Boolean(collectiveParams));
+  }
+
+  function applyWaitlistMode(mode: WaitlistMode) {
     setWaitlistMode(mode);
     const patch: VenueFeatureFlagsRaw = {
       ...localRaw,
@@ -564,6 +648,7 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
                         : `For every venue in ${collectiveParams.collective}`}
                     </Text>
                   ) : null}
+                  {byCollective && collectiveParams ? <SeeAllCollectiveSettings /> : null}
                 </View>
                 <Switch
                   value={enabled}
@@ -724,6 +809,7 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
           );
         })}
       </View>
+      {question.sheet}
     </Card>
   );
 }
@@ -808,6 +894,7 @@ export default function BookingSettingsScreen() {
   const collective = featureFlagsQuery.data?.collective ?? null;
   const collectiveParams = collective ? collectiveSettingsParams(collective) : null;
   const signInReadOnly = Boolean(collective && !collective.is_host);
+  const signInQuestion = useCollectiveChangeQuestion(collective);
 
   // --- Booking models state (lazy initialiser, no render-phase side effects) ---
   const [models, setModels] = useState<BookingModel[]>(() => {
@@ -928,19 +1015,34 @@ export default function BookingSettingsScreen() {
   // Require login autosave (immediate, matching web behaviour)
   // ---------------------------------------------------------------------------
 
-  async function handleRequireLoginChange(value: boolean) {
+  function handleRequireLoginChange(value: boolean) {
     if (signInReadOnly) return;
     hapticTap();
+    signInQuestion.ask(() => void saveRequireLogin(value), Boolean(collective));
+  }
+
+  async function saveRequireLogin(value: boolean) {
     setRequireLogin(value);
     setLoginSaving(true);
     try {
-      await update.mutateAsync({ require_account_login_for_bookings: value });
+      await update.mutateAsync({
+        require_account_login_for_bookings: value,
+        // A host's save names the collective settings' version it read (§21.3 item 6).
+        ...(collective?.is_host && typeof collective.version === 'number'
+          ? { booking_settings_version: collective.version }
+          : {}),
+      });
       hapticSuccess();
       if (collectiveParams) toast.success(collectiveSettingsCopy.savedForCollective(collectiveParams));
     } catch (e) {
       hapticWarning();
       // Revert on error
       setRequireLogin(!value);
+      if (isStaleCollectiveSave(e)) {
+        // Someone else saved first: read the current setting again.
+        void featureFlagsQuery.refetch();
+        refetch();
+      }
       toast.error(
         e instanceof ApiError ? e.message : 'Could not update guest sign-in requirement.',
       );
@@ -1173,10 +1275,12 @@ export default function BookingSettingsScreen() {
                 : 'Guests must verify their email before completing an online booking.'
             }
             value={requireLogin}
-            onValueChange={(v) => void handleRequireLoginChange(v)}
+            onValueChange={(v) => handleRequireLoginChange(v)}
             disabled={loginSaving || signInReadOnly}
             isLast
           />
+          {collectiveParams ? <SeeAllCollectiveSettings /> : null}
+          {signInQuestion.sheet}
         </Card>
 
         {/* Payments at your venue (the web's group of the same name, Appointments plans only):
@@ -1218,6 +1322,11 @@ export default function BookingSettingsScreen() {
 // ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
+  seeAll: {
+    minHeight: 44,
+    justifyContent: 'center',
+    alignSelf: 'flex-start',
+  },
   content: {
     padding: spacing.base,
     gap: spacing.base,

@@ -2,12 +2,14 @@ import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { HiddenContactValue } from '@/components/roles/HiddenContact';
+import { CardStatePill } from '@/components/bookings/CardStatePill';
 import { StatusPill } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { ACTION_COLORS } from '@/lib/booking/booking-action-colors';
+import { rowCardPill } from '@/lib/booking/card-list';
 import { formatPence } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { formatPhoneForDisplay } from '@/lib/phone/e164';
@@ -59,9 +61,8 @@ function ticketLineSummary(row: EventAttendee): string | null {
 
 /** "£5.00 deposit (Paid)" style line, or null when there's no deposit. */
 function depositSummary(row: EventAttendee): string | null {
-  // Card-hold states carry no deposit amount; label them by name (§9.1).
-  if (row.deposit_status === 'Card Held') return 'Card held';
-  if (row.deposit_status === 'Charged') return 'No-show fee charged';
+  // A card-hold booking shows its card pill instead (card-on-file plan §6.1).
+  if (rowCardPill(row)) return null;
   if (row.deposit_amount_pence == null || row.deposit_amount_pence <= 0) {
     return row.deposit_status ? `Deposit · ${row.deposit_status}` : null;
   }
@@ -249,6 +250,7 @@ export function EventAttendees({
                 <Text variant="bodyMedium" numberOfLines={1} style={styles.rowName}>
                   {row.guest_name || 'Guest'}
                 </Text>
+                <CardStatePill row={row} />
                 <StatusPill status={row.status} />
               </View>
               <Text variant="caption" tone="secondary">

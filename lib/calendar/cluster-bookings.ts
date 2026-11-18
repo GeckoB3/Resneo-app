@@ -57,6 +57,8 @@ export interface CalendarBookingCluster {
   serviceLabel: string;
   /** The row is settled. */
   paid: boolean;
+  /** Card on file (plan §6.1): the booking still waits for a card; the bar shows the pill. */
+  waitingForCard: boolean;
 }
 
 /** A group id that actually groups: non-empty once trimmed. */
@@ -90,5 +92,6 @@ export function clusterCalendarBookings(
     visit: positions.get(booking.id) ?? null,
     serviceLabel: booking.serviceName?.trim() ?? '',
     paid: booking.payment_state === 'paid',
+    waitingForCard: booking.card_state === 'waiting',
   }));
 }

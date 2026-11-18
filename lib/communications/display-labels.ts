@@ -61,6 +61,13 @@ export function formatCommunicationLogLabel(messageType: string): string {
     card_hold_payment_reminder_email: 'Card reminder email',
     card_hold_payment_reminder_sms: 'Card reminder SMS',
     card_hold_charged_email: 'No-show fee receipt',
+    // Card on file (web card-on-file-plan §7), keyed by the full log type like the card-hold ones.
+    card_on_file_reminder_email: 'Card reminder email',
+    card_on_file_reminder_sms: 'Card reminder SMS',
+    card_on_file_update_email: 'Card update request',
+    card_on_file_stopped_email: 'Card stopped notice',
+    card_on_file_inactive_email: 'Unused card notice',
+    card_not_you_email: '"Not you" alert to the business',
   };
   if (titles[normalized]) return titles[normalized];
   if (titles[messageType]) return titles[messageType];

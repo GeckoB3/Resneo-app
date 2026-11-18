@@ -4,6 +4,7 @@ import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
+import type { ApiCardState } from '@/lib/booking/card-hold';
 import type { BookingsListResponse } from '@/types/booking-list';
 
 type UseBookingsRangeOptions = {
@@ -12,6 +13,12 @@ type UseBookingsRangeOptions = {
   /** Inclusive range end (YYYY-MM-DD). */
   to: string;
   enabled?: boolean;
+  /**
+   * Card on file (plan §6.4): only bookings in this card state, filtered by the server
+   * (`?card_state=`), so a long "from today onwards" range stays small. An older server ignores it;
+   * the screen filters again on the rows.
+   */
+  cardState?: ApiCardState | null;
 };
 
 /**
@@ -27,11 +34,14 @@ type UseBookingsRangeOptions = {
 export function useBookingsRange(options: UseBookingsRangeOptions) {
   const accessToken = useAccessToken();
   const { from, to } = options;
+  const cardState = options.cardState ?? null;
   const queryEnabled =
     (options.enabled ?? true) && isBackendConfigured() && accessToken !== null;
 
   return useQuery({
-    queryKey: queryKeys.bookings.range(accessToken, from, to),
+    queryKey: cardState
+      ? [...queryKeys.bookings.range(accessToken, from, to), cardState]
+      : queryKeys.bookings.range(accessToken, from, to),
     enabled: queryEnabled,
     // Keep the prior range's data on screen while the next loads, so stepping
     // week→week (or to a cached-then-stale range) dims instead of flashing a full
@@ -45,6 +55,7 @@ export function useBookingsRange(options: UseBookingsRangeOptions) {
         from,
         to,
       });
+      if (cardState) params.set('card_state', cardState);
       return apiFetch<BookingsListResponse>(`/api/venue/bookings/list?${params}`, {
         accessToken,
       });

@@ -261,6 +261,10 @@ export interface CreateMultiServicePayload {
    */
   require_deposit_by_venue?: Record<string, boolean>;
   require_card_hold_by_venue?: Record<string, boolean>;
+  /** Card on file (web card-on-file-plan §10): false is "Don't use the card for this booking". */
+  use_card_on_file?: boolean;
+  /** "Cancel if no card is added within 24 hours" (§4.9). */
+  cancel_if_no_card?: boolean;
   /** Staff "Override availability" (web #187): the chain is booked exactly as laid out. */
   override_availability?: boolean;
   client_address_line1?: string;
@@ -295,6 +299,8 @@ export interface CreateGroupPayload {
   /** As `CreateMultiServicePayload`: one decision covers the whole group. */
   require_deposit?: boolean;
   require_card_hold?: boolean;
+  use_card_on_file?: boolean;
+  cancel_if_no_card?: boolean;
   client_address_line1?: string;
   client_address_line2?: string;
   client_address_city?: string;
@@ -311,6 +317,10 @@ export interface StaffChargeDecision {
   requireDepositByVenue?: Record<string, boolean>;
   /** A visit across businesses: each business's card-hold choice, by venue id (7.1). */
   requireCardHoldByVenue?: Record<string, boolean>;
+  /** Card on file: false is "Don't use the card for this booking" (plan §6.2). */
+  useCardOnFile?: boolean;
+  /** "Cancel if no card is added within 24 hours" (plan §4.9); never sent for a walk-in. */
+  cancelIfNoCard?: boolean;
 }
 
 /**
@@ -329,7 +339,15 @@ export interface StaffChargeDecision {
 function staffChargePayloadFields(
   source: BookingSource,
   charges?: StaffChargeDecision,
-): Pick<CreateMultiServicePayload, 'require_deposit' | 'require_card_hold' | 'require_deposit_by_venue' | 'require_card_hold_by_venue'> {
+): Pick<
+  CreateMultiServicePayload,
+  | 'require_deposit'
+  | 'require_card_hold'
+  | 'require_deposit_by_venue'
+  | 'require_card_hold_by_venue'
+  | 'use_card_on_file'
+  | 'cancel_if_no_card'
+> {
   if (!charges) return {};
   const byVenueDeposit = charges.requireDepositByVenue;
   const byVenueHold = charges.requireCardHoldByVenue;
@@ -340,6 +358,8 @@ function staffChargePayloadFields(
       ? { require_deposit_by_venue: byVenueDeposit }
       : {}),
     ...(byVenueHold && Object.keys(byVenueHold).length > 0 ? { require_card_hold_by_venue: byVenueHold } : {}),
+    ...(charges.useCardOnFile === false ? { use_card_on_file: false } : {}),
+    ...(charges.cancelIfNoCard && source !== 'walk-in' ? { cancel_if_no_card: true } : {}),
   };
 }
 

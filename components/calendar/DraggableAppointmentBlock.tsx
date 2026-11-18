@@ -219,6 +219,8 @@ type DraggableAppointmentBlockProps = {
   complianceFlag?: ComplianceBookingFlag | null;
   /** The visit is settled — renders the "paid" glyph on the bar. */
   paid?: boolean;
+  /** Card on file: the booking waits for a card (the bar's pill or glyph). */
+  waitingForCard?: boolean;
   /** Called on drag release with the new snapped "HH:mm". Parent commits. */
   onDragReschedule?: (bookingId: string, newTime: string) => void;
   /** Called on resize release with the new snapped duration (minutes). */
@@ -354,6 +356,7 @@ export function DraggableAppointmentBlock({
   actionPending = false,
   complianceFlag,
   paid = false,
+  waitingForCard = false,
   onDragReschedule,
   onDragResize,
   onDragConflictReject,
@@ -909,6 +912,7 @@ export function DraggableAppointmentBlock({
           actionPending={actionPending}
           complianceFlag={complianceFlag}
           paid={paid}
+          waitingForCard={waitingForCard}
         />
 
         {/* Resize affordance — a grip on the bottom edge (hold it to resize).

@@ -32,6 +32,16 @@ export function useCustomerBookings() {
   });
 }
 
+/** No-show protection on a booking, for the customer (web `GuestCardHoldSummary`). */
+export interface CustomerBookingCardHold {
+  fee_pence: number;
+  state: 'awaiting_card' | 'held' | 'released' | 'charged' | 'refunded';
+  charged_pence: number | null;
+  charged_at: string | null;
+  /** The card-request link, while the booking waits for a card. */
+  payment_link?: string;
+}
+
 /** Where it happens, already assembled in reading order by the server. */
 export interface BookingLocation {
   type: 'venue' | 'client_address' | 'online';
@@ -88,6 +98,10 @@ export interface CustomerBookingDetail {
    * link to it still opens the visit. Absent on older servers.
    */
   in_visit?: boolean;
+  /** No-show protection; null when the booking has none. Absent on older servers. */
+  card_hold?: CustomerBookingCardHold | null;
+  /** The manage page link; null for a signed-in read (the v1 route leaves it out). */
+  manage_booking_url?: string | null;
   location: BookingLocation;
   notes: { label: string; value: string }[];
   compliance_forms: { name: string; url: string }[];

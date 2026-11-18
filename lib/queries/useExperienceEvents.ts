@@ -1,3 +1,4 @@
+import { parseApiCardState, type ApiCardState } from '@/lib/booking/card-hold';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
@@ -112,6 +113,8 @@ export interface EventAttendee {
   guest_phone: string | null;
   /** Per-ticket-type breakdown — `qty` mirrors the route's `quantity`. */
   ticket_lines: EventAttendeeTicketLine[];
+  /** Card on file (web card-on-file-plan §6.1): the booking's card state; absent from older servers. */
+  card_state?: ApiCardState | null;
 }
 
 /** Raw row shape from the attendees route (before the qty rename). */
@@ -128,6 +131,7 @@ interface RawEventAttendee {
   guest_email?: string | null;
   guest_phone?: string | null;
   ticket_lines?: Array<{ label?: string | null; quantity?: number | null }> | null;
+  card_state?: unknown;
 }
 
 interface EventAttendeesResponse {
@@ -148,6 +152,7 @@ function toEventAttendee(raw: RawEventAttendee): EventAttendee {
     guest_name: raw.guest_name ?? null,
     guest_email: raw.guest_email ?? null,
     guest_phone: raw.guest_phone ?? null,
+    ...(raw.card_state !== undefined ? { card_state: parseApiCardState(raw.card_state) } : {}),
     ticket_lines: Array.isArray(raw.ticket_lines)
       ? raw.ticket_lines.map((line) => ({
           label: line.label ?? '',

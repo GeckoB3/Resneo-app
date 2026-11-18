@@ -3,7 +3,6 @@ import { useState } from 'react';
 
 import { Button } from '@/components/ui/Button';
 import { Text } from '@/components/ui/Text';
-import { STAFF_CARD_HOLD_LINK_SENT_LINE } from '@/lib/booking/card-hold';
 
 /**
  * What the staff confirmation says about the card or deposit link (web QA 2026-11-08 BKG-A-F9,
@@ -11,6 +10,10 @@ import { STAFF_CARD_HOLD_LINK_SENT_LINE } from '@/lib/booking/card-hold';
  * auto-cancelled" after 24 hours for every booking, walk-ins too. The web now answers
  * `payment_link_sent: false` when the client has no email or phone, and a walk-in is booked straight
  * away and never cancelled for a missing card, so the lines follow both.
+ *
+ * Card on file (web card-on-file-plan §4.9, D26): a staff booking waiting for a card stays booked.
+ * Only a booking with "Cancel if no card is added within 24 hours" ticked is cancelled, so the
+ * cancellation line is said for that tick alone.
  */
 export function staffPaymentLinkLines(input: {
   cardHold: boolean;
@@ -18,6 +21,8 @@ export function staffPaymentLinkLines(input: {
   /** From the create response; absent from older servers, which read as sent. */
   linkSent: boolean | undefined;
   walkIn: boolean;
+  /** The card request's "Cancel if no card is added within 24 hours" was ticked. */
+  cancelIfNoCard?: boolean;
 }): { sent: string; cancel: string | null; showLink: boolean } {
   const notSent = input.linkSent === false && Boolean(input.paymentUrl);
   const sent = notSent
@@ -25,12 +30,14 @@ export function staffPaymentLinkLines(input: {
       ? 'The client has no email or phone number, so the card request was not sent. Open the link on this device, or copy it to send. No payment is taken.'
       : 'The client has no email or phone number, so the deposit link was not sent. Open the link on this device, or copy it to send.'
     : input.cardHold
-      ? `${STAFF_CARD_HOLD_LINK_SENT_LINE} No payment is taken.`
+      ? 'A card request was sent to the client. No payment is taken.'
       : 'A deposit payment link has been sent to the guest.';
   const cancel =
     input.paymentUrl && !input.walkIn
       ? input.cardHold
-        ? 'If card details are not added within 24 hours, the booking will be auto-cancelled.'
+        ? input.cancelIfNoCard
+          ? 'If no card is added within 24 hours, the booking is cancelled.'
+          : null
         : 'If deposit is not paid within 24 hours, the booking will be auto-cancelled.'
       : null;
   return { sent, cancel, showLink: notSent };
@@ -42,6 +49,7 @@ export function StaffPaymentLinkLines(props: {
   paymentUrl: string | null | undefined;
   linkSent: boolean | undefined;
   walkIn: boolean;
+  cancelIfNoCard?: boolean;
 }) {
   const lines = staffPaymentLinkLines(props);
   const [copied, setCopied] = useState(false);

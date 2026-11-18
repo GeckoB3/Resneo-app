@@ -89,17 +89,19 @@ describe('ConfirmStep confirmation heading (web QA B-9)', () => {
     expect(screen.queryByText('Booking confirmed')).toBeNull();
   });
 
-  it('waits for card details when the link asks for a card, naming the phone when there is no email', async () => {
+  it('an older server: waits for a card, naming the phone when there is no email', async () => {
     await createWith(
       { payment_url: 'https://pay.example/abc', card_hold_requested: true },
       { email: '', phone: '07700 900123' },
     );
-    expect(screen.getByText('Waiting for card details')).toBeTruthy();
+    expect(screen.getAllByText('Waiting for card').length).toBeGreaterThan(0);
     expect(
       screen.getByText(
-        'The booking stays pending until the card is added. Then a confirmation will be sent to 07700 900123.',
+        'The booking is waiting for the client to add a card. Then a confirmation will be sent to 07700 900123.',
       ),
     ).toBeTruthy();
+    // No 24-hour cancellation is claimed: nothing was ticked.
+    expect(screen.queryByText(/cancelled/)).toBeNull();
   });
 
   it('says confirmed when nothing is owed', async () => {

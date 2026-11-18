@@ -10,6 +10,7 @@ import { BookingPaymentHistory } from '@/components/bookings/BookingPaymentHisto
 import { BookingPriceSummary } from '@/components/bookings/BookingPriceSummary';
 import { ComplianceCard } from '@/components/bookings/ComplianceCard';
 import { DepositSheet, type DepositTarget } from '@/components/bookings/DepositSheet';
+import { BookingAddCardSheet } from '@/components/bookings/BookingAddCardSheet';
 import {
   TakePaymentSheet,
   type TakePaymentTarget,
@@ -623,6 +624,8 @@ export function BookingDetailContent({
   const [resourceMoveTarget, setResourceMoveTarget] = useState<ResourceMoveTarget | null>(null);
   const [modifyTarget, setModifyTarget] = useState<ModifyBookingTarget | null>(null);
   const [depositTarget, setDepositTarget] = useState<DepositTarget | null>(null);
+  // "Add card now" (card-on-file §6.7): the desk screen, opened after the card sheet closes.
+  const [addCardOpen, setAddCardOpen] = useState(false);
   const [takePaymentTarget, setTakePaymentTarget] = useState<TakePaymentTarget | null>(null);
   const [copiedRef, setCopiedRef] = useState(false);
   // Two-step confirm for destructive/irreversible actions. `Alert.alert` is a
@@ -986,14 +989,24 @@ export function BookingDetailContent({
   // Card-hold state (§9.1): when non-null the legacy deposit UI is replaced by
   // the card-aware pill/lines/actions everywhere in this component.
   const cardHoldState = resolveCardHoldUiState(
-    { status: booking.status, deposit_status: booking.deposit_status ?? '' },
+    {
+      status: booking.status,
+      deposit_status: booking.deposit_status ?? '',
+      booking_date: booking.booking_date,
+      // A list row's card state while the full payload (with `card_hold`) loads.
+      card_state: (booking as { card_state?: string | null }).card_state ?? null,
+    },
     booking.card_hold ?? null,
     { isAdmin },
   );
+  // "Add card now" needs a client record of this business (never a linked partner's booking).
+  const cardGuestId = linked ? null : booking.guest?.id ?? booking.guest_id ?? null;
+  const canAddCard = !!cardGuestId && !!cardHoldState?.showAddCardNow;
   const cardHoldHasActions =
     !!cardHoldState &&
-    (cardHoldState.showResendLink ||
-      cardHoldState.showWaive ||
+    (cardHoldState.showSendCardRequest ||
+      cardHoldState.showConfirmWithoutCard ||
+      canAddCard ||
       cardHoldState.showChargeAction ||
       cardHoldState.showRefundAction ||
       cardHoldState.showReleaseAction);
@@ -1879,7 +1892,7 @@ export function BookingDetailContent({
         summary={[
           partyLabel,
           cardHoldState
-            ? cardHoldState.pill?.label ?? 'Card hold'
+            ? cardHoldState.pill?.label ?? 'Card'
             : shownDepositStatus ?? (depositLabel ? 'Deposit' : null),
         ]
           .filter(Boolean)
@@ -1898,8 +1911,8 @@ export function BookingDetailContent({
           {tableNames ? <DetailRow label="Table" value={tableNames} /> : null}
           {cardHoldState ? (
             <DetailRow
-              label="Card hold"
-              value={cardHoldState.pill?.label ?? cardHoldState.lines[0] ?? 'Card hold'}
+              label="Card"
+              value={cardHoldState.pill?.label ?? cardHoldState.lines[0] ?? 'Card'}
             />
           ) : depositLabel || shownDepositStatus ? (
             <DetailRow
@@ -2035,7 +2048,7 @@ export function BookingDetailContent({
                 ? 'Card payment unconfirmed'
                 : 'Card payment processing'
               : cardHoldState
-                ? cardHoldState.pill?.label ?? 'Card hold'
+                ? cardHoldState.pill?.label ?? 'Card'
                 : // The outstanding balance is the most actionable money fact, so it
                   // shows on the collapsed header rather than only inside.
                   booking.balance_due_pence != null && booking.balance_due_pence > 0 && !bookingClosedForMoney
@@ -2070,12 +2083,12 @@ export function BookingDetailContent({
             ) : null}
             {cardHoldState ? (
               <>
-                <View style={styles.detailRow}>
+                <View style={styles.detailRow} testID="card-section">
                   <Text variant="bodySmall" tone="muted">
-                    Card hold
+                    Card
                   </Text>
                   <Text variant="bodyMedium" style={styles.detailValue}>
-                    {cardHoldState.pill?.label ?? 'Card hold'}
+                    {cardHoldState.pill?.label ?? 'Card'}
                   </Text>
                 </View>
                 {cardHoldState.lines.map((line) => (
@@ -2138,7 +2151,7 @@ export function BookingDetailContent({
               // the no-deposit label could never be reached. Taking money on a
               // booking that never owed a deposit is the in-person payment button.
               <Button
-                label={cardHoldState ? 'Card hold actions' : 'Deposit actions'}
+                label={cardHoldState ? 'Card actions' : 'Deposit actions'}
                 variant="secondary"
                 fullWidth
                 onPress={() =>
@@ -2148,6 +2161,8 @@ export function BookingDetailContent({
                     amountPence: booking.deposit_amount_pence,
                     status: booking.deposit_status,
                     cardHold: cardHoldState,
+                    visitId: booking.group_booking_id ?? booking.id,
+                    canAddCard,
                   })
                 }
               />
@@ -2297,7 +2312,26 @@ export function BookingDetailContent({
       <ClassSessionMoveSheet target={classMoveTarget} onClose={() => setClassMoveTarget(null)} />
       <ResourceMoveSheet target={resourceMoveTarget} onClose={() => setResourceMoveTarget(null)} />
       <ModifyBookingSheet target={modifyTarget} onClose={() => setModifyTarget(null)} />
-      <DepositSheet target={depositTarget} onClose={() => setDepositTarget(null)} />
+      <DepositSheet
+        target={depositTarget}
+        onClose={() => setDepositTarget(null)}
+        onAddCard={() => {
+          setDepositTarget(null);
+          setAddCardOpen(true);
+        }}
+      />
+      {cardGuestId && addCardOpen ? (
+        <BookingAddCardSheet
+          onClose={() => setAddCardOpen(false)}
+          guestId={cardGuestId}
+          bookingId={booking.id}
+          clientName={guestName}
+          // Hidden contacts: the server still holds them, and answers in words when there are none.
+          hasContact={Boolean(guestEmail || guestPhone || contactHidden)}
+          businessName={venue?.name ?? null}
+          isAdmin={isAdmin}
+        />
+      ) : null}
       {/* The target only carries WHICH booking is open; the balance and ledger
           rows are fed live from the booking so a refetch (or a payment taken
           moments ago) is reflected without closing and reopening the sheet. */}

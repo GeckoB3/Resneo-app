@@ -124,6 +124,13 @@ jest.mock('@/lib/queries/useUpdateServiceOverride', () => ({
   useUpdateServiceOverride: () => ({ mutate: jest.fn(), isPending: false }),
 }));
 jest.mock('@/providers/VenueProvider', () => ({ useVenueContext: () => ({ venue: { currency: 'GBP' } }) }));
+// Manage collective, Settings (card-on-file plan §21): the panel has its own suite; here only
+// whether it opens.
+jest.mock('@/components/collective-area/SettingsPanel', () => {
+  const React = require('react');
+  const { Text } = require('react-native');
+  return { SettingsPanel: () => React.createElement(Text, null, 'Settings panel here') };
+});
 const mockToast = { error: jest.fn(), success: jest.fn(), info: jest.fn() };
 jest.mock('@/providers/ToastProvider', () => ({ useToast: () => mockToast }));
 
@@ -131,6 +138,12 @@ import { ApiError } from '@/lib/api/client';
 import { clientSharingCopy } from '@/lib/collective-area/client-sharing-copy';
 
 import CollectiveAreaScreen from './collective-area';
+
+/** The sections are one control (D28): open it, then choose the section. */
+async function openSection(name: string) {
+  await fireEvent.press(screen.getByTestId('collective-section-picker'));
+  await fireEvent.press(screen.getByRole('menuitem', { name }));
+}
 
 const block = (role: 'master' | 'replica' | 'parked') => ({
   role,
@@ -226,7 +239,10 @@ describe('CollectiveAreaScreen', () => {
   it('gives a host the services across the venues, and the Venues tab', async () => {
     mockServices = [{ id: 's1', name: 'Balayage', collective: block('master') }];
     await render(<CollectiveAreaScreen />);
-    expect(screen.getByText('Venues')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('collective-section-picker'));
+    });
+    expect(screen.getByRole('menuitem', { name: 'Venues' })).toBeTruthy();
     expect(screen.getByText('Balayage')).toBeTruthy();
     expect(screen.getByPlaceholderText('Search services')).toBeTruthy();
   });
@@ -238,7 +254,13 @@ describe('CollectiveAreaScreen', () => {
     ];
     mockOwnGroup = ownGroup();
     await render(<CollectiveAreaScreen />);
-    expect(screen.queryByText('Venues')).toBeNull();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('collective-section-picker'));
+    });
+    expect(screen.queryByRole('menuitem', { name: 'Venues' })).toBeNull();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('collective-section-picker'));
+    });
     expect(screen.getByText(/^On the Northside page/)).toBeTruthy();
     // The page's services only, each with how many of its calendars offer it.
     expect(screen.getByText('Balayage')).toBeTruthy();
@@ -598,9 +620,7 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
       },
     ];
     await render(<CollectiveAreaScreen />);
-    await act(async () => {
-      fireEvent.press(screen.getByText('Venues'));
-    });
+    await openSection('Venues');
     expect(screen.getByText('Aura Hair Studio (you)')).toBeTruthy();
     expect(screen.getByText('Aura Hair Studio in Holywood')).toBeTruthy();
   });
@@ -811,9 +831,7 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
       ],
     });
     await render(<CollectiveAreaScreen />);
-    await act(async () => {
-      fireEvent.press(screen.getByText('Venues'));
-    });
+    await openSection('Venues');
     await act(async () => {
       fireEvent.press(screen.getByRole('button', { name: 'Invite a venue' }));
     });
@@ -838,5 +856,48 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
         'Invitation sent to Light 3. When they accept it, they are linked with every venue here and join, in one step.',
       ),
     ).toBeTruthy();
+  });
+});
+
+describe('CollectiveAreaScreen, the section control (card-on-file plan §21, D28)', () => {
+  beforeEach(() => {
+    mockRole = 'admin';
+    mockParams = {};
+    mockCollectives = [];
+    mockSharingSummary = undefined;
+    mockGroups = [];
+    mockServices = [{ id: 's1', name: 'Balayage', collective: block('master') }];
+  });
+
+  it('shows the current section with a chevron and opens the list of sections', async () => {
+    await render(<CollectiveAreaScreen />);
+    const picker = screen.getByTestId('collective-section-picker');
+    expect(picker.props.accessibilityLabel).toBe('Section: Services');
+    expect(picker.props.accessibilityState).toEqual({ expanded: false });
+    expect(screen.queryByTestId('collective-section-list')).toBeNull();
+    await act(async () => {
+      fireEvent.press(picker);
+    });
+    expect(screen.getByTestId('collective-section-picker').props.accessibilityState).toEqual({ expanded: true });
+    const names = screen.getAllByRole('menuitem').map((item) => item.props.accessibilityLabel);
+    // The host offers shared client lists there, so Clients is listed too.
+    expect(names).toEqual(['Services', 'Classes & more', 'Venues', 'Clients', 'History', 'Settings']);
+    expect(screen.getByRole('menuitem', { name: 'Services' }).props.accessibilityState).toEqual({ selected: true });
+  });
+
+  it('opens Settings from the list, and closes the list', async () => {
+    await render(<CollectiveAreaScreen />);
+    await openSection('Settings');
+    expect(screen.getByText('Settings panel here')).toBeTruthy();
+    expect(screen.queryByTestId('collective-section-list')).toBeNull();
+    expect(screen.getByTestId('collective-section-picker').props.accessibilityLabel).toBe('Section: Settings');
+    expect(screen.queryByText('Balayage')).toBeNull();
+  });
+
+  it('opens straight on Settings with ?tab=settings (See all collective settings)', async () => {
+    mockParams = { tab: 'settings' };
+    await render(<CollectiveAreaScreen />);
+    expect(screen.getByText('Settings panel here')).toBeTruthy();
+    expect(screen.getByTestId('collective-section-picker').props.accessibilityLabel).toBe('Section: Settings');
   });
 });

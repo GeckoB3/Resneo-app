@@ -6,6 +6,7 @@ import { Chip } from '@/components/ui/Chip';
 import { Sheet } from '@/components/ui/Sheet';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Text } from '@/components/ui/Text';
+import type { ApiCardState } from '@/lib/booking/card-hold';
 import type { CollectiveChoice, CollectiveFilter } from '@/lib/booking/collective-filter';
 import { useAppointmentCatalog } from '@/lib/queries/useAppointmentCatalog';
 import { radius, spacing } from '@/theme/index';
@@ -77,6 +78,11 @@ type BookingFilterSheetProps = {
   // Reset — clears every filter below back to its default.
   anyFilterActive: boolean;
   onReset: () => void;
+
+  /** Card on file (card-on-file plan §6.4): Waiting for card, Protected, Card not needed, Fee charged. */
+  cardOptions?: FilterOption[];
+  cardFilter?: ApiCardState | null;
+  onChangeCard?: (key: ApiCardState | null) => void;
 };
 
 type ServiceEntry = { id: string; name: string };
@@ -151,6 +157,9 @@ export function BookingFilterSheet({
   onToggleCompliance,
   anyFilterActive,
   onReset,
+  cardOptions = [],
+  cardFilter = null,
+  onChangeCard,
 }: BookingFilterSheetProps) {
   const { colors } = useTheme();
   const { height } = useWindowDimensions();
@@ -308,6 +317,23 @@ export function BookingFilterSheet({
               selected={collectiveFilter === 'none'}
               onPress={() => onChangeCollective(collectiveFilter === 'none' ? 'all' : 'none')}
             />
+          </Section>
+        ) : null}
+
+        {cardOptions.length > 0 && onChangeCard ? (
+          <Section title="Card">
+            <Chip label="Any" selected={cardFilter === null} onPress={() => onChangeCard(null)} />
+            {cardOptions.map((option) => (
+              <Chip
+                key={option.key}
+                label={option.label}
+                count={option.count}
+                selected={cardFilter === option.key}
+                onPress={() =>
+                  onChangeCard(cardFilter === option.key ? null : (option.key as ApiCardState))
+                }
+              />
+            ))}
           </Section>
         ) : null}
 

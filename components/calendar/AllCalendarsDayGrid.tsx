@@ -1388,6 +1388,7 @@ function DayColumn({
                 clientArrivedAt={item.cluster.lead.client_arrived_at}
                 staffAttendanceConfirmedAt={item.cluster.lead.staff_attendance_confirmed_at}
                 guestAttendanceConfirmedAt={item.cluster.lead.guest_attendance_confirmed_at}
+                waitingForCard={item.cluster.waitingForCard}
                 height={item.height}
                 widthPx={laneWidthPx}
                 laneIndex={item.laneIndex}
@@ -1422,6 +1423,7 @@ function DayColumn({
             clientArrivedAt={item.cluster.lead.client_arrived_at}
             staffAttendanceConfirmedAt={item.cluster.lead.staff_attendance_confirmed_at}
             guestAttendanceConfirmedAt={item.cluster.lead.guest_attendance_confirmed_at}
+            waitingForCard={item.cluster.waitingForCard}
             top={item.top}
             height={item.height}
             laneWidthPx={laneWidthPx}

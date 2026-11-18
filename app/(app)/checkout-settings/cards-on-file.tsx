@@ -25,6 +25,7 @@ const LINK_HOURS: { hours: number; label: string }[] = [
  * hours unless changed). Cards on file is off by default. A card is only ever saved when the client agrees on the card reader
  * or on the phone handed to them; staff can never agree for them. The switch saves at once, at the
  * loaded settings version; changing it needs `manage_settings` (admins always), as on the web.
+ * Card on file plan §6.9: a till card also protects bookings with the business, said in one line.
  */
 export default function CardsOnFileScreen() {
   return (
@@ -76,6 +77,9 @@ function CardsOnFileBody({ data }: { data: PosSettingsResponse }) {
       <SettingsCard
         title={cardsOnFileT('set.cof.title')}
         description={cardsOnFileT('set.cof.help', { client: words.client })}>
+        <Text variant="caption" tone="muted" testID="cards-on-file-protect-line">
+          {`Cards saved at the till also protect bookings with ${data.venue.name}.`}
+        </Text>
         <SwitchRow
           label={cardsOnFileT('set.cof.switch', { clients: words.clients })}
           help={cardsOnFileT('set.cof.switch.help')}

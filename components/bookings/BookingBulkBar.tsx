@@ -9,6 +9,7 @@ import { Text } from '@/components/ui/Text';
 import { useToast } from '@/providers/ToastProvider';
 import { useClientContactHidden } from '@/providers/ViewerAccessProvider';
 import { hapticSelect, hapticWarning } from '@/lib/haptics';
+import { selectAllCardLabel } from '@/lib/booking/card-list';
 import { useBulkAddTag } from '@/lib/queries/useContactsBulk';
 import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -27,6 +28,19 @@ type BookingBulkBarProps = {
   onMessageSelected: (bookings: BookingListRow[]) => void;
   /** Reports the bar's bottom-inset clearance so the list can pad clear of it. */
   onHeightChange?: (clearance: number) => void;
+  /** "Select all {n} bookings" chose a whole Card filter: the bar counts those, not the rows. */
+  countOverride?: number;
+  /** Card on file bulk actions (card-on-file plan §4.16, §6.4). Absent hides them. */
+  cardActions?: {
+    /** A Waiting for card booking is ticked (or Select all over Waiting for card). */
+    canConfirmWithoutCard: boolean;
+    /** A Waiting for card or Card not needed booking is ticked. */
+    canSendCardRequests: boolean;
+    onConfirmWithoutCard: () => void;
+    onSendCardRequests: () => void;
+    /** "Select all {n} bookings" over the Card filter; null when not offered. */
+    selectAll: { count: number; onPress: () => void } | null;
+  };
 };
 
 type SubSheet = 'tag' | 'message' | null;
@@ -46,6 +60,8 @@ export function BookingBulkBar({
   onClear,
   onMessageSelected,
   onHeightChange,
+  countOverride,
+  cardActions,
 }: BookingBulkBarProps) {
   const { colors } = useTheme();
   const toast = useToast();
@@ -93,11 +109,44 @@ export function BookingBulkBar({
   return (
     <>
       <BulkActionBar
-        count={selected.length}
+        count={countOverride ?? selected.length}
         allSelected={allSelected}
         onToggleSelectAll={onToggleSelectAll}
         onClear={onClear}
         onHeightChange={onHeightChange}>
+        {cardActions?.selectAll ? (
+          <Button
+            label={selectAllCardLabel(cardActions.selectAll.count)}
+            variant="ghost"
+            size="sm"
+            onPress={() => {
+              hapticSelect();
+              cardActions.selectAll?.onPress();
+            }}
+          />
+        ) : null}
+        {cardActions?.canSendCardRequests ? (
+          <Button
+            label="Send card requests"
+            variant="secondary"
+            size="sm"
+            onPress={() => {
+              hapticSelect();
+              cardActions.onSendCardRequests();
+            }}
+          />
+        ) : null}
+        {cardActions?.canConfirmWithoutCard ? (
+          <Button
+            label="Confirm without a card"
+            variant="secondary"
+            size="sm"
+            onPress={() => {
+              hapticSelect();
+              cardActions.onConfirmWithoutCard();
+            }}
+          />
+        ) : null}
         <Button
           label="Tag"
           variant="secondary"

@@ -4,6 +4,7 @@ import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { HIDDEN_CONTACT_LABEL } from '@/components/roles/HiddenContact';
 import { Badge, StatusPill } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { CardStatePill } from '@/components/bookings/CardStatePill';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -35,6 +36,7 @@ import {
   CARD_HOLD_CHARGE_ACTION_LABEL,
   isRosterChargeLinkCandidate,
 } from '@/lib/booking/card-hold';
+import { rowCardPill } from '@/lib/booking/card-list';
 import type { ClassAttendee } from '@/types/classes-manage';
 
 type ClassRosterViewProps = {
@@ -53,10 +55,8 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
 };
 
 function formatDeposit(row: ClassAttendee, currency: string): string | null {
-  // Card-hold states carry no deposit amount (the fee lives on the hold row);
-  // show the state by name so staff see the protection at a glance (§9.1).
-  if (row.deposit_status === 'Card Held') return 'Card held';
-  if (row.deposit_status === 'Charged') return 'No-show fee charged';
+  // A card-hold booking shows its card pill instead (card-on-file plan §6.1).
+  if (rowCardPill(row)) return null;
   if (row.deposit_amount_pence == null || row.deposit_amount_pence <= 0) return null;
   const symbol = CURRENCY_SYMBOLS[currency] ?? `${currency} `;
   const amount = `${symbol}${(row.deposit_amount_pence / 100).toFixed(2)}`;
@@ -382,6 +382,7 @@ export function ClassRosterView({
                       {row.guest_name}
                     </Text>
                     {isCheckedIn ? <Badge label="Checked in" tone="success" /> : null}
+                    <CardStatePill row={row} />
                     <StatusPill status={row.status} />
                   </View>
                   <Text variant="caption" tone="secondary">

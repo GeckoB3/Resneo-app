@@ -26,3 +26,14 @@ describe('checkout and shop messages', () => {
     expect(formatCommunicationLogLabel('shop_order_ready_for_collection_sms')).toBe('Order ready to collect');
   });
 });
+
+describe('card on file messages (web card-on-file-plan §7)', () => {
+  it('names each by its full log type, as the web does', () => {
+    expect(formatCommunicationLogLabel('card_on_file_reminder_email')).toBe('Card reminder email');
+    expect(formatCommunicationLogLabel('card_on_file_reminder_sms')).toBe('Card reminder SMS');
+    expect(formatCommunicationLogLabel('card_on_file_update_email')).toBe('Card update request');
+    expect(formatCommunicationLogLabel('card_on_file_stopped_email')).toBe('Card stopped notice');
+    expect(formatCommunicationLogLabel('card_on_file_inactive_email')).toBe('Unused card notice');
+    expect(formatCommunicationLogLabel('card_not_you_email')).toBe('"Not you" alert to the business');
+  });
+});

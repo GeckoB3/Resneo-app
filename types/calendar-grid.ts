@@ -3,6 +3,7 @@
  * @see _reference/reserve-ni/src/app/api/venue/calendar-grid/route.ts
  */
 
+import type { ApiCardState } from '@/lib/booking/card-hold';
 import type { ProcessingTimeBlock } from '@/types/services-manage';
 
 export interface CalendarGridBooking {
@@ -27,6 +28,12 @@ export interface CalendarGridBooking {
    * one that is not.
    */
   payment_state?: string | null;
+  /**
+   * Card on file (web card-on-file-plan §6.1): the booking's card state. The grid route does not
+   * send it yet; the diary lays it over from the list route (`useCalendarGrid`'s
+   * `waitingForCardIds`), and an older server leaves it absent.
+   */
+  card_state?: ApiCardState | null;
   /**
    * Multi-service visit key: several consecutive bookings for one guest share a
    * `group_booking_id`. Optional — older backends omit it.

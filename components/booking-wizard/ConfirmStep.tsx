@@ -10,10 +10,18 @@ import { AvailabilityOverrideWarnings } from '@/components/booking-wizard/Availa
 import { ComplianceWarningNotice } from '@/components/compliance/ComplianceWarningNotice';
 import { StaffPaymentLinkLines } from '@/components/booking-wizard/StaffPaymentLinkLines';
 import { HiddenContactValue } from '@/components/roles/HiddenContact';
+import { StaffAddCardSheet } from '@/components/booking-wizard/StaffAddCardSheet';
+import { StaffCardConfirmation, staffCardConfirmationView } from '@/components/booking-wizard/StaffCardConfirmation';
 import {
-  StaffCardHoldToggle,
+  StaffCardRequestControls,
   StaffRequireChargeCheckbox,
 } from '@/components/booking-wizard/StaffChargeControls';
+import {
+  DEFAULT_STAFF_CARD_REQUEST,
+  staffCardRequestFields,
+  useStaffCardLookup,
+  type StaffCardRequestState,
+} from '@/components/booking-wizard/staff-card-request';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
@@ -30,8 +38,12 @@ import {
   type MultiServiceSegment,
 } from '@/lib/booking/multi-service-chain';
 import {
+  CARD_STATE_WAITING,
+  parseStaffCreateCardOnFile,
   resolveStaffEntityCardHold,
+  staffCancelIfNoCardAllowed,
   staffCardHoldFeeLine,
+  type StaffCreateCardOnFile,
 } from '@/lib/booking/card-hold';
 import { formatPence } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
@@ -135,6 +147,12 @@ interface BookingConfirmation {
   payment_link_sent?: boolean;
   /** A walk-in: booked straight away, never cancelled for a missing card (web QA BKG-A-F9). */
   walk_in?: boolean;
+  /** Card on file (web card-on-file-plan §10): what the create did; absent from older servers. */
+  card_on_file?: StaffCreateCardOnFile | null;
+  /** The client record from the create (`guest_id`), so a typed new client can get "Add card now". */
+  guest_id?: string;
+  /** Staff ticked "Cancel if no card is added within 24 hours". */
+  cancel_if_no_card?: boolean;
   cancellation_notice_hours?: number;
   compliance_warnings?: ComplianceBookingWarning[];
   /** With the override: the engine's reasons, repeated from the 201. */
@@ -200,18 +218,34 @@ function BookingConfirmationView({
   onViewBooking,
   onBookAnother,
   bookedAtBusiness = null,
+  onAddCardNow,
 }: {
   confirmation: BookingConfirmation;
   onViewBooking: () => void;
   onBookAnother?: () => void;
   bookedAtBusiness?: string | null;
+  /** "Add card now" for a client with a record, under Waiting for card or Card not needed. */
+  onAddCardNow?: () => void;
 }) {
   const { colors } = useTheme();
-  // A deposit or card link went to the guest, so the booking stays Pending
-  // until they use it. Saying "confirmed" here was not true (web QA B-9).
-  const cardHold = Boolean(confirmation.card_hold_requested);
+  const cardOnFile = confirmation.card_on_file ?? null;
+  // A deposit or card link went to the guest. A deposit keeps the booking Pending until it is paid
+  // (web QA B-9). A card request no longer does (card-on-file-plan §4.9): `card_on_file` says what
+  // happened, and only a ticked "Cancel if no card" leaves it waiting.
+  const cardHold = Boolean(confirmation.card_hold_requested) || cardOnFile !== null;
+  const cardView = cardOnFile
+    ? staffCardConfirmationView({
+        cardOnFile,
+        feePence: confirmation.card_hold_fee_pence ?? null,
+        sentTo: confirmation.guest_contact ?? null,
+        businessName: bookedAtBusiness,
+        paymentUrl: confirmation.payment_url ?? null,
+        linkSent: confirmation.payment_link_sent,
+      })
+    : null;
   // A walk-in with a card hold is booked straight away with the card request open (web QA BKG-A-F9).
-  const awaitingPayment = Boolean(confirmation.payment_url) && !(cardHold && confirmation.walk_in);
+  const awaitingPayment =
+    !cardOnFile && Boolean(confirmation.payment_url) && !(cardHold && confirmation.walk_in);
   const linkedUrl = confirmation.linked_payment_url ?? null;
   const [copied, setCopied] = useState(false);
 
@@ -224,22 +258,28 @@ function BookingConfirmationView({
         <Text variant="heading">
           {linkedUrl
             ? 'Waiting for payment'
-            : awaitingPayment
-              ? cardHold
-                ? 'Waiting for card details'
-                : 'Waiting for the deposit'
-              : 'Booking confirmed'}
+            : cardView
+              ? cardView.heading
+              : awaitingPayment
+                ? cardHold
+                  ? CARD_STATE_WAITING
+                  : 'Waiting for the deposit'
+                : 'Booking confirmed'}
         </Text>
         <Text variant="bodyMedium" tone="muted">
           {linkedUrl
             ? 'The visit stays pending until the client uses the link below.'
-            : awaitingPayment
-            ? `The booking stays pending until ${cardHold ? 'the card is added' : 'the deposit is paid'}.${
-                confirmation.guest_contact
-                  ? ` Then a confirmation will be sent to ${confirmation.guest_contact}.`
-                  : ''
-              }`
-            : 'The appointment has been created successfully.'}
+            : cardView
+              ? cardView.heading === 'Waiting for card'
+                ? 'The booking waits for the card, and is cancelled if none is added within 24 hours.'
+                : 'The appointment has been created successfully.'
+              : awaitingPayment
+                ? `${cardHold ? 'The booking is waiting for the client to add a card.' : 'The booking stays pending until the deposit is paid.'}${
+                    confirmation.guest_contact
+                      ? ` Then a confirmation will be sent to ${confirmation.guest_contact}.`
+                      : ''
+                  }`
+                : 'The appointment has been created successfully.'}
         </Text>
       </View>
 
@@ -276,12 +316,23 @@ function BookingConfirmationView({
               }}
             />
           </View>
+        ) : cardOnFile ? (
+          <StaffCardConfirmation
+            cardOnFile={cardOnFile}
+            feePence={confirmation.card_hold_fee_pence ?? null}
+            sentTo={confirmation.guest_contact ?? null}
+            businessName={bookedAtBusiness}
+            paymentUrl={confirmation.payment_url ?? null}
+            linkSent={confirmation.payment_link_sent}
+            onAddCardNow={onAddCardNow}
+          />
         ) : confirmation.card_hold_requested ? (
+          // An older server, which says only that a card request went.
           <View style={[styles.depositNotice, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Text variant="bodySmall" tone="brand">
-              Card hold
+              {CARD_STATE_WAITING}
               {confirmation.card_hold_fee_pence != null && confirmation.card_hold_fee_pence > 0
-                ? ` · ${staffCardHoldFeeLine(confirmation.card_hold_fee_pence).toLowerCase()}`
+                ? `. ${staffCardHoldFeeLine(confirmation.card_hold_fee_pence)}.`
                 : ''}
             </Text>
             <StaffPaymentLinkLines
@@ -289,6 +340,7 @@ function BookingConfirmationView({
               paymentUrl={confirmation.payment_url}
               linkSent={confirmation.payment_link_sent}
               walkIn={Boolean(confirmation.walk_in)}
+              cancelIfNoCard={confirmation.cancel_if_no_card}
             />
           </View>
         ) : confirmation.requires_deposit || confirmation.payment_url ? (
@@ -461,17 +513,38 @@ export function ConfirmStep({
         paymentRequirement: service.paymentRequirement,
         feePerUnitPence: baseDeposit,
       });
-  // No card hold where the venue cannot take cards; the create still says "no hold" outright.
-  const staffCardHold = noCardPayments ? null : entityCardHold;
-  const [requireCardHold, setRequireCardHold] = useState(false);
-  const cardHoldDecision = entityCardHold ? Boolean(staffCardHold) && requireCardHold : null;
+  /**
+   * The card line (web card-on-file-plan §6.2): a card on file found for a picked client protects
+   * the booking; otherwise "Send a card request" (on by default, C2) and the optional "Cancel if no
+   * card is added within 24 hours". Where the business cannot take card payments nothing is asked
+   * for and the create says "no hold" outright.
+   */
+  const [cardRequest, setCardRequest] = useState<StaffCardRequestState>(DEFAULT_STAFF_CARD_REQUEST);
+  const [addCardOpen, setAddCardOpen] = useState(false);
+  const byBusinessVisit = isMultiService && (businessParts?.length ?? 0) >= 2;
+  const cardLookup = useStaffCardLookup(guest.guest_id, Boolean(entityCardHold) && !noCardPayments && !byBusinessVisit);
+  const cardNotPossible = noCardPayments || cardLookup.canTakeCards === false;
+  // No card hold where the venue cannot take cards.
+  const staffCardHold = cardNotPossible ? null : entityCardHold;
+  const tickAllowed =
+    source !== 'walk-in' &&
+    (staffCancelIfNoCardAllowed({ walkIn: false, email: guest.email, phone: guest.phone }) || pickedContactHidden);
+  const cardFields = entityCardHold
+    ? staffCardRequestFields(cardRequest, {
+        cardFound: cardLookup.card !== null,
+        tickAllowed,
+        notPossible: cardNotPossible,
+      })
+    : null;
   /**
    * A visit across businesses (web 7.1): each business's own deposit and card-hold choice, off until
    * ticked, as the single choices are. A business that cannot take cards is offered neither.
    */
   const byBusiness = isMultiService && (businessParts?.length ?? 0) >= 2 ? businessParts! : null;
   const [depositByVenue, setDepositByVenue] = useState<Record<string, boolean>>({});
+  // "Send a card request" for each business: on by default (C2), as the single switch is.
   const [holdByVenue, setHoldByVenue] = useState<Record<string, boolean>>({});
+  const holdOn = (venueId: string) => holdByVenue[venueId] ?? true;
   const partTakesCards = (part: VisitBusinessPart) => !noCardVenueIds.includes(part.venueId);
   /**
    * What the summary says is taken now, and the no-show fee it secures: only what staff have ticked
@@ -497,10 +570,10 @@ export function ConfirmStep({
     : chargeNoun;
   const holdNowPence = byBusiness
     ? byBusiness.reduce(
-        (sum, p) => (partTakesCards(p) && p.holdPence > 0 && holdByVenue[p.venueId] ? sum + p.holdPence : sum),
+        (sum, p) => (partTakesCards(p) && p.holdPence > 0 ? sum + p.holdPence : sum),
         0,
       )
-    : staffCardHold && requireCardHold
+    : staffCardHold
       ? staffCardHold.feePence
       : 0;
   const spansPeople = isMultiService && chainSpansPeople(multiServiceSegments!);
@@ -554,7 +627,7 @@ export function ConfirmStep({
     // (walk-ins included). Independent spreads rather than an either/or: a
     // single service only ever resolves to one of the two, but writing it as a
     // choice hid the second one from every caller that can carry both.
-    ...(cardHoldDecision !== null ? { require_card_hold: cardHoldDecision } : {}),
+    ...(cardFields ?? {}),
     ...(hasDeposit && requireDeposit && source !== 'walk-in' ? { require_deposit: true } : {}),
     // Existing-contact / rebook → flag as a returning guest (web parity; metrics only).
     ...(returningGuest ? { returning_guest: true } : {}),
@@ -594,10 +667,19 @@ export function ConfirmStep({
               byBusiness.map((p) => [p.venueId, partTakesCards(p) && p.depositPence > 0 && Boolean(depositByVenue[p.venueId])]),
             ),
             requireCardHoldByVenue: Object.fromEntries(
-              byBusiness.map((p) => [p.venueId, partTakesCards(p) && p.holdPence > 0 && Boolean(holdByVenue[p.venueId])]),
+              byBusiness.map((p) => [p.venueId, partTakesCards(p) && p.holdPence > 0 && holdOn(p.venueId)]),
             ),
           }
-        : { requireDeposit, ...(cardHoldDecision !== null ? { requireCardHold: cardHoldDecision } : {}) },
+        : {
+            requireDeposit,
+            ...(cardFields
+              ? {
+                  requireCardHold: cardFields.require_card_hold,
+                  ...(cardFields.use_card_on_file === false ? { useCardOnFile: false } : {}),
+                  ...(cardFields.cancel_if_no_card ? { cancelIfNoCard: true } : {}),
+                }
+              : {}),
+          },
       overrideAvailability,
       address: collectClientAddress
         ? {
@@ -733,7 +815,13 @@ export function ConfirmStep({
             // notice; a mixed payment_with_setup chain keeps the deposit notice
             // (money IS taken there, so "no payment" copy would mislead).
             card_hold_requested: res.payment_mode === 'setup',
-            card_hold_fee_pence: res.card_hold_fee_pence ?? null,
+            card_hold_fee_pence: res.card_hold_fee_pence ?? chainCardHoldPence ?? null,
+            card_on_file: parseStaffCreateCardOnFile(res.card_on_file),
+            guest_id: typeof res.guest_id === 'string' && res.guest_id ? res.guest_id : undefined,
+            cancel_if_no_card: Boolean(cardFields?.cancel_if_no_card),
+            payment_url: res.payment_mode === 'setup' || res.card_on_file ? res.payment_url : undefined,
+            payment_link_sent: res.payment_link_sent,
+            guest_contact: guest.email.trim() || guest.phone.trim() || undefined,
             walk_in: source === 'walk-in',
             cancellation_notice_hours: res.cancellation_notice_hours,
             // Every segment's unmet requirements, merged by type (`required` first).
@@ -782,9 +870,13 @@ export function ConfirmStep({
           // reads it the same way (`hasDeposit = Boolean(result.payment_url)`).
           // Reading `requires_deposit` / `deposit_amount_pence` off the response
           // meant this notice never appeared: the route returns neither.
-          requires_deposit: Boolean(response.payment_url) && !response.card_hold_requested,
+          requires_deposit:
+            Boolean(response.payment_url) && !response.card_hold_requested && !response.card_on_file,
           card_hold_requested: response.card_hold_requested,
           card_hold_fee_pence: staffCardHold?.feePence ?? null,
+          card_on_file: parseStaffCreateCardOnFile(response.card_on_file),
+          guest_id: typeof response.guest_id === 'string' && response.guest_id ? response.guest_id : undefined,
+          cancel_if_no_card: Boolean(cardFields?.cancel_if_no_card),
           payment_link_sent: response.payment_link_sent,
           walk_in: source === 'walk-in',
           compliance_warnings: response.compliance_warnings,
@@ -815,13 +907,29 @@ export function ConfirmStep({
 
   // Show inline confirmation once booking is created.
   if (confirmation) {
+    // The picked client, else the record the create answered (a client typed in as new).
+    const confirmedGuestId = guest.guest_id ?? confirmation.guest_id;
     return (
-      <BookingConfirmationView
-        confirmation={confirmation}
-        onViewBooking={() => onSuccess(confirmation.booking_id)}
-        onBookAnother={onBookAnother}
-        bookedAtBusiness={bookedAtBusiness}
+      <>
+        <BookingConfirmationView
+          confirmation={confirmation}
+          onViewBooking={() => onSuccess(confirmation.booking_id)}
+          onBookAnother={onBookAnother}
+          bookedAtBusiness={bookedAtBusiness}
+          onAddCardNow={confirmedGuestId ? () => setAddCardOpen(true) : undefined}
+        />
+      <StaffAddCardSheet
+        open={addCardOpen}
+        onClose={() => setAddCardOpen(false)}
+        guestId={confirmedGuestId}
+        bookingId={confirmation.booking_id}
+        clientFirstName={first_name}
+        hasContact={Boolean(guest.email.trim() || guest.phone.trim()) || pickedContactHidden}
+        savesWith={cardLookup.addSavesWith}
+        businessName={bookedAtBusiness}
+        onSaved={cardLookup.refresh}
       />
+      </>
     );
   }
 
@@ -952,11 +1060,12 @@ export function ConfirmStep({
               <View key={p.venueId} style={[styles.businessCharge, { borderColor: colors.border }]}>
                 <Text variant="label">{p.name}</Text>
                 {p.holdPence > 0 ? (
-                  <StaffCardHoldToggle
+                  <StaffCardRequestControls
                     walkIn={source === 'walk-in'}
-                    checked={Boolean(holdByVenue[p.venueId])}
-                    onChange={(next) => setHoldByVenue((prev) => ({ ...prev, [p.venueId]: next }))}
+                    value={{ requestCard: holdOn(p.venueId), cancelIfNoCard: false, dontUseCard: false }}
+                    onChange={(next) => setHoldByVenue((prev) => ({ ...prev, [p.venueId]: next.requestCard }))}
                     feePence={p.holdPence}
+                    tickAllowed={false}
                   />
                 ) : null}
                 {p.depositPence > 0 && source !== 'walk-in' ? (
@@ -972,12 +1081,17 @@ export function ConfirmStep({
         </View>
       ) : null}
 
-      {staffCardHold && !byBusiness ? (
-        <StaffCardHoldToggle
+      {entityCardHold && !byBusiness ? (
+        <StaffCardRequestControls
           walkIn={source === 'walk-in'}
-          checked={requireCardHold}
-          onChange={setRequireCardHold}
-          feePence={staffCardHold.feePence}
+          value={cardRequest}
+          onChange={setCardRequest}
+          feePence={entityCardHold.feePence}
+          foundCard={cardLookup.card}
+          notPossible={cardNotPossible}
+          businessName={bookedAtBusiness}
+          tickAllowed={tickAllowed}
+          onAddCardNow={guest.guest_id && !cardNotPossible ? () => setAddCardOpen(true) : undefined}
         />
       ) : null}
 
@@ -1012,6 +1126,17 @@ export function ConfirmStep({
         fullWidth
         loading={createBooking.isPending || createMultiService.isPending || checkingCreate}
         onPress={() => handleConfirm()}
+      />
+      <StaffAddCardSheet
+        open={addCardOpen}
+        onClose={() => setAddCardOpen(false)}
+        guestId={guest.guest_id}
+        bookingId={null}
+        clientFirstName={first_name}
+        hasContact={Boolean(guest.email.trim() || guest.phone.trim()) || pickedContactHidden}
+        savesWith={cardLookup.addSavesWith}
+        businessName={bookedAtBusiness}
+        onSaved={cardLookup.refresh}
       />
     </ScrollView>
   );

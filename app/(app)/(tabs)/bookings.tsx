@@ -23,6 +23,7 @@ import { BlockEditSheet, type BlockTarget } from '@/components/calendar/BlockEdi
 import { BookingDetailSheet } from '@/components/bookings/BookingDetailSheet';
 import { BookingSwipeRow } from '@/components/bookings/BookingSwipeRow';
 import { BookingBulkBar } from '@/components/bookings/BookingBulkBar';
+import { CardBulkController, type CardBulkRequest } from '@/components/bookings/CardBulkController';
 import { BULK_ACTION_BAR_CLEARANCE } from '@/components/ui/BulkActionBar';
 import { BookingSortSheet } from '@/components/bookings/BookingSortSheet';
 import { BookingFilterSheet, type FilterOption } from '@/components/bookings/BookingFilterSheet';
@@ -43,6 +44,16 @@ import { Text } from '@/components/ui/Text';
 
 import { newBookingActionLabel } from '@/lib/booking/terminology';
 import { collapseMultiServiceVisits } from '@/lib/booking/collapseMultiServiceVisits';
+import { cardStateFromRow, parseApiCardState, type ApiCardState } from '@/lib/booking/card-hold';
+import {
+  CARD_FILTER_OPTIONS,
+  CARD_UPCOMING_DAYS,
+  cardBulkAbilities,
+  cardStateCounts,
+  isCardBulkState,
+  rowsCarryCardState,
+  selectAllCardCount,
+} from '@/lib/booking/card-list';
 import {
   collectiveChoicesFor,
   collectiveFilterLabel,
@@ -408,7 +419,7 @@ export default function BookingsScreen() {
   // Deep-link params (web parity): `?openBooking=<id>` opens that booking's
   // detail sheet; `?guest=<id>` scopes the list to one guest. Push targets and
   // shared links rely on these.
-  const params = useLocalSearchParams<{ openBooking?: string; guest?: string }>();
+  const params = useLocalSearchParams<{ openBooking?: string; guest?: string; card?: string }>();
   const { colors } = useTheme();
   const reduceMotion = useReduceMotion();
   // Four summary tiles need room — hide the strip on narrow phones so the
@@ -447,6 +458,10 @@ export default function BookingsScreen() {
   const [openBookingId, setOpenBookingId] = useState<string | null>(null);
   // Guest scope from the `?guest=` deep link — filters the list to one contact.
   const [guestFilter, setGuestFilter] = useState<string | null>(null);
+  // Card on file (plan §6.4): the Card filter, "Select all {n}" over it, and the bulk question.
+  const [cardFilter, setCardFilter] = useState<ApiCardState | null>(null);
+  const [cardSelectAll, setCardSelectAll] = useState<{ state: 'waiting' | 'not_needed'; count: number } | null>(null);
+  const [cardBulkRequest, setCardBulkRequest] = useState<CardBulkRequest | null>(null);
 
   // --- Custom date range (Custom scope): days after the shared day, null until one is applied ---
   const [customSpan, setCustomSpan] = useState<number | null>(null);
@@ -493,7 +508,12 @@ export default function BookingsScreen() {
 
   // Day uses the single-date endpoint (all statuses); week/month/custom use the range endpoint.
   const dayQuery = useBookingsList({ date: anchor, timeZone, enabled: scope === 'day' });
-  const rangeQuery = useBookingsRange({ from: range.from, to: range.to, enabled: scope !== 'day' });
+  const rangeQuery = useBookingsRange({
+    from: range.from,
+    to: range.to,
+    enabled: scope !== 'day',
+    cardState: cardFilter,
+  });
   const activeQuery = scope === 'day' ? dayQuery : rangeQuery;
 
   // --- Realtime live sync ---
@@ -717,6 +737,11 @@ export default function BookingsScreen() {
       });
     }
 
+    // Card filter (card-on-file plan §6.4): rows from an older server read their deposit status.
+    if (cardFilter) {
+      rows = rows.filter((b) => cardStateFromRow(b) === cardFilter);
+    }
+
     // Needs-compliance filter — bookings whose compliance requirement is unmet.
     if (needsComplianceOnly) {
       rows = rows.filter((b) => needsCompliance(complianceFlags?.[b.id]));
@@ -750,6 +775,7 @@ export default function BookingsScreen() {
     dayHourRange,
     needsComplianceOnly,
     complianceFlags,
+    cardFilter,
   ]);
 
   // Collapse multi-service visits (shared group_booking_id, no per-person label)
@@ -868,9 +894,10 @@ export default function BookingsScreen() {
   // Consume `?openBooking` / `?guest` once each. The router keeps params around
   // across re-renders, so track what we've handled and strip them after acting
   // (mirrors the web, which deletes the param after opening the booking).
-  const consumedParamsRef = useRef<{ openBooking?: string; guest?: string }>({});
+  const consumedParamsRef = useRef<{ openBooking?: string; guest?: string; card?: string }>({});
   const openBookingParam = typeof params.openBooking === 'string' ? params.openBooking : null;
   const guestParam = typeof params.guest === 'string' ? params.guest : null;
+  const cardParam = typeof params.card === 'string' ? params.card : null;
   useEffect(() => {
     const clear: Record<string, undefined> = {};
 
@@ -882,6 +909,7 @@ export default function BookingsScreen() {
     // booking would silently fail to open it.
     if (!openBookingParam) consumedParamsRef.current.openBooking = undefined;
     if (!guestParam) consumedParamsRef.current.guest = undefined;
+    if (!cardParam) consumedParamsRef.current.card = undefined;
 
     if (openBookingParam && consumedParamsRef.current.openBooking !== openBookingParam) {
       consumedParamsRef.current.openBooking = openBookingParam;
@@ -890,6 +918,20 @@ export default function BookingsScreen() {
         setOpenBookingId(openBookingParam);
       }
       clear.openBooking = undefined;
+    }
+
+    if (cardParam && consumedParamsRef.current.card !== cardParam) {
+      consumedParamsRef.current.card = cardParam;
+      const state = parseApiCardState(cardParam);
+      if (state) {
+        // "View" on the home card: every upcoming booking in that state, from today onwards.
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot deep-link consume (guarded by consumedParamsRef)
+        setCardFilter(state);
+        setAnchor(today);
+        setCustomSpan(CARD_UPCOMING_DAYS);
+        setScope('custom');
+      }
+      clear.card = undefined;
     }
 
     if (guestParam && consumedParamsRef.current.guest !== guestParam) {
@@ -903,9 +945,10 @@ export default function BookingsScreen() {
       // Strip the consumed params so a back/refresh doesn't re-trigger them.
       router.setParams(clear);
     }
-  }, [openBookingParam, guestParam, router]);
+  }, [openBookingParam, guestParam, cardParam, router, setAnchor, today]);
 
   const toggleSelect = useCallback((id: string) => {
+    setCardSelectAll(null);
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
@@ -917,7 +960,10 @@ export default function BookingsScreen() {
     });
   }, []);
 
-  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set());
+    setCardSelectAll(null);
+  }, []);
 
   const handleMessageSelected = useCallback((bookings: BookingListRow[]) => {
     setBulkMessageBookings(bookings);
@@ -1012,7 +1058,8 @@ export default function BookingsScreen() {
     collectiveFilter !== 'all' ||
     modelFilter !== null ||
     dayHourRange !== null ||
-    needsComplianceOnly;
+    needsComplianceOnly ||
+    cardFilter !== null;
 
   // Search + the guest deep-link scope count too — both shown as removable
   // summary chips below the toolbar so an applied scope stays visible.
@@ -1033,6 +1080,8 @@ export default function BookingsScreen() {
     setModelFilter(null);
     setDayHourRange(null);
     setNeedsComplianceOnly(false);
+    setCardFilter(null);
+    setCardSelectAll(null);
   }, []);
 
   const clearAllFilters = useCallback(() => {
@@ -1058,6 +1107,50 @@ export default function BookingsScreen() {
 
   // Labels for the removable summary chips (resolve keys → display text).
   const statusLabel = STATUS_FILTERS.find((o) => o.key === status)?.label ?? status;
+
+  // The Card filter (card-on-file plan §6.4): shown once the server answers card states. Counts
+  // are left off while a card filter is on, because the server then sends only those rows.
+  const ownRowsForCard = venueSel.own ? rawRows : [];
+  const showCardFilter = cardFilter !== null || rowsCarryCardState(ownRowsForCard);
+  const cardOptions = useMemo<FilterOption[]>(() => {
+    const counts = cardStateCounts(rawRows);
+    return CARD_FILTER_OPTIONS.map((o) => ({
+      key: o.key,
+      label: o.label,
+      count: cardFilter === null ? counts[o.key] : undefined,
+    }));
+  }, [rawRows, cardFilter]);
+  const cardFilterLabel = CARD_FILTER_OPTIONS.find((o) => o.key === cardFilter)?.label ?? null;
+
+  // What the ticked rows allow, and "Select all {n} bookings" over the Card filter (§4.16).
+  const cardAbilities = useMemo(() => cardBulkAbilities(selectedRows), [selectedRows]);
+  const selectAllCardTotal = useMemo(
+    () =>
+      isCardBulkState(cardFilter) && venueSel.own ? selectAllCardCount(rawRows, cardFilter, range) : 0,
+    [cardFilter, venueSel.own, rawRows, range],
+  );
+  const startCardBulk = useCallback(
+    (action: CardBulkRequest['action']) => {
+      if (cardSelectAll) {
+        setCardBulkRequest({
+          action,
+          count: cardSelectAll.count,
+          selection: {
+            filter: { card_state: cardSelectAll.state, from_date: range.from, to_date: range.to },
+            expectedCount: cardSelectAll.count,
+          },
+        });
+        return;
+      }
+      const ids =
+        action === 'confirm_without_card'
+          ? cardAbilities.waitingIds
+          : [...cardAbilities.waitingIds, ...cardAbilities.notNeededIds];
+      if (ids.length === 0) return;
+      setCardBulkRequest({ action, count: ids.length, selection: { bookingIds: ids } });
+    },
+    [cardSelectAll, cardAbilities, range],
+  );
   const practitionerName = practitioners.find((p) => p.id === practitionerFilter)?.name;
   const typeLabel = MODEL_FILTERS.find((g) => g.key === modelFilter)?.label;
   const timeLabel = TIME_WINDOWS.find(
@@ -1235,6 +1328,14 @@ export default function BookingsScreen() {
                 onRemove={() => setCollectiveFilter('all')}
               />
             ) : null}
+            {cardFilterLabel !== null ? (
+              <Chip
+                label={cardFilterLabel}
+                selected
+                onPress={() => setCardFilter(null)}
+                onRemove={() => setCardFilter(null)}
+              />
+            ) : null}
             {needsComplianceOnly ? (
               <Chip
                 label="Needs compliance"
@@ -1251,6 +1352,16 @@ export default function BookingsScreen() {
 
       {/* Summary stats strip — Total / Confirmed / Completed / No-shows for the
           current scope (web parity). Hidden while selecting and on narrow phones. */}
+      {/* Bulk card actions: the question, then the result with Undo (card-on-file plan §4.16). */}
+      <CardBulkController
+        request={cardBulkRequest}
+        onDone={() => {
+          setCardBulkRequest(null);
+          clearSelection();
+        }}
+        onCancel={() => setCardBulkRequest(null)}
+      />
+
       {showSummary && !selectionMode && !activeQuery.isLoading && !activeQuery.isError ? (
         <BookingSummaryStats summary={summary} />
       ) : null}
@@ -1396,6 +1507,23 @@ export default function BookingsScreen() {
         onClear={clearSelection}
         onMessageSelected={handleMessageSelected}
         onHeightChange={setBulkBarClearance}
+        countOverride={cardSelectAll?.count}
+        cardActions={{
+          canConfirmWithoutCard: cardSelectAll ? cardSelectAll.state === 'waiting' : cardAbilities.canConfirmWithoutCard,
+          canSendCardRequests: cardSelectAll ? true : cardAbilities.canSendCardRequests,
+          onConfirmWithoutCard: () => startCardBulk('confirm_without_card'),
+          onSendCardRequests: () => startCardBulk('send_card_requests'),
+          selectAll:
+            isCardBulkState(cardFilter) && !cardSelectAll && selectAllCardTotal > selectedRows.length
+              ? {
+                  count: selectAllCardTotal,
+                  onPress: () => {
+                    setSelectedIds(new Set(ownFilteredRows.map((b) => b.id)));
+                    setCardSelectAll({ state: cardFilter, count: selectAllCardTotal });
+                  },
+                }
+              : null,
+        }}
       />
 
       {/* Bulk message compose sheet.
@@ -1457,6 +1585,12 @@ export default function BookingsScreen() {
         onToggleCompliance={setNeedsComplianceOnly}
         anyFilterActive={sheetFiltersActive}
         onReset={resetSheetFilters}
+        cardOptions={showCardFilter ? cardOptions : []}
+        cardFilter={cardFilter}
+        onChangeCard={(key) => {
+          setCardFilter(key);
+          setCardSelectAll(null);
+        }}
       />
 
       {/* Custom date-range sheet */}

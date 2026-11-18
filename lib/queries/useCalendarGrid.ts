@@ -1,4 +1,5 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { useCallback } from 'react';
 
 import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
@@ -23,6 +24,11 @@ type UseCalendarGridOptions = {
    * put the pre-write status back over the optimistic patch.
    */
   refetchInterval?: number | false;
+  /**
+   * Card on file (plan §6.1): bookings waiting for a card, read from the list route because the
+   * grid route does not say. Each is marked `card_state: 'waiting'` so its bar shows the pill.
+   */
+  waitingForCardIds?: ReadonlySet<string> | null;
 };
 
 /**
@@ -33,6 +39,11 @@ export function useCalendarGrid(options: UseCalendarGridOptions) {
   const accessToken = useAccessToken();
   const calendarIds = options.calendarIds.join(',');
   const { from, to } = options;
+  const waiting = options.waitingForCardIds ?? null;
+  const select = useCallback(
+    (data: CalendarGridResponse) => markWaitingForCard(data, waiting),
+    [waiting],
+  );
   const queryEnabled =
     (options.enabled ?? true) &&
     isBackendConfigured() &&
@@ -47,6 +58,7 @@ export function useCalendarGrid(options: UseCalendarGridOptions) {
     placeholderData: keepPreviousData,
     // Only poll while the query is enabled (an active calendar/range).
     refetchInterval: options.refetchInterval,
+    select,
     queryFn: async (): Promise<CalendarGridResponse> => {
       if (!accessToken) {
         throw new Error('Missing access token');
@@ -61,4 +73,28 @@ export function useCalendarGrid(options: UseCalendarGridOptions) {
       });
     },
   });
+}
+
+/**
+ * Mark the grid's bookings that wait for a card (`card_state: 'waiting'`). The response is
+ * returned as it is when there is nothing to mark, so the grid keeps its identity.
+ */
+export function markWaitingForCard(
+  data: CalendarGridResponse,
+  waiting: ReadonlySet<string> | null,
+): CalendarGridResponse {
+  if (!waiting || waiting.size === 0) return data;
+  let changed = false;
+  const calendars = data.calendars.map((cal) => ({
+    ...cal,
+    dates: cal.dates.map((day) => ({
+      ...day,
+      bookings: day.bookings.map((b) => {
+        if (!waiting.has(b.id) || b.card_state === 'waiting') return b;
+        changed = true;
+        return { ...b, card_state: 'waiting' as const };
+      }),
+    })),
+  }));
+  return changed ? { ...data, calendars } : data;
 }

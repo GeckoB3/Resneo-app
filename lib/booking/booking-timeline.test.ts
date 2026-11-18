@@ -85,6 +85,16 @@ describe('formatBookingTimelineEvent', () => {
     });
   });
 
+  it('says how a no-show fee was paid: the saved card, or the client on a payment link', () => {
+    expect(formatBookingTimelineEvent(event({ event_type: 'card_hold_charged', payload: { charged_pence: 1000 } }))).toEqual({
+      title: 'No-show fee charged',
+      detail: '£10.00 charged to the saved card',
+    });
+    expect(
+      formatBookingTimelineEvent(event({ event_type: 'card_hold_charged', payload: { charged_pence: 1000, paid_by_link: true } })),
+    ).toEqual({ title: 'No-show fee charged', detail: '£10.00 paid by the client through a payment link' });
+  });
+
   it('describes who confirmed for a status change', () => {
     expect(
       formatBookingTimelineEvent(

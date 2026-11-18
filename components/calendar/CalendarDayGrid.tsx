@@ -1097,6 +1097,7 @@ export function CalendarDayGrid({
                 .map((id) => complianceFlags?.[id])
                 .find((flag) => flag != null)}
               paid={item.cluster.paid}
+              waitingForCard={item.cluster.waitingForCard}
               onDragReschedule={onDragReschedule}
               // Compact rows are too short for a usable resize grip — hide the
               // affordance and disable the resize gesture (web parity: no

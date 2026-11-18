@@ -35,6 +35,12 @@ export interface UpdateVenueInput {
   active_booking_models?: string[];
   enabled_models?: string[];
   require_account_login_for_bookings?: boolean;
+  /**
+   * The collective settings' version this screen read (web card-on-file plan §21.3 item 6). A host's
+   * save of a collective setting names it; a save from an older read is refused with 412
+   * COLLECTIVE_SETTINGS_CHANGED. Older servers ignore it.
+   */
+  booking_settings_version?: number;
   /** Email the owner when a new booking comes in (Communications owner-alert). */
   owner_booking_notification_enabled?: boolean;
   /** Recipient for the owner booking alert; empty/null falls back to the venue email server-side. */
