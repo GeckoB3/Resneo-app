@@ -21,6 +21,8 @@ export interface JustCreatedBookingQuery {
   email?: string | null;
   phone?: string | null;
   fullName?: string | null;
+  /** The business the booking was made at, when it is a linked or collective partner's. */
+  ownerVenueId?: string | null;
 }
 
 function digits(value: string | null | undefined): string {
@@ -46,6 +48,8 @@ function sameGuest(row: BookingListRow, q: JustCreatedBookingQuery): boolean {
  */
 export async function findJustCreatedBooking(q: JustCreatedBookingQuery): Promise<string | null> {
   const params = new URLSearchParams({ date: q.date });
+  // A partner's booking is listed only in the partner's scope.
+  if (q.ownerVenueId) params.set('owner_venue_id', q.ownerVenueId);
   const res = await apiFetch<BookingsListResponse>(`/api/venue/bookings/list?${params.toString()}`, {
     accessToken: q.accessToken,
   });

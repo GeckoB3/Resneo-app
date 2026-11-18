@@ -118,11 +118,21 @@ const EMPTY: Omit<StaffCardLookup, 'refresh'> = { card: null, canTakeCards: null
  * A plain request rather than the cached `useGuestCardOnFile` query: the booking forms render
  * outside a query client in many of their tests, and this needs no cache.
  */
-export function useStaffCardLookup(guestId: string | null | undefined, enabled: boolean): StaffCardLookup {
+export function useStaffCardLookup(
+  guestId: string | null | undefined,
+  enabled: boolean,
+  /**
+   * The business the booking is made at, when it is not the signed-in one (a collective partner's or
+   * a linked calendar). The answer is then for a booking there: a card saved for this business only
+   * cannot protect it, and "can take cards" and "saved with" are that business's.
+   */
+  bookingVenueId: string | null = null,
+): StaffCardLookup {
   const accessToken = useAccessToken();
   // The answer is kept with the client it is for, so a different client (or none) reads as nothing
   // found until its own answer lands.
-  const [result, setResult] = useState<{ guestId: string; value: Omit<StaffCardLookup, 'refresh'> } | null>(null);
+  const key = `${guestId ?? ''}|${bookingVenueId ?? ''}`;
+  const [result, setResult] = useState<{ key: string; value: Omit<StaffCardLookup, 'refresh'> } | null>(null);
   const [version, setVersion] = useState(0);
   const refresh = useCallback(() => setVersion((v) => v + 1), []);
   const active = enabled && Boolean(guestId) && Boolean(accessToken) && isBackendConfigured();
@@ -130,18 +140,19 @@ export function useStaffCardLookup(guestId: string | null | undefined, enabled: 
   useEffect(() => {
     if (!active || !guestId || !accessToken) return;
     let cancelled = false;
-    apiFetch<unknown>(`/api/venue/guests/${encodeURIComponent(guestId)}/card-on-file`, { accessToken })
+    const query = bookingVenueId ? `?booking_venue_id=${encodeURIComponent(bookingVenueId)}` : '';
+    apiFetch<unknown>(`/api/venue/guests/${encodeURIComponent(guestId)}/card-on-file${query}`, { accessToken })
       .then((body) => {
-        if (!cancelled) setResult({ guestId, value: parseStaffCardLookup(body) });
+        if (!cancelled) setResult({ key, value: parseStaffCardLookup(body) });
       })
       .catch(() => {
-        if (!cancelled) setResult({ guestId, value: EMPTY });
+        if (!cancelled) setResult({ key, value: EMPTY });
       });
     return () => {
       cancelled = true;
     };
-  }, [active, guestId, accessToken, version]);
+  }, [active, guestId, bookingVenueId, key, accessToken, version]);
 
-  const value = active && result && result.guestId === guestId ? result.value : EMPTY;
+  const value = active && result && result.key === key ? result.value : EMPTY;
   return { ...value, refresh };
 }

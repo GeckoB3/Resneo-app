@@ -1398,7 +1398,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
    * (QA 2026-11-08 DEVICE-F4): staff booked, and created clients, at a partner without knowing. A
    * visit across businesses names each business in its own block instead.
    */
-  const bookedAtBusiness = useMemo(() => {
+  const bookedAtVenueId = useMemo(() => {
     if (!isCollective || !selectedService) return null;
     const practitioners = catalogQuery.data?.practitioners ?? [];
     const segments = multiServiceSegments && multiServiceSegments.length > 1 ? multiServiceSegments : null;
@@ -1413,8 +1413,12 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           return owner ? [owner] : [];
         })();
     if (venueIds.length !== 1 || venueIds[0] === signedInVenueId) return null;
-    return businessNameOf(venueIds[0]!);
-  }, [isCollective, selectedService, selectedSlot, multiServiceSegments, catalogQuery.data, signedInVenueId, businessNameOf]);
+    return venueIds[0]!;
+  }, [isCollective, selectedService, selectedSlot, multiServiceSegments, catalogQuery.data, signedInVenueId]);
+  const bookedAtBusiness = useMemo(
+    () => (bookedAtVenueId ? businessNameOf(bookedAtVenueId) : null),
+    [bookedAtVenueId, businessNameOf],
+  );
 
   /** A visit across businesses (only a collective's services span businesses): each with its money (7.1). */
   const visitParts = useMemo(
@@ -2410,6 +2414,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           noCardPayments={calendarNotice.noCards}
           businessParts={visitParts}
           bookedAtBusiness={bookedAtBusiness}
+          bookingVenueId={ownerVenueId ?? bookedAtVenueId}
           noCardVenueIds={calendarNotice.noCardVenueIds}
           returningGuest={returningGuest}
           phoneDefaultCountry={phoneDefaultCountry}

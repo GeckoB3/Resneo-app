@@ -108,6 +108,7 @@ import { useLinkedGuestHistory } from '@/lib/queries/useLinkedGuestHistory';
 import { useManagedServices } from '@/lib/queries/useServicesManage';
 import {
   canChangeVisitServiceStatus,
+  linkedContextFromBooking,
   linkedDetailPolicy,
   type LinkedBookingContext,
 } from '@/lib/linked/linked-detail-policy';
@@ -594,7 +595,7 @@ export function BookingDetailContent({
   fallbackServiceName,
   fallbackPractitionerName,
   detailPending = false,
-  linked = null,
+  linked: linkedProp = null,
   onOpenedSale,
   onOpenedRecord,
 }: BookingDetailContentProps) {
@@ -604,6 +605,10 @@ export function BookingDetailContent({
   const toast = useToast();
   const { venue, featureFlags } = useVenueContext();
   const contactHidden = useClientContactHidden(booking.contacts_hidden);
+  // The link context the caller passed, else the booking's own (a partner's booking reached from
+  // "View booking" after creating it, or any other way in that does not carry the link).
+  const viewerLink = booking.viewer_link;
+  const linked = useMemo(() => linkedProp ?? linkedContextFromBooking(viewerLink), [linkedProp, viewerLink]);
   // What a linked venue's booking lets us do; everything, for our own.
   const policy = linkedDetailPolicy(linked?.act);
   // Other people's diaries (roles plan §5.11, §7.3): the open scope for everyone on "Can book and

@@ -80,6 +80,11 @@ type ConfirmStepProps = {
    *  Chosen on the date+time step; shown read-only here. */
   source: BookingSource;
   ownerVenueId?: string | null;
+  /**
+   * The business the booking is made at when it is not the signed-in one: a linked calendar's
+   * (`ownerVenueId`) or a collective partner's. The card line answers for a booking there.
+   */
+  bookingVenueId?: string | null;
   onSuccess: (bookingId: string) => void;
   /** Reset the wizard to step 1 for a back-to-back booking (front-desk flow). */
   onBookAnother?: () => void;
@@ -413,6 +418,7 @@ export function ConfirmStep({
   overrideAvailability = false,
   businessParts = null,
   bookedAtBusiness = null,
+  bookingVenueId = null,
   noCardVenueIds = [],
 }: ConfirmStepProps) {
   const { colors } = useTheme();
@@ -526,7 +532,12 @@ export function ConfirmStep({
   const [cardRequest, setCardRequest] = useState<StaffCardRequestState>(DEFAULT_STAFF_CARD_REQUEST);
   const [addCardOpen, setAddCardOpen] = useState(false);
   const byBusinessVisit = isMultiService && (businessParts?.length ?? 0) >= 2;
-  const cardLookup = useStaffCardLookup(guest.guest_id, Boolean(entityCardHold) && !noCardPayments && !byBusinessVisit);
+  const partnerVenueId = bookingVenueId ?? ownerVenueId ?? null;
+  const cardLookup = useStaffCardLookup(
+    guest.guest_id,
+    Boolean(entityCardHold) && !noCardPayments && !byBusinessVisit,
+    partnerVenueId,
+  );
   const cardNotPossible = noCardPayments || cardLookup.canTakeCards === false;
   // No card hold where the venue cannot take cards.
   const staffCardHold = cardNotPossible ? null : entityCardHold;
@@ -716,6 +727,7 @@ export function ConfirmStep({
             email: guest.email,
             phone: normalizePhone(guest.phone, phoneDefaultCountry),
             fullName,
+            ownerVenueId: partnerVenueId,
           })
         : null;
       if (found) {
@@ -1095,7 +1107,9 @@ export function ConfirmStep({
           notPossible={cardNotPossible}
           businessName={bookedAtBusiness}
           tickAllowed={tickAllowed}
-          onAddCardNow={guest.guest_id && !cardNotPossible ? () => setAddCardOpen(true) : undefined}
+          // At a partner's business the card must be saved for the client record the booking makes
+          // there, so "Add card now" waits for the confirmation (it then targets that record).
+          onAddCardNow={guest.guest_id && !cardNotPossible && !partnerVenueId ? () => setAddCardOpen(true) : undefined}
         />
       ) : null}
 

@@ -1,5 +1,6 @@
 import {
   canChangeVisitServiceStatus,
+  linkedContextFromBooking,
   LINKED_LIMITED_EDIT_BANNER,
   LINKED_VIEW_ONLY_BANNER,
   linkedDetailPolicy,
@@ -85,5 +86,33 @@ describe('canChangeVisitServiceStatus', () => {
   it('withholds them on a table reservation, own or linked', () => {
     expect(canChangeVisitServiceStatus(linkedDetailPolicy(null), true)).toBe(false);
     expect(canChangeVisitServiceStatus(linkedDetailPolicy('create_edit_cancel'), true)).toBe(false);
+  });
+});
+
+/**
+ * A partner's booking opened without its link ("View booking" after booking on a collective
+ * partner's calendar, 2026-11-18) takes the link from the booking itself.
+ */
+describe('linkedContextFromBooking', () => {
+  it('builds the context from the booking for a partner booking', () => {
+    expect(
+      linkedContextFromBooking({ venue_id: 'v-b', venue_name: ' Jenny at Aura ', act: 'create_edit_cancel', pii: true }),
+    ).toEqual({ act: 'create_edit_cancel', venueId: 'v-b', venueName: 'Jenny at Aura', pii: true });
+  });
+
+  it('is null for an own booking, an older server or an unknown grant', () => {
+    expect(linkedContextFromBooking(null)).toBeNull();
+    expect(linkedContextFromBooking(undefined)).toBeNull();
+    expect(linkedContextFromBooking({ venue_id: 'v-b', act: 'something_else' })).toBeNull();
+    expect(linkedContextFromBooking({ venue_id: '', act: 'none' })).toBeNull();
+  });
+
+  it('names an unnamed partner plainly and reads a missing pii as no', () => {
+    expect(linkedContextFromBooking({ venue_id: 'v-b', venue_name: null, act: 'none' })).toEqual({
+      act: 'none',
+      venueId: 'v-b',
+      venueName: 'Linked venue',
+      pii: false,
+    });
   });
 });

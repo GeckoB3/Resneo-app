@@ -194,7 +194,8 @@ export function GroupBookingFlow({
   const groupCharge = useMemo(() => resolveVisitChargeTotal(people), [people]);
   const groupCardHoldPence = useMemo(() => resolveVisitCardHoldTotal(people), [people]);
   const showCardHoldToggle = groupCardHoldPence > 0;
-  const cardLookup = useStaffCardLookup(organiser.guest_id, showCardHoldToggle);
+  // A linked business's calendar: the card line answers for a booking there.
+  const cardLookup = useStaffCardLookup(organiser.guest_id, showCardHoldToggle, ownerVenueId ?? null);
   const cardNotPossible = cardLookup.canTakeCards === false;
   const cardTickAllowed =
     source !== 'walk-in' &&
@@ -922,7 +923,9 @@ export function GroupBookingFlow({
               leadName={leadName}
               notPossible={cardNotPossible}
               tickAllowed={cardTickAllowed}
-              onAddCardNow={organiser.guest_id && !cardNotPossible ? () => setAddCardOpen(true) : undefined}
+              onAddCardNow={
+                organiser.guest_id && !cardNotPossible && !ownerVenueId ? () => setAddCardOpen(true) : undefined
+              }
             />
           ) : null}
           <StaffAddCardSheet

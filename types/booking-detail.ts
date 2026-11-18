@@ -242,6 +242,13 @@ export interface BookingDetail extends ContactsHiddenFlag {
   linked_visit_id?: string | null;
   /** The booking's own business (the full GET spreads the row). */
   venue_id?: string;
+  /**
+   * A linked or collective partner's booking: whose it is and what the link allows (full GET; null
+   * for this business's own booking; absent from older servers). Lets a screen opened without the
+   * link context, such as "View booking" after booking on a partner's calendar, offer only what the
+   * link allows.
+   */
+  viewer_link?: { venue_id: string; venue_name: string | null; act: string; pii: boolean } | null;
   /** Per-person label on group people visits ("Person 1", a name…). */
   person_label?: string | null;
   /**

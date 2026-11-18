@@ -35,6 +35,28 @@ export interface LinkedBookingContext {
   serviceName?: string | null;
 }
 
+const LINK_ACTS: readonly LinkActionLevel[] = ['none', 'edit_existing', 'create_edit_cancel'];
+
+/**
+ * The link context from the booking itself (`viewer_link` on the full GET), for a partner's booking
+ * opened without one: "View booking" after booking on a collective partner's calendar opened it as
+ * our own, offering actions the partner's booking refuses (2026-11-18). Null for our own booking,
+ * an older server, or an unknown grant.
+ */
+export function linkedContextFromBooking(
+  viewerLink: { venue_id?: string | null; venue_name?: string | null; act?: string | null; pii?: boolean | null } | null | undefined,
+): LinkedBookingContext | null {
+  if (!viewerLink?.venue_id) return null;
+  const act = LINK_ACTS.find((a) => a === viewerLink.act);
+  if (!act) return null;
+  return {
+    act,
+    venueId: viewerLink.venue_id,
+    venueName: viewerLink.venue_name?.trim() || 'Linked venue',
+    pii: viewerLink.pii === true,
+  };
+}
+
 export interface LinkedDetailPolicy {
   /** The booking belongs to a linked venue. */
   linked: boolean;

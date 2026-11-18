@@ -82,7 +82,9 @@ const slot: AppointmentSlot = {
 type Guest = { first_name: string; last_name: string; email: string; phone: string; guest_id?: string };
 const JO: Guest = { first_name: 'Jo', last_name: 'Bloggs', email: 'jo@example.com', phone: '' };
 
-async function renderStep(opts: { guest?: Guest; source?: 'phone' | 'walk-in'; noCardPayments?: boolean } = {}) {
+async function renderStep(
+  opts: { guest?: Guest; source?: 'phone' | 'walk-in'; noCardPayments?: boolean; bookingVenueId?: string | null } = {},
+) {
   await render(
     <ConfirmStep
       service={service}
@@ -91,6 +93,7 @@ async function renderStep(opts: { guest?: Guest; source?: 'phone' | 'walk-in'; n
       guest={opts.guest ?? JO}
       source={opts.source ?? 'phone'}
       noCardPayments={opts.noCardPayments}
+      bookingVenueId={opts.bookingVenueId ?? null}
       onSuccess={jest.fn()}
     />,
   );
@@ -176,6 +179,16 @@ describe('no card found', () => {
     });
     expect(screen.getByText('desk sheet for g-1')).toBeTruthy();
   });
+
+  it("at a collective partner's business, looks the card up for a booking there and keeps Add card for after the booking", async () => {
+    await renderStep({ guest: { ...JO, guest_id: 'g-1' }, bookingVenueId: 'venue-partner' });
+    expect(mockLookupArgs[mockLookupArgs.length - 1]).toEqual(['g-1', true, 'venue-partner']);
+    // Saved before the booking, the card would go on this business's record of the client, not the
+    // record the booking makes at the partner.
+    expect(screen.queryByText('Add card now')).toBeNull();
+    await renderStep({ guest: { ...JO, guest_id: 'g-1' } });
+    expect(mockLookupArgs[mockLookupArgs.length - 1]).toEqual(['g-1', true, null]);
+  });
 });
 
 /**
@@ -238,7 +251,7 @@ describe('a card on file found', () => {
       addSavesWith: null,
     };
     await renderStep({ guest: { ...JO, guest_id: 'g-1' } });
-    expect(mockLookupArgs[0]).toEqual(['g-1', true]);
+    expect(mockLookupArgs[0]).toEqual(['g-1', true, null]);
     expect(
       screen.getByText('Protected by card on file (Visa ending 4242). No-show fee up to £10.00.'),
     ).toBeTruthy();

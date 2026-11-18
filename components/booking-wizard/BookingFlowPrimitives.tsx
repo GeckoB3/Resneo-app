@@ -270,7 +270,9 @@ export function BookingFlowConfirm({
 
   // Who the booking is for, as the payload names them (the flows own the guest step).
   const guestPreview = buildPayload({ source, requireDeposit });
-  const cardLookup = useStaffCardLookup(guestPreview.guest_id, Boolean(staffCardHold));
+  // A booking at another business (a linked or collective partner's): the card line answers for it.
+  const partnerVenueId = guestPreview.owner_venue_id ?? null;
+  const cardLookup = useStaffCardLookup(guestPreview.guest_id, Boolean(staffCardHold), partnerVenueId);
   const cardNotPossible = cardLookup.canTakeCards === false;
   const cardTickAllowed =
     source !== 'walk-in' &&
@@ -512,7 +514,9 @@ export function BookingFlowConfirm({
           foundCard={cardLookup.card}
           notPossible={cardNotPossible}
           tickAllowed={cardTickAllowed}
-          onAddCardNow={guestPreview.guest_id && !cardNotPossible ? () => setAddCardOpen(true) : undefined}
+          onAddCardNow={
+            guestPreview.guest_id && !cardNotPossible && !partnerVenueId ? () => setAddCardOpen(true) : undefined
+          }
         />
       ) : null}
       <StaffAddCardSheet
