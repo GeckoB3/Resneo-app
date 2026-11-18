@@ -448,7 +448,11 @@ export function ConfirmStep({
   const basePrice = (variant ? variant.price_pence : service.pricePence) ?? 0;
   const baseDuration =
     durationOverride ?? (variant ? variant.duration_minutes : service.durationMinutes);
-  const baseDeposit = variant ? variant.deposit_pence : service.depositPence;
+  // An option without its own fee takes the service's, as the server does (web
+  // service-variant.ts) and as the group and multi-service flows here already do.
+  // Reading the option alone left a card-hold service with options showing no card
+  // line at all (found on the phone 2026-11-18).
+  const baseDeposit = (variant ? variant.deposit_pence : null) ?? service.depositPence;
   // A multi-service visit totals across all chained segments; a single booking
   // totals just this service (+ its add-ons).
   const totalPrice = isMultiService

@@ -178,6 +178,58 @@ describe('no card found', () => {
   });
 });
 
+/**
+ * A service with options whose chosen option has no fee of its own takes the service's fee, as the
+ * server does. Reading the option alone hid the whole card line (found on the phone 2026-11-18).
+ */
+describe('a service option', () => {
+  const variant = {
+    id: 'var-1',
+    name: 'Long hair',
+    description: null,
+    duration_minutes: 45,
+    buffer_minutes: 0,
+    price_pence: 3500,
+    deposit_pence: null as number | null,
+    sort_order: 0,
+  };
+
+  async function renderWithVariant(v: typeof variant) {
+    await render(
+      <ConfirmStep
+        service={{ ...service, variants: [v] }}
+        variant={v}
+        date="2026-10-01"
+        slot={slot}
+        guest={JO}
+        source="phone"
+        onSuccess={jest.fn()}
+      />,
+    );
+  }
+
+  it('without its own fee shows the card line and the tick, using the service fee', async () => {
+    await renderWithVariant(variant);
+    expect(screen.getByLabelText('Send a card request')).toBeTruthy();
+    expect(screen.getByLabelText('Cancel if no card is added within 24 hours')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Cancel if no card is added within 24 hours'));
+    });
+    const body = await create();
+    expect(body).toMatchObject({ require_card_hold: true, cancel_if_no_card: true });
+  });
+
+  it('with its own fee uses that fee', async () => {
+    mockLookup = {
+      card: { brand: 'visa', last4: '4242', label: 'Visa ending 4242', savedWith: 'Bloom', scope: 'business' },
+      canTakeCards: true,
+      addSavesWith: null,
+    };
+    await renderWithVariant({ ...variant, deposit_pence: 2500 });
+    expect(screen.getByTestId('staff-card-found-line').props.children).toContain('£25.00');
+  });
+});
+
 describe('a card on file found', () => {
   it('says the booking is protected, looks the card up for the picked client only, and uses it', async () => {
     mockLookup = {
