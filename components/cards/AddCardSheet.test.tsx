@@ -6,6 +6,8 @@
  */
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
+import { LinkedVenueContext } from '@/providers/LinkedVenueProvider';
+
 import {
   AddCardSheet,
   addCardReachLine,
@@ -41,6 +43,16 @@ jest.mock('@/components/cards/ReaderSaveFlow', () => {
   const React = require('react');
   const { Text } = require('react-native');
   return { ReaderSaveFlow: ({ device }: { device: string }) => React.createElement(Text, null, `reader flow ${device}`) };
+});
+jest.mock('@/providers/VenueProvider', () => ({ useVenueContext: () => ({ venue: { id: 'venue-own' } }) }));
+/** Shows which business's account the reader is pointed at. */
+jest.mock('@/components/bookings/CardAccountScope', () => {
+  const React = require('react');
+  const { Text, View } = require('react-native');
+  return {
+    CardAccountScope: ({ ownerVenueId, children }: { ownerVenueId: string | null; children: React.ReactNode }) =>
+      React.createElement(View, null, React.createElement(Text, null, `reader account ${ownerVenueId ?? 'app'}`), children),
+  };
 });
 jest.mock('@/lib/queries/useCardsOnFile', () => ({
   useCreateDeskSession: () => ({ mutate: mockCreate, isPending: false, variables: undefined }),
@@ -142,6 +154,38 @@ describe('AddCardSheet reader options (plan §4.12, C12)', () => {
     await render(<AddCardSheet {...baseProps} />);
     expect(screen.getByTestId('add-card-reader-reach').props.children).toBe("Saves the card for Steph's only.");
     await fireEvent.press(screen.getByText('Tap to Pay on this phone'));
+    expect(screen.getByText('reader flow tap_to_pay')).toBeTruthy();
+  });
+
+  it("keeps the reader on the app's account when the app is on the signed-in business", async () => {
+    mockTerminal = true;
+    mockReaderOptions = { can_save: true, reader_reach: "Saves the card for Steph's only." };
+    await render(<AddCardSheet {...baseProps} />);
+    await fireEvent.press(screen.getByText('Tap to Pay on this phone'));
+    expect(screen.getByText('reader account app')).toBeTruthy();
+  });
+
+  it('points the reader at the signed-in business inside a collective booking form (2026-11-19)', async () => {
+    // The collective form scopes the app to the collective id, which the connection token route
+    // reads as a linked venue: "You do not have an active link with that venue".
+    mockTerminal = true;
+    mockReaderOptions = { can_save: true, reader_reach: "Saves the card for Steph's only." };
+    const scope = {
+      ownerVenueId: 'collective-1',
+      ownerVenueName: 'The Beauty Parlour',
+      ownerPractitionerId: null,
+      hydrated: true,
+      setOwnerVenueId: jest.fn(),
+      clearOwnerVenue: jest.fn(),
+      reconcileOwnerVenue: jest.fn(),
+    };
+    await render(
+      <LinkedVenueContext.Provider value={scope}>
+        <AddCardSheet {...baseProps} />
+      </LinkedVenueContext.Provider>,
+    );
+    await fireEvent.press(screen.getByText('Tap to Pay on this phone'));
+    expect(screen.getByText('reader account venue-own')).toBeTruthy();
     expect(screen.getByText('reader flow tap_to_pay')).toBeTruthy();
   });
 

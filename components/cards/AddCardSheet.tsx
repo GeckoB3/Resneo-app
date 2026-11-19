@@ -17,12 +17,13 @@
  * Card entry happens on the web page, so Apple Pay and Google Pay are offered there and the app
  * needs no native change (plan §16.1).
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Modal, StyleSheet, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView, type WebViewNavigation } from 'react-native-webview';
 
+import { CardAccountScope } from '@/components/bookings/CardAccountScope';
 import { ReaderSaveFlow } from '@/components/cards/ReaderSaveFlow';
 import { Button } from '@/components/ui/Button';
 import { Sheet } from '@/components/ui/Sheet';
@@ -45,6 +46,8 @@ import { useReaderSaveOptions } from '@/lib/queries/useReaderSaveOptions';
 import { useOverlayOpen } from '@/lib/ui/open-overlays';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
+import { LinkedVenueContext } from '@/providers/LinkedVenueProvider';
+import { useVenueContext } from '@/providers/VenueProvider';
 
 /**
  * Saving a card on Tap to Pay or the Bluetooth reader with no charge (§4.12, C12) needs the
@@ -80,6 +83,24 @@ export interface AddCardSheetProps {
   /** iOS: only an admin may accept Apple's Tap to Pay terms on first use. */
   isAdmin?: boolean;
   onSaved?: () => void;
+}
+
+/**
+ * A card saved on the reader is a till card on the signed-in business's own Stripe account (the
+ * server's `reader-save/setup-intent` always uses it), so the reader must connect through that
+ * account. The app or the booking form may be scoped to a collective or a linked venue instead: the
+ * collective form books for the collective, whose id the server reads as a linked venue, and the
+ * connection token was refused with "You do not have an active link with that venue" (Tap to Pay
+ * from Add card in a collective booking, 2026-11-19). This points the reader back at the signed-in
+ * business while the save runs; a no-op when the app is already on it.
+ */
+function OwnAccountReaderScope({ children }: { children: ReactNode }) {
+  const { venue } = useVenueContext();
+  const linked = useContext(LinkedVenueContext);
+  const appScope = linked?.ownerVenueId ?? null;
+  const ownVenueId = venue?.id ?? null;
+  const readerOwner = appScope && ownVenueId && appScope !== ownVenueId ? ownVenueId : null;
+  return <CardAccountScope ownerVenueId={readerOwner}>{children}</CardAccountScope>;
 }
 
 /** The outcome words for a finished session (plan §6.7 point 4). */
@@ -277,17 +298,19 @@ export function AddCardSheet({
           ) : null}
 
           {step.kind === 'reader' ? (
-            <ReaderSaveFlow
-              device={step.device}
-              guestId={guestId}
-              clientFirstName={clientFirstName}
-              isAdmin={isAdmin}
-              onSaved={onSaved}
-              onDone={(saved) => {
-                if (saved) onClose();
-                else setStep({ kind: 'choose' });
-              }}
-            />
+            <OwnAccountReaderScope>
+              <ReaderSaveFlow
+                device={step.device}
+                guestId={guestId}
+                clientFirstName={clientFirstName}
+                isAdmin={isAdmin}
+                onSaved={onSaved}
+                onDone={(saved) => {
+                  if (saved) onClose();
+                  else setStep({ kind: 'choose' });
+                }}
+              />
+            </OwnAccountReaderScope>
           ) : null}
 
           {step.kind === 'waiting' ? (
