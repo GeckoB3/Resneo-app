@@ -1,5 +1,5 @@
 import { SymbolView } from 'expo-symbols';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedRef } from 'react-native-reanimated';
 import Sortable, { type SortableGridRenderItem } from 'react-native-sortables';
@@ -42,19 +42,28 @@ export function ServiceOrderSheet({ visible, groups, onSave, onClose }: ServiceO
   // A refetch after our own save must not undo a drag made since, so props are not followed.
   const [order, setOrder] = useState<ServiceOrderGroup[]>(groups);
   const [saving, setSaving] = useState(false);
+  // Dragging is locked while a save runs, as on the web: two saves in flight could land out of
+  // order, and a failed first save's rollback would undo the second drag on screen only. The ref
+  // closes the gap before the re-render that locks the grids.
+  const savingRef = useRef(false);
 
   const handleDrop = useCallback(
     (key: string, services: ServiceOrderItem[]) => {
+      if (savingRef.current) return;
       const before = order;
       const next = withGroupOrder(order, key, services);
       const beforeIds = serviceOrderIds(before);
       const nextIds = serviceOrderIds(next);
       if (beforeIds.every((id, index) => id === nextIds[index])) return;
       setOrder(next);
+      savingRef.current = true;
       setSaving(true);
       onSave(nextIds)
         .catch(() => setOrder(before))
-        .finally(() => setSaving(false));
+        .finally(() => {
+          savingRef.current = false;
+          setSaving(false);
+        });
     },
     [order, onSave],
   );
@@ -111,6 +120,7 @@ export function ServiceOrderSheet({ visible, groups, onSave, onClose }: ServiceO
                 columns={1}
                 rowGap={spacing.xs}
                 scrollableRef={scrollRef}
+                sortEnabled={!saving}
                 onDragStart={() => hapticSelect()}
                 onDragEnd={({ data }) => handleDrop(group.key, data)}
               />

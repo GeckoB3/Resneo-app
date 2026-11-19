@@ -24,6 +24,7 @@ import {
   type CardHoldUiState,
 } from '@/lib/booking/card-hold';
 import { hasSettleableDeposit } from '@/lib/booking/booking-staff-indicators';
+import { confirmWithoutCardUndoneMessage } from '@/lib/booking/card-list';
 import { currencySymbol, formatPositivePence } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useBookingDeposit, type DepositAction } from '@/lib/queries/useBookingMutations';
@@ -253,10 +254,11 @@ export function DepositSheet({ target, onClose, onAddCard }: DepositSheetProps) 
     setError(null);
     setCardBusy('undo');
     try {
-      await undoConfirm.mutateAsync(undo.actionIds);
+      // A card added meanwhile keeps the booking confirmed: say so rather than "waiting again".
+      const out = await undoConfirm.mutateAsync(undo.actionIds);
       hapticSuccess();
       setUndo(null);
-      setNotice('Undone. The booking is waiting for a card again.');
+      setNotice(confirmWithoutCardUndoneMessage(out));
     } catch (e) {
       hapticWarning();
       setUndo(null);

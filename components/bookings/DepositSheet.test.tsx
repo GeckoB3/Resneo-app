@@ -263,6 +263,29 @@ describe('DepositSheet: the Card actions (card-on-file-plan §6.3)', () => {
     expect(screen.queryByText('Undo')).toBeNull();
   });
 
+  it('says so when Undo kept the booking because a card was added meanwhile (2026-11-19)', async () => {
+    mockConfirmWithout.mockResolvedValue({
+      changed: 1,
+      bookingIds: ['bk-1'],
+      unitExtra: 0,
+      skipped: [],
+      actionIds: ['act-1'],
+      undoUntil: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+      message: '1 booking confirmed without a card.',
+    });
+    mockUndo.mockResolvedValue({ restored: 0, kept: 1 });
+    await render(<DepositSheet target={target({ cardHold: waiting })} onClose={onClose} />);
+    await fireEvent.press(screen.getByText('Confirm without a card'));
+    await fireEvent.press(screen.getByText('Confirm 1 booking'));
+    await fireEvent.press(screen.getByText('Undo'));
+    expect(
+      screen.getByText(
+        'This could not be undone because a card was added since. The booking stays confirmed and the card protects it.',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText('Undone. The booking is waiting for a card again.')).toBeNull();
+  });
+
   it('confirms with Waive on an older server', async () => {
     mockConfirmWithout.mockRejectedValue(new ApiError('Not found', 404, undefined));
     await render(<DepositSheet target={target({ cardHold: waiting })} onClose={onClose} />);

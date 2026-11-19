@@ -4,11 +4,36 @@
  * outcome shown in the server's words.
  */
 import { ApiError } from '@/lib/api/client';
-import { runReaderSave, type ReaderSaveApi, type ReaderSaveDto, type ReaderSaveTerminal } from '@/lib/cards/reader-save';
+import {
+  READER_SAVE_OTHER_BUSINESS,
+  readerSaveApi,
+  runReaderSave,
+  type ReaderSaveApi,
+  type ReaderSaveDto,
+  type ReaderSaveTerminal,
+} from '@/lib/cards/reader-save';
 
 jest.mock('@/lib/payments/terminal-sdk', () => ({
   terminalErrorMessage: (error: { message?: string } | undefined, fallback: string) => error?.message || fallback,
 }));
+const mockApiFetch = jest.fn();
+jest.mock('@/lib/api/client', () => ({
+  ...jest.requireActual('@/lib/api/client'),
+  apiFetch: (...args: unknown[]) => mockApiFetch(...args),
+}));
+
+describe('readerSaveApi.options', () => {
+  it("tells another business's client from an older server without the route (2026-11-19)", async () => {
+    mockApiFetch.mockRejectedValueOnce(
+      new ApiError("We couldn't find that client.", 404, { error: "We couldn't find that client.", code: 'NOT_FOUND' }),
+    );
+    await expect(readerSaveApi('t').options('g-1')).resolves.toBe(READER_SAVE_OTHER_BUSINESS);
+    mockApiFetch.mockRejectedValueOnce(new ApiError('Not found', 404, '<html>'));
+    await expect(readerSaveApi('t').options('g-1')).resolves.toBeNull();
+    mockApiFetch.mockResolvedValueOnce({ can_save: true });
+    await expect(readerSaveApi('t').options('g-1')).resolves.toEqual({ can_save: true });
+  });
+});
 
 function save(over: Partial<ReaderSaveDto> = {}): ReaderSaveDto {
   return {

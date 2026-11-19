@@ -19,7 +19,11 @@ jest.mock('@/lib/payments/terminal', () => ({ useTapToPayReader: () => ({ connec
 jest.mock('@/lib/payments/bluetoothReader', () => ({
   useBluetoothReader: () => ({ connected: mockBluetoothConnected, reconnectRemembered: mockReconnect }),
 }));
-const mockTerminal = { cancelProcessSetupIntent: jest.fn() };
+const mockTerminal = {
+  cancelProcessSetupIntent: jest.fn(),
+  retrieveSetupIntent: jest.fn(),
+  processSetupIntent: jest.fn(),
+};
 jest.mock('@/lib/payments/terminal-sdk', () => ({ getTerminalSdk: () => ({ useStripeTerminal: () => mockTerminal }) }));
 
 const mockRun = jest.fn();
@@ -38,6 +42,67 @@ beforeEach(() => {
   mockBluetoothConnected = null;
   mockRun.mockReset();
   mockTerminal.cancelProcessSetupIntent.mockReset();
+  mockTerminal.retrieveSetupIntent.mockReset();
+  mockTerminal.processSetupIntent.mockReset();
+});
+
+describe('ReaderSaveFlow stopping (2026-11-19)', () => {
+  it('Cancel while the reader is getting ready starts no save', async () => {
+    let connected: (v: unknown) => void = () => undefined;
+    mockTapConnect.mockReturnValue(
+      new Promise((resolve) => {
+        connected = resolve;
+      }),
+    );
+    const onDone = jest.fn();
+    await render(<ReaderSaveFlow device="tap_to_pay" guestId="g-1" clientFirstName="Amy" onDone={onDone} />);
+    await fireEvent.press(screen.getByText('Cancel'));
+    expect(onDone).toHaveBeenCalledWith(false);
+    await act(async () => {
+      connected({ ok: true, error: null });
+    });
+    await flush();
+    expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  it('closing while the card is read cancels the reader, and nothing more starts on it', async () => {
+    let reader:
+      | { processSetupIntent: (p: unknown) => Promise<unknown>; retrieveSetupIntent: (s: string) => Promise<unknown> }
+      | undefined;
+    mockTerminal.processSetupIntent.mockReturnValue(new Promise(() => undefined));
+    mockRun.mockImplementation((_api, terminal) => {
+      reader = terminal;
+      void terminal.processSetupIntent({});
+      return new Promise(() => undefined);
+    });
+    const view = await render(<ReaderSaveFlow device="tap_to_pay" guestId="g-1" clientFirstName="Amy" onDone={jest.fn()} />);
+    await flush();
+    expect(mockTerminal.processSetupIntent).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      view.unmount();
+    });
+    expect(mockTerminal.cancelProcessSetupIntent).toHaveBeenCalledTimes(1);
+    // A save still running after the close is answered as cancelled, and the reader is left alone.
+    const cancelled = { error: { code: 'CANCELED', message: 'Cancelled.' } };
+    await expect(reader!.retrieveSetupIntent('secret')).resolves.toEqual(cancelled);
+    await expect(reader!.processSetupIntent({})).resolves.toEqual(cancelled);
+    expect(mockTerminal.retrieveSetupIntent).not.toHaveBeenCalled();
+    expect(mockTerminal.processSetupIntent).toHaveBeenCalledTimes(1);
+  });
+
+  it('a question asked after closing is answered as stopping', async () => {
+    let ask: ((text: string) => Promise<boolean | null>) | undefined;
+    mockRun.mockImplementation((_api, _terminal, _input, hooks) => {
+      ask = hooks.askConsent;
+      return new Promise(() => undefined);
+    });
+    const view = await render(<ReaderSaveFlow device="tap_to_pay" guestId="g-1" clientFirstName="Amy" onDone={jest.fn()} />);
+    await flush();
+    await act(async () => {
+      view.unmount();
+    });
+    await expect(ask!('Save this card?')).resolves.toBeNull();
+  });
 });
 
 describe('ReaderSaveFlow', () => {

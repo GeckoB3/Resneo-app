@@ -29,6 +29,21 @@ function digits(value: string | null | undefined): string {
   return (value ?? '').replace(/\D/g, '');
 }
 
+/**
+ * What staff are told when a timed-out create was not found. For a booking at another business
+ * the search could only look at this business's calendar (2026-11-19), so "it is not on the
+ * calendar yet" would be a guess: staff are asked to check that business's calendar instead.
+ */
+export function timedOutCreateNotFoundMessage(atOtherBusiness: boolean, businessName?: string | null): string {
+  if (!atOtherBusiness) {
+    return 'We could not confirm this booking in time, and it is not on the calendar yet. Check the calendar before trying again, so it is not booked twice.';
+  }
+  const name = businessName?.trim();
+  return name
+    ? `We could not confirm this booking in time, and we could not check ${name}'s calendar from here. Check their calendar before trying again, so it is not booked twice.`
+    : "We could not confirm this booking in time, and we could not check the other business's calendar from here. Check their calendar before trying again, so it is not booked twice.";
+}
+
 /** Same guest: the email, the phone's last nine digits, or failing both the name. */
 function sameGuest(row: BookingListRow, q: JustCreatedBookingQuery): boolean {
   const email = q.email?.trim().toLowerCase();
@@ -45,6 +60,10 @@ function sameGuest(row: BookingListRow, q: JustCreatedBookingQuery): boolean {
  * not stop the server, so the booking may well exist, and a blind retry would
  * make it twice (a walk-in skips the slot check that refuses the second one).
  * Returns the booking's id, or null when it is not there (yet).
+ *
+ * A partner's booking (a linked or collective partner's calendar) cannot be found this way yet: the
+ * list route reads `owner_venue_id` only for guest history and sessions, so a day's list is always
+ * the signed-in business's. See {@link timedOutCreateNotFoundMessage}.
  */
 export async function findJustCreatedBooking(q: JustCreatedBookingQuery): Promise<string | null> {
   const params = new URLSearchParams({ date: q.date });

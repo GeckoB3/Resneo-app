@@ -374,6 +374,11 @@ describe('formatRangeLabel', () => {
     expect(label).toBe('28 May – 3 Jun');
   });
 
+  it('names both years when the range crosses a new year (the upcoming year from Today)', () => {
+    expect(formatRangeLabel('2026-11-19', '2027-11-19')).toBe('19 Nov 2026 – 19 Nov 2027');
+    expect(formatRangeLabel('2026-12-29', '2027-01-04')).toBe('29 Dec 2026 – 4 Jan 2027');
+  });
+
   it('formats a range spanning a year boundary', () => {
     const label = formatRangeLabel('2025-12-29', '2026-01-04');
     expect(label).toContain('29 Dec');

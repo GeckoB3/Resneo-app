@@ -71,13 +71,24 @@ export const READER_SAVE_COLLECTIVE_CODE = 'CARD_ALREADY_SAVED_COLLECTIVE';
 
 const BASE = '/api/venue/cards/reader-save';
 
+/**
+ * The options' answer for a client this business does not keep (a collective partner's, as after
+ * a booking at a partner): the reader saves a till card for this business's own client records
+ * only, so the server answers "We couldn't find that client."
+ */
+export const READER_SAVE_OTHER_BUSINESS = 'other_business' as const;
+
 /** The calls, bound to a token. */
 export function readerSaveApi(accessToken: string) {
   return {
-    options: async (guestId: string): Promise<ReaderSaveOptions | null> => {
+    options: async (guestId: string): Promise<ReaderSaveOptions | typeof READER_SAVE_OTHER_BUSINESS | null> => {
       try {
         return await apiFetch<ReaderSaveOptions>(`${BASE}?guest_id=${encodeURIComponent(guestId)}`, { accessToken });
       } catch (error) {
+        // The route answered in words: the client is not one of this business's own.
+        if (error instanceof ApiError && error.status === 404 && isApiErrorBody(error.body)) {
+          return READER_SAVE_OTHER_BUSINESS;
+        }
         // An older server has no route: the reader options stay hidden.
         if (error instanceof ApiError && (error.status === 404 || error.status === 405)) return null;
         throw error;

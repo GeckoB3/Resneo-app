@@ -71,21 +71,43 @@ export function ReaderSaveFlow({
   const resolver = useRef<((answer: boolean | null) => void) | null>(null);
   const started = useRef(false);
   const mounted = useRef(true);
+  /**
+   * Staff stopped (Cancel, or the sheet closed). Nothing further is started on the reader or the
+   * server after this. Found 2026-11-19: Cancel while "Getting the card reader ready" went back to
+   * the choices but the save still started once the reader connected, and closing the sheet while
+   * the card was being read left the reader waiting for a card.
+   */
+  const stopped = useRef(false);
+  /** The reader is collecting the card (between processSetupIntent's start and its answer). */
+  const reading = useRef(false);
+  const terminalRef = useRef(terminal);
   const client = clientFirstName || 'the client';
+
+  useEffect(() => {
+    terminalRef.current = terminal;
+  }, [terminal]);
 
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
+      stopped.current = true;
       // Leaving mid-question counts as stopping.
       resolver.current?.(null);
       resolver.current = null;
+      // Leaving mid-read stops the reader too.
+      if (reading.current) void terminalRef.current.cancelProcessSetupIntent?.()?.catch(() => undefined);
     };
   }, []);
 
   const ask = useCallback(
     (next: Step) =>
       new Promise<boolean | null>((resolve) => {
+        // Stopped already: answer as staff stopping, so the save is cancelled rather than left open.
+        if (stopped.current) {
+          resolve(null);
+          return;
+        }
         resolver.current = resolve;
         if (mounted.current) setStep(next);
       }),
@@ -111,14 +133,33 @@ export function ReaderSaveFlow({
   useEffect(() => {
     if (started.current || !accessToken) return;
     started.current = true;
+    // The reader as the save sees it: once staff have stopped, nothing more is started on it (the
+    // save is then cancelled on the server as a stop), and a read in progress can be cancelled.
+    const CANCELED = { error: { code: 'CANCELED', message: 'Cancelled.' } };
+    const guarded: ReaderSaveTerminal = {
+      retrieveSetupIntent: (secret) =>
+        stopped.current ? Promise.resolve(CANCELED) : terminal.retrieveSetupIntent(secret),
+      processSetupIntent: async (params) => {
+        if (stopped.current) return CANCELED;
+        reading.current = true;
+        try {
+          return await terminal.processSetupIntent(params);
+        } finally {
+          reading.current = false;
+        }
+      },
+      cancelProcessSetupIntent: terminal.cancelProcessSetupIntent,
+    };
     void (async () => {
       let outcome: ReaderSaveResult;
       try {
         const failed = await connect();
+        // Cancelled while the reader was getting ready: start nothing.
+        if (stopped.current) return;
         if (failed) {
           outcome = { kind: 'failed', text: failed, save: null };
         } else {
-          outcome = await runReaderSave(readerSaveApi(accessToken), terminal, { guestId, device }, {
+          outcome = await runReaderSave(readerSaveApi(accessToken), guarded, { guestId, device }, {
             confirmBusinessOnly: async (question) => (await ask({ kind: 'question', text: question })) === true,
             askConsent: async (text) => {
               const handed = await ask({ kind: 'handTo', text });
@@ -147,8 +188,15 @@ export function ReaderSaveFlow({
   }, [accessToken, ask, connect, device, guestId, onSaved, terminal]);
 
   const cancelReading = useCallback(() => {
-    void terminal.cancelProcessSetupIntent?.();
+    // Also covers the moment before the read starts: the guarded reader then starts nothing.
+    stopped.current = true;
+    void terminal.cancelProcessSetupIntent?.()?.catch(() => undefined);
   }, [terminal]);
+
+  const cancelConnecting = useCallback(() => {
+    stopped.current = true;
+    onDone(false);
+  }, [onDone]);
 
   return (
     <View style={styles.stack} testID="reader-save-flow">
@@ -157,7 +205,7 @@ export function ReaderSaveFlow({
           <Text variant="bodySmall" accessibilityLiveRegion="polite">
             {READER_SAVE_COPY.connecting}
           </Text>
-          <Button label="Cancel" variant="secondary" onPress={() => onDone(false)} fullWidth />
+          <Button label="Cancel" variant="secondary" onPress={cancelConnecting} fullWidth />
         </>
       ) : null}
 

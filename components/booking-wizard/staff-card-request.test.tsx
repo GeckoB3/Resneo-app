@@ -11,9 +11,56 @@ import { staffCardConfirmationView } from '@/components/booking-wizard/StaffCard
 import { StaffCardRequestControls } from '@/components/booking-wizard/StaffChargeControls';
 import {
   DEFAULT_STAFF_CARD_REQUEST,
+  groupBookedAtVenueId,
   parseStaffCardLookup,
   staffCardRequestFields,
+  staffCardVenues,
 } from '@/components/booking-wizard/staff-card-request';
+
+describe('staffCardVenues', () => {
+  it('in the collective form, never names the collective: the member, else the signed-in business', () => {
+    const base = { collectiveForm: true, ownerVenueId: 'collective-1', signedInVenueId: 'venue-a' };
+    expect(staffCardVenues({ ...base, bookingVenueId: null })).toEqual({ lookupVenueId: 'venue-a', partnerVenueId: null });
+    expect(staffCardVenues({ ...base, bookingVenueId: 'venue-b' })).toEqual({
+      lookupVenueId: 'venue-b',
+      partnerVenueId: 'venue-b',
+    });
+    // The signed-in business named as the booking's business is still its own.
+    expect(staffCardVenues({ ...base, bookingVenueId: 'venue-a' })).toEqual({ lookupVenueId: 'venue-a', partnerVenueId: null });
+    expect(staffCardVenues({ ...base, bookingVenueId: null, signedInVenueId: null })).toEqual({
+      lookupVenueId: null,
+      partnerVenueId: null,
+    });
+  });
+
+  it('outside the collective form, a linked calendar is the partner, as before', () => {
+    expect(
+      staffCardVenues({ collectiveForm: false, bookingVenueId: null, ownerVenueId: 'linked-1', signedInVenueId: 'venue-a' }),
+    ).toEqual({ lookupVenueId: 'linked-1', partnerVenueId: 'linked-1' });
+    expect(
+      staffCardVenues({ collectiveForm: false, bookingVenueId: null, ownerVenueId: null, signedInVenueId: 'venue-a' }),
+    ).toEqual({ lookupVenueId: null, partnerVenueId: null });
+  });
+});
+
+describe('groupBookedAtVenueId', () => {
+  const practitioners = [
+    { id: 'cal-a', owning_venue_id: 'venue-a' },
+    { id: 'cal-b1', owning_venue_id: 'venue-b' },
+    { id: 'cal-b2', owning_venue_id: 'venue-b' },
+  ];
+  it("names the member the group's calendars belong to, none for the signed-in business", () => {
+    expect(groupBookedAtVenueId([{ practitionerId: 'cal-b1' }, { practitionerId: 'cal-b2' }], practitioners, 'venue-a')).toBe(
+      'venue-b',
+    );
+    expect(groupBookedAtVenueId([{ practitionerId: 'cal-a' }], practitioners, 'venue-a')).toBeNull();
+  });
+  it('names none when it cannot be told', () => {
+    expect(groupBookedAtVenueId([], practitioners, 'venue-a')).toBeNull();
+    expect(groupBookedAtVenueId([{ practitionerId: 'cal-a' }, { practitionerId: 'cal-b1' }], practitioners, 'venue-a')).toBeNull();
+    expect(groupBookedAtVenueId([{ practitionerId: 'cal-x' }], practitioners, 'venue-a')).toBeNull();
+  });
+});
 
 describe('staffCardRequestFields', () => {
   it('sends the switch explicitly, and the tick only when on and allowed', () => {

@@ -15,7 +15,9 @@ import { StaffAddCardSheet } from '@/components/booking-wizard/StaffAddCardSheet
 import { staffCardConfirmationView } from '@/components/booking-wizard/StaffCardConfirmation';
 import {
   DEFAULT_STAFF_CARD_REQUEST,
+  groupBookedAtVenueId,
   staffCardRequestFields,
+  staffCardVenues,
   useStaffCardLookup,
   type StaffCardRequestState,
 } from '@/components/booking-wizard/staff-card-request';
@@ -108,6 +110,15 @@ type GroupBookingFlowProps = {
   /** The venue's `services_layout`, for the service picker's category headings. */
   servicesLayout?: ServicesLayout;
   ownerVenueId?: string | null;
+  /**
+   * The collective booking form: `ownerVenueId` is then the collective, never a business. The card
+   * line answers for the member business the group's calendars belong to.
+   */
+  collectiveForm?: boolean;
+  /** The signed-in business (the collective form's own-calendar bookings). */
+  signedInVenueId?: string | null;
+  /** A member business's name, in the collective form. */
+  businessNameOf?: (venueId: string) => string;
   /** 'phone' | 'walk-in' — the group create posts this source. */
   source: 'phone' | 'walk-in';
   /** The phone picker's starting country (from the venue's currency). */
@@ -133,6 +144,9 @@ export function GroupBookingFlow({
   anyAvailableEnabled,
   servicesLayout = 'sections',
   ownerVenueId,
+  collectiveForm = false,
+  signedInVenueId = null,
+  businessNameOf,
   source,
   phoneDefaultCountry = 'GB',
   onCreated,
@@ -194,8 +208,22 @@ export function GroupBookingFlow({
   const groupCharge = useMemo(() => resolveVisitChargeTotal(people), [people]);
   const groupCardHoldPence = useMemo(() => resolveVisitCardHoldTotal(people), [people]);
   const showCardHoldToggle = groupCardHoldPence > 0;
-  // A linked business's calendar: the card line answers for a booking there.
-  const cardLookup = useStaffCardLookup(organiser.guest_id, showCardHoldToggle, ownerVenueId ?? null);
+  // A linked business's calendar: the card line answers for a booking there. In the collective form
+  // `ownerVenueId` is the COLLECTIVE: the card was looked up there, "Add card now" was always
+  // withheld and the line answered for the wrong business, so the member is worked out from the
+  // group's calendars (all one business; the server refuses a group across businesses).
+  const bookedAtVenueId = useMemo(
+    () => (collectiveForm ? groupBookedAtVenueId(people, catalog?.practitioners ?? [], signedInVenueId) : null),
+    [collectiveForm, people, catalog, signedInVenueId],
+  );
+  const bookedAtBusiness = bookedAtVenueId && businessNameOf ? businessNameOf(bookedAtVenueId) : null;
+  const { lookupVenueId, partnerVenueId } = staffCardVenues({
+    collectiveForm,
+    bookingVenueId: collectiveForm ? bookedAtVenueId : null,
+    ownerVenueId,
+    signedInVenueId,
+  });
+  const cardLookup = useStaffCardLookup(organiser.guest_id, showCardHoldToggle, lookupVenueId);
   const cardNotPossible = cardLookup.canTakeCards === false;
   const cardTickAllowed =
     source !== 'walk-in' &&
@@ -922,9 +950,12 @@ export function GroupBookingFlow({
               group
               leadName={leadName}
               notPossible={cardNotPossible}
+              businessName={bookedAtBusiness}
               tickAllowed={cardTickAllowed}
+              // At another business the card must be saved for the client record the booking makes
+              // there, so "Add card now" is not offered before the booking.
               onAddCardNow={
-                organiser.guest_id && !cardNotPossible && !ownerVenueId ? () => setAddCardOpen(true) : undefined
+                organiser.guest_id && !cardNotPossible && !partnerVenueId ? () => setAddCardOpen(true) : undefined
               }
             />
           ) : null}
@@ -932,9 +963,11 @@ export function GroupBookingFlow({
             open={addCardOpen}
             onClose={() => setAddCardOpen(false)}
             guestId={organiser.guest_id}
+            bookingVenueId={lookupVenueId}
             clientFirstName={organiser.first_name.trim()}
             hasContact={Boolean(organiser.email.trim() || organiser.phone.trim() || organiser.guest_id)}
             savesWith={cardLookup.addSavesWith}
+            businessName={bookedAtBusiness}
             onSaved={cardLookup.refresh}
           />
 

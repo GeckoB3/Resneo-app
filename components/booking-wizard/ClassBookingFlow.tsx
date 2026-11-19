@@ -61,7 +61,7 @@ type ClassBookingFlowProps = { onCreated: (bookingId: string) => void };
 /** Book a guest onto a scheduled class session (web-parity class flow). */
 export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
   const router = useRouter();
-  const { venueId, timeZone, currency, isCollective, ownerVenueId: formOwnerVenueId } =
+  const { venueId, timeZone, currency, isCollective, ownerVenueId: formOwnerVenueId, signedInVenueId } =
     useBookingFormVenue();
   // The phone picker's starting country (web parity: EUR venues → IE, else GB).
   const phoneDefaultCountry = defaultPhoneCountryForVenueCurrency(currency);
@@ -368,6 +368,11 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
         <BookingFlowConfirm
           source={source}
           onSourceChange={setSource}
+          // A listed class books for the collective: the card line answers for the member hosting
+          // it (only when the server names that member).
+          collectiveForm={isCollective && Boolean(inst.venue_id)}
+          bookingVenueId={inst.venue_id ?? null}
+          signedInVenueId={signedInVenueId ?? null}
           headerTitle={inst.venue_name ? `${selectedClass.class_name} at ${inst.venue_name}` : selectedClass.class_name}
           headerSubtitle={`${formatDurationMinutes(inst.duration_minutes)}${inst.instructor_name ? ` · with ${inst.instructor_name}` : ''}`}
           rows={[

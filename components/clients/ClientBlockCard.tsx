@@ -78,6 +78,9 @@ export function ClientBlockBanner({ guestId }: { guestId: string }) {
           {block.reason ? (
             <Text variant="bodySmall">{`Reason: ${block.reason}`}</Text>
           ) : null}
+          {block.through_client_name ? (
+            <Text variant="caption" tone="secondary">{`This comes from ${block.through_client_name}, who shares this client's email or phone. To unblock, open ${block.through_client_name}'s record.`}</Text>
+          ) : null}
           {!block.own && !block.can_unblock ? (
             <Text variant="caption" tone="secondary">{`Ask ${block.venue_name} to unblock them.`}</Text>
           ) : null}

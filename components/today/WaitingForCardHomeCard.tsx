@@ -51,7 +51,12 @@ export function WaitingForCardHomeCard() {
                     action: 'send_card_requests',
                     count: waiting.count,
                     selection: {
-                      filter: { card_state: 'waiting', from_date: waiting.from, to_date: waiting.to },
+                      // The served count has no end date; the older list read has its own.
+                      filter: {
+                        card_state: 'waiting',
+                        from_date: waiting.from,
+                        ...(waiting.to ? { to_date: waiting.to } : {}),
+                      },
                       expectedCount: waiting.count,
                     },
                   })

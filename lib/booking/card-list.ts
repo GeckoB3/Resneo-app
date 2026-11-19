@@ -78,6 +78,21 @@ export function selectAllCardCount(
   ).length;
 }
 
+/**
+ * Whether "Select all {n} bookings" may be offered. It sends the server only the Card filter and the
+ * dates, so it is offered only on this business's own list while nothing else narrows what staff see
+ * (a stylist, a service, a status, a search, one client...). Found 2026-11-19: with a stylist filter
+ * on, "Select all" counted and sent card requests to other stylists' clients too.
+ */
+export function selectAllCardOffered(opts: {
+  cardFilter: ApiCardState | null;
+  ownVenue: boolean;
+  /** Any filter or search besides the Card filter and the dates. */
+  otherFiltersActive: boolean;
+}): boolean {
+  return isCardBulkState(opts.cardFilter) && opts.ownVenue && !opts.otherFiltersActive;
+}
+
 /** "Select all 86 bookings". */
 export function selectAllCardLabel(n: number): string {
   return `Select all ${n} booking${n === 1 ? '' : 's'}`;
@@ -93,6 +108,20 @@ export const CARD_UPCOMING_DAYS = 365;
 export function undoDeadlineMs(undoUntilIso: string | null | undefined, nowMs: number, windowMs: number): number {
   const parsed = undoUntilIso ? Date.parse(undoUntilIso) : Number.NaN;
   return Number.isFinite(parsed) ? parsed : nowMs + windowMs;
+}
+
+/**
+ * What Undo of "Confirm without a card" did to one booking (its visit's bookings move with it), in
+ * the server's counts: `restored` went back to Waiting for card, `kept` stayed as they were because
+ * a card protected them since (web `undoConfirmWithoutCard`: protection wins). Found 2026-11-19:
+ * the booking sheet always said "waiting for a card again", even when the server kept it.
+ */
+export function confirmWithoutCardUndoneMessage(out: { restored: number; kept: number }): string {
+  if (out.kept === 0) return 'Undone. The booking is waiting for a card again.';
+  if (out.restored === 0) {
+    return 'This could not be undone because a card was added since. The booking stays confirmed and the card protects it.';
+  }
+  return `Undone. ${out.restored} ${out.restored === 1 ? 'booking is' : 'bookings are'} waiting for a card again. ${out.kept} could not be undone because a card was added since.`;
 }
 
 /** The badge tone for a card state pill: Waiting for card asks for attention, the rest are calm. */

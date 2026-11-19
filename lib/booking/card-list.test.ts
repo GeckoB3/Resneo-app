@@ -9,11 +9,13 @@ import {
   CARD_UPCOMING_DAYS,
   cardBulkAbilities,
   cardStateCounts,
+  confirmWithoutCardUndoneMessage,
   isCardBulkState,
   rowCardPill,
   rowsCarryCardState,
   selectAllCardCount,
   selectAllCardLabel,
+  selectAllCardOffered,
   undoDeadlineMs,
 } from '@/lib/booking/card-list';
 import { addDaysToDateStr } from '@/lib/dates/venue-dates';
@@ -93,6 +95,25 @@ describe('bulk selection', () => {
     expect(selectAllCardLabel(1)).toBe('Select all 1 booking');
     expect(isCardBulkState('protected')).toBe(false);
     expect(isCardBulkState('not_needed')).toBe(true);
+  });
+
+  it('offers "Select all" only while the Card filter and the dates are all that narrow the list', () => {
+    expect(selectAllCardOffered({ cardFilter: 'waiting', ownVenue: true, otherFiltersActive: false })).toBe(true);
+    // A stylist filter or a search: the server would act on bookings staff cannot see (2026-11-19).
+    expect(selectAllCardOffered({ cardFilter: 'waiting', ownVenue: true, otherFiltersActive: true })).toBe(false);
+    expect(selectAllCardOffered({ cardFilter: 'waiting', ownVenue: false, otherFiltersActive: false })).toBe(false);
+    expect(selectAllCardOffered({ cardFilter: 'protected', ownVenue: true, otherFiltersActive: false })).toBe(false);
+    expect(selectAllCardOffered({ cardFilter: null, ownVenue: true, otherFiltersActive: false })).toBe(false);
+  });
+
+  it('words what Undo of Confirm without a card did, kept bookings included', () => {
+    expect(confirmWithoutCardUndoneMessage({ restored: 1, kept: 0 })).toBe('Undone. The booking is waiting for a card again.');
+    expect(confirmWithoutCardUndoneMessage({ restored: 0, kept: 1 })).toBe(
+      'This could not be undone because a card was added since. The booking stays confirmed and the card protects it.',
+    );
+    expect(confirmWithoutCardUndoneMessage({ restored: 1, kept: 2 })).toBe(
+      'Undone. 1 booking is waiting for a card again. 2 could not be undone because a card was added since.',
+    );
   });
 
   it('keeps Undo until the server says, or 5 minutes', () => {

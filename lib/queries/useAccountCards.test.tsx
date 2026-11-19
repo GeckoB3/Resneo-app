@@ -176,6 +176,66 @@ describe('useSaveAccountCard', () => {
     expect(out).toEqual({ status: 'pending' });
   });
 
+  it('after the sheet saved the card, a dropped connection or a server error reads as being saved (2026-11-19)', async () => {
+    let n = 0;
+    mockHandler = () => {
+      n += 1;
+      if (n === 1) throw new ApiError('Network request failed. Check your connection and try again.', 0);
+      throw new ApiError('Something went wrong', 500, { error: 'Something went wrong' });
+    };
+    const wait = jest.fn().mockResolvedValue(undefined);
+    const { result } = await renderHook(
+      () => useSaveAccountCard(jest.fn().mockResolvedValue({ status: 'succeeded' }), wait),
+      { wrapper: Wrapper },
+    );
+    let out: unknown;
+    await act(async () => {
+      out = await result.current.mutateAsync(setup);
+      await flush();
+    });
+    expect(mockCalls).toHaveLength(4);
+    expect(wait).toHaveBeenCalledTimes(3);
+    expect(out).toEqual({ status: 'pending' });
+  });
+
+  it('a dropped confirm followed by a confirmed one is saved', async () => {
+    let n = 0;
+    mockHandler = () => {
+      n += 1;
+      if (n === 1) throw new ApiError('Network request failed.', 0);
+      return { confirmed: true, card: { brand: 'visa', last4: '4242' }, secured_bookings: 0 };
+    };
+    const { result } = await renderHook(
+      () => useSaveAccountCard(jest.fn().mockResolvedValue({ status: 'succeeded' }), jest.fn().mockResolvedValue(undefined)),
+      { wrapper: Wrapper },
+    );
+    let out: unknown;
+    await act(async () => {
+      out = await result.current.mutateAsync(setup);
+      await flush();
+    });
+    expect(out).toEqual({ status: 'saved', label: 'Visa ending 4242', securedBookings: 0 });
+  });
+
+  it('a real refusal of the confirm is still an error', async () => {
+    mockHandler = () => {
+      throw new ApiError('Not found', 404, { error: 'Not found' });
+    };
+    const { result } = await renderHook(
+      () => useSaveAccountCard(jest.fn().mockResolvedValue({ status: 'succeeded' }), jest.fn().mockResolvedValue(undefined)),
+      { wrapper: Wrapper },
+    );
+    let caught: unknown = null;
+    await act(async () => {
+      await result.current.mutateAsync(setup).catch((e: unknown) => {
+        caught = e;
+      });
+      await flush();
+    });
+    expect(caught).toBeInstanceOf(ApiError);
+    expect(mockCalls).toHaveLength(1);
+  });
+
   it('confirms nothing when the sheet was closed or failed', async () => {
     const sheet = jest.fn().mockResolvedValueOnce({ status: 'cancelled' }).mockResolvedValueOnce({ status: 'failed', message: 'Declined' });
     const { result } = await renderHook(() => useSaveAccountCard(sheet), { wrapper: Wrapper });

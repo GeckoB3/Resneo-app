@@ -28,7 +28,14 @@ jest.mock('@/lib/api/client', () => ({
   },
 }));
 
-import { isStaleCollectiveSave, useCollectiveSettings, useSaveCollectiveRule } from '@/lib/queries/useCollectiveSettings';
+import {
+  collectiveSettingsKey,
+  isStaleCollectiveSave,
+  savedCollectiveRulesVersion,
+  useCollectiveSettings,
+  useSaveCollectiveRule,
+  type CollectiveSettingsPayload,
+} from '@/lib/queries/useCollectiveSettings';
 
 let client: QueryClient;
 function Wrapper({ children }: { children: ReactNode }) {
@@ -85,6 +92,40 @@ describe('useSaveCollectiveRule', () => {
     ]);
     const keys = invalidate.mock.calls.map(([f]) => JSON.stringify(f?.queryKey));
     expect(keys.some((k) => k.includes('"settings"') && k.includes('"col-1"'))).toBe(true);
+  });
+
+  it('reads the saved version from either route', () => {
+    expect(savedCollectiveRulesVersion({ booking_settings_version: 6 })).toBe(6);
+    expect(savedCollectiveRulesVersion({ raw: {}, collective: { version: 7 } })).toBe(7);
+    expect(savedCollectiveRulesVersion({ raw: {}, collective: null })).toBeNull();
+    expect(savedCollectiveRulesVersion(null)).toBeNull();
+  });
+
+  it('a second quick change names the version the first save made (2026-11-19)', async () => {
+    const key = collectiveSettingsKey('token-A', 'col-1');
+    client.setQueryData(key, { booking_rules: { version: 4 } } as unknown as CollectiveSettingsPayload);
+    // The read after the save is slow: the saved version must not wait for it.
+    let release: (v: unknown) => void = () => undefined;
+    mockHandler = (call) => {
+      if (call.method === 'PATCH') return { raw: {}, collective: { version: 5 } };
+      return new Promise((resolve) => {
+        release = resolve;
+      });
+    };
+    await renderHook(() => useCollectiveSettings('col-1'), { wrapper: Wrapper });
+    const { result } = await renderHook(() => useSaveCollectiveRule('col-1'), { wrapper: Wrapper });
+    act(() => {
+      result.current.mutate({ route: 'feature-flags', patch: { waitlist_v2: false }, version: 4 });
+    });
+    await waitFor(() =>
+      expect((client.getQueryData(key) as CollectiveSettingsPayload).booking_rules.version).toBe(5),
+    );
+    // Still saving until the settings are read again, so the switches stay disabled.
+    expect(result.current.isPending).toBe(true);
+    await act(async () => {
+      release({ booking_rules: { version: 5 } });
+    });
+    await waitFor(() => expect(result.current.isPending).toBe(false));
   });
 
   it('tells a stale save from other refusals', () => {

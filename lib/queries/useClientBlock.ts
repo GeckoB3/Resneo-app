@@ -22,6 +22,8 @@ export interface ClientBlockSummary {
   /** This business's own block, or any when this business hosts the collective. */
   reason: string | null;
   can_unblock: boolean;
+  /** This business's block on another client who shares this client's email or phone: their name. */
+  through_client_name?: string | null;
 }
 
 export interface ClientBlockPreview {
@@ -43,18 +45,34 @@ export interface ClientBlockState {
   preview: ClientBlockPreview | null;
 }
 
-export function useClientBlock(guestId: string | null | undefined, options?: { preview?: boolean; enabled?: boolean }) {
+export function useClientBlock(
+  guestId: string | null | undefined,
+  options?: {
+    preview?: boolean;
+    enabled?: boolean;
+    /**
+     * The collective member the booking is at, when it is not the signed-in business: the warning
+     * then follows that business's block rules, and works for a client picked from another member.
+     */
+    bookingVenueId?: string | null;
+  },
+) {
   const accessToken = useAccessToken();
   const preview = options?.preview === true;
+  const bookingVenueId = options?.bookingVenueId ?? null;
+  const params = [
+    ...(preview ? ['preview=1'] : []),
+    ...(bookingVenueId ? [`booking_venue_id=${encodeURIComponent(bookingVenueId)}`] : []),
+  ];
   return useQuery({
-    queryKey: queryKeys.guests.block(accessToken, guestId, preview),
+    queryKey: [...queryKeys.guests.block(accessToken, guestId, preview), bookingVenueId],
     enabled: (options?.enabled ?? true) && isBackendConfigured() && accessToken !== null && Boolean(guestId),
     retry: false,
     queryFn: async (): Promise<ClientBlockState | null> => {
       if (!accessToken || !guestId) throw new Error('Missing client');
       try {
         return await apiFetch<ClientBlockState>(
-          `/api/venue/guests/${encodeURIComponent(guestId)}/block${preview ? '?preview=1' : ''}`,
+          `/api/venue/guests/${encodeURIComponent(guestId)}/block${params.length > 0 ? `?${params.join('&')}` : ''}`,
           { accessToken },
         );
       } catch {

@@ -106,9 +106,13 @@ export function formatReportRangeLabel(from: string, to: string): string {
   return `${format(a, sameYear ? 'd MMM' : 'd MMM yyyy')} to ${format(b, 'd MMM yyyy')}`;
 }
 
-/** Compact range label, e.g. "23 May – 29 May". */
+/**
+ * Compact range label, e.g. "23 May – 29 May". A range across a new year names both years, or the
+ * upcoming year read "19 Nov – 19 Nov" (QA 2026-11-19).
+ */
 export function formatRangeLabel(from: string, to: string): string {
-  return `${format(parseCalendarDateStr(from), 'd MMM')} – ${format(parseCalendarDateStr(to), 'd MMM')}`;
+  const pattern = from.slice(0, 4) !== to.slice(0, 4) ? 'd MMM yyyy' : 'd MMM';
+  return `${format(parseCalendarDateStr(from), pattern)} – ${format(parseCalendarDateStr(to), pattern)}`;
 }
 
 export { calendarDateInTimeZone };

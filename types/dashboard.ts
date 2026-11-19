@@ -105,4 +105,11 @@ export interface DashboardHomePayload {
   forecast?: DashboardForecastDay[];
   alerts?: DashboardAlert[];
   recent_bookings: DashboardRecentBooking[];
+  /**
+   * Card on file (web card-on-file-plan §6.5): upcoming bookings (the venue's today onwards)
+   * waiting for a card. `null` when it could not be counted; absent on an older server.
+   */
+  waiting_for_card_count?: number | null;
+  /** The venue's today the count starts from, so "Send card requests" acts on the same set. */
+  waiting_for_card_from_date?: string;
 }

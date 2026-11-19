@@ -13,6 +13,7 @@ import {
   addCardReachLine,
   deskOutcomeText,
   isDeskHandBackNavigation,
+  READER_OTHER_BUSINESS_LINE,
 } from './AddCardSheet';
 
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
@@ -197,6 +198,22 @@ describe('AddCardSheet reader options (plan §4.12, C12)', () => {
     mockReaderOptions = null;
     await view.rerender(<AddCardSheet {...baseProps} />);
     expect(screen.queryByText('Bluetooth reader')).toBeNull();
+    expect(screen.queryByTestId('add-card-reader-other-business')).toBeNull();
+  });
+
+  it("says why the reader is not offered for another business's client (2026-11-19)", async () => {
+    mockTerminal = true;
+    mockReaderOptions = 'other_business';
+    await render(<AddCardSheet {...baseProps} />);
+    expect(screen.queryByText('Bluetooth reader')).toBeNull();
+    expect(screen.getByTestId('add-card-reader-other-business').props.children).toBe(READER_OTHER_BUSINESS_LINE);
+    expect(READER_OTHER_BUSINESS_LINE).not.toContain('—');
+  });
+
+  it('names the booking business to the desk session before a booking exists', async () => {
+    await render(<AddCardSheet {...baseProps} bookingId={null} bookingVenueId="venue-a" />);
+    await fireEvent.press(screen.getByText('Show a code for their phone'));
+    expect(mockCreate.mock.calls[0][0]).toEqual({ guestId: 'g-1', bookingId: null, bookingVenueId: 'venue-a', mode: 'qr' });
   });
 });
 

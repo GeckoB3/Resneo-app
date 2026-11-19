@@ -22,6 +22,9 @@ jest.mock('expo-router', () => ({ useRouter: () => ({ push: mockPush }) }));
 jest.mock('@/providers/VenueProvider', () => ({ useVenueContext: () => ({ venue: { timezone: 'Europe/London' } }) }));
 jest.mock('@/lib/dates/use-venue-today', () => ({ useVenueToday: () => '2026-11-17' }));
 
+/** The dashboard home payload: an older server's (no count) unless a test says otherwise. */
+let mockHome: { data?: Record<string, unknown>; isError: boolean } = { data: { recent_bookings: [] }, isError: false };
+jest.mock('@/lib/queries/useDashboardHome', () => ({ useDashboardHome: () => mockHome }));
 let mockRows: unknown[] | undefined;
 const mockRangeArgs: unknown[] = [];
 jest.mock('@/lib/queries/useBookingsRange', () => ({
@@ -43,6 +46,7 @@ jest.mock('@/lib/queries/useCardsOnFile', () => ({
 import { WAITING_FOR_CARD_HREF, WaitingForCardHomeCard } from './WaitingForCardHomeCard';
 
 beforeEach(() => {
+  mockHome = { data: { recent_bookings: [] }, isError: false };
   mockRows = undefined;
   mockRangeArgs.length = 0;
   mockPush.mockReset();
@@ -87,6 +91,35 @@ describe('WaitingForCardHomeCard', () => {
     mockRows = [];
     await render(<WaitingForCardHomeCard />);
     expect(screen.queryByText(/waiting for a card/)).toBeNull();
+  });
+
+  it("uses the home payload's count without reading a year of bookings (2026-11-19)", async () => {
+    mockHome = {
+      data: { recent_bookings: [], waiting_for_card_count: 3, waiting_for_card_from_date: '2026-11-17' },
+      isError: false,
+    };
+    mockSend.mockResolvedValue({ clients: 3, emails: 3, texts: 0, reopened: 0, skipped: [], message: '3 clients: 3 emails.' });
+    await render(<WaitingForCardHomeCard />);
+    expect(mockRangeArgs.every((a) => (a as { enabled: boolean }).enabled === false)).toBe(true);
+    expect(screen.getByText('3 upcoming bookings are waiting for a card')).toBeTruthy();
+    await fireEvent.press(screen.getByText('Send card requests'));
+    await screen.findByText(/This sends to 2 clients/);
+    const buttons = screen.getAllByText('Send card requests');
+    await fireEvent.press(buttons[buttons.length - 1]);
+    // From the venue's today with no end date, as the web sends it, so the server counts the same set.
+    expect(mockSend).toHaveBeenCalledWith({ filter: { card_state: 'waiting', from_date: '2026-11-17' }, expectedCount: 3 });
+  });
+
+  it('is hidden when the home payload counts none', async () => {
+    mockHome = { data: { recent_bookings: [], waiting_for_card_count: 0, waiting_for_card_from_date: '2026-11-17' }, isError: false };
+    await render(<WaitingForCardHomeCard />);
+    expect(screen.queryByText(/waiting for a card/)).toBeNull();
+  });
+
+  it('waits for the home payload before reading the list', async () => {
+    mockHome = { data: undefined, isError: false };
+    await render(<WaitingForCardHomeCard />);
+    expect(mockRangeArgs.every((a) => (a as { enabled: boolean }).enabled === false)).toBe(true);
   });
 
   it('is hidden on an older server (rows without card_state)', async () => {

@@ -33,6 +33,7 @@ import {
   cardCountChangedFrom,
   removeGuestCardMessage,
   useConfirmWithoutCard,
+  useCreateDeskSession,
   useGuestCardOnFile,
   useNoShowCharges,
   usePreviewCardRequests,
@@ -247,6 +248,29 @@ describe('useGuestCardOnFile', () => {
     const { result } = await renderHook(() => useGuestCardOnFile('g-1'), { wrapper: Wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toBeNull();
+  });
+});
+
+describe('useCreateDeskSession', () => {
+  it("names the booking's business before a booking exists, and only then", async () => {
+    mockHandler = () => ({ session_id: 's-1', url: 'https://x/desk/s-1', expires_at: '', mode: 'qr' });
+    const { result } = await renderHook(() => useCreateDeskSession(), { wrapper: Wrapper });
+    await act(async () => {
+      await result.current.mutateAsync({ guestId: 'g-1', bookingVenueId: 'venue-a', mode: 'qr' });
+    });
+    expect(mockCalls[0]).toEqual({
+      path: '/api/venue/cards/desk-session',
+      method: 'POST',
+      body: { guest_id: 'g-1', booking_id: null, booking_venue_id: 'venue-a', mode: 'qr' },
+    });
+    await act(async () => {
+      await result.current.mutateAsync({ guestId: 'g-1', bookingId: 'b-1', bookingVenueId: 'venue-a', mode: 'qr' });
+    });
+    expect(mockCalls[1].body).toEqual({ guest_id: 'g-1', booking_id: 'b-1', mode: 'qr' });
+    await act(async () => {
+      await result.current.mutateAsync({ guestId: 'g-1', mode: 'handover' });
+    });
+    expect(mockCalls[2].body).toEqual({ guest_id: 'g-1', booking_id: null, mode: 'handover' });
   });
 });
 

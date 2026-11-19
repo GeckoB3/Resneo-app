@@ -143,6 +143,19 @@ export function useSaveClientBlocksScope(collectiveId: string) {
   });
 }
 
+/**
+ * The collective booking settings version a save answered: `/api/venue` sends
+ * `booking_settings_version`, `/api/venue/feature-flags` sends `collective.version`. Null when the
+ * answer has none (an older server, or a venue not in a live collective).
+ */
+export function savedCollectiveRulesVersion(body: unknown): number | null {
+  if (!body || typeof body !== 'object') return null;
+  const b = body as { booking_settings_version?: unknown; collective?: { version?: unknown } | null };
+  if (typeof b.booking_settings_version === 'number') return b.booking_settings_version;
+  const nested = b.collective?.version;
+  return typeof nested === 'number' ? nested : null;
+}
+
 /** A host's save of a collective booking rule, naming the version read. */
 export function useSaveCollectiveRule(collectiveId: string) {
   const accessToken = useAccessToken();
@@ -156,11 +169,26 @@ export function useSaveCollectiveRule(collectiveId: string) {
         body: JSON.stringify({ ...input.patch, booking_settings_version: input.version }),
       });
     },
+    // A second quick change named the version read before this save and was refused as "someone
+    // else saved first" (2026-11-19): the saved version goes straight into the settings read.
+    onSuccess: (body) => {
+      const version = savedCollectiveRulesVersion(body);
+      if (version === null) return;
+      queryClient.setQueryData<CollectiveSettingsPayload | null>(
+        collectiveSettingsKey(accessToken, collectiveId),
+        (prev) =>
+          prev && version > prev.booking_rules.version
+            ? { ...prev, booking_rules: { ...prev.booking_rules, version } }
+            : prev,
+      );
+    },
     // Saved or refused, the current settings are read again: a refusal shows what someone else saved.
-    onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: collectiveSettingsKey(accessToken, collectiveId) });
+    // The save stays pending until that read lands, so the switches (disabled while saving) never
+    // offer a change from the values before it.
+    onSettled: async () => {
       // Settings, Booking settings and the bootstrap read the same store.
       void queryClient.invalidateQueries({ queryKey: queryKeys.venue.all() });
+      await queryClient.invalidateQueries({ queryKey: collectiveSettingsKey(accessToken, collectiveId) });
     },
   });
 }

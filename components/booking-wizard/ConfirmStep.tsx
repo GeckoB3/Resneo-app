@@ -1,7 +1,7 @@
 import * as Clipboard from 'expo-clipboard';
 import { useEffect, useState } from 'react';
 
-import { findJustCreatedBooking } from '@/lib/booking/find-just-created-booking';
+import { findJustCreatedBooking, timedOutCreateNotFoundMessage } from '@/lib/booking/find-just-created-booking';
 import { formatPhoneForDisplay } from '@/lib/phone/e164';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { ScrollView, StyleSheet, View } from 'react-native';
@@ -19,6 +19,7 @@ import {
 import {
   DEFAULT_STAFF_CARD_REQUEST,
   staffCardRequestFields,
+  staffCardVenues,
   useStaffCardLookup,
   type StaffCardRequestState,
 } from '@/components/booking-wizard/staff-card-request';
@@ -90,6 +91,11 @@ type ConfirmStepProps = {
    * `bookingVenueId` (a partner member, or null for the signed-in business) names where it is made.
    */
   collectiveForm?: boolean;
+  /**
+   * The signed-in business. In the collective form, a booking at its own calendar names it to the
+   * card line, so the answer is for this business even for a client from another member's records.
+   */
+  signedInVenueId?: string | null;
   onSuccess: (bookingId: string) => void;
   /** Reset the wizard to step 1 for a back-to-back booking (front-desk flow). */
   onBookAnother?: () => void;
@@ -425,6 +431,7 @@ export function ConfirmStep({
   bookedAtBusiness = null,
   bookingVenueId = null,
   collectiveForm = false,
+  signedInVenueId = null,
   noCardVenueIds = [],
 }: ConfirmStepProps) {
   const { colors } = useTheme();
@@ -539,12 +546,18 @@ export function ConfirmStep({
   const [addCardOpen, setAddCardOpen] = useState(false);
   const byBusinessVisit = isMultiService && (businessParts?.length ?? 0) >= 2;
   // The collective form's `ownerVenueId` is the collective: looking the card up there was refused,
-  // so no saved card showed and "Add card now" was withheld (2026-11-19).
-  const partnerVenueId = collectiveForm ? bookingVenueId ?? null : bookingVenueId ?? ownerVenueId ?? null;
+  // so no saved card showed and "Add card now" was withheld (2026-11-19). A booking at the signed-in
+  // business names that business, so a client from another member's records is answered for it.
+  const { lookupVenueId, partnerVenueId } = staffCardVenues({
+    collectiveForm,
+    bookingVenueId,
+    ownerVenueId,
+    signedInVenueId,
+  });
   const cardLookup = useStaffCardLookup(
     guest.guest_id,
     Boolean(entityCardHold) && !noCardPayments && !byBusinessVisit,
-    partnerVenueId,
+    lookupVenueId,
   );
   const cardNotPossible = noCardPayments || cardLookup.canTakeCards === false;
   // No card hold where the venue cannot take cards.
@@ -745,9 +758,8 @@ export function ConfirmStep({
         return;
       }
       hapticWarning();
-      setSubmitError(
-        'We could not confirm this booking in time, and it is not on the calendar yet. Check the calendar before trying again, so it is not booked twice.',
-      );
+      // A partner's diary cannot be searched yet, so not finding it there proves nothing.
+      setSubmitError(timedOutCreateNotFoundMessage(Boolean(partnerVenueId), bookedAtBusiness));
     } catch {
       hapticWarning();
       setSubmitError(
@@ -1160,6 +1172,8 @@ export function ConfirmStep({
         onClose={() => setAddCardOpen(false)}
         guestId={guest.guest_id}
         bookingId={null}
+        // Before the booking there is no booking to say where it is: name the business.
+        bookingVenueId={lookupVenueId}
         clientFirstName={first_name}
         hasContact={Boolean(guest.email.trim() || guest.phone.trim()) || pickedContactHidden}
         savesWith={cardLookup.addSavesWith}

@@ -6,7 +6,19 @@
 const mockApiFetch = jest.fn();
 jest.mock('@/lib/api/client', () => ({ apiFetch: (...a: unknown[]) => mockApiFetch(...a) }));
 
-import { findJustCreatedBooking } from '@/lib/booking/find-just-created-booking';
+import { findJustCreatedBooking, timedOutCreateNotFoundMessage } from '@/lib/booking/find-just-created-booking';
+
+describe('timedOutCreateNotFoundMessage', () => {
+  it("never says a partner's booking is not on the calendar: that calendar could not be searched (2026-11-19)", () => {
+    expect(timedOutCreateNotFoundMessage(false)).toContain('it is not on the calendar yet');
+    const partner = timedOutCreateNotFoundMessage(true, 'Sage Studio');
+    expect(partner).toBe(
+      "We could not confirm this booking in time, and we could not check Sage Studio's calendar from here. Check their calendar before trying again, so it is not booked twice.",
+    );
+    expect(timedOutCreateNotFoundMessage(true, null)).not.toContain('not on the calendar yet');
+    expect(timedOutCreateNotFoundMessage(true, null)).toContain("the other business's calendar");
+  });
+});
 
 function row(over: Record<string, unknown> = {}) {
   return {

@@ -64,7 +64,7 @@ type EventBookingFlowProps = { onCreated: (bookingId: string) => void };
 export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
   const router = useRouter();
   const { colors } = useTheme();
-  const { venueId, timeZone, currency, isCollective, ownerVenueId: formOwnerVenueId } =
+  const { venueId, timeZone, currency, isCollective, ownerVenueId: formOwnerVenueId, signedInVenueId } =
     useBookingFormVenue();
   // The phone picker's starting country (web parity: EUR venues → IE, else GB).
   const phoneDefaultCountry = defaultPhoneCountryForVenueCurrency(currency);
@@ -416,6 +416,11 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
         <BookingFlowConfirm
           source={source}
           onSourceChange={setSource}
+          // A listed event books for the collective: the card line answers for the member hosting
+          // it (only when the server names that member).
+          collectiveForm={isCollective && Boolean(occ.venue_id)}
+          bookingVenueId={occ.venue_id ?? null}
+          signedInVenueId={signedInVenueId ?? null}
           headerTitle={occ.venue_name ? `${selectedEvent.event_name} at ${occ.venue_name}` : selectedEvent.event_name}
           headerSubtitle={formatTimeRange(occ.start_time, occ.end_time)}
           rows={[

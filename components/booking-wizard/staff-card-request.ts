@@ -108,6 +108,53 @@ export function parseStaffCardLookup(body: unknown): Omit<StaffCardLookup, 'refr
   };
 }
 
+/**
+ * Which business the card line answers for, and whether that is another business than the
+ * signed-in one.
+ *
+ * - `lookupVenueId`: sent as `booking_venue_id` to the client's Card on file and with a desk
+ *   session started before the booking. In the collective form `ownerVenueId` is the COLLECTIVE,
+ *   never a business, so the business is the member the booking is at, or the signed-in business
+ *   when it is its own (2026-11-19: a client picked from another member's records was answered for
+ *   that member).
+ * - `partnerVenueId`: the booking is at another business (a collective partner, or a linked
+ *   calendar). "Add card now" then waits for the confirmation, since the card must be saved for
+ *   the client record the booking makes there.
+ */
+export function staffCardVenues(opts: {
+  collectiveForm: boolean;
+  bookingVenueId: string | null | undefined;
+  ownerVenueId: string | null | undefined;
+  signedInVenueId: string | null | undefined;
+}): { lookupVenueId: string | null; partnerVenueId: string | null } {
+  if (opts.collectiveForm) {
+    const partner = opts.bookingVenueId && opts.bookingVenueId !== opts.signedInVenueId ? opts.bookingVenueId : null;
+    return { lookupVenueId: partner ?? opts.signedInVenueId ?? null, partnerVenueId: partner };
+  }
+  const partner = opts.bookingVenueId ?? opts.ownerVenueId ?? null;
+  return { lookupVenueId: partner, partnerVenueId: partner };
+}
+
+/**
+ * The member business a collective group booking is at: every attendee's calendar belongs to one
+ * business (the server refuses a group across businesses). Null when that is the signed-in
+ * business, or when it cannot be told yet (no attendees, or calendars of more than one business).
+ */
+export function groupBookedAtVenueId(
+  people: readonly { practitionerId: string }[],
+  practitioners: readonly { id: string; owning_venue_id?: string }[],
+  signedInVenueId: string | null | undefined,
+): string | null {
+  const owners = new Set<string>();
+  for (const person of people) {
+    const owner = practitioners.find((p) => p.id === person.practitionerId)?.owning_venue_id;
+    if (owner) owners.add(owner);
+  }
+  if (owners.size !== 1) return null;
+  const [only] = [...owners];
+  return only && only !== signedInVenueId ? only : null;
+}
+
 const EMPTY: Omit<StaffCardLookup, 'refresh'> = { card: null, canTakeCards: null, addSavesWith: null };
 
 /**

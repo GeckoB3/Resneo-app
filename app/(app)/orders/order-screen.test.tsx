@@ -198,4 +198,21 @@ describe("the customer's contact details", () => {
     expect(screen.getByText('ana@example.test')).toBeTruthy();
     expect(screen.queryByText('Hidden')).toBeNull();
   });
+
+  it('copies the email and says so when the device has no mail app', async () => {
+    const { Linking } = require('react-native');
+    const Clipboard = require('expo-clipboard');
+    const open = jest.spyOn(Linking, 'openURL').mockRejectedValue(new Error('Unable to open URL'));
+    const copy = jest.spyOn(Clipboard, 'setStringAsync').mockResolvedValue(true);
+    mockDetail = detail('preparing');
+    await render(<OrderScreen />);
+    await act(async () => {
+      fireEvent.press(screen.getByText('ana@example.test'));
+    });
+    expect(open).toHaveBeenCalledWith('mailto:ana@example.test');
+    expect(copy).toHaveBeenCalledWith('ana@example.test');
+    expect(mockToast.success).toHaveBeenCalledWith('Could not open your mail app. The email address is copied.');
+    open.mockRestore();
+    copy.mockRestore();
+  });
 });

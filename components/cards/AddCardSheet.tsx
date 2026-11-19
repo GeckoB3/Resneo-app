@@ -29,7 +29,7 @@ import { Button } from '@/components/ui/Button';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { cardLabel } from '@/lib/booking/card-hold';
-import type { ReaderSaveDevice } from '@/lib/cards/reader-save';
+import { READER_SAVE_OTHER_BUSINESS, type ReaderSaveDevice } from '@/lib/cards/reader-save';
 import { getStripePublishableKey } from '@/lib/env';
 import { hapticSuccess } from '@/lib/haptics';
 import {
@@ -72,6 +72,8 @@ export interface AddCardSheetProps {
   onClose: () => void;
   guestId: string;
   bookingId?: string | null;
+  /** Before a booking exists: the business the booking will be at (sent with the desk session). */
+  bookingVenueId?: string | null;
   clientFirstName: string;
   /** The client has an email or mobile number, so a card request can reach them. */
   hasContact: boolean;
@@ -127,6 +129,14 @@ export function deskOutcomeText(
   }
 }
 
+/**
+ * Why Tap to Pay and the Bluetooth reader are not offered for a client another business keeps (a
+ * collective partner's, as after a booking at a partner). The web leaves the options out without a
+ * word; staff on the phone read the missing buttons as a fault (2026-11-19).
+ */
+export const READER_OTHER_BUSINESS_LINE =
+  "Tap to Pay and the card reader only save cards for your own business's clients. For this client, use one of the options above.";
+
 /** The reach line under the title (plan §6.7 point 1). */
 export function addCardReachLine(scope: 'business' | 'collective', savedWith: string): string {
   return scope === 'collective' ? `Saves the card for all of ${savedWith}.` : `Saves the card for ${savedWith}.`;
@@ -137,6 +147,7 @@ export function AddCardSheet({
   onClose,
   guestId,
   bookingId,
+  bookingVenueId = null,
   clientFirstName,
   hasContact,
   savedWith,
@@ -156,7 +167,10 @@ export function AddCardSheet({
   const savedReported = useRef<string | null>(null);
   const readersPossible = readerSaveAvailable();
   const readerOptions = useReaderSaveOptions(guestId, visible && readersPossible);
-  const canReaderSave = readersPossible && readerOptions.data?.can_save === true;
+  const readerAnswer = readerOptions.data;
+  const readerOtherBusiness = readersPossible && readerAnswer === READER_SAVE_OTHER_BUSINESS;
+  const readerData = readerAnswer && typeof readerAnswer === 'object' ? readerAnswer : null;
+  const canReaderSave = readersPossible && readerData?.can_save === true;
   const tapToPayHere = canReaderSave && buildSupportsTapToPay();
 
   // Start again each time the sheet opens (set while rendering, React's pattern for a prop change).
@@ -184,7 +198,7 @@ export function AddCardSheet({
     (mode: 'handover' | 'qr' | 'message') => {
       setError(null);
       create.mutate(
-        { guestId, bookingId: bookingId ?? null, mode },
+        { guestId, bookingId: bookingId ?? null, ...(bookingVenueId ? { bookingVenueId } : {}), mode },
         {
           onSuccess: (result) => {
             if (mode === 'message') {
@@ -203,7 +217,7 @@ export function AddCardSheet({
         },
       );
     },
-    [create, guestId, bookingId],
+    [create, guestId, bookingId, bookingVenueId],
   );
 
   const cancelWaiting = useCallback(
@@ -273,7 +287,7 @@ export function AddCardSheet({
               {canReaderSave ? (
                 <>
                   <Text variant="caption" tone="muted" testID="add-card-reader-reach">
-                    {readerOptions.data?.reader_reach ||
+                    {readerData?.reader_reach ||
                       `The reader saves the card for ${businessName?.trim() || 'this business'} only.`}
                   </Text>
                   {tapToPayHere ? (
@@ -293,6 +307,10 @@ export function AddCardSheet({
                     fullWidth
                   />
                 </>
+              ) : readerOtherBusiness ? (
+                <Text variant="caption" tone="muted" testID="add-card-reader-other-business">
+                  {READER_OTHER_BUSINESS_LINE}
+                </Text>
               ) : null}
             </View>
           ) : null}

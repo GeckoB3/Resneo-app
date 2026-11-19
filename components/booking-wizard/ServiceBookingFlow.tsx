@@ -1982,6 +1982,11 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
         anyAvailableEnabled={anyAvailableEnabled}
         servicesLayout={servicesLayout}
         ownerVenueId={ownerVenueId}
+        // In the collective form `ownerVenueId` is the COLLECTIVE: the group works out the member
+        // business it is at from its calendars, as the single booking does.
+        collectiveForm={isCollective}
+        signedInVenueId={signedInVenueId ?? null}
+        businessNameOf={isCollective ? businessNameOf : undefined}
         source={source}
         phoneDefaultCountry={phoneDefaultCountry}
         onCreated={(bookingId) => onCreated(bookingId)}
@@ -2391,6 +2396,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           readOnlyContact={rebookContactReadOnly}
           collectClientAddress={selectedService?.locationType === 'client_address'}
           phoneDefaultCountry={phoneDefaultCountry}
+          bookingVenueId={isCollective ? bookedAtVenueId : (ownerVenueId ?? bookedAtVenueId)}
           value={guest}
         />
       ) : null}
@@ -2418,6 +2424,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           // member the booking is at (none when it is the signed-in business), 2026-11-19.
           bookingVenueId={isCollective ? bookedAtVenueId : (ownerVenueId ?? bookedAtVenueId)}
           collectiveForm={isCollective}
+          signedInVenueId={signedInVenueId ?? null}
           noCardVenueIds={calendarNotice.noCardVenueIds}
           returningGuest={returningGuest}
           phoneDefaultCountry={phoneDefaultCountry}

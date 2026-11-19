@@ -10,6 +10,7 @@ export function StaffAddCardSheet({
   onClose,
   guestId,
   bookingId = null,
+  bookingVenueId = null,
   clientFirstName,
   hasContact,
   savesWith,
@@ -20,6 +21,8 @@ export function StaffAddCardSheet({
   onClose: () => void;
   guestId: string | null | undefined;
   bookingId?: string | null;
+  /** Before the booking exists: the business it will be at, named to the desk session. */
+  bookingVenueId?: string | null;
   clientFirstName: string;
   hasContact: boolean;
   /** Where a card added now is kept (the client record's `add_saves_with`), when known. */
@@ -34,6 +37,7 @@ export function StaffAddCardSheet({
       onClose={onClose}
       guestId={guestId}
       bookingId={bookingId}
+      bookingVenueId={bookingVenueId}
       clientFirstName={clientFirstName}
       hasContact={hasContact}
       savedWith={savesWith?.name || businessName?.trim() || 'this business'}

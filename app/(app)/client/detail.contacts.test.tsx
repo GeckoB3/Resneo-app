@@ -6,7 +6,7 @@
  *
  * jest hoists mock factories above imports, so closed-over vars are prefixed `mock*`.
  */
-import { render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
 // Shared client lists (web 2026-11-15): not what this file is about.
 jest.mock('@/lib/queries/useClientSharing', () => ({
@@ -175,5 +175,22 @@ describe('Client detail with hidden contacts', () => {
     expect(screen.getByLabelText('Message')).toBeTruthy();
     expect(screen.getByLabelText('Email')).toBeTruthy();
     expect(screen.getByText('To ada@example.com')).toBeTruthy();
+  });
+
+  it('copies the number and says so when the device cannot make calls, as the Clients tab does', async () => {
+    const { Linking } = require('react-native');
+    const Clipboard = require('expo-clipboard');
+    const open = jest.spyOn(Linking, 'openURL').mockRejectedValue(new Error('Unable to open URL'));
+    const copy = jest.spyOn(Clipboard, 'setStringAsync').mockResolvedValue(true);
+    mockDetail = detail({ email: 'ada@example.com', phone: '+447911123456' });
+    await renderAs(FULL_VIEWER_ACCESS);
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Call'));
+    });
+    expect(open).toHaveBeenCalledWith('tel:+447911123456');
+    expect(copy).toHaveBeenCalledWith('+447911123456');
+    expect(mockToast.success).toHaveBeenCalledWith('Calls cannot be made from this device. The number is copied.');
+    open.mockRestore();
+    copy.mockRestore();
   });
 });

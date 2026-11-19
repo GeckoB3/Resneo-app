@@ -80,15 +80,20 @@ type GuestDetailsStepProps = {
    * moves the picker to that number's own country.
    */
   phoneDefaultCountry?: CountryCode;
+  /**
+   * The collective member the booking is at when it is not the signed-in business, for the
+   * blocked-client warning (web `booking_venue_id`).
+   */
+  bookingVenueId?: string | null;
 };
 
 const SEARCH_DEBOUNCE_MS = 280;
 const MIN_SEARCH_LENGTH = 2;
 
 /** A warning while the details belong to a client a business has blocked (web BC7). */
-function BlockedClientWarning({ guestId }: { guestId: string }) {
+function BlockedClientWarning({ guestId, bookingVenueId }: { guestId: string; bookingVenueId?: string | null }) {
   const { colors } = useTheme();
-  const block = useClientBlock(guestId);
+  const block = useClientBlock(guestId, { bookingVenueId });
   const first = block.data?.blocks?.[0];
   if (!first) return null;
   return (
@@ -138,6 +143,7 @@ export function GuestDetailsStep({
   source,
   onSourceChange,
   phoneDefaultCountry = 'GB',
+  bookingVenueId = null,
 }: GuestDetailsStepProps) {
   const { colors } = useTheme();
   // "Can see client phone numbers and emails" (web roles plan §5.6). Off: search matches names
@@ -283,7 +289,7 @@ export function GuestDetailsStep({
         ) : null}
 
         {/* Blocked from booking online (web 2026-11-19): staff may still book them. */}
-        {value.guest_id ? <BlockedClientWarning guestId={value.guest_id} /> : null}
+        {value.guest_id ? <BlockedClientWarning guestId={value.guest_id} bookingVenueId={bookingVenueId} /> : null}
 
         {!readOnlyContact ? (
           <>

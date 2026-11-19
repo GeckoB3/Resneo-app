@@ -53,6 +53,7 @@ import {
   isCardBulkState,
   rowsCarryCardState,
   selectAllCardCount,
+  selectAllCardOffered,
 } from '@/lib/booking/card-list';
 import {
   collectiveChoicesFor,
@@ -1124,20 +1125,39 @@ export default function BookingsScreen() {
 
   // What the ticked rows allow, and "Select all {n} bookings" over the Card filter (§4.16).
   const cardAbilities = useMemo(() => cardBulkAbilities(selectedRows), [selectedRows]);
+  // "Select all" sends only the Card filter and the dates, so it is offered only while nothing else
+  // narrows the list (a stylist, a search...), and one already chosen stops counting once something
+  // does (2026-11-19: it reached other stylists' clients).
+  const filtersBesidesCardActive =
+    status !== 'All' ||
+    practitionerFilter !== null ||
+    serviceFilter !== null ||
+    collectiveFilter !== 'all' ||
+    modelFilter !== null ||
+    dayHourRange !== null ||
+    needsComplianceOnly ||
+    search.trim().length > 0 ||
+    guestFilter !== null;
+  const cardSelectAllAllowed = selectAllCardOffered({
+    cardFilter,
+    ownVenue: venueSel.own,
+    otherFiltersActive: filtersBesidesCardActive,
+  });
+  const activeCardSelectAll = cardSelectAllAllowed ? cardSelectAll : null;
   const selectAllCardTotal = useMemo(
     () =>
-      isCardBulkState(cardFilter) && venueSel.own ? selectAllCardCount(rawRows, cardFilter, range) : 0,
-    [cardFilter, venueSel.own, rawRows, range],
+      cardSelectAllAllowed && isCardBulkState(cardFilter) ? selectAllCardCount(rawRows, cardFilter, range) : 0,
+    [cardSelectAllAllowed, cardFilter, rawRows, range],
   );
   const startCardBulk = useCallback(
     (action: CardBulkRequest['action']) => {
-      if (cardSelectAll) {
+      if (activeCardSelectAll) {
         setCardBulkRequest({
           action,
-          count: cardSelectAll.count,
+          count: activeCardSelectAll.count,
           selection: {
-            filter: { card_state: cardSelectAll.state, from_date: range.from, to_date: range.to },
-            expectedCount: cardSelectAll.count,
+            filter: { card_state: activeCardSelectAll.state, from_date: range.from, to_date: range.to },
+            expectedCount: activeCardSelectAll.count,
           },
         });
         return;
@@ -1149,7 +1169,7 @@ export default function BookingsScreen() {
       if (ids.length === 0) return;
       setCardBulkRequest({ action, count: ids.length, selection: { bookingIds: ids } });
     },
-    [cardSelectAll, cardAbilities, range],
+    [activeCardSelectAll, cardAbilities, range],
   );
   const practitionerName = practitioners.find((p) => p.id === practitionerFilter)?.name;
   const typeLabel = MODEL_FILTERS.find((g) => g.key === modelFilter)?.label;
@@ -1507,14 +1527,19 @@ export default function BookingsScreen() {
         onClear={clearSelection}
         onMessageSelected={handleMessageSelected}
         onHeightChange={setBulkBarClearance}
-        countOverride={cardSelectAll?.count}
+        countOverride={activeCardSelectAll?.count}
         cardActions={{
-          canConfirmWithoutCard: cardSelectAll ? cardSelectAll.state === 'waiting' : cardAbilities.canConfirmWithoutCard,
-          canSendCardRequests: cardSelectAll ? true : cardAbilities.canSendCardRequests,
+          canConfirmWithoutCard: activeCardSelectAll
+            ? activeCardSelectAll.state === 'waiting'
+            : cardAbilities.canConfirmWithoutCard,
+          canSendCardRequests: activeCardSelectAll ? true : cardAbilities.canSendCardRequests,
           onConfirmWithoutCard: () => startCardBulk('confirm_without_card'),
           onSendCardRequests: () => startCardBulk('send_card_requests'),
           selectAll:
-            isCardBulkState(cardFilter) && !cardSelectAll && selectAllCardTotal > selectedRows.length
+            cardSelectAllAllowed &&
+            isCardBulkState(cardFilter) &&
+            !activeCardSelectAll &&
+            selectAllCardTotal > selectedRows.length
               ? {
                   count: selectAllCardTotal,
                   onPress: () => {

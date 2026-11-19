@@ -10,6 +10,7 @@ import { StaffPaymentLinkLines } from '@/components/booking-wizard/StaffPaymentL
 import {
   DEFAULT_STAFF_CARD_REQUEST,
   staffCardRequestFields,
+  staffCardVenues,
   useStaffCardLookup,
   type StaffCardRequestState,
 } from '@/components/booking-wizard/staff-card-request';
@@ -189,6 +190,14 @@ type BookingFlowConfirmProps = {
   onSourceChange?: (source: 'phone' | 'walk-in') => void;
   onCreated: (bookingId: string) => void;
   onBookAnother?: () => void;
+  /**
+   * The collective booking form: a listing's `owner_venue_id` is then the COLLECTIVE, never a
+   * business, so the card line answers for `bookingVenueId` (the member hosting the class or
+   * event), or the signed-in business when that is its own.
+   */
+  collectiveForm?: boolean;
+  bookingVenueId?: string | null;
+  signedInVenueId?: string | null;
 };
 
 interface Confirmation {
@@ -242,6 +251,9 @@ export function BookingFlowConfirm({
   onSourceChange,
   onCreated,
   onBookAnother,
+  collectiveForm = false,
+  bookingVenueId = null,
+  signedInVenueId = null,
 }: BookingFlowConfirmProps) {
   const { colors } = useTheme();
   const createBooking = useCreateBooking();
@@ -271,8 +283,15 @@ export function BookingFlowConfirm({
   // Who the booking is for, as the payload names them (the flows own the guest step).
   const guestPreview = buildPayload({ source, requireDeposit });
   // A booking at another business (a linked or collective partner's): the card line answers for it.
-  const partnerVenueId = guestPreview.owner_venue_id ?? null;
-  const cardLookup = useStaffCardLookup(guestPreview.guest_id, Boolean(staffCardHold), partnerVenueId);
+  // A collective listing's `owner_venue_id` is the collective, so there the hosting member decides
+  // (2026-11-19: "Add card now" was always withheld and the card was looked up at the collective).
+  const { lookupVenueId, partnerVenueId } = staffCardVenues({
+    collectiveForm,
+    bookingVenueId: collectiveForm ? bookingVenueId : null,
+    ownerVenueId: guestPreview.owner_venue_id ?? null,
+    signedInVenueId,
+  });
+  const cardLookup = useStaffCardLookup(guestPreview.guest_id, Boolean(staffCardHold), lookupVenueId);
   const cardNotPossible = cardLookup.canTakeCards === false;
   const cardTickAllowed =
     source !== 'walk-in' &&
@@ -524,6 +543,7 @@ export function BookingFlowConfirm({
         onClose={() => setAddCardOpen(false)}
         guestId={guestPreview.guest_id}
         bookingId={null}
+        bookingVenueId={lookupVenueId}
         clientFirstName={guestPreview.first_name?.trim() ?? ''}
         hasContact={Boolean(guestContact || guestPreview.guest_id)}
         savesWith={cardLookup.addSavesWith}

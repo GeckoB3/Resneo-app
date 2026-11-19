@@ -168,13 +168,24 @@ export function useCreateDeskSession() {
     mutationFn: async (input: {
       guestId: string;
       bookingId?: string | null;
+      /**
+       * Before a booking exists (the booking form's "Add card now"): the business the booking will
+       * be at, so the card is saved for that business rather than the client record's own. Sent only
+       * when known; a server that does not read it ignores it.
+       */
+      bookingVenueId?: string | null;
       mode: DeskMode;
     }): Promise<DeskSessionCreated | DeskMessageSent> => {
       if (!accessToken) throw new Error('Missing access token');
       return apiFetch<DeskSessionCreated | DeskMessageSent>('/api/venue/cards/desk-session', {
         accessToken,
         method: 'POST',
-        body: JSON.stringify({ guest_id: input.guestId, booking_id: input.bookingId ?? null, mode: input.mode }),
+        body: JSON.stringify({
+          guest_id: input.guestId,
+          booking_id: input.bookingId ?? null,
+          ...(input.bookingVenueId && !input.bookingId ? { booking_venue_id: input.bookingVenueId } : {}),
+          mode: input.mode,
+        }),
       });
     },
   });

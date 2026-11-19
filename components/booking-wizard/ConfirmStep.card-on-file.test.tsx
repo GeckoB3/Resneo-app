@@ -47,10 +47,12 @@ jest.mock('@/components/booking-wizard/staff-card-request', () => {
 });
 // The desk screen itself is tested in components/cards; here only that it opens.
 jest.mock('@/components/booking-wizard/StaffAddCardSheet', () => ({
-  StaffAddCardSheet: ({ open, guestId }: { open: boolean; guestId?: string }) => {
+  StaffAddCardSheet: ({ open, guestId, bookingVenueId }: { open: boolean; guestId?: string; bookingVenueId?: string | null }) => {
     const React = require('react');
     const { Text } = require('react-native');
-    return open ? React.createElement(Text, null, `desk sheet for ${guestId}`) : null;
+    return open
+      ? React.createElement(Text, null, `desk sheet for ${guestId}${bookingVenueId ? ` at ${bookingVenueId}` : ''}`)
+      : null;
   },
 }));
 
@@ -90,6 +92,7 @@ async function renderStep(
     bookingVenueId?: string | null;
     ownerVenueId?: string | null;
     collectiveForm?: boolean;
+    signedInVenueId?: string | null;
   } = {},
 ) {
   await render(
@@ -103,6 +106,7 @@ async function renderStep(
       bookingVenueId={opts.bookingVenueId ?? null}
       ownerVenueId={opts.ownerVenueId ?? null}
       collectiveForm={opts.collectiveForm}
+      signedInVenueId={opts.signedInVenueId ?? null}
       onSuccess={jest.fn()}
     />,
   );
@@ -213,6 +217,22 @@ describe('no card found', () => {
     });
     expect(mockLookupArgs[mockLookupArgs.length - 1]).toEqual(['g-1', true, 'venue-partner']);
     expect(screen.queryByText('Add card now')).toBeNull();
+  });
+
+  it('in the collective form, a booking at the signed-in business names it to the lookup and the desk session', async () => {
+    // A client from another member's records: the answer is for the signed-in business the booking
+    // is at, not the member who keeps the record.
+    await renderStep({
+      guest: { ...JO, guest_id: 'g-member-b' },
+      ownerVenueId: 'collective-1',
+      collectiveForm: true,
+      signedInVenueId: 'venue-a',
+    });
+    expect(mockLookupArgs[mockLookupArgs.length - 1]).toEqual(['g-member-b', true, 'venue-a']);
+    await act(async () => {
+      fireEvent.press(screen.getByText('Add card now'));
+    });
+    expect(screen.getByText('desk sheet for g-member-b at venue-a')).toBeTruthy();
   });
 });
 

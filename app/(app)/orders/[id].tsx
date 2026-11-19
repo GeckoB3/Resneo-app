@@ -35,6 +35,7 @@ import {
   packingSlipFilename,
   timelineText,
 } from '@/lib/shop/order-words';
+import { useContactLinks } from '@/lib/phone/contact-links';
 import { formatPhoneForDisplay } from '@/lib/phone/e164';
 import { downloadAndShareFile } from '@/lib/share/share-binary-file';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
@@ -126,6 +127,8 @@ function OrderBody({
 }) {
   const t = usePosT();
   const toast = useToast();
+  // As on the Clients tab: a device that cannot email or call copies the address or number.
+  const contactLinks = useContactLinks();
   const router = useRouter();
   const siteLink = useWebDashboardLink();
   const o = data.order;
@@ -421,12 +424,12 @@ function OrderBody({
             {/* Left-aligned links under the name, like the client screens; the phone as people read it. */}
             {contactHidden ? <HiddenContactValue label="Email and phone" showTip /> : null}
             {!contactHidden && o.contact_email ? (
-              <Text tone="brand" accessibilityRole="link" onPress={() => void Linking.openURL(`mailto:${o.contact_email}`).catch(() => undefined)}>
+              <Text tone="brand" accessibilityRole="link" onPress={() => contactLinks.email(o.contact_email)}>
                 {o.contact_email}
               </Text>
             ) : null}
             {!contactHidden && o.contact_phone ? (
-              <Text tone="brand" accessibilityRole="link" onPress={() => void Linking.openURL(`tel:${o.contact_phone}`).catch(() => undefined)}>
+              <Text tone="brand" accessibilityRole="link" onPress={() => contactLinks.call(o.contact_phone)}>
                 {formatPhoneForDisplay(o.contact_phone)}
               </Text>
             ) : null}

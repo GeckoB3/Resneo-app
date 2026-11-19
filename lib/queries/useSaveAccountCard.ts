@@ -6,7 +6,7 @@
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
-import { apiFetch } from '@/lib/api/client';
+import { ApiError, apiFetch } from '@/lib/api/client';
 import { presentCardSheet, type CardSheetResult } from '@/lib/payments/customer-card-sheet';
 import type { PaymentIntentTicket } from '@/lib/payments/customer-purchase';
 import type { AccountCardSetup } from '@/lib/queries/useAccountCards';
@@ -56,12 +56,23 @@ export function useSaveAccountCard(
       if (sheet.status === 'cancelled') return { status: 'cancelled' };
       if (sheet.status === 'failed') return { status: 'failed', message: sheet.message };
 
+      // Stripe has the card from here on, and the platform webhook saves it whatever the confirm
+      // answers. A dropped connection or a server error used to reject, and the customer read "We
+      // could not save your card" for a card that was saved (2026-11-19): it is asked again, and
+      // after the last try the card is "being saved" rather than failed.
       for (let attempt = 1; attempt <= CONFIRM_ATTEMPTS; attempt += 1) {
-        const body = await apiFetch<ConfirmBody>('/api/v1/me/payment-methods/card-on-file/confirm', {
-          accessToken,
-          method: 'POST',
-          body: JSON.stringify({ setup_intent_id: setup.setup_intent_id }),
-        });
+        let body: ConfirmBody;
+        try {
+          body = await apiFetch<ConfirmBody>('/api/v1/me/payment-methods/card-on-file/confirm', {
+            accessToken,
+            method: 'POST',
+            body: JSON.stringify({ setup_intent_id: setup.setup_intent_id }),
+          });
+        } catch (error) {
+          if (!isPassingConfirmError(error)) throw error;
+          if (attempt < CONFIRM_ATTEMPTS) await wait(CONFIRM_GAP_MS);
+          continue;
+        }
         if (body.confirmed) {
           const card = body.card;
           return {
@@ -80,6 +91,16 @@ export function useSaveAccountCard(
       }
     },
   });
+}
+
+/**
+ * A confirm that did not get an answer, rather than one refused: no connection or a timeout (status
+ * 0), too many requests, or a server error. Anything else (a 4xx) is a real refusal.
+ */
+export function isPassingConfirmError(error: unknown): boolean {
+  if (error instanceof ApiError) return error.status === 0 || error.status === 429 || error.status >= 500;
+  // Not an answer from the server at all (a fetch that threw).
+  return true;
 }
 
 function cardWords(brand: string | null, last4: string): string {

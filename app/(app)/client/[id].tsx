@@ -2,7 +2,6 @@ import { format, parseISO } from 'date-fns';
 import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
-  Linking,
   Platform,
   Pressable,
   RefreshControl,
@@ -63,6 +62,7 @@ import {
 import { guestBookingsSummary, splitGuestHistory } from '@/lib/guests/guest-history-sections';
 import { marketingSummaryHint } from '@/lib/guests/marketing-permission';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { useContactLinks } from '@/lib/phone/contact-links';
 import { formatPhoneForDisplay } from '@/lib/phone/e164';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
 import { useGuestTimeline, useSendGuestMessage, useUpdateGuest } from '@/lib/queries/useGuestMutations';
@@ -238,6 +238,7 @@ export default function ClientDetailScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const toast = useToast();
+  const contactLinks = useContactLinks();
   const { id } = useLocalSearchParams<{ id: string }>();
   const guestId = typeof id === 'string' ? id : undefined;
   const detailQuery = useGuestDetail(guestId);
@@ -414,24 +415,11 @@ export default function ClientDetailScreen() {
   const openMessage = () =>
     setMessageTarget({ id: guest.id, guestName: name, email: guest.email, phone: guest.phone });
 
-  /** Open an external URL, surfacing a toast if the handler is unavailable. */
-  const openLink = async (url: string, failure: string) => {
-    try {
-      await Linking.openURL(url);
-    } catch {
-      toast.error(failure);
-    }
-  };
+  // As on the Clients tab: a device that cannot call or has no mail app copies the number or
+  // address and says so, rather than only "Could not open mail."
+  const handleCall = () => contactLinks.call(phone);
 
-  const handleCall = () => {
-    if (!phone) return;
-    void openLink(`tel:${phone}`, 'Could not start a call.');
-  };
-
-  const handleEmail = () => {
-    if (!email) return;
-    void openLink(`mailto:${email}`, 'Could not open mail.');
-  };
+  const handleEmail = () => contactLinks.email(email);
 
   // Recording a consent lifts a standing opt-out, and opting out withdraws
   // the consent (web 2026-09-10): the server does the same, and sending both
