@@ -202,3 +202,23 @@ describe('summariseBulkGuestMessage', () => {
     ).toBe('No messages were sent.');
   });
 });
+
+describe('blocked clients (web 2026-11-19, BC10)', () => {
+  it('counts a blocked contact as left out, named apart from missing permission', () => {
+    const outcomes = [
+      classifyGuestMessageResponse('g1', { success: true }),
+      classifyGuestMessageResponse('g2', { success: false, skipped: true, reason: 'blocked' }),
+      classifyGuestMessageResponse('g3', { success: false, skipped: true, reason: 'no_permission' }),
+    ];
+    expect(outcomes[1]).toMatchObject({ skipped: true, blocked: true });
+    const summary = summariseBulkGuestMessage({ outcomes, total: 3, clientWord: 'Client', nameForGuest: () => '' });
+    expect(summary.ok).toBe(true);
+    expect(summary.toast).toBe('Message sent to 1 client, 1 skipped (no marketing permission), 1 blocked client was left out');
+  });
+
+  it('says so when every contact was blocked', () => {
+    const outcomes = [classifyGuestMessageResponse('g1', { success: false, skipped: true, reason: 'blocked' })];
+    const summary = summariseBulkGuestMessage({ outcomes, total: 1, clientWord: 'Client', nameForGuest: () => '' });
+    expect(summary.toast).toBe('No messages sent: 1 blocked client was left out.');
+  });
+});

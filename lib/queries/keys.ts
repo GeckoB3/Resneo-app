@@ -486,6 +486,9 @@ export const queryKeys = {
       ] as const,
     timeline: (accessToken?: string | null, guestId?: string | null) =>
       [...queryKeys.guests.all(), 'timeline', keyScope(accessToken), guestId ?? null] as const,
+    /** Blocked from booking online (web 2026-11-19): the blocks, with the Block sheet's preview. */
+    block: (accessToken?: string | null, guestId?: string | null, preview = false) =>
+      [...queryKeys.guests.all(), 'block', keyScope(accessToken), guestId ?? null, preview] as const,
   },
 
   practitioners: {

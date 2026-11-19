@@ -17,6 +17,7 @@ import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { CountryCode } from '@/lib/phone/e164';
 import type { GuestListItem } from '@/types/guest-list';
+import { useClientBlock } from '@/lib/queries/useClientBlock';
 
 export type GuestDetails = {
   first_name: string;
@@ -83,6 +84,26 @@ type GuestDetailsStepProps = {
 
 const SEARCH_DEBOUNCE_MS = 280;
 const MIN_SEARCH_LENGTH = 2;
+
+/** A warning while the details belong to a client a business has blocked (web BC7). */
+function BlockedClientWarning({ guestId }: { guestId: string }) {
+  const { colors } = useTheme();
+  const block = useClientBlock(guestId);
+  const first = block.data?.blocks?.[0];
+  if (!first) return null;
+  return (
+    <View
+      testID="staff-blocked-client-warning"
+      accessibilityRole="alert"
+      style={[styles.blockedWarning, { backgroundColor: colors.warningSurface, borderColor: colors.warning }]}>
+      <Text variant="bodySmall">
+        {first.own
+          ? 'This client is blocked from booking online. You can still book them here.'
+          : `${first.venue_name} has blocked this client from booking online. You can still book them here.`}
+      </Text>
+    </View>
+  );
+}
 
 function guestDisplayName(guest: GuestListItem): string {
   return [guest.first_name, guest.last_name].filter(Boolean).join(' ').trim() || 'Unnamed guest';
@@ -260,6 +281,9 @@ export function GuestDetailsStep({
             returnKeyType="search"
           />
         ) : null}
+
+        {/* Blocked from booking online (web 2026-11-19): staff may still book them. */}
+        {value.guest_id ? <BlockedClientWarning guestId={value.guest_id} /> : null}
 
         {!readOnlyContact ? (
           <>
@@ -461,6 +485,11 @@ export function GuestDetailsStep({
 }
 
 const styles = StyleSheet.create({
+  blockedWarning: {
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+  },
   flex: {
     flex: 1,
   },

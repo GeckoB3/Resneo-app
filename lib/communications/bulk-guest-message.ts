@@ -25,8 +25,10 @@ export interface GuestMessageResponse {
 export interface BulkGuestMessageOutcome {
   guestId: string;
   sent: boolean;
-  /** Left out on purpose: no marketing permission. Never counted as a failure. */
+  /** Left out on purpose: no marketing permission, or blocked. Never counted as a failure. */
   skipped: boolean;
+  /** Left out because the client is blocked from booking online (web 2026-11-19, BC10). */
+  blocked?: boolean;
   /** Staff-facing reason this contact was not messaged; null when there is none. */
   issues: string | null;
 }
@@ -50,6 +52,7 @@ export function classifyGuestMessageResponse(
     guestId,
     sent: Boolean(body.success),
     skipped: Boolean(body.skipped),
+    ...(body.skipped && body.reason === 'blocked' ? { blocked: true } : {}),
     issues: issueText(body),
   };
 }
@@ -137,7 +140,15 @@ export function summariseBulkGuestMessage({
     .filter((o) => !o.sent && !o.skipped && o.issues)
     .slice(0, 5)
     .map((o) => `${nameForGuest(o.guestId) || clientWord}: ${o.issues}`);
-  const skippedNote = skippedCount > 0 ? `${skippedCount} skipped (no marketing permission)` : '';
+  // Blocked clients are left out of bulk messages (web 2026-11-19, BC10), named apart.
+  const blockedCount = outcomes.filter((o) => o.blocked).length;
+  const permissionSkipped = skippedCount - blockedCount;
+  const skippedNote = [
+    permissionSkipped > 0 ? `${permissionSkipped} skipped (no marketing permission)` : '',
+    blockedCount > 0 ? `${blockedCount} blocked ${clientLower}${blockedCount === 1 ? ' was' : 's were'} left out` : '',
+  ]
+    .filter(Boolean)
+    .join(', ');
 
   if (okCount + skippedCount === total && okCount > 0) {
     return {
@@ -159,7 +170,10 @@ export function summariseBulkGuestMessage({
   }
 
   if (skippedCount === total && total > 0) {
-    const msg = `No messages sent: none of the selected ${clientLower}s has given marketing permission.`;
+    const msg =
+      blockedCount === 0
+        ? `No messages sent: none of the selected ${clientLower}s has given marketing permission.`
+        : `No messages sent: ${skippedNote}.`;
     return { ok: false, toast: msg, error: msg };
   }
 

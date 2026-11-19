@@ -30,6 +30,10 @@ export interface GuestListItem {
    * request sets `include_custom_fields=1` (used by the CSV export).
    */
   custom_fields?: Record<string, unknown>;
+  /** Blocked from booking online where this business is (web 2026-11-19). Absent on older servers. */
+  blocked?: boolean;
+  /** Which business blocked them: this one (`own`) or another in the collective. */
+  blocked_by?: { venue_id: string; venue_name: string; own: boolean } | null;
 }
 
 /** `contacts_hidden` (web roles plan A2): phone and email are null on every row. */

@@ -29,6 +29,7 @@ const mockGuests: GuestListItem[] = [
     upcoming_booking_count: 0,
   },
 ];
+jest.mock('@/lib/queries/useClientBlock', () => ({ useClientBlock: () => ({ data: undefined }) }));
 jest.mock('@/lib/queries/useGuests', () => ({
   useGuests: () => ({ data: { guests: mockGuests }, isFetching: false }),
 }));

@@ -19,6 +19,7 @@ import { ComplianceSection } from '@/components/clients/ComplianceSection';
 import { CustomFieldsSection } from '@/components/clients/CustomFieldsSection';
 import { DocumentsSection } from '@/components/clients/DocumentsSection';
 import { GdprSection } from '@/components/clients/GdprSection';
+import { BlockClientButton, ClientBlockBanner } from '@/components/clients/ClientBlockCard';
 import { GuestEditSheet, type GuestEditTarget } from '@/components/clients/GuestEditSheet';
 import { GuestTagEditor } from '@/components/clients/GuestTagEditor';
 import { TreatmentRecordsSection } from '@/components/clients/TreatmentRecordsSection';
@@ -524,6 +525,12 @@ export default function ClientDetailScreen() {
                 <Badge key={tag} label={tag} tone="brand" />
               ))}
             </View>
+            {/* Blocked from booking online (web 2026-11-19). */}
+            {guestId ? (
+              <View style={styles.alertsRow}>
+                <ClientBlockBanner guestId={guestId} />
+              </View>
+            ) : null}
             {/* The client's alerts (web plan TR24), for someone who reaches treatment records. */}
             {treatmentRecordsEnabled && guestId ? (
               <View style={styles.alertsRow}>
@@ -749,7 +756,10 @@ export default function ClientDetailScreen() {
       {/* Admin section — merge + GDPR (admin only). Collapsed by default so the
           destructive "Erase data" is not an always-visible bottom-of-screen CTA. */}
       {isAdmin ? (
-        <CollapsibleCard title="Admin" summary="Merge & data tools">
+        <CollapsibleCard title="Admin" summary="Merge, block & data tools">
+          {guestId ? (
+            <BlockClientButton guestId={guestId} guestName={name} businessName={venue?.name ?? 'your business'} />
+          ) : null}
           <Button
             label="Merge duplicate"
             variant="secondary"

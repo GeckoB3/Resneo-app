@@ -337,10 +337,20 @@ export function useEraseHeldCounts(guestId: string | null, enabled = true) {
     queryKey: queryKeys.treatmentRecords.eraseCounts(accessToken, guestId),
     enabled: enabled && Boolean(guestId) && isBackendConfigured() && accessToken !== null,
     retry: false,
-    queryFn: async (): Promise<{ treatment_records: number; client_alerts: number; also_held_by: string[] } | null> => {
+    queryFn: async (): Promise<{
+      treatment_records: number;
+      client_alerts: number;
+      also_held_by: string[];
+      blocked: boolean;
+    } | null> => {
       if (!accessToken || !guestId) throw new Error('Missing client');
       try {
-        const out = await apiFetch<{ treatment_records?: number; client_alerts?: number; also_held_by?: string[] }>(
+        const out = await apiFetch<{
+          treatment_records?: number;
+          client_alerts?: number;
+          also_held_by?: string[];
+          blocked?: boolean;
+        }>(
           `/api/venue/gdpr/erase-guest?guest_id=${encodeURIComponent(guestId)}`,
           { accessToken },
         );
@@ -349,6 +359,8 @@ export function useEraseHeldCounts(guestId: string | null, enabled = true) {
           client_alerts: out.client_alerts ?? 0,
           // Shared client lists (web 2026-11-15): "Also held by Aura and Light 16." Absent on older servers.
           also_held_by: Array.isArray(out.also_held_by) ? out.also_held_by : [],
+          // Blocked clients (web 2026-11-19): erasing does not lift a block. Absent on older servers.
+          blocked: out.blocked === true,
         };
       } catch {
         // An older server has no GET here; it still asks for a reason if one is needed.

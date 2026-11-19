@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { IconButton } from '@/components/ui/IconButton';
 import { Text } from '@/components/ui/Text';
+import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
 import { ApiError } from '@/lib/api/client';
 import {
   COLLECTIVE_RULE_ROWS,
@@ -31,6 +32,7 @@ import { hapticSuccess, hapticTap, hapticWarning } from '@/lib/haptics';
 import {
   isStaleCollectiveSave,
   useCollectiveSettings,
+  useSaveClientBlocksScope,
   useSaveCollectiveRule,
   type CollectiveRuleSave,
   type CollectiveSettingsPayload,
@@ -107,6 +109,7 @@ export function SettingsPanel({
         </Text>
       ) : null}
       <BookingRulesPart data={data} collectiveId={collectiveId} />
+      {data.booking_rules.client_blocks ? <BlockedClientsPart data={data} collectiveId={collectiveId} /> : null}
       <CollectivePagePart data={data} />
       <HostDetailsPart data={data} />
       {data.clients ? <ClientsPart clients={data.clients} onOpenClients={onOpenClients} /> : null}
@@ -405,6 +408,78 @@ function Choice({
       />
       <Text variant="bodySmall">{label}</Text>
     </Pressable>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 1b. Blocked clients (web 2026-11-19, BC4): the same words as the web
+// ---------------------------------------------------------------------------
+
+function BlockedClientsPart({ data, collectiveId }: { data: CollectiveSettingsPayload; collectiveId: string }) {
+  const toast = useToast();
+  const save = useSaveClientBlocksScope(collectiveId);
+  const blocks = data.booking_rules.client_blocks!;
+  const name = data.collective.name;
+  const [asking, setAsking] = useState<'collective' | 'business' | null>(null);
+  const others = Math.max(0, blocks.business_count - 1);
+
+  const confirm = async () => {
+    if (!asking) return;
+    try {
+      await save.mutateAsync({ scope: asking, version: data.booking_rules.version });
+      toast.success(settingsCopy('set.saved', { collective: name }));
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'That did not save. Please try again.');
+    } finally {
+      setAsking(null);
+    }
+  };
+
+  return (
+    <Card>
+      <View style={styles.part} testID="collective-blocked-clients">
+        <PartTitle>Blocked clients</PartTitle>
+        <Text variant="bodySmall" tone="secondary">
+          A blocked client cannot book online. This choice decides where.
+        </Text>
+        {data.can_edit ? (
+          <>
+            <Choice
+              label={`Every business in ${name}`}
+              selected={blocks.scope === 'collective'}
+              disabled={save.isPending}
+              onPress={() => setAsking('collective')}
+            />
+            <Choice
+              label="Only the business that blocks them"
+              selected={blocks.scope === 'business'}
+              disabled={save.isPending}
+              onPress={() => setAsking('business')}
+            />
+          </>
+        ) : (
+          <Text variant="bodySmall" testID="collective-blocked-clients-read-only">
+            {blocks.scope === 'collective'
+              ? `Every business in ${name}. A client blocked by any business cannot book online with any of them.`
+              : 'Only the business that blocks them. Each business decides for itself.'}
+          </Text>
+        )}
+      </View>
+      <ConfirmSheet
+        visible={asking !== null}
+        title={asking === 'business' ? 'Blocks for each business only?' : `Blocks for every business in ${name}?`}
+        message={
+          asking === 'business'
+            ? `Clients blocked by one business will be able to book online with the other ${others} business${others === 1 ? '' : 'es'} again. Nothing is deleted, and you can switch this back.`
+            : `${blocks.block_count} client${blocks.block_count === 1 ? '' : 's'} blocked by member businesses will no longer be able to book online with any business in ${name}.`
+        }
+        confirmLabel="Change"
+        destructive={false}
+        loading={save.isPending}
+        onConfirm={() => void confirm()}
+        onClose={() => setAsking(null)}
+      />
+    </Card>
   );
 }
 

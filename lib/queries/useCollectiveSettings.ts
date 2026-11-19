@@ -59,6 +59,8 @@ export interface CollectiveSettingsPayload {
     waitlist_mode: string;
     any_available_practitioner_config: { mode: 'priority' | 'random'; calendar_order: string[] };
     calendars: CollectiveSettingsCalendar[];
+    /** Where a block on a client applies (web 2026-11-19, BC4). Absent on older servers. */
+    client_blocks?: { scope: 'collective' | 'business'; business_count: number; block_count: number };
   };
   page: {
     name: string;
@@ -121,6 +123,25 @@ export function isStaleCollectiveSave(error: unknown): boolean {
 export type CollectiveRuleSave =
   | { route: 'venue'; patch: { require_account_login_for_bookings: boolean }; version: number }
   | { route: 'feature-flags'; patch: Record<string, unknown>; version: number };
+
+/** The host's choice of where a block on a client applies (web 2026-11-19, BC4). */
+export function useSaveClientBlocksScope(collectiveId: string) {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { scope: 'collective' | 'business'; version: number }): Promise<unknown> => {
+      if (!accessToken) throw new Error('Missing access token');
+      return apiFetch<unknown>(`/api/venue/collectives/${encodeURIComponent(collectiveId)}/settings`, {
+        accessToken,
+        method: 'PATCH',
+        body: JSON.stringify({ client_blocks_scope: input.scope, booking_settings_version: input.version }),
+      });
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: collectiveSettingsKey(accessToken, collectiveId) });
+    },
+  });
+}
 
 /** A host's save of a collective booking rule, naming the version read. */
 export function useSaveCollectiveRule(collectiveId: string) {

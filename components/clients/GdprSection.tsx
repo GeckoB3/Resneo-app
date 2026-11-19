@@ -150,6 +150,18 @@ export function GdprSection({ guestId, guestName, onErased, bare = false }: Gdpr
                 This permanently anonymises {guestName}&apos;s personal data (name, email, phone,
                 notes). Their booking history is retained anonymously. This cannot be undone.
               </Text>
+              {held.data?.blocked ? (
+                <View
+                  testID="erase-blocked-note"
+                  style={[styles.held, { backgroundColor: colors.dangerSurface, borderColor: colors.danger }]}
+                >
+                  <Text variant="bodyMedium">This client is blocked.</Text>
+                  <Text variant="bodySmall">
+                    The block stays, kept only as a one-way code of their email and phone, so they still cannot
+                    book online. Unblock them first if you want it gone too.
+                  </Text>
+                </View>
+              ) : null}
               {alsoHeldBy.length > 0 ? (
                 <View
                   testID="erase-also-held"

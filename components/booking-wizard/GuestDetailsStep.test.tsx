@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import React from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+jest.mock('@/lib/queries/useClientBlock', () => ({ useClientBlock: () => ({ data: undefined }) }));
 jest.mock('@/lib/queries/useGuests', () => ({
   useGuests: () => ({ data: { guests: [] }, isFetching: false }),
 }));

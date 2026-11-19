@@ -53,6 +53,11 @@ const SEGMENT_OPTIONS = [
     label: 'By tag',
     hint: 'Show contacts who have a specific tag. Pick a suggestion or type any tag; matching is not case sensitive.',
   },
+  {
+    value: 'blocked',
+    label: 'Blocked from booking online',
+    hint: 'Contacts your business has blocked. A block another business in your collective set shows on the contact, not here.',
+  },
 ] as const;
 
 // Identity-scope hints mirror the web `CONTACT_SHOW_OPTIONS` hint copy

@@ -59,6 +59,8 @@ import { useVenueLiveSync } from '@/lib/realtime/useVenueLiveSync';
 import { ROLES_COPY } from '@/lib/roles/roles';
 import { isUnifiedSchedulingVenue } from '@/lib/venue/venue-experience';
 import { useToast } from '@/providers/ToastProvider';
+import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
+import { useBulkBlockClients } from '@/lib/queries/useClientBlock';
 import { useClientContactHidden, useViewerAccess } from '@/providers/ViewerAccessProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
@@ -105,6 +107,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   last_staff: 'By last staff',
   last_service: 'By last service',
   tag: 'By tag',
+  blocked: 'Blocked',
 };
 
 const IDENTITY_LABELS: Record<string, string> = {
@@ -220,6 +223,13 @@ function GuestRowBase({
           {guest.no_show_count > 0 ? (
             <Badge label={`${guest.no_show_count} no-show${guest.no_show_count === 1 ? '' : 's'}`} tone="warning" />
           ) : null}
+          {/* Blocked from booking online (web 2026-11-19). */}
+          {guest.blocked ? (
+            <Badge
+              label={guest.blocked_by && !guest.blocked_by.own ? `Blocked by ${guest.blocked_by.venue_name}` : 'Blocked'}
+              tone="danger"
+            />
+          ) : null}
         </View>
         {contactHidden ? (
           isAnonymous ? null : <HiddenContactValue variant="caption" label="Phone and email" />
@@ -281,6 +291,8 @@ export default function ClientsScreen() {
   // Bulk selection (long-press a row to start).
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkSheet, setBulkSheet] = useState<'tag' | 'remove_tag' | 'message' | null>(null);
+  const [bulkBlockOpen, setBulkBlockOpen] = useState(false);
+  const bulkBlock = useBulkBlockClients();
   const [exporting, setExporting] = useState(false);
   // Measured bulk-bar height — grows when its actions wrap to a second row.
   const [bulkBarClearance, setBulkBarClearance] = useState(BULK_ACTION_BAR_CLEARANCE);
@@ -480,6 +492,21 @@ export default function ClientsScreen() {
         : [...current, guestId],
     );
   }, []);
+
+  const runBulkBlock = async () => {
+    try {
+      const out = await bulkBlock.mutateAsync(selectedIds);
+      const blocked = out.blocked ?? 0;
+      const already = out.already_blocked ?? 0;
+      toast.success(
+        `Blocked ${blocked} ${clientLabel}${blocked === 1 ? '' : 's'}${already > 0 ? `, ${already} already blocked` : ''}`,
+      );
+      setBulkBlockOpen(false);
+      setSelectedIds([]);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Could not block these contacts.');
+    }
+  };
 
   const clearSelection = () => {
     setSelectedIds([]);
@@ -1092,7 +1119,27 @@ export default function ClientsScreen() {
             onPress={() => setBulkSheet('message')}
           />
         ) : null}
+        {isAdmin ? (
+          <Button
+            label="Block"
+            size="sm"
+            variant="secondary"
+            onPress={() => setBulkBlockOpen(true)}
+            testID="bulk-block-button"
+          />
+        ) : null}
       </BulkActionBar>
+
+      {/* Bulk Block (web 2026-11-19): an imported list of clients blocked on the old system. */}
+      <ConfirmSheet
+        visible={bulkBlockOpen}
+        title={`Block ${selectedIds.length} ${clientLabel}${selectedIds.length === 1 ? '' : 's'}?`}
+        message={`They will not be able to book online. When they try, they see that you cannot take the booking online and are asked to contact you; it never says they are blocked. Their upcoming bookings stay, and you can still book them yourself. Open a ${clientLabel} to add a reason or to unblock them.`}
+        confirmLabel={`Block ${selectedIds.length}`}
+        loading={bulkBlock.isPending}
+        onConfirm={() => void runBulkBlock()}
+        onClose={() => setBulkBlockOpen(false)}
+      />
 
       {/* FAB — create new contact */}
       {!selectionMode ? (
