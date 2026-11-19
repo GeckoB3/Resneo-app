@@ -811,6 +811,11 @@ export interface StaffCreateCardOnFile {
   found_by_label: string | null;
   kind: 'card_on_file' | 'till_card' | null;
   cancel_if_no_card_at: string | null;
+  /**
+   * No request went now: one already went to this client today (one card message a day). Their link
+   * lists this booking too. Absent from older servers.
+   */
+  request_already_sent_today?: boolean;
 }
 
 /** Narrow the create response's `card_on_file` (null when absent or malformed). */
@@ -831,6 +836,7 @@ export function parseStaffCreateCardOnFile(value: unknown): StaffCreateCardOnFil
     found_by_label: str(v.found_by_label),
     kind: v.kind === 'card_on_file' || v.kind === 'till_card' ? v.kind : null,
     cancel_if_no_card_at: str(v.cancel_if_no_card_at),
+    request_already_sent_today: v.request_already_sent_today === true,
   };
 }
 
@@ -857,7 +863,16 @@ export function staffCardConfirmationLines(input: {
       return { heading: 'Booking confirmed', lines: [staffCardNotPossibleLine(input.businessName)] };
     case 'waiting': {
       const lines: string[] = [];
-      lines.push(input.sentTo ? `A card request was sent to ${input.sentTo}.` : 'A card request was sent to the client.');
+      if (cardOnFile.request_already_sent_today) {
+        // Staff were told a request was sent when none was (2026-11-19).
+        lines.push(
+          input.sentTo
+            ? `${input.sentTo} already had a card request today, so no new one was sent. The link in it covers this booking too.`
+            : 'The client already had a card request today, so no new one was sent. The link in it covers this booking too.',
+        );
+      } else {
+        lines.push(input.sentTo ? `A card request was sent to ${input.sentTo}.` : 'A card request was sent to the client.');
+      }
       if (cardOnFile.cancel_if_no_card_at) {
         lines.push(cardCancelIfNoCardLine(cardOnFile.cancel_if_no_card_at));
         return { heading: 'Waiting for card', lines };

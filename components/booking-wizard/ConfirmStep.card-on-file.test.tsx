@@ -83,7 +83,14 @@ type Guest = { first_name: string; last_name: string; email: string; phone: stri
 const JO: Guest = { first_name: 'Jo', last_name: 'Bloggs', email: 'jo@example.com', phone: '' };
 
 async function renderStep(
-  opts: { guest?: Guest; source?: 'phone' | 'walk-in'; noCardPayments?: boolean; bookingVenueId?: string | null } = {},
+  opts: {
+    guest?: Guest;
+    source?: 'phone' | 'walk-in';
+    noCardPayments?: boolean;
+    bookingVenueId?: string | null;
+    ownerVenueId?: string | null;
+    collectiveForm?: boolean;
+  } = {},
 ) {
   await render(
     <ConfirmStep
@@ -94,6 +101,8 @@ async function renderStep(
       source={opts.source ?? 'phone'}
       noCardPayments={opts.noCardPayments}
       bookingVenueId={opts.bookingVenueId ?? null}
+      ownerVenueId={opts.ownerVenueId ?? null}
+      collectiveForm={opts.collectiveForm}
       onSuccess={jest.fn()}
     />,
   );
@@ -188,6 +197,22 @@ describe('no card found', () => {
     expect(screen.queryByText('Add card now')).toBeNull();
     await renderStep({ guest: { ...JO, guest_id: 'g-1' } });
     expect(mockLookupArgs[mockLookupArgs.length - 1]).toEqual(['g-1', true, null]);
+  });
+
+  it('in the collective form, never looks the card up at the collective (2026-11-19)', async () => {
+    // The signed-in business's own service: the lookup is for this business, and Add card is offered.
+    await renderStep({ guest: { ...JO, guest_id: 'g-1' }, ownerVenueId: 'collective-1', collectiveForm: true });
+    expect(mockLookupArgs[mockLookupArgs.length - 1]).toEqual(['g-1', true, null]);
+    expect(screen.getByText('Add card now')).toBeTruthy();
+    // A partner member's service: the lookup is for the partner, and Add card waits for the booking.
+    await renderStep({
+      guest: { ...JO, guest_id: 'g-1' },
+      ownerVenueId: 'collective-1',
+      collectiveForm: true,
+      bookingVenueId: 'venue-partner',
+    });
+    expect(mockLookupArgs[mockLookupArgs.length - 1]).toEqual(['g-1', true, 'venue-partner']);
+    expect(screen.queryByText('Add card now')).toBeNull();
   });
 });
 
@@ -354,6 +379,16 @@ describe('the confirmation (card_on_file)', () => {
       fireEvent.press(card.getByText('Add card now'));
     });
     expect(screen.getByText('desk sheet for g-new')).toBeTruthy();
+  });
+
+  it("after the booking, Add card is for the record the booking made, not the picked one (a partner's booking)", async () => {
+    await renderStep({ guest: { ...JO, guest_id: 'g-picked' }, bookingVenueId: 'venue-partner' });
+    await create({ guest_id: 'g-at-partner', card_on_file: { covered: false, state: 'waiting', cancel_if_no_card_at: null } });
+    const card = within(screen.getByTestId('staff-card-confirmation'));
+    await act(async () => {
+      fireEvent.press(card.getByText('Add card now'));
+    });
+    expect(screen.getByText('desk sheet for g-at-partner')).toBeTruthy();
   });
 
   it('a typed new client with no guest_id in the answer (an older server) is offered no "Add card now"', async () => {

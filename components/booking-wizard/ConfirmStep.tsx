@@ -85,6 +85,11 @@ type ConfirmStepProps = {
    * (`ownerVenueId`) or a collective partner's. The card line answers for a booking there.
    */
   bookingVenueId?: string | null;
+  /**
+   * The collective booking form: `ownerVenueId` is then the collective, never a business, so only
+   * `bookingVenueId` (a partner member, or null for the signed-in business) names where it is made.
+   */
+  collectiveForm?: boolean;
   onSuccess: (bookingId: string) => void;
   /** Reset the wizard to step 1 for a back-to-back booking (front-desk flow). */
   onBookAnother?: () => void;
@@ -419,6 +424,7 @@ export function ConfirmStep({
   businessParts = null,
   bookedAtBusiness = null,
   bookingVenueId = null,
+  collectiveForm = false,
   noCardVenueIds = [],
 }: ConfirmStepProps) {
   const { colors } = useTheme();
@@ -532,7 +538,9 @@ export function ConfirmStep({
   const [cardRequest, setCardRequest] = useState<StaffCardRequestState>(DEFAULT_STAFF_CARD_REQUEST);
   const [addCardOpen, setAddCardOpen] = useState(false);
   const byBusinessVisit = isMultiService && (businessParts?.length ?? 0) >= 2;
-  const partnerVenueId = bookingVenueId ?? ownerVenueId ?? null;
+  // The collective form's `ownerVenueId` is the collective: looking the card up there was refused,
+  // so no saved card showed and "Add card now" was withheld (2026-11-19).
+  const partnerVenueId = collectiveForm ? bookingVenueId ?? null : bookingVenueId ?? ownerVenueId ?? null;
   const cardLookup = useStaffCardLookup(
     guest.guest_id,
     Boolean(entityCardHold) && !noCardPayments && !byBusinessVisit,
@@ -923,8 +931,10 @@ export function ConfirmStep({
 
   // Show inline confirmation once booking is created.
   if (confirmation) {
-    // The picked client, else the record the create answered (a client typed in as new).
-    const confirmedGuestId = guest.guest_id ?? confirmation.guest_id;
+    // The record the create booked (a partner's booking makes its own record there), else the
+    // picked client. A client picked from another member's records has no record at the signed-in
+    // business, so the desk screens refused it ("We couldn't find that client", 2026-11-19).
+    const confirmedGuestId = confirmation.guest_id ?? guest.guest_id;
     return (
       <>
         <BookingConfirmationView

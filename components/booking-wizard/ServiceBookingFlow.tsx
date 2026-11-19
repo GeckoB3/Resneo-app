@@ -2414,7 +2414,10 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           noCardPayments={calendarNotice.noCards}
           businessParts={visitParts}
           bookedAtBusiness={bookedAtBusiness}
-          bookingVenueId={ownerVenueId ?? bookedAtVenueId}
+          // In the collective form `ownerVenueId` is the COLLECTIVE: the card line answers for the
+          // member the booking is at (none when it is the signed-in business), 2026-11-19.
+          bookingVenueId={isCollective ? bookedAtVenueId : (ownerVenueId ?? bookedAtVenueId)}
+          collectiveForm={isCollective}
           noCardVenueIds={calendarNotice.noCardVenueIds}
           returningGuest={returningGuest}
           phoneDefaultCountry={phoneDefaultCountry}

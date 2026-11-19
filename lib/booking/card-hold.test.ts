@@ -495,6 +495,16 @@ describe('staff booking form card line (plan §6.2)', () => {
     expect(staffCardConfirmationLines({ cardOnFile: ticked! }).heading).toBe('Waiting for card');
   });
 
+  it('says no new request went when one already went today (2026-11-19)', () => {
+    const again = parseStaffCreateCardOnFile({ state: 'waiting', cancel_if_no_card_at: null, request_already_sent_today: true });
+    expect(again?.request_already_sent_today).toBe(true);
+    expect(staffCardConfirmationLines({ cardOnFile: again!, sentTo: 'amy@example.com' }).lines[0]).toBe(
+      'amy@example.com already had a card request today, so no new one was sent. The link in it covers this booking too.',
+    );
+    // An older server sends no flag: the old line.
+    expect(parseStaffCreateCardOnFile({ state: 'waiting' })?.request_already_sent_today).toBe(false);
+  });
+
   it('words the bulk questions', () => {
     expect(confirmWithoutCardQuestion(86).confirmLabel).toBe('Confirm 86 bookings');
     expect(confirmWithoutCardQuestion(1).title).toBe('Confirm 1 booking without a card?');
