@@ -67,3 +67,14 @@ export function endSharingLine(status: ClientSharingStatusResponse | undefined |
   if (status.sharingVenueIds.length === 0) return null;
   return clientSharingCopy('cs.leave.end');
 }
+
+/**
+ * Joining with Share now starts sharing at once, with no Bring together step: the venue is told,
+ * and where to follow it (web `cs.join.started`; review 2026-11-21). Null for any other answer.
+ */
+export function joinedSharingLine(
+  offered: boolean | undefined,
+  answer: 'share' | 'not_now' | null | undefined,
+): string | null {
+  return offered === true && answer === 'share' ? clientSharingCopy('cs.join.started') : null;
+}

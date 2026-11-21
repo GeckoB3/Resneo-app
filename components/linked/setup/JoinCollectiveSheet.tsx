@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { joinedSharingLine } from '@/lib/collective-area/client-sharing-lines';
 import { areaCopy } from '@/lib/collective-area/copy';
 import { COLLECTIVE_NAME_MAX, tidyCollectiveName } from '@/lib/collective-area/names';
 import {
@@ -135,7 +136,9 @@ export function JoinCollectiveSheet({
       },
       {
         onSuccess: () => {
-          toast.success(`Joined ${name}.`);
+          // Share now starts at once: say so, and where to follow it (web parity, 2026-11-21).
+          const sharing = joinedSharingLine(preview.client_sharing_offered, shareClients);
+          toast.success(sharing ? `Joined ${name}. ${sharing}` : `Joined ${name}.`);
           onJoined?.();
           // Something still stands between guests and this venue: say what, with the buttons,
           // before closing. Otherwise the sheet closes as it always has.

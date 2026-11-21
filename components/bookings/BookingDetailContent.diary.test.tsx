@@ -227,6 +227,16 @@ describe('everything stays as before', () => {
     expect(mockNotesProps.at(-1)).toMatchObject({ bookingReadOnly: false });
   });
 
+  it('wraps the quick actions onto a second row rather than hiding Rebook off the edge', async () => {
+    await renderAs(BOOK, makeBooking());
+    const row = screen.getByTestId('booking-quick-actions');
+    expect(row.props.horizontal).toBeUndefined();
+    expect(row.props.style).toMatchObject({ flexWrap: 'wrap' });
+    for (const label of ['Call', 'Email', 'Reschedule', 'Modify', 'Rebook', 'New for guest']) {
+      expect(screen.getByLabelText(label)).toBeTruthy();
+    }
+  });
+
   it('for everyone on Can book and change, on anyone\'s calendar', async () => {
     await renderAs(BOOK, makeBooking());
     expect(screen.queryByText(NOTE)).toBeNull();

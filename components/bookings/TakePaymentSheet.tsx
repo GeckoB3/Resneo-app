@@ -14,6 +14,7 @@ import { currencySymbol, formatPence, formatPositivePence, penceToPoundsInput } 
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { newPaymentAttemptId } from '@/lib/payments/attempt-id';
 import { useBluetoothReader } from '@/lib/payments/bluetoothReader';
+import { READER_STARTING_UP_MESSAGE } from '@/lib/payments/reader-connect-errors';
 import {
   cardOutcomeHeading,
   cardReceiptText,
@@ -1298,6 +1299,12 @@ function CardCollectSection({
         </Text>
       ) : null}
 
+      {bluetooth.reconnecting ? (
+        <Text variant="bodySmall" tone="muted">
+          The reader lost its connection. Reconnecting. Keep it switched on and close by.
+        </Text>
+      ) : null}
+
       {stage === 'collecting' ? (
         <Text variant="bodyMedium">
           {readerType === 'tap_to_pay'
@@ -1320,7 +1327,9 @@ function CardCollectSection({
           <TapToPayProgress progress={tapToPay.progress} />
         ) : (
           <Text variant="bodySmall" tone="muted">
-            Getting the card reader ready.
+            {readerType === 'bluetooth' && bluetooth.retrying
+              ? READER_STARTING_UP_MESSAGE
+              : 'Getting the card reader ready.'}
           </Text>
         )
       ) : null}
@@ -1457,19 +1466,23 @@ export function ReaderPairingSection({
   const scanning = reader.status === 'scanning';
   const connecting = reader.status === 'connecting';
   // A mandatory firmware install blocks collection and can run for minutes, so
-  // it locks the controls rather than letting staff tap into a dead end.
-  const locked = scanning || connecting || updating;
+  // it locks the controls rather than letting staff tap into a dead end. A quiet
+  // retry (a reader just switched on) re-scans between attempts, so it locks
+  // them too.
+  const locked = scanning || connecting || updating || reader.retrying;
 
   return (
     <>
       <Text variant="bodySmall" tone="muted">
         {updating
           ? 'Updating your reader. Keep it nearby and switched on. This can take a few minutes.'
-          : connecting
-            ? 'Connecting to your reader. This takes a few seconds.'
-            : scanning
-              ? 'Looking for card readers nearby. Keep the reader switched on.'
-              : 'Choose your card reader.'}
+          : reader.retrying
+            ? READER_STARTING_UP_MESSAGE
+            : connecting
+              ? 'Connecting to your reader. This takes a few seconds.'
+              : scanning
+                ? 'Looking for card readers nearby. Keep the reader switched on.'
+                : 'Choose your card reader.'}
       </Text>
 
       {updating && reader.updateProgress != null ? (

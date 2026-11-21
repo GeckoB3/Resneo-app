@@ -6,7 +6,12 @@
  * status OR either attendance timestamp. Imported as a pure function (no render),
  * matching the `buildDestinations` pattern in settings.test.tsx.
  */
-import { computeBookingSummary, defaultVenueSelection, rangeFor } from '@/app/(app)/(tabs)/bookings';
+import {
+  computeBookingSummary,
+  defaultVenueSelection,
+  rangeFor,
+  venueSelectionLabel,
+} from '@/app/(app)/(tabs)/bookings';
 import type { BookingListRow } from '@/types/booking-list';
 
 function bk(overrides: Partial<BookingListRow> & { id: string }): BookingListRow {
@@ -98,6 +103,27 @@ describe('defaultVenueSelection', () => {
     const sel = defaultVenueSelection(null, []);
     expect(sel.own).toBe(true);
     expect(sel.linked.size).toBe(0);
+  });
+});
+
+/** The chip that says the list is narrowed to some calendars (phone QA 2026-11-21). */
+describe('venueSelectionLabel', () => {
+  const venues = [
+    { venueId: 'v1', venueName: 'Jenny at Aura' },
+    { venueId: 'v2', venueName: 'Light 16' },
+  ];
+
+  it('is null while everything is shown, or with no linked venues', () => {
+    expect(venueSelectionLabel({ own: true, linked: new Set(['v1', 'v2']) }, venues)).toBeNull();
+    expect(venueSelectionLabel({ own: true, linked: new Set() }, [])).toBeNull();
+  });
+
+  it('names the partner the diary picked, which hides this venue\'s own bookings', () => {
+    expect(venueSelectionLabel(defaultVenueSelection('v1', ['v1', 'v2']), venues)).toBe('Jenny at Aura');
+  });
+
+  it('names every business still shown', () => {
+    expect(venueSelectionLabel({ own: true, linked: new Set(['v2']) }, venues)).toBe('My venue and Light 16');
   });
 });
 

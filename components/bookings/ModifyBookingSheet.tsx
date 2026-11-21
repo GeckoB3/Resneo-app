@@ -268,8 +268,9 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
    */
   const linkedVisitId = detailQuery.data?.linked_visit_id ?? null;
   const partnerLinesByVisit = useVisitPartnerLines([linkedVisitId]);
+  // Not the booking being changed (opened from a member's booking it is in the list too).
   const otherBusinessLines = (linkedVisitId ? partnerLinesByVisit.get(linkedVisitId) ?? [] : []).filter(
-    (l) => l.status !== 'Cancelled',
+    (l) => l.status !== 'Cancelled' && l.booking_id !== target?.id,
   );
   const moveAllOption = useMoveWholeVisitOption(target?.id, Boolean(linkedVisitId));
   const moveWholeVisit = useMoveWholeVisit(target?.id);

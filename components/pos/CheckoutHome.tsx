@@ -1,5 +1,5 @@
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
-import { format, parseISO } from 'date-fns';
+import { format, isSameDay, parseISO } from 'date-fns';
 import { type Href, useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { Linking, Pressable, StyleSheet, View } from 'react-native';
@@ -28,10 +28,16 @@ import type { PosSaleListRow, PosVenueAlert } from '@/types/pos';
 type Icon = SymbolViewProps['name'];
 const CHEVRON_RIGHT: Icon = { ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' };
 
-function timeOf(iso: string | null | undefined): string {
+/**
+ * A moment on an open sale: "14:30" today, "14:30 on 18 Nov" another day (web `formatTillTimeWithDay`).
+ * A sale left open days before said only "Started by Andrew at 18:57", which read as later today.
+ */
+export function timeOf(iso: string | null | undefined, now: Date = new Date()): string {
   if (!iso) return '';
   try {
-    return format(parseISO(iso), 'HH:mm');
+    const d = parseISO(iso);
+    const time = format(d, 'HH:mm');
+    return isSameDay(d, now) ? time : `${time} on ${format(d, 'd MMM')}`;
   } catch {
     return '';
   }

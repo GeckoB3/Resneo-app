@@ -2408,6 +2408,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           durationOverride={durationOverride}
           guest={guest}
           onSuccess={handleBookingCreated}
+          onConfirmed={setCreatedBookingId}
           onBookAnother={resetWizard}
           ownerVenueId={ownerVenueId}
           service={selectedService}

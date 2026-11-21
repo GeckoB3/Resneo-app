@@ -19,10 +19,18 @@ import {
 } from '@/lib/payments/reader-timeouts';
 import { ensureIosLocationPermission } from '@/lib/payments/card-present-permissions';
 import {
+  isAlreadyConnectedError,
+  isTransientReaderConnectError,
+  READER_CONNECT_ATTEMPTS,
+  READER_CONNECT_RETRY_DELAY_MS,
+  READER_CONNECT_RETRY_WINDOW_MS,
+  READER_REMEMBERED_WAIT_MS,
+  readerErrorMessage,
+} from '@/lib/payments/reader-connect-errors';
+import {
   androidPermissionMessage,
   ensureTerminalInitialized,
   getTerminalSdk,
-  terminalErrorMessage,
   type TerminalHookApi,
 } from '@/lib/payments/terminal-sdk';
 import { isTapToPayConnectInFlight } from '@/lib/payments/terminal';
@@ -198,6 +206,21 @@ export interface UseBluetoothReader {
   batteryLow: boolean;
   /** 0-1 firmware install progress while `status === 'updating'`. */
   updateProgress: number | null;
+  /**
+   * True while a connect is quietly trying again after the reader was not ready (a reader just
+   * switched on is listed before it can accept a connection). Show "starting up", not an error.
+   */
+  retrying: boolean;
+  /**
+   * True while the SDK is restoring a dropped connection by itself (auto-reconnect), so staff see
+   * "Reconnecting" rather than a reader that looks ready but cannot take a card.
+   */
+  reconnecting: boolean;
+  /**
+   * The latest error, read at call time rather than from the last render, so a caller that has
+   * just awaited `reconnectRemembered` can say why it failed.
+   */
+  lastError: () => string | null;
   /** Start scanning for nearby readers. */
   scan: () => Promise<void>;
   /** Connect to a specific discovered reader and remember it. */
@@ -227,11 +250,29 @@ export function useBluetoothReader(): UseBluetoothReader {
   const siteId = useChosenSiteId();
 
   const [status, setStatus] = useState<BluetoothReaderStatus>('idle');
-  const [error, setError] = useState<string | null>(null);
+  const [error, setErrorState] = useState<string | null>(null);
   const [discovered, setDiscovered] = useState<Reader.Type[]>([]);
   const [localConnected, setConnected] = useState<Reader.Type | null>(null);
   const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
+  /** The reader itself said its battery is low (`onDidReportLowBatteryWarning`). */
+  const [lowBatteryWarned, setLowBatteryWarned] = useState(false);
   const [updateProgress, setUpdateProgress] = useState<number | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
+
+  /** The error as of now, for `lastError()` (see the interface). */
+  const errorRef = useRef<string | null>(null);
+  const setError = useCallback((next: string | null) => {
+    errorRef.current = next;
+    setErrorState(next);
+  }, []);
+  /** False once unmounted: a quiet retry must not start new reader work for a screen that has gone. */
+  const mountedRef = useRef(true);
+  /**
+   * Listeners for every discovery update, so a caller can wait for ONE reader (by serial) rather
+   * than for the first sighting of any reader.
+   */
+  const discoveryWatchersRef = useRef(new Set<(readers: Reader.Type[]) => void>());
 
   const scopeRef = useRef<string>(`${siteId ?? 'home'}:${ownerVenueId ?? 'own'}`);
   const discoveredRef = useRef<Reader.Type[]>([]);
@@ -284,6 +325,7 @@ export function useBluetoothReader(): UseBluetoothReader {
       // This — not the `discoverReaders` promise — is how a Bluetooth scan learns
       // it has succeeded.
       if (external.length > 0) readersFoundRef.current?.();
+      for (const watch of [...discoveryWatchersRef.current]) watch(external);
     },
     // Reader-update events are global, and setting up Tap to Pay on iPhone reports
     // its progress through them too. While the phone's reader is connecting they
@@ -310,14 +352,49 @@ export function useBluetoothReader(): UseBluetoothReader {
       setUpdateProgress(null);
       setStatus((prev) => (prev === 'updating' ? 'ready' : prev));
     },
-    onDidReportBatteryLevel: (level: number) => {
-      if (typeof level === 'number' && Number.isFinite(level)) setBatteryLevel(level);
+    /**
+     * The SDK's battery event is `onDidUpdateBatteryLevel` with `{ batteryLevel, batteryStatus,
+     * isCharging }` (beta.33 `UserCallbacks`). This used to be registered as
+     * `onDidReportBatteryLevel`, a name the SDK never calls, so the level only ever came from the
+     * reader object at connect and a reader running down during the day was never flagged.
+     */
+    onDidUpdateBatteryLevel: (result: { batteryLevel?: unknown } | null | undefined) => {
+      const level = result?.batteryLevel;
+      if (typeof level === 'number' && Number.isFinite(level)) {
+        setBatteryLevel(level);
+        if (level >= LOW_BATTERY_THRESHOLD) setLowBatteryWarned(false);
+      }
+    },
+    onDidReportLowBatteryWarning: () => {
+      if (bluetoothConnectedRef.current) setLowBatteryWarned(true);
+    },
+    /**
+     * The SDK's own auto-reconnect (on by default for Bluetooth on iOS, and asked for explicitly in
+     * `connect` so Android matches). Reconnect events are global, so the phone's Tap to Pay reader
+     * is ignored.
+     */
+    onDidStartReaderReconnect: (r?: Reader.Type) => {
+      if (r?.deviceType === 'tapToPay' || !bluetoothConnectedRef.current) return;
+      setReconnecting(true);
+      setError(null);
+    },
+    onDidSucceedReaderReconnect: (r?: Reader.Type) => {
+      if (r?.deviceType === 'tapToPay') return;
+      setReconnecting(false);
+      setError(null);
+      setStatus((prev) => (prev === 'updating' ? prev : 'ready'));
+    },
+    onDidFailReaderReconnect: (r?: Reader.Type) => {
+      if (r?.deviceType === 'tapToPay') return;
+      // `onDidDisconnect` follows and takes it from here.
+      setReconnecting(false);
     },
     onDidDisconnect: () => {
       // Global as well: the phone's own Tap to Pay reader dropping (it is now
       // prepared at launch on iOS) is not this reader going away, and must not
       // start a Bluetooth reconnect with nothing to reconnect to.
       if (!bluetoothConnectedRef.current) return;
+      setReconnecting(false);
       setConnected(null);
       setStatus('disconnected');
       setError('Reader disconnected. Trying to reconnect.');
@@ -347,6 +424,13 @@ export function useBluetoothReader(): UseBluetoothReader {
    * while one is already running, so an abandoned scan would break the NEXT
    * attempt to pair.
    */
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   useEffect(
     () => () => {
       readersFoundRef.current = null;
@@ -373,7 +457,7 @@ export function useBluetoothReader(): UseBluetoothReader {
     void terminal.disconnectReader().catch(() => {
       // Best effort; reconnection happens on next use.
     });
-  }, [ownerVenueId, siteId, terminal]);
+  }, [ownerVenueId, setError, siteId, terminal]);
 
   /** Shared setup: initialise once and resolve the Terminal Location. */
   const prepare = useCallback(async (): Promise<string> => {
@@ -510,7 +594,13 @@ export function useBluetoothReader(): UseBluetoothReader {
         const res = await session.ended;
         if (res?.error) {
           setStatus('error');
-          setError(terminalErrorMessage(res.error, 'Could not search for card readers.'));
+          setError(
+            readerErrorMessage(
+              res.error,
+              'Could not search for card readers.',
+              READER_DISCOVERY_TIMEOUT_MESSAGE,
+            ),
+          );
           return;
         }
         setStatus(discoveredRef.current.length > 0 ? 'found' : 'error');
@@ -528,7 +618,59 @@ export function useBluetoothReader(): UseBluetoothReader {
       setError(e instanceof Error ? e.message : 'Could not search for card readers.');
     }
     });
-  }, [prepare, terminal]);
+  }, [prepare, setError, terminal]);
+
+  /**
+   * Wait for ONE reader, by serial, on the discovery that is running now. Resolves the freshest
+   * reader object with that serial, or null when the time is up, the discovery has ended, or none
+   * is running. Never starts a discovery itself.
+   */
+  const waitForReader = useCallback(
+    (serial: string, ms: number): Promise<Reader.Type | null> => {
+      const seen = discoveredRef.current.find((r) => r.serialNumber === serial);
+      if (seen) return Promise.resolve(seen);
+      const session = liveDiscovery;
+      if (!session) return Promise.resolve(null);
+      return new Promise<Reader.Type | null>((resolve) => {
+        let settled = false;
+        const finish = (value: Reader.Type | null) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          discoveryWatchersRef.current.delete(watch);
+          resolve(value);
+        };
+        const watch = (readers: Reader.Type[]) => {
+          const match = readers.find((r) => r.serialNumber === serial);
+          if (match) finish(match);
+        };
+        const timer = setTimeout(() => finish(null), ms);
+        discoveryWatchersRef.current.add(watch);
+        void session.ended.then(() => finish(null));
+      });
+    },
+    [],
+  );
+
+  /**
+   * A fresh reader object for `serial` before a retry. A failed connect can end the discovery it
+   * came from (and with it the SDK's list of readers it can connect to), so when the reader is not
+   * on a running discovery a new scan looks for it. Null when it cannot be found.
+   */
+  const freshReaderFor = useCallback(
+    async (serial: string): Promise<Reader.Type | null> => {
+      if (liveDiscovery) {
+        const seen = await waitForReader(serial, READER_CONNECT_RETRY_DELAY_MS);
+        if (seen) return seen;
+      }
+      await scan();
+      return (
+        discoveredRef.current.find((r) => r.serialNumber === serial) ??
+        (await waitForReader(serial, READER_REMEMBERED_WAIT_MS))
+      );
+    },
+    [scan, waitForReader],
+  );
 
   const connect = useCallback(
     async (reader: Reader.Type): Promise<boolean> => {
@@ -545,25 +687,81 @@ export function useBluetoothReader(): UseBluetoothReader {
             // Already gone; the connect below still works.
           });
         }
-        setStatus('connecting');
         /**
-         * Bounded so a reader that dies mid-handshake cannot leave
-         * `status: 'connecting'` set for ever (which disables every collect
-         * button) — but the budget yields to a firmware install rather than
-         * cutting one short. See `awaitReaderConnect`.
+         * The reader object to connect with: the freshest one the running discovery holds for
+         * this serial, not the one captured when the list last rendered. Stripe: stale reader
+         * objects from an earlier discovery "can cause connection failures".
          */
-        const res = await awaitReaderConnect(
-          terminal.connectReader({ discoveryMethod: 'bluetoothScan', reader, locationId }),
-          () => installActivityRef.current,
-        );
-        if (abortRef.current !== generation) return false;
-        if (res?.error) {
-          setStatus('error');
-          setError(terminalErrorMessage(res.error, 'Could not connect to the card reader.'));
-          return false;
+        const serial = reader.serialNumber;
+        let target = discoveredRef.current.find((r) => r.serialNumber === serial) ?? reader;
+        const startedAt = Date.now();
+        let res: Awaited<ReturnType<TerminalHookApi['connectReader']>>;
+        /**
+         * THE "first try fails, second works" BUG (owner, 21 Nov 2026). A reader just switched on
+         * is listed by the scan a moment before it can accept a connection, so the first
+         * handshake fails with a Bluetooth or timeout error. One tap now makes up to
+         * READER_CONNECT_ATTEMPTS quiet attempts on such an error, with a short wait and a fresh
+         * reader object between them, showing "starting up" (`retrying`) instead of an error.
+         */
+        for (let attempt = 1; ; attempt += 1) {
+          setStatus('connecting');
+          /**
+           * Bounded so a reader that dies mid-handshake cannot leave
+           * `status: 'connecting'` set for ever (which disables every collect
+           * button) — but the budget yields to a firmware install rather than
+           * cutting one short. See `awaitReaderConnect`.
+           */
+          res = await awaitReaderConnect(
+            terminal.connectReader({
+              discoveryMethod: 'bluetoothScan',
+              reader: target,
+              locationId,
+              // The SDK restores a dropped Bluetooth link by itself. iOS already defaults this
+              // on; Android's bridge defaults it OFF for Bluetooth, so it is asked for here.
+              autoReconnectOnUnexpectedDisconnect: true,
+            }),
+            () => installActivityRef.current,
+          );
+          if (abortRef.current !== generation) return false;
+          if (!res?.error) break;
+          // A connect that lost a race with an earlier one for the SAME reader is a success.
+          const held = terminalRef.current?.connectedReader;
+          if (
+            isAlreadyConnectedError(res.error) &&
+            held &&
+            held.deviceType !== 'tapToPay' &&
+            held.serialNumber === serial
+          ) {
+            res = { reader: held };
+            break;
+          }
+          const canRetry =
+            attempt < READER_CONNECT_ATTEMPTS &&
+            isTransientReaderConnectError(res.error) &&
+            // Never interrupt a firmware install by starting another connect.
+            installActivityRef.current == null &&
+            Date.now() - startedAt < READER_CONNECT_RETRY_WINDOW_MS &&
+            mountedRef.current;
+          if (!canRetry) {
+            setRetrying(false);
+            setStatus('error');
+            setError(readerErrorMessage(res.error, 'Could not connect to the card reader.'));
+            return false;
+          }
+          setRetrying(true);
+          setError(null);
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, READER_CONNECT_RETRY_DELAY_MS * attempt);
+          });
+          if (abortRef.current !== generation || !mountedRef.current) return false;
+          target = (await freshReaderFor(serial)) ?? target;
+          if (abortRef.current !== generation || !mountedRef.current) return false;
+          setError(null);
         }
-        const live = res.reader ?? reader;
+        setRetrying(false);
+        const live = res.reader ?? target;
         setConnected(live);
+        setLowBatteryWarned(false);
         if (typeof live.batteryLevel === 'number') setBatteryLevel(live.batteryLevel);
         // A mandatory firmware update may have flipped us to 'updating'; only
         // claim ready when it has not.
@@ -583,6 +781,7 @@ export function useBluetoothReader(): UseBluetoothReader {
          * how one gets bricked. Keep the `updating` state (and its determinate
          * progress) and say what staff should actually do — nothing.
          */
+        setRetrying(false);
         if (installActivityRef.current != null) {
           setError('Your reader is still updating. Leave it switched on and nearby.');
           return false;
@@ -593,7 +792,7 @@ export function useBluetoothReader(): UseBluetoothReader {
       }
       });
     },
-    [ownerVenueId, prepare, terminal],
+    [freshReaderFor, ownerVenueId, prepare, setError, terminal],
   );
 
   /**
@@ -639,14 +838,22 @@ export function useBluetoothReader(): UseBluetoothReader {
 
     await scan();
     if (abortRef.current !== generation) return false;
-    const match = discoveredRef.current.find((r) => r.serialNumber === serial);
-    // Not in this scan's results: fall back to the picker, which keeps listing
-    // readers as they arrive. (The scan resolves on the FIRST sighting, so a
-    // second reader in the room may not have been reported yet.)
+    /**
+     * The scan resolves on the FIRST sighting of ANY reader. With two readers in the room, or
+     * the remembered one switched on a moment after the scan started, that first sighting is
+     * not ours, and this used to give up straight away (the card-save flow then said "No
+     * Bluetooth reader is connected"). Keep watching the running scan for the remembered
+     * serial for a while before falling back to the picker.
+     */
+    const match =
+      discoveredRef.current.find((r) => r.serialNumber === serial) ??
+      (await waitForReader(serial, READER_REMEMBERED_WAIT_MS));
+    if (abortRef.current !== generation) return false;
+    // Still not seen: fall back to the picker, which keeps listing readers as they arrive.
     if (!match) return false;
     return connect(match);
     });
-  }, [connect, ownerVenueId, scan, terminal]);
+  }, [connect, ownerVenueId, scan, terminal, waitForReader]);
 
   // Late-bind for the disconnect handler, which is defined above this callback.
   // Done in an effect, never during render: mutating a ref while rendering is
@@ -666,14 +873,15 @@ export function useBluetoothReader(): UseBluetoothReader {
     });
     setConnected(null);
     setBatteryLevel(null);
+    setLowBatteryWarned(false);
     setStatus('idle');
     setError(null);
-  }, [ownerVenueId, terminal]);
+  }, [ownerVenueId, setError, terminal]);
 
   const reset = useCallback(() => {
     setStatus(connected ? 'ready' : 'idle');
     setError(null);
-  }, [connected]);
+  }, [connected, setError]);
 
   /**
    * Staff's escape hatch: abandon whatever is in flight and come back to a clean
@@ -696,18 +904,34 @@ export function useBluetoothReader(): UseBluetoothReader {
     setDiscovered([]);
     discoveredRef.current = [];
     setError(null);
+    setRetrying(false);
     setStatus((prev) => (prev === 'updating' ? prev : connected ? 'ready' : 'idle'));
     await endLiveDiscovery(terminal);
-  }, [connected, terminal]);
+  }, [connected, setError, terminal]);
+
+  const lastError = useCallback(() => errorRef.current, []);
+
+  /**
+   * The level from the battery event when one has arrived, else the level the connected reader
+   * reported. The second matters because the payment sheet's collect step is a different hook
+   * instance from the pairing step that connected, and it never saw the connect result.
+   */
+  const level =
+    batteryLevel ?? (typeof connected?.batteryLevel === 'number' ? connected.batteryLevel : null);
 
   return {
     status,
     error,
     discovered,
     connected,
-    batteryLevel,
-    batteryLow: batteryLevel != null && batteryLevel < LOW_BATTERY_THRESHOLD,
+    batteryLevel: level,
+    batteryLow:
+      connected != null &&
+      ((level != null && level < LOW_BATTERY_THRESHOLD) || lowBatteryWarned),
     updateProgress,
+    retrying,
+    reconnecting,
+    lastError,
     scan,
     connect,
     reconnectRemembered,

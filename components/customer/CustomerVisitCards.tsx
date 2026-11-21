@@ -130,7 +130,9 @@ export function VisitContactsCard({ visit }: { visit: CustomerVisit }) {
           <Text variant="bodyMedium">{business.name}</Text>
           {many && business.payments ? (
             <Text variant="bodySmall" tone="secondary" testID={`visit-business-payments-${business.id}`}>
-              {paymentsLine(business.payments, business.currency)}
+              {business.card_secured && business.payments.paid_pence <= 0 && business.payments.refunded_pence <= 0
+                ? 'Secured by your saved card. No payment has been taken.'
+                : paymentsLine(business.payments, business.currency)}
             </Text>
           ) : null}
           {many && business.address ? (

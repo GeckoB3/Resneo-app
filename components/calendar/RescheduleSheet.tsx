@@ -92,8 +92,10 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
   const visit = target?.visit ?? null;
   const linkedVisitId = target?.linkedVisitId ?? null;
   const partnerLinesByVisit = useVisitPartnerLines([linkedVisitId]);
+  // Not the booking being moved: opened from a member's booking, the host's "other businesses" list
+  // held that very booking ("also has Root Tint ... at 10:00" while moving that Root Tint).
   const otherBusinessLines = (linkedVisitId ? partnerLinesByVisit.get(linkedVisitId) ?? [] : []).filter(
-    (l) => l.status !== 'Cancelled',
+    (l) => l.status !== 'Cancelled' && l.booking_id !== target?.id,
   );
   const moveAllOption = useMoveWholeVisitOption(target?.id, Boolean(linkedVisitId));
   const moveWholeVisit = useMoveWholeVisit(target?.id);

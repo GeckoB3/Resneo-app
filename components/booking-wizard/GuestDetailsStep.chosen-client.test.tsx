@@ -91,9 +91,11 @@ afterEach(() => {
 
 describe('someone who can see client contacts', () => {
   it('keeps the picked client id, and shows the phone in the results', async () => {
+    mockGuests[0] = { ...mockGuests[0]!, phone: '+442079460101' };
     await renderAs(FULL_VIEWER);
     await search('Search name or phone', 'Ana');
-    expect(screen.getByText('+447700900123 · 3 visits')).toBeTruthy();
+    // As people read it, like everywhere else in the app (it showed "+442079460101", 2026-11-21).
+    expect(screen.getByText('020 7946 0101 · 3 visits')).toBeTruthy();
     await act(async () => {
       fireEvent.press(screen.getByText('Ana Lopez'));
     });

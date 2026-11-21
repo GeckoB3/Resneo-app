@@ -361,5 +361,15 @@ describe('RescheduleSheet: a visit across businesses (web split-visit plan 7.5)'
     });
     expect(mockReschedule).not.toHaveBeenCalled();
   });
+
+  it("leaves the booking being moved out of what the client 'also has' (the host moving a member's booking)", async () => {
+    mockMoveAllOption = { can_move_all: true, message: null, expected: [] };
+    mockPartnerLines = new Map([
+      ['lv-1', [{ ...LINE, booking_id: 'bk-1', service_name: 'Root Tint', start_time: '14:00' }, LINE]],
+    ]);
+    await render(<RescheduleSheet target={LINKED} onClose={jest.fn()} />);
+    expect(screen.getByText('Alex Rivera also has Gel Manicure with Bea at SV Nails at 15:00.')).toBeTruthy();
+    expect(screen.queryByText(/Root Tint/)).toBeNull();
+  });
 });
 

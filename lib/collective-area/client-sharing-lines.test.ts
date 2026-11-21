@@ -3,7 +3,7 @@
  * (web review 2026-11-15; plan P7).
  */
 import { clientSharingCopy } from '@/lib/collective-area/client-sharing-copy';
-import { clientSharingTodos, endSharingLine, removeSharingLine } from '@/lib/collective-area/client-sharing-lines';
+import { clientSharingTodos, endSharingLine, joinedSharingLine, removeSharingLine } from '@/lib/collective-area/client-sharing-lines';
 import type { ClientSharingStatusResponse, VenueClientSharingSummary } from '@/types/client-sharing';
 
 function status(over: Partial<ClientSharingStatusResponse> = {}): ClientSharingStatusResponse {
@@ -86,5 +86,18 @@ describe('clientSharingTodos', () => {
     expect(clientSharingTodos(summary(), 'c1')).toBeNull();
     expect(clientSharingTodos(summary({ request: undefined }), 'c1')).toBeNull();
     expect(clientSharingTodos(undefined, 'c1')).toBeNull();
+  });
+});
+
+describe('joinedSharingLine (review 2026-11-21)', () => {
+  it('tells a venue that joined with Share now where to follow its lists coming together', () => {
+    expect(joinedSharingLine(true, 'share')).toBe(clientSharingCopy('cs.join.started'));
+  });
+
+  it('says nothing for Not now, no answer, or a collective that does not offer sharing', () => {
+    expect(joinedSharingLine(true, 'not_now')).toBeNull();
+    expect(joinedSharingLine(true, null)).toBeNull();
+    expect(joinedSharingLine(false, 'share')).toBeNull();
+    expect(joinedSharingLine(undefined, 'share')).toBeNull();
   });
 });

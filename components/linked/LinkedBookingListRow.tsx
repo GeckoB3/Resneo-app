@@ -3,7 +3,6 @@ import { StyleSheet, View } from 'react-native';
 import { StatusPill } from '@/components/ui/Badge';
 import { PressableScale } from '@/components/ui/PressableScale';
 import { Text } from '@/components/ui/Text';
-import { formatBookingTime } from '@/lib/booking/booking-format';
 import { linkedBookingLabel } from '@/lib/linked/linked-calendar-view';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -35,7 +34,9 @@ export function LinkedBookingListRow({
   // On a no-PII link the title already IS the service, so the subtitle would
   // just repeat it back.
   const subtitle = timeOnly || serviceLabel === title ? null : serviceLabel;
-  const time = booking.bookingTime ? formatBookingTime(booking.bookingTime) : '';
+  // "14:00", as the list's own rows write it. "11:30am" did not fit the 52pt column and wrapped
+  // to "11:30a / m" beside 24-hour own rows (phone QA 2026-11-21).
+  const time = booking.bookingTime ? booking.bookingTime.slice(0, 5) : '';
 
   return (
     <PressableScale

@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/Button';
 import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { joinedSharingLine } from '@/lib/collective-area/client-sharing-lines';
 import { describeGrant, isLinkConfigurationValid, normaliseGrant } from '@/lib/linked/grants';
 import { defaultJoinDraft, EMPTY_JOIN_DRAFT, joinChoicesFrom, joinStepsFor, type JoinDraft, type JoinStep } from '@/lib/linked/join-choices';
 import { joinLinkNames } from '@/lib/linked/join-links';
@@ -420,6 +421,10 @@ export function ReviewLinkRequestSheet({
             ))}
             {/* Joined: Stripe or forms, when guests cannot book every page service here without them. */}
             {done.joined && joinedWith ? <JoinNextSteps preview={joinedWith.preview} draft={joinedWith.draft} /> : null}
+            {/* Share now starts at once: say so, and where to follow it (web parity, 2026-11-21). */}
+            {done.joined && joinedWith && joinedSharingLine(joinedWith.preview.client_sharing_offered, shareClients) ? (
+              <Text variant="bodySmall">{joinedSharingLine(joinedWith.preview.client_sharing_offered, shareClients)}</Text>
+            ) : null}
           </View>
         ) : null}
       </StepShell>

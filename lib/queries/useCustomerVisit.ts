@@ -47,6 +47,8 @@ export interface CustomerVisitBusiness {
   payments?: { paid_pence: number; refunded_pence: number };
   /** The currency those payments are in; absent means pounds. */
   currency?: 'GBP' | 'EUR';
+  /** A saved card secures a live service of this business; absent from older servers. */
+  card_secured?: boolean;
 }
 
 export interface CustomerVisitActionState {

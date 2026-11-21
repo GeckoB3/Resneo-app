@@ -24,6 +24,8 @@ export const CLIENT_SHARING_COPY = {
   'cs.join.share': 'Share now',
   'cs.join.notNow': 'Not now',
   'cs.join.required': 'Choose Share now or Not now to carry on.',
+  'cs.join.started':
+    'You now share clients with this collective. Manage Collective, Clients shows who with and how your lists are coming together.',
 
   // The Clients tab on Manage Collective (§1A.2 step 3).
   'cs.tab.label': 'Clients',
@@ -34,7 +36,7 @@ export const CLIENT_SHARING_COPY = {
   'cs.tab.changeWhoHelp': 'Untick a venue to stop sharing with it. You both keep every client you already have.',
   'cs.tab.askFirst': 'Ask me before clients are matched',
   'cs.tab.askFirstHelp':
-    'Off: records with the same email or client account are linked for you. On: every match waits for you in Clients to check.',
+    'Off: clear matches (the same email, client account, or name and phone) are linked for you, and others wait in Clients to check. On: every match waits for you there.',
   'cs.tab.counts': '{here} clients here, {fromOthers} from the other venues, {inBoth} in both.',
   'cs.tab.upToDate': 'Up to date.',
   'cs.tab.arriving': '{count} changes still arriving.',

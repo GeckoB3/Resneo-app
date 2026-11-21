@@ -14,10 +14,15 @@ jest.mock('@/lib/queries/useAccessToken', () => ({ useAccessToken: () => 'token-
 
 const mockTapConnect = jest.fn();
 const mockReconnect = jest.fn();
+let mockLastError: string | null = null;
 let mockBluetoothConnected: unknown = null;
 jest.mock('@/lib/payments/terminal', () => ({ useTapToPayReader: () => ({ connect: mockTapConnect }) }));
 jest.mock('@/lib/payments/bluetoothReader', () => ({
-  useBluetoothReader: () => ({ connected: mockBluetoothConnected, reconnectRemembered: mockReconnect }),
+  useBluetoothReader: () => ({
+    connected: mockBluetoothConnected,
+    reconnectRemembered: mockReconnect,
+    lastError: () => mockLastError,
+  }),
 }));
 const mockTerminal = {
   cancelProcessSetupIntent: jest.fn(),
@@ -164,6 +169,19 @@ describe('ReaderSaveFlow', () => {
     await flush();
     expect(screen.getByTestId('reader-save-outcome').props.children).toBe(READER_SAVE_COPY.noBluetooth);
     expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  it('says why when the remembered reader was found but would not connect', async () => {
+    mockReconnect.mockResolvedValue(false);
+    mockLastError = 'The reader battery is too low to connect. Charge it for a few minutes, then try again.';
+    try {
+      await render(<ReaderSaveFlow device="bluetooth_reader" guestId="g-1" clientFirstName="Amy" onDone={jest.fn()} />);
+      await flush();
+      expect(screen.getByTestId('reader-save-outcome').props.children).toBe(mockLastError);
+      expect(mockRun).not.toHaveBeenCalled();
+    } finally {
+      mockLastError = null;
+    }
   });
 
   it('shows Tap to Pay connection failures in words', async () => {

@@ -166,11 +166,22 @@ const confirmGuests: GuestDetails[] = [];
 jest.mock('@/components/booking-wizard/ConfirmStep', () => {
   const { Pressable: P, Text: T, View: V } = require('react-native');
   return {
-    ConfirmStep: ({ guest, onBookAnother }: { guest: GuestDetails; onBookAnother?: () => void }) => {
+    ConfirmStep: ({
+      guest,
+      onBookAnother,
+      onConfirmed,
+    }: {
+      guest: GuestDetails;
+      onBookAnother?: () => void;
+      onConfirmed?: (bookingId: string) => void;
+    }) => {
       confirmGuests.push(guest);
       return (
         <V>
           <T>__confirm__</T>
+          <P accessibilityRole="button" onPress={() => onConfirmed?.('bk-1')}>
+            <T>__created__</T>
+          </P>
           <P accessibilityRole="button" onPress={() => onBookAnother?.()}>
             <T>__book_another__</T>
           </P>
@@ -258,6 +269,22 @@ describe('ServiceBookingFlow: the chosen client', () => {
     await walkToGuestStep();
     expect(screen.getByText('__guest_id:g-2__')).toBeTruthy();
     expect(guestValues[guestValues.length - 1]).toMatchObject({ first_name: 'Bo', last_name: 'Ray', guest_id: 'g-2' });
+  });
+
+  it('drops the back arrow once the booking exists, so back cannot reopen it for a duplicate', async () => {
+    await renderFlow();
+    await walkToGuestStep();
+    await press(() => screen.getByText('__guest_continue__'));
+    await waitFor(() => expect(screen.getByText('__confirm__')).toBeTruthy());
+    expect(screen.getByLabelText('Back')).toBeTruthy();
+
+    await press(() => screen.getByText('__created__'));
+    expect(screen.queryByLabelText('Back')).toBeNull();
+
+    // "Book another" starts afresh, and the arrow comes back past step one.
+    await press(() => screen.getByText('__book_another__'));
+    await walkToGuestStep();
+    expect(screen.getByLabelText('Back')).toBeTruthy();
   });
 
   it('holds no client when opened without one', async () => {

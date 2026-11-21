@@ -214,6 +214,25 @@ export function defaultVenueSelection(
   return { own: true, linked: new Set(linkedVenueIds) };
 }
 
+/**
+ * The summary chip for a narrowed Calendars choice ("Jenny at Aura", "My venue and Light 16"), null
+ * while everything is shown. Picking a partner's calendar in the diary narrows this list too, and
+ * nothing on the list said so: the host's own bookings were simply missing (phone QA 2026-11-21).
+ */
+export function venueSelectionLabel(
+  sel: VenueSelection,
+  linkedVenues: readonly { venueId: string; venueName: string }[],
+): string | null {
+  if (linkedVenues.length === 0) return null;
+  if (sel.own && linkedVenues.every((v) => sel.linked.has(v.venueId))) return null;
+  const names = [
+    ...(sel.own ? ['My venue'] : []),
+    ...linkedVenues.filter((v) => sel.linked.has(v.venueId)).map((v) => v.venueName),
+  ];
+  if (names.length === 0) return null;
+  return names.length === 1 ? names[0]! : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
 /** Linked rows are id-namespaced so the list tells them apart from own rows. */
 const LINKED_ROW_PREFIX = 'linked:';
 
@@ -1064,8 +1083,10 @@ export default function BookingsScreen() {
 
   // Search + the guest deep-link scope count too — both shown as removable
   // summary chips below the toolbar so an applied scope stays visible.
+  // A narrowed Calendars choice (often from picking a partner's calendar in the diary) shows too.
+  const venueScopeLabel = venueSelectionLabel(venueSel, linkedVenues);
   const anyFilterActive =
-    sheetFiltersActive || search.trim().length > 0 || guestFilter !== null;
+    sheetFiltersActive || search.trim().length > 0 || guestFilter !== null || venueScopeLabel !== null;
 
   // Name for the guest-scope chip — resolved from any loaded row for that guest.
   const guestFilterName = useMemo(() => {
@@ -1089,7 +1110,8 @@ export default function BookingsScreen() {
     setSearch('');
     setGuestFilter(null);
     resetSheetFilters();
-  }, [resetSheetFilters]);
+    if (venueScopeLabel !== null) selectAllVenues();
+  }, [resetSheetFilters, venueScopeLabel, selectAllVenues]);
 
   // Option lists for the unified sheet (status counts mirror the old chip row).
   const statusOptions = useMemo<FilterOption[]>(
@@ -1292,6 +1314,14 @@ export default function BookingsScreen() {
             applied filters stay visible now that the controls live in the sheet. */}
         {anyFilterActive ? (
           <View style={styles.activeFilterRow}>
+            {venueScopeLabel !== null ? (
+              <Chip
+                label={venueScopeLabel}
+                selected
+                onPress={selectAllVenues}
+                onRemove={selectAllVenues}
+              />
+            ) : null}
             {guestFilter !== null ? (
               <Chip
                 label={guestFilterName ?? 'Guest'}

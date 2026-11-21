@@ -15,7 +15,7 @@ import { buildGuestSchema, type GuestField } from '@/lib/validation/walk-in-gues
 import { useViewerAccess } from '@/providers/ViewerAccessProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
-import type { CountryCode } from '@/lib/phone/e164';
+import { formatPhoneForDisplay, type CountryCode } from '@/lib/phone/e164';
 import type { GuestListItem } from '@/types/guest-list';
 import { useClientBlock } from '@/lib/queries/useClientBlock';
 
@@ -117,7 +117,7 @@ function guestDisplayName(guest: GuestListItem): string {
 function guestMeta(guest: GuestListItem, showContact: boolean): string {
   const visits =
     guest.visit_count > 0 ? `${guest.visit_count} visit${guest.visit_count === 1 ? '' : 's'}` : null;
-  return [showContact ? guest.phone : null, visits].filter(Boolean).join(' · ');
+  return [showContact ? formatPhoneForDisplay(guest.phone) : null, visits].filter(Boolean).join(' · ');
 }
 
 /**

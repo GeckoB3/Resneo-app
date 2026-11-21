@@ -18,7 +18,11 @@ type SdkCallbacks = {
   onDidStartInstallingUpdate?: () => void;
   onDidReportReaderSoftwareUpdateProgress?: (p: number) => void;
   onDidFinishInstallingUpdate?: () => void;
-  onDidReportBatteryLevel?: (l: number) => void;
+  onDidUpdateBatteryLevel?: (r: { batteryLevel: number }) => void;
+  onDidReportLowBatteryWarning?: () => void;
+  onDidStartReaderReconnect?: (r: Reader.Type) => void;
+  onDidSucceedReaderReconnect?: (r: Reader.Type) => void;
+  onDidFailReaderReconnect?: (r: Reader.Type) => void;
   onDidDisconnect?: () => void;
   onDidAcceptTermsOfService?: () => void;
 };
@@ -109,6 +113,10 @@ import {
   READER_CONNECT_TIMEOUT_MS,
   READER_DISCOVERY_TIMEOUT_MS,
 } from '@/lib/payments/reader-timeouts';
+import {
+  READER_CONNECT_FAILED_MESSAGE,
+  READER_CONNECT_RETRY_DELAY_MS,
+} from '@/lib/payments/reader-connect-errors';
 import { TAP_TO_PAY_DEVELOPER_OPTIONS_MESSAGE } from '@/lib/payments/tap-to-pay-errors';
 import {
   __resetTapToPayDeviceSupportForTests,
@@ -1051,14 +1059,50 @@ describe('useBluetoothReader', () => {
   });
 
   it('warns when the battery is low', async () => {
+    /**
+     * The SDK's event is `onDidUpdateBatteryLevel({ batteryLevel, ... })`. The hook listened for
+     * `onDidReportBatteryLevel`, which the SDK never calls, so this warning could never appear.
+     */
     const { result } = await renderHook(() => useBluetoothReader());
     await act(async () => {
-      mockCallbacks.forEach((c) => c.onDidReportBatteryLevel?.(0.1));
+      await result.current.connect(WISEPAD);
     });
+    await act(async () => {
+      mockCallbacks.forEach((c) => c.onDidUpdateBatteryLevel?.({ batteryLevel: 0.1 }));
+    });
+    expect(result.current.batteryLevel).toBe(0.1);
     expect(result.current.batteryLow).toBe(true);
 
     await act(async () => {
-      mockCallbacks.forEach((c) => c.onDidReportBatteryLevel?.(0.8));
+      mockCallbacks.forEach((c) => c.onDidUpdateBatteryLevel?.({ batteryLevel: 0.8 }));
+    });
+    expect(result.current.batteryLow).toBe(false);
+  });
+
+  it('warns when the reader itself reports a low battery', async () => {
+    const { result } = await renderHook(() => useBluetoothReader());
+    await act(async () => {
+      await result.current.connect(WISEPAD);
+    });
+    await act(async () => {
+      mockCallbacks.forEach((c) => c.onDidReportLowBatteryWarning?.());
+    });
+    expect(result.current.batteryLow).toBe(true);
+  });
+
+  it('shows the battery of a reader another step connected', async () => {
+    // The payment sheet's collect step never sees the pairing step's connect result.
+    mockApi.connectedReader = { ...WISEPAD, batteryLevel: 0.05 } as Reader.Type;
+    const { result } = await renderHook(() => useBluetoothReader());
+    expect(result.current.batteryLevel).toBe(0.05);
+    expect(result.current.batteryLow).toBe(true);
+  });
+
+  it('does not warn about the battery with no reader connected', async () => {
+    const { result } = await renderHook(() => useBluetoothReader());
+    await act(async () => {
+      mockCallbacks.forEach((c) => c.onDidReportLowBatteryWarning?.());
+      mockCallbacks.forEach((c) => c.onDidUpdateBatteryLevel?.({ batteryLevel: 0.1 }));
     });
     expect(result.current.batteryLow).toBe(false);
   });
@@ -1465,5 +1509,248 @@ describe('Tap to Pay on Android: a device without NFC', () => {
 
     expect(result.current.supported).toBeNull();
     expect(tapToPayDeviceSupport()).toBeNull();
+  });
+});
+
+/**
+ * Owner, 21 Nov 2026: switching the reader on and connecting straight away failed; going back a
+ * step and trying again usually worked. A reader just switched on is listed before it can take a
+ * connection, so one tap now makes a few quiet attempts on such an error.
+ */
+describe('connecting to a reader that has just been switched on', () => {
+  const NOT_READY = { error: { code: 'BLUETOOTH_ERROR', message: 'Bluetooth error.' } };
+  const OTHER = reader({ deviceType: 'chipper2X', serialNumber: 'WP-2', label: 'Back room' });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('tries again quietly and connects, with no error shown in between', async () => {
+    jest.useFakeTimers();
+    discoverable = [WISEPAD];
+    mockApi.connectReader.mockResolvedValueOnce(NOT_READY).mockResolvedValueOnce({});
+    const { result } = await renderHook(() => useBluetoothReader());
+
+    let pending!: Promise<boolean>;
+    await act(async () => {
+      pending = result.current.connect(WISEPAD);
+    });
+    // Between attempts: "starting up", never an error.
+    expect(result.current.retrying).toBe(true);
+    expect(result.current.error).toBeNull();
+    expect(result.current.status).not.toBe('error');
+
+    await act(async () => {
+      jest.advanceTimersByTime(READER_CONNECT_RETRY_DELAY_MS);
+    });
+    let ok = false;
+    await act(async () => {
+      ok = await pending;
+    });
+
+    expect(ok).toBe(true);
+    expect(mockApi.connectReader).toHaveBeenCalledTimes(2);
+    expect(mockApi.connectReader).toHaveBeenLastCalledWith(
+      expect.objectContaining({ reader: WISEPAD, discoveryMethod: 'bluetoothScan' }),
+    );
+    expect(result.current.retrying).toBe(false);
+    expect(result.current.error).toBeNull();
+    expect(result.current.status).toBe('ready');
+    expect([...mockStore.values()]).toContain('WP-1');
+  });
+
+  it('gives up after three attempts with a plain message', async () => {
+    jest.useFakeTimers();
+    discoverable = [WISEPAD];
+    mockApi.connectReader.mockResolvedValue(NOT_READY);
+    const { result } = await renderHook(() => useBluetoothReader());
+
+    let pending!: Promise<boolean>;
+    await act(async () => {
+      pending = result.current.connect(WISEPAD);
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(READER_CONNECT_RETRY_DELAY_MS);
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(READER_CONNECT_RETRY_DELAY_MS * 2);
+    });
+    let ok = true;
+    await act(async () => {
+      ok = await pending;
+    });
+
+    expect(ok).toBe(false);
+    expect(mockApi.connectReader).toHaveBeenCalledTimes(3);
+    expect(result.current.status).toBe('error');
+    expect(result.current.retrying).toBe(false);
+    expect(result.current.error).toBe(READER_CONNECT_FAILED_MESSAGE);
+    expect(result.current.lastError()).toBe(READER_CONNECT_FAILED_MESSAGE);
+  });
+
+  it('does not retry a refusal that waiting cannot fix, and says what to do', async () => {
+    mockApi.connectReader.mockResolvedValue({
+      error: { code: 'READER_BATTERY_CRITICALLY_LOW', message: 'bluetoothConnectionFailedBatteryCriticallyLow' },
+    });
+    const { result } = await renderHook(() => useBluetoothReader());
+
+    const ok = await act(async () => result.current.connect(WISEPAD));
+
+    expect(ok).toBe(false);
+    expect(mockApi.connectReader).toHaveBeenCalledTimes(1);
+    expect(result.current.error).toMatch(/battery is too low.*Charge it/i);
+  });
+
+  it('stops retrying when staff cancel', async () => {
+    jest.useFakeTimers();
+    discoverable = [WISEPAD];
+    mockApi.connectReader.mockResolvedValue(NOT_READY);
+    const { result } = await renderHook(() => useBluetoothReader());
+
+    let pending!: Promise<boolean>;
+    await act(async () => {
+      pending = result.current.connect(WISEPAD);
+    });
+    await act(async () => {
+      await result.current.abort();
+    });
+    expect(result.current.retrying).toBe(false);
+    await act(async () => {
+      jest.advanceTimersByTime(READER_CONNECT_RETRY_DELAY_MS * 3);
+    });
+    let ok = true;
+    await act(async () => {
+      ok = await pending;
+    });
+
+    expect(ok).toBe(false);
+    expect(mockApi.connectReader).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops retrying when the screen is left', async () => {
+    jest.useFakeTimers();
+    discoverable = [WISEPAD];
+    mockApi.connectReader.mockResolvedValue(NOT_READY);
+    const { result, unmount } = await renderHook(() => useBluetoothReader());
+
+    let pending!: Promise<boolean>;
+    await act(async () => {
+      pending = result.current.connect(WISEPAD);
+    });
+    await act(async () => {
+      unmount();
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(READER_CONNECT_RETRY_DELAY_MS * 3);
+    });
+    await act(async () => {
+      await pending;
+    });
+
+    expect(mockApi.connectReader).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats "already connected" to the same reader as connected', async () => {
+    mockApi.connectReader.mockResolvedValue({
+      error: { code: 'ALREADY_CONNECTED_TO_READER', message: 'Already connected.' },
+    });
+    const { result, rerender } = await renderHook(() => useBluetoothReader());
+    // The hook reads the provider's reader through a ref kept current on render.
+    await act(async () => {
+      mockApi.connectedReader = WISEPAD;
+      rerender({});
+    });
+
+    const ok = await act(async () => result.current.connect(WISEPAD));
+
+    expect(ok).toBe(true);
+    expect(result.current.error).toBeNull();
+  });
+
+  it('asks the SDK to restore a dropped connection by itself on both platforms', async () => {
+    const { result } = await renderHook(() => useBluetoothReader());
+    await act(async () => {
+      await result.current.connect(WISEPAD);
+    });
+    expect(mockApi.connectReader).toHaveBeenCalledWith(
+      expect.objectContaining({ autoReconnectOnUnexpectedDisconnect: true }),
+    );
+  });
+
+  it('shows "Reconnecting" while the SDK restores the connection, and ignores the phone reader', async () => {
+    const { result } = await renderHook(() => useBluetoothReader());
+    await act(async () => {
+      await result.current.connect(WISEPAD);
+    });
+
+    await act(async () => {
+      mockCallbacks.forEach((c) => c.onDidStartReaderReconnect?.(PHONE));
+    });
+    expect(result.current.reconnecting).toBe(false);
+
+    await act(async () => {
+      mockCallbacks.forEach((c) => c.onDidStartReaderReconnect?.(WISEPAD));
+    });
+    expect(result.current.reconnecting).toBe(true);
+
+    await act(async () => {
+      mockCallbacks.forEach((c) => c.onDidSucceedReaderReconnect?.(WISEPAD));
+    });
+    expect(result.current.reconnecting).toBe(false);
+    expect(result.current.status).toBe('ready');
+  });
+
+  it('waits for the remembered reader when another one is seen first', async () => {
+    /**
+     * The scan finishes on the first sighting of ANY reader. With a second reader in the room
+     * the silent reconnect used to give up there, and the card-save flow said no reader was
+     * connected.
+     */
+    modelBluetoothDiscovery();
+    mockStore.set('resneo_bt_reader_serial_own', 'WP-1');
+    discoverable = [OTHER];
+    const { result } = await renderHook(() => useBluetoothReader());
+
+    let pending!: Promise<boolean>;
+    await act(async () => {
+      pending = result.current.reconnectRemembered();
+    });
+    expect(mockApi.connectReader).not.toHaveBeenCalled();
+
+    await act(async () => {
+      emitDiscovered([OTHER, WISEPAD]);
+    });
+    let ok = false;
+    await act(async () => {
+      ok = await pending;
+    });
+
+    expect(ok).toBe(true);
+    expect(mockApi.connectReader).toHaveBeenCalledWith(expect.objectContaining({ reader: WISEPAD }));
+  });
+
+  it('falls back to the picker when the remembered reader never appears', async () => {
+    jest.useFakeTimers();
+    modelBluetoothDiscovery();
+    mockStore.set('resneo_bt_reader_serial_own', 'WP-1');
+    discoverable = [OTHER];
+    const { result } = await renderHook(() => useBluetoothReader());
+
+    let pending!: Promise<boolean>;
+    await act(async () => {
+      pending = result.current.reconnectRemembered();
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(11_000);
+    });
+    let ok = true;
+    await act(async () => {
+      ok = await pending;
+    });
+
+    expect(ok).toBe(false);
+    expect(mockApi.connectReader).not.toHaveBeenCalled();
+    // The other reader is still listed for staff to pick.
+    expect(result.current.discovered).toEqual([OTHER]);
   });
 });

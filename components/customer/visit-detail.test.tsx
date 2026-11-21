@@ -334,6 +334,22 @@ describe('a visit across businesses (web split-visit plan 6.5)', () => {
     // A business with no phone or email is still listed, with what it took.
     expect(screen.getByTestId('visit-business-payments-v-2')).toHaveTextContent('Nothing paid online.');
   });
+
+  it('says a business is secured by the saved card (web COLLECTIVE-PAY-8)', async () => {
+    mockVisit = visitWith({
+      services: [
+        { ...visitWith().services[1]!, venue_id: 'v-1', business_name: 'SV Studio' },
+        { ...visitWith().services[2]!, venue_id: 'v-2', person_name: 'Bea', business_name: 'SV Nails' },
+      ],
+      businesses: [
+        { id: 'v-1', name: 'SV Studio', phone: null, email: null, address: null, payments: { paid_pence: 1000, refunded_pence: 0 } },
+        { id: 'v-2', name: 'SV Nails', phone: null, email: null, address: null, payments: { paid_pence: 0, refunded_pence: 0 }, card_secured: true },
+      ],
+    });
+    await renderScreen();
+    expect(screen.getByTestId('visit-business-payments-v-1')).toHaveTextContent('Paid £10.00.');
+    expect(screen.getByTestId('visit-business-payments-v-2')).toHaveTextContent('Secured by your saved card. No payment has been taken.');
+  });
 });
 
 describe('cancelling the visit', () => {

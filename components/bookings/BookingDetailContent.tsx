@@ -2,7 +2,7 @@ import * as Clipboard from 'expo-clipboard';
 import { format, parseISO } from 'date-fns';
 import { useRouter, type Href } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 
 import { BookingNotesSection } from '@/components/bookings/BookingNotesSection';
@@ -1519,11 +1519,9 @@ export function BookingDetailContent({
                 />
               ) : null}
 
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-                contentContainerStyle={styles.quickActions}>
+              {/* Wraps rather than scrolls sideways: on a phone only four of up to six fit, and
+                  Rebook / New for guest sat off the edge with nothing to say they were there. */}
+              <View style={styles.quickActions} testID="booking-quick-actions">
                 {guestPhone ? (
                   <QuickAction
                     icon={{ ios: 'phone.fill', android: 'call', web: 'call' }}
@@ -1694,7 +1692,7 @@ export function BookingDetailContent({
                     }}
                   />
                 ) : null}
-              </ScrollView>
+              </View>
             </View>
           ) : null}
         </View>
@@ -2447,6 +2445,7 @@ const styles = StyleSheet.create({
   },
   quickActions: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.base,
     paddingTop: spacing.md,
     paddingRight: spacing.sm,

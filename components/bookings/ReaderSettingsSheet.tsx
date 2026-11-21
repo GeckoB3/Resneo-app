@@ -6,6 +6,7 @@ import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { getStripePublishableKey } from '@/lib/env';
 import { useBluetoothReader } from '@/lib/payments/bluetoothReader';
+import { READER_STARTING_UP_MESSAGE } from '@/lib/payments/reader-connect-errors';
 import { isTerminalSdkAvailable } from '@/lib/payments/terminal-sdk';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -77,7 +78,7 @@ function ReaderSettingsBody({ onClose }: { onClose: () => void }) {
   const scanning = reader.status === 'scanning';
   const connecting = reader.status === 'connecting';
   const updating = reader.status === 'updating';
-  const busy = scanning || connecting || updating;
+  const busy = scanning || connecting || updating || reader.retrying;
 
   return (
     <View style={styles.body}>
@@ -113,6 +114,26 @@ function ReaderSettingsBody({ onClose }: { onClose: () => void }) {
           {reader.updateProgress != null
             ? ` ${Math.round(reader.updateProgress * 100)}%`
             : ''}
+        </Text>
+      ) : null}
+
+      {reader.retrying ? (
+        <Text variant="bodySmall" tone="muted">
+          {READER_STARTING_UP_MESSAGE}
+        </Text>
+      ) : connecting ? (
+        <Text variant="bodySmall" tone="muted">
+          Connecting to your reader. This takes a few seconds.
+        </Text>
+      ) : scanning ? (
+        <Text variant="bodySmall" tone="muted">
+          Looking for card readers nearby. Keep the reader switched on.
+        </Text>
+      ) : null}
+
+      {reader.reconnecting ? (
+        <Text variant="bodySmall" tone="muted">
+          The reader lost its connection. Reconnecting. Keep it switched on and close by.
         </Text>
       ) : null}
 

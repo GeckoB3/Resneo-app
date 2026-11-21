@@ -97,6 +97,11 @@ type ConfirmStepProps = {
    */
   signedInVenueId?: string | null;
   onSuccess: (bookingId: string) => void;
+  /**
+   * Fires as soon as the booking exists and the confirmation shows (before "View booking"), so the
+   * wizard drops its back arrow: back reopened the filled-in review, one tap from a duplicate.
+   */
+  onConfirmed?: (bookingId: string) => void;
   /** Reset the wizard to step 1 for a back-to-back booking (front-desk flow). */
   onBookAnother?: () => void;
   /** Staff "Require deposit" toggle state (only shown when the service has a deposit). */
@@ -416,6 +421,7 @@ export function ConfirmStep({
   source,
   ownerVenueId,
   onSuccess,
+  onConfirmed,
   onBookAnother,
   requireDeposit: requireDepositProp = false,
   onChangeRequireDeposit,
@@ -446,6 +452,11 @@ export function ConfirmStep({
   const last_name = guest.last_name.trim();
   const fullName = [first_name, last_name].filter(Boolean).join(' ');
   const [confirmation, setConfirmation] = useState<BookingConfirmation | null>(null);
+  const confirmedBookingId = confirmation?.booking_id ?? null;
+  useEffect(() => {
+    if (confirmedBookingId) onConfirmed?.(confirmedBookingId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per created booking
+  }, [confirmedBookingId]);
   const [complianceError, setComplianceError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const accessToken = useAccessToken();

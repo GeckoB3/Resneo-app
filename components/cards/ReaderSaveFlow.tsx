@@ -22,6 +22,7 @@ import { readerSaveApi, runReaderSave, type ReaderSaveDevice, type ReaderSaveRes
 import { hapticSuccess } from '@/lib/haptics';
 import { useBluetoothReader } from '@/lib/payments/bluetoothReader';
 import { useTapToPayReader } from '@/lib/payments/terminal';
+import { READER_STARTING_UP_MESSAGE } from '@/lib/payments/reader-connect-errors';
 import { getTerminalSdk } from '@/lib/payments/terminal-sdk';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { spacing } from '@/theme/index';
@@ -127,7 +128,10 @@ export function ReaderSaveFlow({
     }
     if (bluetooth.connected) return null;
     const ok = await bluetooth.reconnectRemembered();
-    return ok ? null : READER_SAVE_COPY.noBluetooth;
+    if (ok) return null;
+    // Say why when the remembered reader was found but would not connect (battery, paired with
+    // another phone, Bluetooth off). "No reader is connected" is right only when none was found.
+    return bluetooth.lastError?.() ?? READER_SAVE_COPY.noBluetooth;
   }, [device, tapToPay, bluetooth, isAdmin]);
 
   useEffect(() => {
@@ -203,7 +207,7 @@ export function ReaderSaveFlow({
       {step.kind === 'connecting' ? (
         <>
           <Text variant="bodySmall" accessibilityLiveRegion="polite">
-            {READER_SAVE_COPY.connecting}
+            {bluetooth.retrying ? READER_STARTING_UP_MESSAGE : READER_SAVE_COPY.connecting}
           </Text>
           <Button label="Cancel" variant="secondary" onPress={cancelConnecting} fullWidth />
         </>
