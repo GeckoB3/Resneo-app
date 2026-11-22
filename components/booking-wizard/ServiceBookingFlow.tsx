@@ -12,7 +12,7 @@ import type { GuestDetails } from '@/components/booking-wizard/GuestDetailsStep'
 import { GuestDetailsStep } from '@/components/booking-wizard/GuestDetailsStep';
 import { MonthDatePicker } from '@/components/booking-wizard/MonthDatePicker';
 import { MultiServiceReviewStep } from '@/components/booking-wizard/MultiServiceReviewStep';
-import { optionForPractitioner, PractitionerStep } from '@/components/booking-wizard/PractitionerStep';
+import { anyAvailableAsAssigned, optionForPractitioner, PractitionerStep } from '@/components/booking-wizard/PractitionerStep';
 import { VisitPeopleStep } from '@/components/booking-wizard/VisitPeopleStep';
 import {
   addressExclusionLine,
@@ -2411,10 +2411,17 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           onConfirmed={setCreatedBookingId}
           onBookAnother={resetWizard}
           ownerVenueId={ownerVenueId}
-          service={selectedService}
+          // "Any available": quote the person the time gave, not the first person listed (APP-6).
+          {...(selectedService.practitionerId === ANY_AVAILABLE_PRACTITIONER_ID
+            ? anyAvailableAsAssigned(
+                selectedService,
+                selectedVariant,
+                selectedSlot.practitioner_id,
+                bookableCatalog?.practitioners ?? [],
+              )
+            : { service: selectedService, variant: selectedVariant })}
           slot={selectedSlot}
           source={source}
-          variant={selectedVariant}
           requireDeposit={requireDeposit}
           onChangeRequireDeposit={setRequireDeposit}
           staffNotes={calendarNotice.notes}

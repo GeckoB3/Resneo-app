@@ -113,3 +113,20 @@ describe('getApiErrorMessage', () => {
     ).toMatch(/Billing is past due/);
   });
 });
+
+describe('a refusal with a message and no error (web review 22 Nov 2026, APP-7)', () => {
+  it('shows the message the server sent, never "Request failed (402)"', () => {
+    expect(getApiErrorMessage({ code: 'CARD_DECLINED', message: 'The bank declined the card.' }, 402)).toBe(
+      'The bank declined the card.',
+    );
+    expect(getApiErrorMessage({ code: 'NOTHING_TO_CHARGE', message: 'There is nothing left to charge.' }, 409)).toBe(
+      'There is nothing left to charge.',
+    );
+  });
+
+  it('still falls back when there is nothing to say', () => {
+    expect(getApiErrorMessage({ code: 'X', message: '  ' }, 402)).toBe('Request failed (402)');
+    expect(getApiErrorMessage(null, 500)).toBe('Request failed (500)');
+    expect(getApiErrorMessage({}, 403)).toBe('You do not have permission for this action.');
+  });
+});

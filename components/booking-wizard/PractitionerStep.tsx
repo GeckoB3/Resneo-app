@@ -67,6 +67,43 @@ export function optionForPractitioner(
   };
 }
 
+/**
+ * An "Any available" pick, priced as the person the chosen time gave: their own price, length,
+ * buffer, processing and deposit or no-show fee, and their own copy of the chosen option. The pick
+ * stays "Any available" (the person fields are untouched), so the create still sends the time's
+ * person; only what Review & confirm quotes changes (web review 22 Nov 2026, APP-6: staff were shown
+ * the first-listed person's figures while the booking was made at the assigned person's).
+ */
+export function anyAvailableAsAssigned<V extends { id: string; name?: string | null }>(
+  serviceOption: AppointmentServiceOption,
+  variant: V | null,
+  assignedPractitionerId: string | null | undefined,
+  practitioners: readonly AppointmentCatalogPractitioner[],
+): { service: AppointmentServiceOption; variant: V | null } {
+  const person = assignedPractitionerId ? practitioners.find((p) => p.id === assignedPractitionerId) : undefined;
+  const own = person ? optionForPractitioner(serviceOption, person) : null;
+  if (!own) return { service: serviceOption, variant };
+  const sameName = (a?: string | null, b?: string | null) =>
+    Boolean(a && b) && a!.trim().toLowerCase() === b!.trim().toLowerCase();
+  // The same option at this person: the same row at one business, its named copy at another.
+  const ownVariants = (own.variants ?? []) as unknown as V[];
+  const ownVariant = variant
+    ? ownVariants.find((v) => v.id === variant.id) ?? ownVariants.find((v) => sameName(v.name, variant.name)) ?? variant
+    : null;
+  return {
+    service: {
+      ...serviceOption,
+      durationMinutes: own.durationMinutes,
+      buffer_minutes: own.buffer_minutes,
+      processing_time_blocks: own.processing_time_blocks,
+      pricePence: own.pricePence,
+      depositPence: own.depositPence,
+      paymentRequirement: own.paymentRequirement,
+    },
+    variant: ownVariant,
+  };
+}
+
 type PractitionerRow = {
   id: string;
   name: string;

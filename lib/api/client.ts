@@ -132,6 +132,13 @@ export function getApiErrorMessage(body: unknown, status: number): string {
     const detail = status === 400 ? zodDetailMessage(body.details) : null;
     return detail ? `${body.error} (${detail})` : body.error;
   }
+  // Some routes answer a refusal as `{ code, message }` with no `error` (the no-show fee charge and
+  // refund among them): say what the server said, never "Request failed (402)" (review 22 Nov 2026,
+  // APP-7).
+  if (body && typeof body === 'object') {
+    const message = (body as { message?: unknown }).message;
+    if (typeof message === 'string' && message.trim() !== '') return message.trim();
+  }
   if (status === 403) {
     return 'You do not have permission for this action.';
   }

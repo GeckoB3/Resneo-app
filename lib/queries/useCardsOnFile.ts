@@ -579,13 +579,26 @@ export function useChargeNoShowFees(visitId: string, bookingId: string) {
       lines?: { booking_id: string; amount_pence?: number }[];
     }): Promise<NoShowChargeResult> => {
       if (!accessToken) throw new Error('Missing access token');
-      return apiFetch<NoShowChargeResult>(`/api/venue/visits/${encodeURIComponent(visitId)}/charge-no-show`, {
-        accessToken,
-        method: 'POST',
-        body: JSON.stringify(input.lines ? { lines: input.lines } : {}),
-      });
+      try {
+        return await apiFetch<NoShowChargeResult>(`/api/venue/visits/${encodeURIComponent(visitId)}/charge-no-show`, {
+          accessToken,
+          method: 'POST',
+          body: JSON.stringify(input.lines ? { lines: input.lines } : {}),
+        });
+      } catch (e) {
+        // When every charge fails the route answers 402 with the usual result body (MOBILE_API.md):
+        // a declined card, a card the client must approve, a card that has ended. That is an answer,
+        // not a broken request, so the panel can say what happened and offer the payment link
+        // (review 22 Nov 2026, APP-7: it showed "Request failed (402)").
+        const body = e instanceof ApiError ? (e.body as Partial<NoShowChargeResult> | undefined) : undefined;
+        if (body && Array.isArray(body.charges)) {
+          return { ...(body as NoShowChargeResult), skipped: Array.isArray(body.skipped) ? body.skipped : [] };
+        }
+        throw e;
+      }
     },
-    onSuccess: () => invalidateBookingCaches(queryClient, accessToken, bookingId),
+    // After a refusal too: a failed attempt is part of the booking's payment history.
+    onSettled: () => invalidateBookingCaches(queryClient, accessToken, bookingId),
   });
 }
 
