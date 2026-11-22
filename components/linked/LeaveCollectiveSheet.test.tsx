@@ -106,8 +106,8 @@ describe('LeaveCollectiveSheet', () => {
     ).toBeTruthy();
     expect(screen.getByText('Bookings made through the Plus 1 page stay with you.')).toBeTruthy();
     // The app's name for the place a link is changed.
-    expect(screen.getByText(/^Your account links with Aura Hair Studio and Light 16 stay exactly as they are.*go to Linked venues\.$/)).toBeTruthy();
-    expect(screen.queryByText('Plus 1 needs at least two venues, so it ends when you leave.')).toBeNull();
+    expect(screen.getByText(/^Your account links with Aura Hair Studio and Light 16 stay exactly as they are.*go to Linked businesses\.$/)).toBeTruthy();
+    expect(screen.queryByText('Plus 1 needs at least two businesses, so it ends when you leave.')).toBeNull();
     const buttons = screen.getAllByRole('button').map((b) => b.props.accessibilityLabel ?? '');
     expect(buttons.indexOf('Go back')).toBeLessThan(buttons.indexOf('Leave Plus 1'));
     expect(screen.getByRole('button', { name: 'Leave Plus 1' }).props.accessibilityState?.disabled).toBe(false);
@@ -116,22 +116,22 @@ describe('LeaveCollectiveSheet', () => {
   it('warns the last member that leaving ends the collective', async () => {
     mockApiFetch.mockResolvedValue({ ...PREVIEW, services: 1, no_stripe: 0, other_venues: [], last_member: true });
     await renderSheet();
-    await waitFor(() => expect(screen.getByText('Plus 1 needs at least two venues, so it ends when you leave.')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Plus 1 needs at least two businesses, so it ends when you leave.')).toBeTruthy());
     expect(screen.getByText('1 service from Aura Hair Studio becomes your own service, with the settings it has now.')).toBeTruthy();
   });
 
-  it('keeps the older sentence, and lets the venue leave, when the preview answers 409', async () => {
+  it('keeps the older sentence, and lets the business leave, when the preview answers 409', async () => {
     mockApiFetch.mockRejectedValue(
       new ApiError('This collective does not use shared services yet.', 409, { error: 'This collective does not use shared services yet.' }),
     );
     await renderSheet(null);
     await waitFor(() =>
-      expect(screen.getByText('Your venue will be removed from "Plus 1". Your own booking page is unaffected.')).toBeTruthy(),
+      expect(screen.getByText('Your business will be removed from "Plus 1". Your own booking page is unaffected.')).toBeTruthy(),
     );
     expect(screen.getByRole('button', { name: 'Leave Plus 1' }).props.accessibilityState?.disabled).toBe(false);
   });
 
-  it('after leaving, puts the review in the cache and goes to Venue collectives', async () => {
+  it('after leaving, puts the review in the cache and goes to Business collectives', async () => {
     mockApiFetch.mockImplementation((path: string, init?: { method?: string }) =>
       Promise.resolve(init?.method === 'PATCH' ? { review: REVIEW } : PREVIEW),
     );

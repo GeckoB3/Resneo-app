@@ -124,7 +124,7 @@ export function ServiceCategoriesManager({
     <View style={styles.panel}>
       <Text variant="caption" tone="muted">
         Group your services under headings on the booking page, the staff booking form and this
-        list. A venue with no categories keeps one flat list.
+        list. A business with no categories keeps one flat list.
       </Text>
 
       {isAdmin ? (
@@ -154,7 +154,7 @@ export function ServiceCategoriesManager({
           message={
             isAdmin
               ? 'Add your first category above, then choose a category on each service.'
-              : 'Your venue admin has not created any categories yet.'
+              : 'Your business admin has not created any categories yet.'
           }
         />
       ) : (

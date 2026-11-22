@@ -36,24 +36,24 @@ describe('app place names', () => {
 
   it('reads the same as before for a sentence with no swap', () => {
     expect(setupCopy('setup.venue.onPage', { collective: 'Plus 1' })).toBe('On the Plus 1 page');
-    expect(setupCopy('join.links.openLinked')).toBe('Change it in Linked venues');
+    expect(setupCopy('join.links.openLinked')).toBe('Change it in Linked businesses');
     expect(setupCopy('respond.done.joinFailed', { venue: 'Aura', collective: 'Plus 1', error: 'Nope.' })).toBe(
-      'The link with Aura is active, but joining Plus 1 did not finish: Nope. You can join from the Venue collectives screen.',
+      'The link with Aura is active, but joining Plus 1 did not finish: Nope. You can join from the Business collectives screen.',
     );
   });
 
   it("names the app's screens in the linking wizard (CQ-17)", () => {
     expect(setupCopy('setup.venue.alreadyLinked', { venue: 'Aura' })).toBe(
-      'You are already linked with Aura. To share one booking page with them, use Create venue collective, on the Venue collectives screen.',
+      'You are already linked with Aura. To share one booking page with them, use Create business collective, on the Business collectives screen.',
     );
     expect(setupCopy('setup.venue.youAsked', { venue: 'Aura' })).toBe(
-      'You have already asked Aura to link. The request waits under Sent by you on the Linked venues screen, where you can cancel it.',
+      'You have already asked Aura to link. The request waits under Sent by you on the Linked businesses screen, where you can cancel it.',
     );
     expect(setupCopy('setup.limit', { max: 10 })).toBe(
       'You have 10 link requests waiting, the most you can have at once. Cancel one under Sent by you to send another.',
     );
     expect(setupCopy('setup.done.next.where')).toBe(
-      'The request is listed under Sent by you on the Linked venues screen. You can cancel it there.',
+      'The request is listed under Sent by you on the Linked businesses screen. You can cancel it there.',
     );
   });
 });

@@ -121,7 +121,7 @@ export function DeleteVenueSheet({ visible, venueName, canAct = true, onClose }:
       hapticSuccess();
       setFeedback({
         tone: 'success',
-        text: 'Scheduled deletion cancelled. Your venue and subscription continue as normal.',
+        text: 'Scheduled deletion cancelled. Your business and subscription continue as normal.',
       });
     } catch (err) {
       hapticError();
@@ -140,9 +140,9 @@ export function DeleteVenueSheet({ visible, venueName, canAct = true, onClose }:
         <Text variant="overline" tone="danger">
           Danger zone
         </Text>
-        <Text variant="subheading">Delete this venue</Text>
+        <Text variant="subheading">Delete this business</Text>
         <Text variant="caption" tone="muted">
-          Permanently removes this venue and all of its data: bookings, contacts, staff, services,
+          Permanently removes this business and all of its data: bookings, contacts, staff, services,
           uploaded files, and linked-account connections. This cannot be undone once the grace
           period ends.
         </Text>
@@ -202,7 +202,7 @@ export function DeleteVenueSheet({ visible, venueName, canAct = true, onClose }:
           ) : !canAct ? (
             // ----- Nothing scheduled, and this admin cannot schedule it -----
             <Text variant="bodySmall" tone="secondary">
-              No deletion is scheduled for this venue.
+              No deletion is scheduled for this business.
             </Text>
           ) : (
             // ----- Request form (armed type-to-confirm) -----
@@ -212,12 +212,12 @@ export function DeleteVenueSheet({ visible, venueName, canAct = true, onClose }:
                 <Text variant="bodySmall" style={styles.bold}>
                   30-day grace period
                 </Text>
-                , after which this venue and all of its data are permanently erased and any linked
-                venues are notified. Your subscription is set to cancel at the end of the current
+                , after which this business and all of its data are permanently erased and any linked
+                businesses are notified. Your subscription is set to cancel at the end of the current
                 billing period.
               </Text>
               <Input
-                label={`Type the venue name "${resolvedName}" to confirm`}
+                label={`Type the business name "${resolvedName}" to confirm`}
                 value={confirmation}
                 onChangeText={(v) => {
                   setConfirmation(v);
@@ -234,7 +234,7 @@ export function DeleteVenueSheet({ visible, venueName, canAct = true, onClose }:
                 </Text>
               ) : null}
               <Button
-                label={requestMutation.isPending ? 'Scheduling…' : 'Schedule venue deletion'}
+                label={requestMutation.isPending ? 'Scheduling…' : 'Schedule business deletion'}
                 variant="danger"
                 fullWidth
                 loading={requestMutation.isPending}
@@ -245,7 +245,7 @@ export function DeleteVenueSheet({ visible, venueName, canAct = true, onClose }:
           )}
         </View>
 
-        <Button label={canAct ? 'Keep my venue' : 'Close'} variant="ghost" fullWidth onPress={handleClose} />
+        <Button label={canAct ? 'Keep my business' : 'Close'} variant="ghost" fullWidth onPress={handleClose} />
       </ScrollView>
     </Sheet>
   );

@@ -44,7 +44,7 @@ export const BREAKS_READ_ONLY_HINT =
 
 /** The intro over the editor for someone who may change it (web copy). */
 export const BREAKS_INTRO =
-  'Breaks are short windows on a day when this calendar stays closed to bookings (for example a lunch break), using the working-hours window you set on the Availability tab. Guests cannot book during a break.';
+  'Breaks are short windows on a day when this calendar stays closed to bookings (for example a lunch break), using the working-hours window you set on the Availability tab. Clients cannot book during a break.';
 
 /** What a resource shows instead of the editor (web copy). */
 export const BREAKS_RESOURCE_NOTE =

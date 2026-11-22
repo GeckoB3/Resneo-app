@@ -41,7 +41,7 @@ export const REPORT_SCOPE_COPY = {
   'scope.allOf': '{name}: all calendars',
   'scope.sharedOf': '{name}: shared calendars',
   'scope.calendarAt': '{calendar} at {business}',
-  'scope.yourVenue': 'Your venue',
+  'scope.yourVenue': 'Your business',
   'scope.partnerCalendar': 'Showing {calendar} at {business} only.',
   'scope.business': 'Showing {business}.',
   'scope.businessDetail':
@@ -50,9 +50,9 @@ export const REPORT_SCOPE_COPY = {
   'scope.togetherDetail':
     "Each business's figures are added up, and each one is listed below. A client who visits two businesses counts once at each.",
   'scope.tillTab':
-    "These figures are your venue's only: takings and sales are never shared between businesses. {scope} stays chosen on the other tabs.",
+    "These figures are your business's only: takings and sales are never shared between businesses. {scope} stays chosen on the other tabs.",
   'scope.togetherGroup': 'Together',
-  'scope.showYourVenue': 'Show your venue',
+  'scope.showYourVenue': 'Show your business',
   'scope.compareWith': 'Compare with',
   'scope.changesCompare': 'Changes compare with {range}.',
   'scope.byBusiness': 'By business',
@@ -141,7 +141,7 @@ export function parseReportShowingOptions(body: unknown, allowBusinesses = true)
       seen.add(b.venue_id);
       businesses.push({
         venue_id: b.venue_id,
-        name: text(b.name, 'Linked venue'),
+        name: text(b.name, 'Linked business'),
         access: b.access === 'collective' ? 'collective' : 'link',
         // Only an explicit false is "shared calendars".
         all_calendars: b.all_calendars !== false,

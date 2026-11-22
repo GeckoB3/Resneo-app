@@ -132,7 +132,7 @@ export function ReviewLinkRequestSheet({
     }
   }, [preview]);
 
-  const other = link?.otherVenue.name ?? 'The other venue';
+  const other = link?.otherVenue.name ?? 'The other business';
   const myFinal = link ? (editing ? normaliseGrant(mine) : normaliseGrant(link.theyCan)) : normaliseGrant(mine);
   const grantsValid = !editing || isLinkConfigurationValid(normaliseGrant(mine), normaliseGrant(theirs));
   const fullAccessAfter = link ? isFullAccessBothWays(myFinal, normaliseGrant(link.iCan)) : false;

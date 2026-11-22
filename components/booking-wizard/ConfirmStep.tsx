@@ -312,7 +312,7 @@ function BookingConfirmationView({
           </Text>
         </View>
         {bookedAtBusiness ? <SummaryRow label="Booked at" value={bookedAtBusiness} /> : null}
-        <SummaryRow label="Guest" value={confirmation.guest_name} />
+        <SummaryRow label="Client" value={confirmation.guest_name} />
         <SummaryRow label="Date" value={confirmation.date_label} />
         <SummaryRow label="Time" value={confirmation.time_label} />
 
@@ -794,7 +794,7 @@ export function ConfirmStep({
     // helper's contract for the online context, so keep reading it verbatim.
     if (apiError?.status === 409 && errorCode === 'COMPLIANCE_REQUIREMENT_UNMET') {
       hapticWarning();
-      const detail = body?.message ?? 'A compliance requirement is unmet for this guest.';
+      const detail = body?.message ?? 'A compliance requirement is unmet for this client.';
       setComplianceError(detail);
       return;
     }
@@ -1028,7 +1028,7 @@ export function ConfirmStep({
         {!isMultiService ? (
           <SummaryRow label="Time" value={formatSummaryTime(slot.start_time)} />
         ) : null}
-        <SummaryRow label="Guest" value={fullName || 'Not given'} />
+        <SummaryRow label="Client" value={fullName || 'Not given'} />
         {pickedContactHidden ? (
           <>
             <HiddenSummaryRow label="Phone" />

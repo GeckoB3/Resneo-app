@@ -107,7 +107,7 @@ export function useBookingFormVenue(): BookingFormVenue {
     !isForbidden && profile.error
       ? profile.error instanceof ApiError
         ? profile.error.message
-        : 'Could not load the linked venue.'
+        : 'Could not load the linked business.'
       : null;
 
   return {

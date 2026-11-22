@@ -180,7 +180,7 @@ export function TapToPayIntroduction() {
             ) : null}
             {askAdmin ? (
               <Text variant="bodySmall" tone="muted">
-                Ask an admin at your venue to turn it on. Only an admin can accept Apple&apos;s
+                Ask an admin at your business to turn it on. Only an admin can accept Apple&apos;s
                 terms.
               </Text>
             ) : null}

@@ -249,7 +249,7 @@ export function ClientSavedCardsSection({ guestId, clientName }: { guestId: stri
   const canRemove = canPos(boot.data, 'take_payment');
   const timeZone = venue?.timezone ?? 'Europe/London';
   const first = clientName.trim().split(/\s+/)[0] || 'They';
-  const venueName = boot.data?.venue?.name ?? venue?.name ?? 'This venue';
+  const venueName = boot.data?.venue?.name ?? venue?.name ?? 'This business';
 
   return (
     <Card>

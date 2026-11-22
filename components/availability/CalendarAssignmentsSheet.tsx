@@ -315,7 +315,7 @@ export function CalendarAssignmentsSheet({
           <View style={styles.section}>
             <Text variant="label">Appointment services</Text>
             <Text variant="caption" tone="muted">
-              Which services can guests book on this column? The same service can appear on
+              Which services can clients book on this column? The same service can appear on
               several columns. Leave empty if this column is only for classes or resources.
             </Text>
             {services.map((s) => (

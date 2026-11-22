@@ -103,7 +103,7 @@ export default function CustomerBookingsScreen() {
             title={filter === 'upcoming' ? 'Nothing coming up' : 'Nothing yet'}
             message={
               filter === 'upcoming'
-                ? 'When you book with a venue that uses ResNeo, it will show up here.'
+                ? 'When you book with a business that uses ResNeo, it will show up here.'
                 : 'Bookings you have already been to will appear here.'
             }
           />

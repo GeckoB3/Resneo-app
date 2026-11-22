@@ -319,7 +319,7 @@ describe('staffCardHoldToggleSublabel (web #187)', () => {
   it('says what each position does, with the 24-hour cancel on the ON side', () => {
     expect(CARD_HOLD_LINK_TIMEOUT_HOURS).toBe(24);
     expect(staffCardHoldToggleSublabel(true)).toBe(
-      'On: the guest gets a link to add their card, charged only if they do not show. The booking is cancelled if no card is added within 24 hours.',
+      'On: the client gets a link to add their card, charged only if they do not show. The booking is cancelled if no card is added within 24 hours.',
     );
     expect(staffCardHoldToggleSublabel(false)).toBe(
       'Off: no card is taken, so a no-show cannot be charged.',

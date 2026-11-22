@@ -93,7 +93,7 @@ export default function CheckoutHomeScreen() {
       <Screen>
         {header}
         {off ? (
-          <EmptyState title={t('till.off.title')} message={t('till.off.body', { venue: 'your venue' })} />
+          <EmptyState title={t('till.off.title')} message={t('till.off.body', { venue: 'your business' })} />
         ) : (
           <ErrorState
             title={t('till.error.title')}
@@ -345,7 +345,7 @@ function MySalesCard({ periods }: { periods: boolean }) {
               <>
                 <Text variant="bodyMedium">{t('comm.mine.commission', { amount: money(figures.commission_pence ?? 0) })}</Text>
                 <Text variant="caption" tone="muted">
-                  {t('comm.mine.note', { venue: data?.venue.name || 'your venue' })}
+                  {t('comm.mine.note', { venue: data?.venue.name || 'your business' })}
                 </Text>
               </>
             ) : null}

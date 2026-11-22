@@ -425,7 +425,7 @@ export default function ComplianceScreen() {
               ) : null}
             </View>
             <Text variant="caption" tone="muted" style={styles.sectionDesc}>
-              Today&apos;s bookings with a required form still outstanding. Complete it on a venue
+              Today&apos;s bookings with a required form still outstanding. Complete it on a business
               device or send a link.
             </Text>
             {todayCheckIns.length === 0 ? (
@@ -647,7 +647,7 @@ export default function ComplianceScreen() {
                   <View key={row.id} style={styles.row}>
                     <View style={styles.rowText}>
                       <Text variant="bodyMedium" numberOfLines={1}>
-                        {row.guest_name ?? 'Guest'}
+                        {row.guest_name ?? 'Client'}
                       </Text>
                       <Text variant="caption" tone="muted" numberOfLines={1}>
                         {row.compliance_type_name ?? 'Form'}
@@ -661,14 +661,14 @@ export default function ComplianceScreen() {
                         variant="ghost"
                         size="sm"
                         loading={pendingResendId === row.id}
-                        onPress={() => handleResend(row.id, row.guest_name ?? 'guest')}
+                        onPress={() => handleResend(row.id, row.guest_name ?? 'client')}
                       />
                       <Button
                         label="Revoke"
                         variant="ghost"
                         size="sm"
                         loading={pendingRevokeId === row.id}
-                        onPress={() => handleRevoke(row.id, row.guest_name ?? 'guest')}
+                        onPress={() => handleRevoke(row.id, row.guest_name ?? 'client')}
                       />
                     </View>
                   </View>
@@ -742,7 +742,7 @@ export default function ComplianceScreen() {
                   : `Send ${action.typeName} link`}
               </Text>
               <Text variant="bodySmall" tone="secondary">
-                How should the guest receive the form?
+                How should the client receive the form?
               </Text>
               <View style={styles.sheetChannels}>
                 <Button

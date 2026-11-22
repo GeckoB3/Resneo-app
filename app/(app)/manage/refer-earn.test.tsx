@@ -139,7 +139,7 @@ describe('Refer & Earn — data state', () => {
     expect(screen.getByText('Credited')).toBeTruthy();
     expect(screen.getByText('Bright Spa')).toBeTruthy();
     // Explained in a sentence, as on the web, never the code itself.
-    expect(screen.getByText(/same business email domain as your venue/)).toBeTruthy();
+    expect(screen.getByText(/same business email domain as your business/)).toBeTruthy();
     expect(screen.queryByText('self_referral_same_email_domain')).toBeNull();
   });
 
@@ -221,7 +221,7 @@ describe('Refer & Earn — disabled / 403', () => {
     mockStaff.data = { staff: { role: 'staff' } };
     await render(<ReferEarnScreen />);
 
-    expect(screen.getByText('Refer & Earn is only available to venue admins.')).toBeTruthy();
+    expect(screen.getByText('Refer & Earn is only available to business admins.')).toBeTruthy();
   });
 });
 

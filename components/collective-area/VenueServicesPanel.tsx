@@ -99,7 +99,7 @@ export function curateUndo(
 }
 
 /** "All venues" is the web's own words for the first chip (not in the copy table). */
-const ALL_VENUES = 'All venues';
+const ALL_VENUES = 'All businesses';
 
 export function useVenueServicesPanel(input: {
   collectiveId: string;
@@ -173,7 +173,7 @@ export function useVenueServicesPanel(input: {
     const names = new Map(list.map((c) => [venueServiceKey(c.group.venue_id, c.service.id), c.service.name]));
     const venues = new Map(list.map((c) => [venueServiceKey(c.group.venue_id, c.service.id), c.group.venue_name]));
     const nameOf = (r: CurateResult) => names.get(venueServiceKey(r.venue_id, r.service_id)) ?? 'A service';
-    const venueOf = (r: CurateResult) => venues.get(venueServiceKey(r.venue_id, r.service_id)) ?? 'a venue';
+    const venueOf = (r: CurateResult) => venues.get(venueServiceKey(r.venue_id, r.service_id)) ?? 'a business';
     curate.mutate(
       {
         action,
@@ -206,7 +206,7 @@ export function useVenueServicesPanel(input: {
     const named = (r: CurateResult) =>
       last.items.find((i) => i.venue_id === r.venue_id && i.service_id === r.service_id) ?? {
         name: 'A service',
-        venueName: 'a venue',
+        venueName: 'a business',
       };
     curate.mutate(
       { action: last.action, mode: 'match', items: last.items.map(({ venue_id, service_id }) => ({ venue_id, service_id })) },
@@ -386,7 +386,7 @@ export function VenueServicesList({
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.venueChips}
         accessibilityRole="tablist"
-        accessibilityLabel="Venue">
+        accessibilityLabel="Business">
         {chips.map((chip) => {
           const active = panel.venue === chip.id;
           return (

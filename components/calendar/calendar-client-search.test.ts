@@ -20,7 +20,7 @@ describe('calendar client search helpers', () => {
     expect(CLIENT_SEARCH_RESULT_LIMIT).toBe(10);
   });
 
-  it('sends the same guest list query as the web toolbar', () => {
+  it('sends the same client list query as the web toolbar', () => {
     const path = buildGuestListPath(clientSearchParams('  ada  '));
     const query = new URLSearchParams(path.split('?')[1]);
     expect(path.startsWith('/api/venue/guests?')).toBe(true);
@@ -36,7 +36,7 @@ describe('calendar client search helpers', () => {
     expect(
       clientSearchResultLabel({ first_name: 'Ada', last_name: null, identifiability_tier: 'anonymous' }),
     ).toBe('Anonymous');
-    expect(clientSearchResultLabel({ first_name: null, last_name: null })).toBe('Guest');
+    expect(clientSearchResultLabel({ first_name: null, last_name: null })).toBe('Client');
   });
 
   it('subtitles a result with email and phone, or says there are none', () => {

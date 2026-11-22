@@ -275,7 +275,7 @@ export function GroupBookingFlow({
 
   const startNewPerson = useCallback(() => {
     resetDraft();
-    setDraftLabel(`Guest ${people.length + 1}`);
+    setDraftLabel(`Person ${people.length + 1}`);
     // Start on the day the group is already booked for. A group is one visit,
     // so sending staff back to today and making them scroll to the first
     // attendee's date for every extra person is pure friction.
@@ -330,7 +330,7 @@ export function GroupBookingFlow({
     );
     const baseDuration = draftVariant ? draftVariant.duration_minutes : draftService.durationMinutes;
     const person: GroupPerson = {
-      label: draftLabel.trim() || `Guest ${people.length + 1}`,
+      label: draftLabel.trim() || `Person ${people.length + 1}`,
       serviceId: draftService.serviceId,
       serviceName: draftService.serviceName,
       serviceVariantId: draftVariant?.id ?? null,
@@ -487,7 +487,7 @@ export function GroupBookingFlow({
             : null;
           if (required.length > 0) {
             toast.error(
-              `This venue requires ${required.join(', ')} for this booking. Capture the record in venue or send the form.`,
+              `This business requires ${required.join(', ')} for this booking. Capture the record in person or send the form.`,
               { duration: 6000 },
             );
           } else if (advisory.length > 0) {
@@ -688,7 +688,7 @@ export function GroupBookingFlow({
             label="Attendee name"
             value={draftLabel}
             onChangeText={setDraftLabel}
-            placeholder="e.g. Jordan, or Guest 2"
+            placeholder="e.g. Jordan, or Person 2"
             autoCapitalize="words"
           />
         </ScrollView>
@@ -986,7 +986,7 @@ export function GroupBookingFlow({
                 {complianceError}
               </Text>
               <Text variant="caption" tone="muted">
-                Resolve the flagged requirement, or book the affected guest individually, to continue.
+                Resolve the flagged requirement, or book the affected client individually, to continue.
               </Text>
             </View>
           ) : null}

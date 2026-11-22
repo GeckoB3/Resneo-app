@@ -105,7 +105,7 @@ describe('noShowOverallRatePct', () => {
 });
 
 describe('showTableUtilisation', () => {
-  it('is for table venues with table management on', () => {
+  it('is for table businesses with table management on', () => {
     expect(showTableUtilisation('table_reservation', true)).toBe(true);
     expect(showTableUtilisation('table_reservation', false)).toBe(false);
     expect(showTableUtilisation('unified_scheduling', true)).toBe(false);
@@ -114,7 +114,7 @@ describe('showTableUtilisation', () => {
 });
 
 describe('report 1 CSV', () => {
-  it('names the metrics with the venue’s words for an appointment venue', () => {
+  it('names the metrics with the business’s words for an appointment business', () => {
     const csv = buildReport1Csv(summary, RANGE, APPOINTMENT);
     expect(csv.filename).toBe('report1-booking-summary-2026-09-01-2026-09-30.csv');
     expect(csv.rows.slice(0, 4)).toEqual([
@@ -130,7 +130,7 @@ describe('report 1 CSV', () => {
     expect(csv.rows).toContainEqual(['Started', '2']);
   });
 
-  it('keeps the covers wording, and raw statuses, for a table venue', () => {
+  it('keeps the covers wording, and raw statuses, for a table business', () => {
     const csv = buildReport1Csv(summary, RANGE, TABLES);
     expect(csv.rows.slice(1, 4)).toEqual([
       ['Total bookings created', '12'],
@@ -142,7 +142,7 @@ describe('report 1 CSV', () => {
 });
 
 describe('a calendar in the file name (web 90ff4d17)', () => {
-  it("names one calendar's figures, and leaves the whole venue's as they were", () => {
+  it("names one calendar's figures, and leaves the whole business's as they were", () => {
     expect(buildReport1Csv(summary, { ...RANGE, calendar: { name: 'Jess' } }, APPOINTMENT).filename).toBe(
       'report1-booking-summary-jess-2026-09-01-2026-09-30.csv',
     );
@@ -182,7 +182,7 @@ describe('report 3 CSV', () => {
       ['Cancellation rate %', '25'],
     ]);
     expect(buildReport3Csv(cancellation, RANGE, TABLES).rows[2]).toEqual([
-      'Cancelled (guest-initiated)',
+      'Cancelled (client-initiated)',
       '2',
     ]);
   });
@@ -226,7 +226,7 @@ describe('report 5 CSV', () => {
 });
 
 describe('report 7 CSV', () => {
-  it('carries the venue’s staff and booking words in its headers', () => {
+  it('carries the business’s staff and booking words in its headers', () => {
     const csv = buildReport7Csv(insights, RANGE, APPOINTMENT);
     expect(csv.filename).toBe('report7-appointment-insights-2026-09-01-2026-09-30.csv');
     expect(csv.rows[0]).toEqual(['Practitioner', 'Appointments', 'Arrived or completed']);

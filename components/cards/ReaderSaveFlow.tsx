@@ -23,6 +23,7 @@ import { hapticSuccess } from '@/lib/haptics';
 import { useBluetoothReader } from '@/lib/payments/bluetoothReader';
 import { useTapToPayReader } from '@/lib/payments/terminal';
 import { READER_STARTING_UP_MESSAGE } from '@/lib/payments/reader-connect-errors';
+import { isReaderUpdateInstalling, READER_BUSY_UPDATING_MESSAGE } from '@/lib/payments/reader-software-update';
 import { getTerminalSdk } from '@/lib/payments/terminal-sdk';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { spacing } from '@/theme/index';
@@ -122,6 +123,9 @@ export function ReaderSaveFlow({
   }, []);
 
   const connect = useCallback(async (): Promise<string | null> => {
+    // The card reader is installing an optional update (started in Reader settings): say so rather
+    // than fail on the reader, and do not let Tap to Pay take the SDK away from it mid-install.
+    if (isReaderUpdateInstalling()) return READER_BUSY_UPDATING_MESSAGE;
     if (device === 'tap_to_pay') {
       const r = await tapToPay.connect(Platform.OS === 'ios' ? { tosAcceptancePermitted: isAdmin } : undefined);
       return r.ok ? null : r.error ?? 'The card reader could not be started.';

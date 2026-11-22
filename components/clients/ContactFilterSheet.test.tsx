@@ -71,7 +71,7 @@ describe('ContactFilterSheet — per-option hints', () => {
     // Pick "Anonymous only" → its hint replaces the default one.
     await press(() => screen.getByText('Anonymous only'));
     expect(
-      screen.getByText(/Guests without saved contact details/),
+      screen.getByText(/Clients without saved contact details/),
     ).toBeTruthy();
   });
 
@@ -112,7 +112,7 @@ describe('ContactFilterSheet — segment date ranges', () => {
     await press(() => screen.getByText('Marketing consent'));
 
     expect(
-      screen.getByText('Happy to hear from you by email or SMS where the venue allows it.'),
+      screen.getByText('Happy to hear from you by email or SMS where the business allows it.'),
     ).toBeTruthy();
     expect(screen.getByText('When consent was saved (optional)')).toBeTruthy();
 

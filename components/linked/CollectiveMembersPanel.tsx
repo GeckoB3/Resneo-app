@@ -121,7 +121,7 @@ export function CollectiveMembersPanel({
                     onPress={() =>
                       setConfirm({
                         title: 'Transfer host?',
-                        message: `Make ${m.venueName} the host? They will control this collective's settings and members; your venue becomes a regular member. Only the new host can transfer it back.`,
+                        message: `Make ${m.venueName} the host? They will control this collective's settings and members; your business becomes a regular member. Only the new host can transfer it back.`,
                         confirmLabel: 'Transfer host',
                         danger: false,
                         run: () =>
@@ -184,7 +184,7 @@ export function CollectiveMembersPanel({
         onPress={() =>
           setConfirm({
             title: 'Dissolve collective?',
-            message: `Dissolve "${collective.name}"? The combined booking page goes offline immediately. Each venue keeps its own page and data.`,
+            message: `Dissolve "${collective.name}"? The combined booking page goes offline immediately. Each business keeps its own page and data.`,
             confirmLabel: 'Dissolve collective',
             danger: true,
             run: handleDissolve,

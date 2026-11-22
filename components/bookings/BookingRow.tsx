@@ -58,8 +58,10 @@ function partyLabel(partySize: number, isAppointment: boolean): string | null {
   if (!partySize || partySize < 1) {
     return null;
   }
-  const noun = isAppointment ? 'guest' : 'cover';
-  return `${partySize} ${noun}${partySize === 1 ? '' : 's'}`;
+  // An appointment names its size only for a party, as the web list does ("2 people"); "1 person"
+  // on every row only pushed "Part of a visit" off the end (live app QA 2026-11-22).
+  if (isAppointment) return partySize > 1 ? `${partySize} people` : null;
+  return `${partySize} cover${partySize === 1 ? '' : 's'}`;
 }
 
 /** A single booking in the list — time-led, tap opens detail, long-press enters selection mode. */

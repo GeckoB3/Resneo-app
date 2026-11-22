@@ -569,7 +569,7 @@ function TreatmentRecordEditor({
             ) : null}
             {context.linked ? (
               <Text variant="caption" tone="muted">
-                A linked venue’s record
+                A linked business’s record
               </Text>
             ) : null}
           </View>

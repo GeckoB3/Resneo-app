@@ -50,7 +50,7 @@ jest.mock('@/lib/queries/useVenueSettings', () => ({
     refetch: mockRefetchFlags,
     data: {
       calendars: [
-        { id: 'aaaaaaaa-0000-4000-8000-000000000001', name: 'Hana', venue_name: 'Host Venue' },
+        { id: 'aaaaaaaa-0000-4000-8000-000000000001', name: 'Hana', venue_name: 'Host Business' },
         { id: 'aaaaaaaa-0000-4000-8000-000000000002', name: 'Zoe', venue_name: 'Zen Studio' },
       ],
       any_available_practitioner_config: { mode: 'priority', calendar_order: [] },
@@ -58,7 +58,7 @@ jest.mock('@/lib/queries/useVenueSettings', () => ({
         id: 'col-1',
         name: 'Northside',
         public_name: 'Northside Hair',
-        host_venue_name: 'Host Venue',
+        host_venue_name: 'Host Business',
         is_host: mockIsHost,
         controls: ['staff_first_booking_flow', 'require_account_login'],
         version: 3,
@@ -112,25 +112,25 @@ describe('Booking settings for a member of a live collective', () => {
     await render(<BookingSettingsScreen />);
     expect(
       screen.getByText(
-        "You're part of Northside, hosted by Host Venue. Your clients book on the Northside page. Host Venue sets the settings marked Northside.",
+        "You're part of Northside, hosted by Host Business. Your clients book on the Northside page. Host Business sets the settings marked Northside.",
       ),
     ).toBeTruthy();
     const staffFirst = screen.getByLabelText('Staff-first booking');
     expect(staffFirst.props.value).toBe(true);
     expect(staffFirst.props.disabled).toBe(true);
-    expect(screen.getAllByText('Host Venue sets this for Northside.').length).toBeGreaterThanOrEqual(4);
+    expect(screen.getAllByText('Host Business sets this for Northside.').length).toBeGreaterThanOrEqual(4);
     await act(async () => {
       fireEvent(staffFirst, 'valueChange', false);
     });
     expect(mockUpdateFlagsAsync).not.toHaveBeenCalled();
   });
 
-  it('shows sign-in read-only, and the priority list with every venue', async () => {
+  it('shows sign-in read-only, and the priority list with every business', async () => {
     await render(<BookingSettingsScreen />);
     const signIn = screen.getByLabelText('Require sign-in to book');
     expect(signIn.props.value).toBe(true);
     expect(signIn.props.disabled).toBe(true);
-    expect(screen.getByText(/1\. Hana at Host Venue/)).toBeTruthy();
+    expect(screen.getByText(/1\. Hana at Host Business/)).toBeTruthy();
     expect(screen.getByText(/2\. Zoe at Zen Studio/)).toBeTruthy();
   });
 
@@ -150,11 +150,11 @@ describe('Booking settings for the host of a live collective', () => {
     mockIsHost = true;
   });
 
-  it('saves a change for every venue and says so', async () => {
+  it('saves a change for every business and says so', async () => {
     await render(<BookingSettingsScreen />);
     expect(
       screen.getByText(
-        'You host Northside. Settings marked Northside apply to the Northside page and to online bookings at every venue in it.',
+        'You host Northside. Settings marked Northside apply to the Northside page and to online bookings at every business in it.',
       ),
     ).toBeTruthy();
     const staffFirst = screen.getByLabelText('Staff-first booking');
@@ -188,8 +188,8 @@ describe('Booking settings for the host of a live collective', () => {
     const { ApiError } = jest.requireActual('@/lib/api/client');
     mockUpdateFlagsAsync.mockImplementationOnce(() =>
       Promise.reject(
-        new ApiError('Host Venue changed this a moment ago. Here is the current setting.', 412, {
-          error: 'Host Venue changed this a moment ago. Here is the current setting.',
+        new ApiError('Host Business changed this a moment ago. Here is the current setting.', 412, {
+          error: 'Host Business changed this a moment ago. Here is the current setting.',
           code: 'COLLECTIVE_SETTINGS_CHANGED',
           booking_settings_version: 4,
         }),
@@ -200,7 +200,7 @@ describe('Booking settings for the host of a live collective', () => {
       fireEvent(screen.getByLabelText('Staff-first booking'), 'valueChange', false);
     });
     await fireEvent.press(screen.getByText('Change for everyone'));
-    expect(await screen.findByText('Host Venue changed this a moment ago. Here is the current setting.')).toBeTruthy();
+    expect(await screen.findByText('Host Business changed this a moment ago. Here is the current setting.')).toBeTruthy();
     expect(mockRefetchFlags).toHaveBeenCalled();
     expect(mockRefetchVenue).toHaveBeenCalled();
     // The switch shows the collective's value again.

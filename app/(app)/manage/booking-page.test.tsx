@@ -137,7 +137,7 @@ beforeEach(() => {
 });
 
 describe('Booking page — embed / QR / slug surface', () => {
-  it('renders the embed snippet built from the web origin + venue slug, and the QR card', async () => {
+  it('renders the embed snippet built from the web origin + business slug, and the QR card', async () => {
     await act(async () => {
       render(<BookingPageScreen />);
     });
@@ -219,7 +219,7 @@ describe('Booking page: the combined page’s embed and QR code (web 4a05756e)',
     expect(mockSetStringAsync.mock.calls[0][0]).toContain('/embed/c/glow');
   });
 
-  it('gives a member venue the same embed and QR code as the host', async () => {
+  it('gives a member business the same embed and QR code as the host', async () => {
     mockCollectives = [liveCollective({ isHost: false, hostVenueId: 'v2' })];
     await act(async () => {
       render(<BookingPageScreen />);
@@ -239,7 +239,7 @@ describe('Booking page: the combined page’s embed and QR code (web 4a05756e)',
     expect(screen.getByTestId('qr-card').props.children).toBe('https://app.example.com/book/second-studio');
   });
 
-  it('carries the venue’s accent colour, one setting shared with its own widget', async () => {
+  it('carries the business’s accent colour, one setting shared with its own widget', async () => {
     mockCollectives = [liveCollective()];
     mockVenue = { ...(mockVenue as Record<string, unknown>), embed_accent_colour: '4F46E5' };
     await act(async () => {
@@ -254,19 +254,19 @@ describe('Booking page: the combined page’s embed and QR code (web 4a05756e)',
     await act(async () => {
       render(<BookingPageScreen />);
     });
-    await press(() => screen.getByText('This venue’s own page'));
+    await press(() => screen.getByText('This business’s own page'));
 
     expect(screen.getByText('What to embed')).toBeTruthy();
-    expect(screen.getByText('This embeds only your own venue’s booking flow.')).toBeTruthy();
+    expect(screen.getByText('This embeds only your own business’s booking flow.')).toBeTruthy();
     expect(screen.getByText(/<iframe src="https:\/\/app\.example\.com\/embed\/plus-1"/)).toBeTruthy();
     expect(screen.getByTestId('qr-card').props.children).toBe('https://app.example.com/book/plus-1');
 
-    await press(() => screen.getByLabelText('Venue collective: Glow Collective'));
+    await press(() => screen.getByLabelText('Business collective: Glow Collective'));
     expect(screen.getByText('This embeds the combined collective booking page.')).toBeTruthy();
     expect(screen.getByText(/<iframe src="https:\/\/app\.example\.com\/embed\/c\/glow"/)).toBeTruthy();
     expect(screen.getByTestId('qr-card').props.children).toBe('https://app.example.com/book/c/glow');
 
-    await press(() => screen.getByLabelText('My venue only (Plus One Salon)'));
+    await press(() => screen.getByLabelText('My business only (Plus One Salon)'));
     expect(screen.getByText(/embed\/plus-1"/)).toBeTruthy();
   });
 
@@ -306,7 +306,7 @@ describe('Booking page: the combined page’s embed and QR code (web 4a05756e)',
 });
 
 describe('Booking page: the ResNeo marketplace card (web MarketplaceSection)', () => {
-  it('closes the venue’s own page, editable for an admin', async () => {
+  it('closes the business’s own page, editable for an admin', async () => {
     await act(async () => {
       render(<BookingPageScreen />);
     });

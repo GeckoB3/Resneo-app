@@ -56,7 +56,7 @@ const hostService = (id: string, name: string, onPage: boolean) => ({
         venue_role: 'host',
         collective_id: 'col-1',
         collective_name: 'Northside',
-        host_venue_name: 'Host Venue',
+        host_venue_name: 'Host Business',
         item_id: `item-${id}`,
         locked_fields: [],
         delegated_fields: [],
@@ -101,7 +101,7 @@ function mockRespond(call: Call): unknown {
           name: 'Northside',
           hostVenueId: 'v-host',
           members: [
-            { venueId: 'v-host', venueName: 'Host Venue', status: 'active' },
+            { venueId: 'v-host', venueName: 'Host Business', status: 'active' },
             { venueId: 'v-zen', venueName: 'Zen Studio', status: 'active' },
           ],
         },
@@ -126,7 +126,7 @@ function mockRespond(call: Call): unknown {
       venues: [
         {
           venue_id: 'v-host',
-          venue_name: 'Host Venue',
+          venue_name: 'Host Business',
           is_host: true,
           services: [memberService('h1', 'Balayage'), memberService('h2', 'Gents cut', { on_page: true })],
         },
@@ -154,13 +154,13 @@ async function openServicesStep() {
   await act(async () => {
     render(
       <QueryClientProvider client={client}>
-        <CollectiveSetupSheet visible collectiveId="col-1" venueName="Host Venue" onClose={jest.fn()} />
+        <CollectiveSetupSheet visible collectiveId="col-1" venueName="Host Business" onClose={jest.fn()} />
       </QueryClientProvider>,
     );
   });
   expect(
     await screen.findByText(
-      'Two steps make the Northside page live. First choose which services it offers, from every venue. Then choose which calendars, at each venue, do them.',
+      'Two steps make the Northside page live. First choose which services it offers, from every business. Then choose which calendars, at each business, do them.',
     ),
   ).toBeTruthy();
   await act(async () => {
@@ -175,7 +175,7 @@ beforeEach(() => {
   mockVenueServicesMissing = false;
 });
 
-describe("CollectiveSetupSheet, every venue's services", () => {
+describe("CollectiveSetupSheet, every business's services", () => {
   it("lists each member's own services, ticked when off the page and bookable online", async () => {
     await openServicesStep();
     expect(screen.getByText('Your services')).toBeTruthy();
@@ -219,7 +219,7 @@ describe("CollectiveSetupSheet, every venue's services", () => {
     expect(await screen.findByText('Who does what?')).toBeTruthy();
   });
 
-  it("unticks every one of a venue's services at once", async () => {
+  it("unticks every one of a business's services at once", async () => {
     await openServicesStep();
     await act(async () => {
       fireEvent.press(screen.getByLabelText('Select all'));
@@ -236,7 +236,7 @@ describe("CollectiveSetupSheet, every venue's services", () => {
     expect(mockCalls.filter((c) => c.method === 'POST').map((c) => c.path)).toEqual(['/api/venue/collectives/col-1/bulk']);
   });
 
-  it("lists the host's services alone on a server without every venue's services", async () => {
+  it("lists the host's services alone on a server without every business's services", async () => {
     mockVenueServicesMissing = true;
     await openServicesStep();
     expect(screen.getByLabelText('Balayage')).toBeTruthy();

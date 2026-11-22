@@ -100,7 +100,7 @@ describe('formatBookingTimelineEvent', () => {
       formatBookingTimelineEvent(
         event({ event_type: 'booking_status_changed', payload: { confirmed_by: 'guest' } }),
       ),
-    ).toEqual({ title: 'Confirmed by guest' });
+    ).toEqual({ title: 'Confirmed by client' });
     expect(
       formatBookingTimelineEvent(
         event({ event_type: 'booking_status_changed', payload: { confirmed_by: 'staff' } }),
@@ -110,7 +110,7 @@ describe('formatBookingTimelineEvent', () => {
       formatBookingTimelineEvent(
         event({ event_type: 'booking_status_changed', payload: { confirmed_by: 'both' } }),
       ),
-    ).toEqual({ title: 'Confirmed by guest and staff' });
+    ).toEqual({ title: 'Confirmed by client and staff' });
   });
 
   it('falls back to "Booking confirmed" with a from-status detail', () => {
@@ -193,7 +193,7 @@ describe('formatBookingTimelineEvent', () => {
         },
       }),
     );
-    expect(result.title).toBe('Booking modified (Guest)');
+    expect(result.title).toBe('Booking modified (Client)');
     expect(result.detail).toBe('Time 10:00 → 11:30');
   });
 
@@ -234,7 +234,7 @@ describe('formatBookingTimelineEvent', () => {
     const result = formatBookingTimelineEvent(
       event({ event_type: 'booking_modified', payload: { modification_actor: 'guest', before: {}, after: {} } }),
     );
-    expect(result).toEqual({ title: 'Booking modified (Guest)', detail: 'Booking details updated' });
+    expect(result).toEqual({ title: 'Booking modified (Client)', detail: 'Booking details updated' });
   });
 
   it('uses "User" as the actor when the modification actor is absent', () => {
@@ -283,7 +283,7 @@ describe('bookingTimelineEventsForDisplay', () => {
     expect(display.map((d) => d.id)).toEqual(['a', 'd', 'e']);
     expect(display.map((d) => d.title)).toEqual([
       'Booking created',
-      'Confirmed by guest',
+      'Confirmed by client',
       'Converted from waitlist',
     ]);
     // Original row fields are spread through onto the display row.

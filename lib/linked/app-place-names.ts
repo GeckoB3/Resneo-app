@@ -12,9 +12,9 @@
 
 type PlaceSwap = readonly [web: string, app: string];
 
-const LINKED = 'Linked venues';
-const VENUE_COLLECTIVES = 'the Venue collectives screen';
-const LINKED_SCREEN = 'the Linked venues screen';
+const LINKED = 'Linked businesses';
+const VENUE_COLLECTIVES = 'the Business collectives screen';
+const LINKED_SCREEN = 'the Linked businesses screen';
 
 export const APP_PLACE_NAMES: Readonly<Record<string, readonly PlaceSwap[]>> = {
   // Linking and joining (setup-copy.ts)
@@ -27,7 +27,7 @@ export const APP_PLACE_NAMES: Readonly<Record<string, readonly PlaceSwap[]>> = {
   'join.block.linksLeft': [['in Linked Accounts', `in ${LINKED}`]],
   'join.links.openLinked': [['in Linked Accounts', `in ${LINKED}`]],
   'join.next.stripeFailed': [['in Settings, Payments', 'in More, Plan & payments']],
-  'setup.venue.alreadyLinked': [['under Venue collectives', `on ${VENUE_COLLECTIVES}`]],
+  'setup.venue.alreadyLinked': [['under Business collectives', `on ${VENUE_COLLECTIVES}`]],
   // The web's Pending requests section is Sent by you on the app's Linked venues screen.
   'setup.venue.youAsked': [['under Pending requests', `under Sent by you on ${LINKED_SCREEN}`]],
   'setup.limit': [['under Pending requests', 'under Sent by you']],
@@ -48,7 +48,7 @@ export const APP_PLACE_NAMES: Readonly<Record<string, readonly PlaceSwap[]>> = {
   'ov.venues.invite.linkCta': [['Go to Linked Accounts', `Go to ${LINKED}`]],
   'ov.linkTodo.change': [['in Linked Accounts', `in ${LINKED}`]],
   'leave.body.access': [['go to Linked accounts', `go to ${LINKED}`]],
-  'bp.name.host.body': [['under Settings, Profile', 'under More, Venue profile']],
+  'bp.name.host.body': [['under Settings, Profile', 'under More, Business profile']],
   'bp.name.collective.help': [['in your dashboard, for example on the Booking Page and Linked Accounts tabs,', `inside ResNeo, for example on the Booking page and ${LINKED} screens,`]],
 };
 

@@ -261,21 +261,21 @@ export default function AppLayout() {
         name="linked-venues/index"
         options={{
           headerShown: true,
-          title: 'Linked venues',
+          title: 'Linked businesses',
         }}
       />
       <Stack.Screen
         name="linked-venues/[id]"
         options={{
           headerShown: true,
-          title: 'Linked venue',
+          title: 'Linked business',
         }}
       />
       <Stack.Screen
         name="collectives/index"
         options={{
           headerShown: true,
-          title: 'Venue collectives',
+          title: 'Business collectives',
         }}
       />
       <Stack.Screen

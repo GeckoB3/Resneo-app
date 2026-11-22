@@ -52,7 +52,7 @@ function makeBooking(overrides: Partial<BookingDetail> = {}): BookingDetail {
 
 /** Expand the collapsible section so its body (composer/log) renders. */
 async function expand() {
-  await press(screen.getByLabelText('SMS / Email guest'));
+  await press(screen.getByLabelText('Text or email client'));
 }
 
 beforeEach(() => {
@@ -60,14 +60,14 @@ beforeEach(() => {
 });
 
 describe('MessageGuestSection — web parity', () => {
-  it('hides entirely only when there is no guest and nothing was ever sent', async () => {
+  it('hides entirely only when there is no client and nothing was ever sent', async () => {
     await render(
       <MessageGuestSection booking={makeBooking({ guest: null, guest_id: '', communications: [] })} />,
     );
-    expect(screen.queryByText('SMS / Email guest')).toBeNull();
+    expect(screen.queryByText('Text or email client')).toBeNull();
   });
 
-  it('stays VISIBLE for a contactless guest and shows a no-contact note (not a composer)', async () => {
+  it('stays VISIBLE for a contactless client and shows a no-contact note (not a composer)', async () => {
     await render(
       <MessageGuestSection
         booking={makeBooking({
@@ -76,15 +76,15 @@ describe('MessageGuestSection — web parity', () => {
       />,
     );
     // The section header is present even with no email/phone (the old gate hid it).
-    expect(screen.getByText('SMS / Email guest')).toBeTruthy();
+    expect(screen.getByText('Text or email client')).toBeTruthy();
     await expand();
     expect(
-      screen.getByText('No email or phone on file. Add contact details to message this guest.'),
+      screen.getByText('No email or phone on file. Add contact details to message this client.'),
     ).toBeTruthy();
     expect(screen.queryByText('Send message')).toBeNull();
   });
 
-  it('messages the address on the booking when there is no guest row', async () => {
+  it('messages the address on the booking when there is no client row', async () => {
     // The web falls back to `bookings.guest_email` (send-custom-booking-message
     // ~159-162), so a booking taken without a profile is still reachable.
     await render(
@@ -93,9 +93,9 @@ describe('MessageGuestSection — web parity', () => {
       />,
     );
 
-    expect(screen.getByText('SMS / Email guest')).toBeTruthy();
+    expect(screen.getByText('Text or email client')).toBeTruthy();
     await expand();
-    expect(screen.getByPlaceholderText('Write a message to the guest…')).toBeTruthy();
+    expect(screen.getByPlaceholderText('Write a message to the client…')).toBeTruthy();
     expect(screen.getByText('Send message')).toBeTruthy();
   });
 
@@ -108,7 +108,7 @@ describe('MessageGuestSection — web parity', () => {
     expect(screen.getByText('Email & SMS (if available)')).toBeTruthy();
     expect(screen.getByText('SMS only')).toBeTruthy();
 
-    await changeText(screen.getByPlaceholderText('Write a message to the guest…'), 'Running late?');
+    await changeText(screen.getByPlaceholderText('Write a message to the client…'), 'Running late?');
     await press(screen.getByText('Send message'));
 
     expect(mockMutate).toHaveBeenCalledTimes(1);
@@ -127,7 +127,7 @@ describe('MessageGuestSection — web parity', () => {
     await render(<MessageGuestSection booking={makeBooking()} />);
     await expand();
 
-    await changeText(screen.getByPlaceholderText('Write a message to the guest…'), 'Hi');
+    await changeText(screen.getByPlaceholderText('Write a message to the client…'), 'Hi');
     await press(screen.getByText('Send message'));
 
     expect(screen.getByText('Email: Delivery failed (check provider configuration)')).toBeTruthy();
@@ -135,16 +135,16 @@ describe('MessageGuestSection — web parity', () => {
 
   it('surfaces a partial send (200 with errors[]) as "Partially sent …"', async () => {
     mockMutate.mockImplementation((_input, opts) => {
-      opts?.onSuccess?.({ success: true, errors: ['SMS: Guest has no phone on file'] });
+      opts?.onSuccess?.({ success: true, errors: ['SMS: Client has no phone on file'] });
     });
     await render(<MessageGuestSection booking={makeBooking()} />);
     await expand();
 
-    await changeText(screen.getByPlaceholderText('Write a message to the guest…'), 'Hi');
+    await changeText(screen.getByPlaceholderText('Write a message to the client…'), 'Hi');
     await press(screen.getByText('Send message'));
 
     expect(
-      screen.getByText('Partially sent. SMS: Guest has no phone on file'),
+      screen.getByText('Partially sent. SMS: Client has no phone on file'),
     ).toBeTruthy();
   });
 

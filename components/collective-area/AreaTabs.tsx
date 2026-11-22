@@ -164,7 +164,7 @@ export function VenuesPanel({
   return (
     <View style={styles.stack}>
       <View style={styles.rowBetween}>
-        <Text variant="subheading">Venues</Text>
+        <Text variant="subheading">Businesses</Text>
         <Button label={areaCopy('ov.venues.invite')} variant="secondary" size="sm" onPress={() => setInviting(true)} />
       </View>
 

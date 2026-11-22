@@ -439,7 +439,7 @@ export default function ReportsScreen() {
             {reportsCopy('staff.ask')}
           </Text>
         ) : (
-          <ErrorState message="Reports are only available to venue admins." />
+          <ErrorState message="Reports are only available to business admins." />
         )}
       </Screen>
     );
@@ -1136,7 +1136,7 @@ export default function ReportsScreen() {
                       badge={pill('cancellation_rate_pct', 'rate', false)}
                     />
                     <StatRow
-                      label={isAppointmentVenue ? `${clientWord}-initiated` : 'Guest-initiated'}
+                      label={isAppointmentVenue ? `${clientWord}-initiated` : 'Client-initiated'}
                       value={String(cancellation.cancelled_guest_initiated)}
                     />
                     {typeof cancellation.cancelled_team_initiated === 'number' ? (

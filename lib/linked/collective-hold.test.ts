@@ -91,15 +91,15 @@ describe('the plan in words', () => {
   it('lists who leaves, then whether the collective carries on, waits or ends', () => {
     const info = breakFromHold(hold(youLeave), 'ifIChange');
     expect(linkBreakLines(info, 'v-me')).toEqual([
-      'You leave Plus 1. You keep every service, calendar and booking, the services from Aura Hair Studio become yours to edit, and guests book you on your own booking page again.',
+      'You leave Plus 1. You keep every service, calendar and booking, the services from Aura Hair Studio become yours to edit, and clients book you on your own booking page again.',
       'Plus 1 carries on with Aura Hair Studio and Light 16.',
     ]);
     expect(linkBreakLines({ ...info, plan: theyLeave }, 'v-me')[0]).toBe(
       'Light 16 leaves Plus 1. It keeps every service, calendar and booking, and its own booking page comes back. Its calendars come off the Plus 1 page straight away.',
     );
-    expect(linkBreakLines({ ...info, plan: ends }, 'v-me')[1]).toMatch(/^Plus 1 needs at least two venues, so it ends\./);
+    expect(linkBreakLines({ ...info, plan: ends }, 'v-me')[1]).toMatch(/^Plus 1 needs at least two businesses, so it ends\./);
     expect(linkBreakLines({ ...info, plan: waits }, 'v-me')[1]).toBe(
-      'Only Aura Hair Studio would be left, so the Plus 1 page stops taking bookings until another venue joins.',
+      'Only Aura Hair Studio would be left, so the Plus 1 page stops taking bookings until another business joins.',
     );
   });
 

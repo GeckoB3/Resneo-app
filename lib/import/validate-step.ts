@@ -18,7 +18,7 @@ export function issueTypeLabel(t: string, clientLabel = 'Client'): string {
   const plural = `${clientLabel}s`;
   const labels: Record<string, string> = {
     reference_skipped: 'Services or staff you chose to skip',
-    booking_defaults_missing: 'Venue setup needed before bookings can import',
+    booking_defaults_missing: 'Business setup needed before bookings can import',
     no_contact_details: `Rows with no way to identify the ${clientLabel.toLowerCase()}`,
     skipped_at_execute: 'Rows skipped during import',
     imported_with_note: 'Rows imported with a note',

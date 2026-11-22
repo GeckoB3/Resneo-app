@@ -259,7 +259,7 @@ export function bookedRevenueCollectiveNote(data: Pick<BookedRevenueReport, 'ven
   const collective = data.collective ?? null;
   const names = (data.venues ?? []).filter((v) => v.access === 'collective').map((v) => v.venue_name);
   if (!collective || names.length === 0) return null;
-  return `Includes ${listVenueNames(names)}, ${names.length === 1 ? 'which is' : 'which are'} part of ${collective.name} with you. Every venue in a collective sees each venue's booked revenue, venue by venue.`;
+  return `Includes ${listVenueNames(names)}, ${names.length === 1 ? 'which is' : 'which are'} part of ${collective.name} with you. Every business in a collective sees each business's booked revenue, business by business.`;
 }
 
 /**
@@ -301,7 +301,7 @@ export function bookedRevenueCsvRows(
   if (showBookedRevenueVenues(data, calendar)) {
     const collective = data.collective ?? null;
     rows.push([]);
-    rows.push(['Venue', 'Booked revenue', collective ? `Through ${collective.name}` : 'Through a collective page']);
+    rows.push(['Business', 'Booked revenue', collective ? `Through ${collective.name}` : 'Through a collective page']);
     for (const v of data.venues ?? []) {
       const cell = data.totals.by_venue?.[v.venue_id];
       rows.push([

@@ -137,7 +137,7 @@ export function CombinedPageConfigEditor({
   const cfg = collective.bookingPageConfig ?? {};
   const router = useRouter();
   const hostName =
-    collective.members.find((m) => m.venueId === collective.hostVenueId)?.venueName ?? 'the host venue';
+    collective.members.find((m) => m.venueId === collective.hostVenueId)?.venueName ?? 'the host business';
 
   // Address strategy.
   const adopt = collective.slugStrategy === 'adopt_member';
@@ -395,7 +395,7 @@ export function CombinedPageConfigEditor({
       <SectionHeader title="Booking page address" />
       <Card style={styles.card}>
         <Text variant="caption" tone="muted">
-          Your combined page works like a single venue: one services menu and one team across all
+          Your combined page works like a single business: one services menu and one team across all
           members. Choose where customers reach it.
         </Text>
         <RadioRow
@@ -405,7 +405,7 @@ export function CombinedPageConfigEditor({
           onPress={setAddressDedicated}
         />
         <RadioRow
-          label="Use a member venue’s existing booking address"
+          label="Use a member business’s existing booking address"
           selected={adopt}
           disabled={update.isPending}
           onPress={() => {
@@ -426,7 +426,7 @@ export function CombinedPageConfigEditor({
               />
             ))}
             <Text variant="caption" color={colors.warning}>
-              That venue’s own page will show the combined page. It can keep a separate page only
+              That business’s own page will show the combined page. It can keep a separate page only
               under a new address.
             </Text>
             {adoptedSlug ? (

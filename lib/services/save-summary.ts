@@ -10,6 +10,7 @@
  */
 import { areaCopy, formatVenueList } from '@/lib/collective-area/copy';
 import { syncFailureReason, type CollectiveCalendarGroup, type CollectiveSync } from '@/lib/collective-area/model';
+import { personAtBusiness } from '@/lib/venue/member-label';
 
 /** The PATCH answer's `collective_sync`. `audit_event_id` is what Put it back sends. */
 export interface ServiceSaveSync extends CollectiveSync {
@@ -57,7 +58,7 @@ export function clearedValuesFrom(
       group && calendar
         ? group.is_host
           ? calendar.name
-          : `${calendar.name} at ${group.venue_name}`
+          : personAtBusiness(calendar.name, group.venue_name)
         : (ownCalendars.find((c) => c.id === e.calendar_id)?.name ?? 'A calendar');
     const words = Object.keys(values).flatMap((column) => (CLEARED_VALUE_WORDS[column] ? [CLEARED_VALUE_WORDS[column]!] : []));
     return [

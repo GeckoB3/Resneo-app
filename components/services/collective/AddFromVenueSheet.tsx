@@ -70,11 +70,11 @@ export function AddFromVenueSheet({
   const loadError = list.isError
     ? refusalText(
         list.error,
-        'Could not load that venue’s services.',
-        'Could not load that venue’s services. Please check your connection.',
+        'Could not load that business’s services.',
+        'Could not load that business’s services. Please check your connection.',
       )
     : null;
-  const venueName = venues.find((v) => v.venue_id === venueId)?.venue_name ?? 'That venue';
+  const venueName = venues.find((v) => v.venue_id === venueId)?.venue_name ?? 'That business';
   const chosen = services?.find((s) => s.id === serviceId) ?? null;
 
   const submit = () => {

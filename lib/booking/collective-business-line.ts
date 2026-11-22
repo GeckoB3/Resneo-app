@@ -1,4 +1,5 @@
 import type { AppointmentCatalogPractitioner } from '@/types/appointment-catalog';
+import { businessBesidePerson } from '@/lib/venue/member-label';
 
 /**
  * On a collective catalogue, the business a person works for, as staff tell look-alike businesses
@@ -17,7 +18,8 @@ export function practitionerBusinessLine(
   if (!practitioner.owning_venue_id) return null;
   const where = practitioner.owning_venue_label?.trim() || practitioner.owning_venue_name?.trim();
   if (!where || practitioner.name.endsWith(`· ${where}`)) return null;
-  return where;
+  // Under Jenny's name, "Aura Hair Studio", not "Aura Hair Studio (Jenny)" (web 2026-11-22).
+  return businessBesidePerson(practitioner.name, where);
 }
 
 /**

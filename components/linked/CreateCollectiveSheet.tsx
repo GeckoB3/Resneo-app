@@ -165,7 +165,7 @@ export function CreateCollectiveSheet({
       {error && step === 'check' && errorStep ? (
         <Pressable accessibilityRole="button" onPress={() => setStep(errorStep)}>
           <Text variant="label" tone="brand">
-            {errorStep === 'venues' ? 'Change the venues' : 'Change the name or address'}
+            {errorStep === 'venues' ? 'Change the businesses' : 'Change the name or address'}
           </Text>
         </Pressable>
       ) : null}
@@ -208,7 +208,7 @@ export function CreateCollectiveSheet({
             <Text variant="bodySmall" tone="secondary">
               {setupCopy('create.venues.empty.body')}
             </Text>
-            <Button label="Open Linked venues" variant="secondary" onPress={() => onOpen('/linked-venues')} />
+            <Button label="Open Linked businesses" variant="secondary" onPress={() => onOpen('/linked-venues')} />
           </View>
         ) : (
           <View style={styles.section}>
@@ -293,7 +293,7 @@ export function CreateCollectiveSheet({
               [
                 { term: setupCopy('create.name.label'), value: collective, to: 'name' },
                 { term: 'Page address', value: `/book/c/${address.slug}`, to: 'name' },
-                { term: 'Venues invited', value: venueList, to: 'venues' },
+                { term: 'Businesses invited', value: venueList, to: 'venues' },
                 { term: 'Your role', value: setupCopy('create.check.role'), to: null },
               ] as { term: string; value: string; to: Step | null }[]
             ).map((row) => (

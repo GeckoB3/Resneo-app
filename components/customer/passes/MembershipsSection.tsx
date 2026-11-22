@@ -59,7 +59,7 @@ export function MembershipsSection() {
       <View style={styles.list}>
         <EmptyState
           title="No memberships"
-          message="A membership you take out with a venue will appear here, with what it covers."
+          message="A membership you take out with a business will appear here, with what it covers."
         />
         {/* Offered with none held: an empty tab is where somebody looks for how
             to get one. */}
@@ -96,7 +96,7 @@ export function MembershipsSection() {
                   { membershipId: membership.id },
                   {
                     onSuccess: () => toast.success('Your membership will keep renewing.'),
-                    onError: () => toast.error('Could not restart it. Please ring the venue.'),
+                    onError: () => toast.error('Could not restart it. Please ring the business.'),
                   },
                 )
               }
@@ -139,7 +139,7 @@ export function MembershipsSection() {
             { membershipId: target.id },
             {
               onSuccess: () => toast.success(membershipCancelConsequence(target)),
-              onError: () => toast.error('Could not cancel. Please ring the venue.'),
+              onError: () => toast.error('Could not cancel. Please ring the business.'),
             },
           );
         }}

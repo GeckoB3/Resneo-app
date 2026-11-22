@@ -194,7 +194,7 @@ describe('MarketplaceSection', () => {
     expect(mockOpenBrowser).toHaveBeenCalledWith(`https://web.example.com/onboarding?site=${mockVenueId}`);
   });
 
-  it('opens the public marketplace without naming a venue', async () => {
+  it('opens the public marketplace without naming a business', async () => {
     await render(<MarketplaceSection isAdmin />);
     await press(screen.getByText('resneo.com/book'));
     expect(mockOpenBrowser).toHaveBeenCalledWith('https://web.example.com/book');
@@ -250,7 +250,7 @@ describe('MarketplaceSection', () => {
     };
     await render(<MarketplaceSection isAdmin />);
     expect(
-      screen.getByText('Your appointments are listed through Glow. Its listing is managed by the host venue.'),
+      screen.getByText('Your appointments are listed through Glow. Its listing is managed by the host business.'),
     ).toBeTruthy();
   });
 });

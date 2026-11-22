@@ -87,10 +87,10 @@ beforeEach(() => {
 });
 
 describe('SuggestionsReviewCard', () => {
-  it('lists the suggestions by venue and adds them all in one request, with nobody asked', async () => {
+  it('lists the suggestions by business and adds them all in one request, with nobody asked', async () => {
     await renderCard(card());
-    expect(await screen.findByText(/^Suggested by your venues/)).toBeTruthy();
-    expect(screen.getByText('Each goes on the Northside page as it is, offered by the calendars of the venue that suggested it.')).toBeTruthy();
+    expect(await screen.findByText(/^Suggested by your businesses/)).toBeTruthy();
+    expect(screen.getByText('Each goes on the Northside page as it is, offered by the calendars of the business that suggested it.')).toBeTruthy();
     expect(screen.getByText('Zen Studio')).toBeTruthy();
     expect(screen.getByText('Glow Bar')).toBeTruthy();
     expect(screen.getAllByText('30 min · £25.00')).toHaveLength(3);
@@ -113,7 +113,7 @@ describe('SuggestionsReviewCard', () => {
       },
     ]);
     expect(await screen.findByText('3 services are on the Northside page.')).toBeTruthy();
-    await waitFor(() => expect(screen.queryByText(/^Suggested by your venues/)).toBeNull());
+    await waitFor(() => expect(screen.queryByText(/^Suggested by your businesses/)).toBeNull());
   });
 
   it('adds only the ticked ones', async () => {
@@ -168,7 +168,7 @@ describe('SuggestionsReviewCard', () => {
     });
     expect(screen.getByText('Leave Brows off the page?')).toBeTruthy();
     expect(
-      screen.getByText('We will let the venues know you are not adding them for now. They keep them, and can suggest them again later.'),
+      screen.getByText('We will let the businesses know you are not adding them for now. They keep them, and can suggest them again later.'),
     ).toBeTruthy();
     await act(async () => {
       fireEvent.press(screen.getByText('Leave it off'));
@@ -189,10 +189,10 @@ describe('SuggestionsReviewCard', () => {
       fireEvent.press(screen.getByText('Leave it off'));
     });
     expect(posts()[0]?.body).toEqual({ service_ids: ['svc-1', 'svc-2', 'svc-3'] });
-    expect(await screen.findByText('3 suggestions are left off the page. We have let the venues know.')).toBeTruthy();
+    expect(await screen.findByText('3 suggestions are left off the page. We have let the businesses know.')).toBeTruthy();
   });
 
-  it('opens every venue\'s services on the suggestions with Review', async () => {
+  it('opens every business\'s services on the suggestions with Review', async () => {
     const onReview = jest.fn();
     await renderCard(card(onReview));
     fireEvent.press(await screen.findByText('Review'));
@@ -209,6 +209,6 @@ describe('SuggestionsReviewCard', () => {
     mockHandler = () => ({ role: 'member', suggestions: [brows] });
     await renderCard(card());
     await waitFor(() => expect(mockCalls).toHaveLength(1));
-    expect(screen.queryByText(/^Suggested by your venues/)).toBeNull();
+    expect(screen.queryByText(/^Suggested by your businesses/)).toBeNull();
   });
 });

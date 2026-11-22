@@ -60,14 +60,14 @@ const groups: VenueServicesGroup[] = [
   },
 ];
 
-describe("every venue's services", () => {
-  it('counts what each venue has on the page and how many it suggested', () => {
+describe("every business's services", () => {
+  it('counts what each business has on the page and how many it suggested', () => {
     const counts = venueCounts(groups);
     expect(counts.get('v-host')).toEqual({ on: 1, total: 2, suggested: 0 });
     expect(counts.get('v-zen')).toEqual({ on: 1, total: 3, suggested: 1 });
   });
 
-  it('filters by venue, by page and by suggestion, and searches names and headings', () => {
+  it('filters by business, by page and by suggestion, and searches names and headings', () => {
     const ids = (venue: string, filter: 'all' | 'on' | 'off' | 'suggested', search = '') =>
       venueServiceRows(groups, venue, filter, search).map((r) => r.service.id);
     expect(ids('all', 'all')).toEqual(['h1', 'h2', 'z1', 'z2', 'z3']);
@@ -80,7 +80,7 @@ describe("every venue's services", () => {
     expect(ids('all', 'all', 'colour')).toEqual(['h1']);
   });
 
-  it("says each service's facts, its venue only when every venue is shown, and its calendars", () => {
+  it("says each service's facts, its business only when every business is shown, and its calendars", () => {
     const [h1, h2] = venueServiceRows(groups, 'all', 'all', '');
     expect(venueServiceFacts(h1!, { symbol: '£', showVenue: true })).toBe(
       '30 min · £25.00 · Colour · Northside Studio (you) · 2 calendars',
@@ -127,7 +127,7 @@ describe("every venue's services", () => {
     expect(declineTitle(['Brows', 'Nails'])).toBe('Leave 2 suggestions off the page?');
     expect(declinedText([{ service: 'Brows', venue: 'Zen Studio' }])).toBe('Brows is left off the page. We have let Zen Studio know.');
     expect(declinedText([{ service: 'A', venue: 'V' }, { service: 'B', venue: 'V' }])).toBe(
-      '2 suggestions are left off the page. We have let the venues know.',
+      '2 suggestions are left off the page. We have let the businesses know.',
     );
   });
 

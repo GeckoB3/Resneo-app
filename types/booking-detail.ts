@@ -248,7 +248,14 @@ export interface BookingDetail extends ContactsHiddenFlag {
    * link context, such as "View booking" after booking on a partner's calendar, offer only what the
    * link allows.
    */
-  viewer_link?: { venue_id: string; venue_name: string | null; act: string; pii: boolean } | null;
+  viewer_link?: {
+    venue_id: string;
+    venue_name: string | null;
+    act: string;
+    pii: boolean;
+    /** Both businesses are in one collective (web 2026-11-22; absent from an older server). */
+    in_collective?: boolean;
+  } | null;
   /** Per-person label on group people visits ("Person 1", a name…). */
   person_label?: string | null;
   /**
@@ -273,6 +280,12 @@ export interface BookingDetail extends ContactsHiddenFlag {
   balance_due_pence?: number | null;
   /** Visit breakdown behind the balance above (§5.7); absent on older payloads. */
   visit_payment?: VisitPayment | null;
+  /**
+   * A visit across businesses waiting on its one pay link (web QA 2026-11-21 COLLECTIVE-PAY-13):
+   * that link covers every business, and which parts are paid or still owed. The words come from
+   * the server. Null otherwise; absent on older servers.
+   */
+  visit_pay_link?: VisitPayLink | null;
   /** In-person payment ledger rows (full GET only; newest first). Visit-wide. */
   payments?: BookingPaymentRow[];
   /**
@@ -289,4 +302,24 @@ export interface BookingDetail extends ContactsHiddenFlag {
 /** PATCH /api/venue/bookings/[id] — status-only updates for v1 mobile actions. */
 export interface UpdateBookingStatusPayload {
   status: BookingStatus;
+}
+
+/** GET /api/venue/bookings/[id] `visit_pay_link`: the visit's one open pay link. */
+export interface VisitPayLink {
+  checkout_id: string;
+  expires_at: string;
+  /** The client's last card was declined; the link is open for another. */
+  card_declined: boolean;
+  /** Server words: "One payment link covers every business in this visit. ..." */
+  summary: string;
+  parts: {
+    venue_id: string;
+    business_name: string;
+    is_this_business: boolean;
+    due_pence: number;
+    hold_fee_pence: number;
+    status: 'paid' | 'owed' | 'card_needed' | 'nothing_due';
+    /** Server words: "Aura Hair Studio: £15.00 deposit, paid at the desk." */
+    line: string;
+  }[];
 }

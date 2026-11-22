@@ -22,18 +22,18 @@ describe('bookingModificationNotifyOutcome', () => {
 
   it('passes the server reason through when the send was skipped', () => {
     expect(
-      bookingModificationNotifyOutcome({ skipped: true, skippedReason: 'Guest has no email or phone on file' }),
-    ).toEqual({ sent: false, message: 'Guest has no email or phone on file' });
+      bookingModificationNotifyOutcome({ skipped: true, skippedReason: 'Client has no email or phone on file' }),
+    ).toEqual({ sent: false, message: 'Client has no email or phone on file' });
   });
 
   it('explains a skip with no reason, and a 200 that sent nothing', () => {
     expect(bookingModificationNotifyOutcome({ skipped: true })).toEqual({
       sent: false,
-      message: 'Guest was not notified (reschedule notifications are off).',
+      message: 'Client was not notified (reschedule notifications are off).',
     });
     expect(bookingModificationNotifyOutcome({})).toEqual({
       sent: false,
-      message: 'Guest has no email or phone on file, so the update was not sent.',
+      message: 'Client has no email or phone on file, so the update was not sent.',
     });
   });
 });

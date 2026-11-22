@@ -43,8 +43,8 @@ export default function ChooseAccountScreen() {
   if (surfaces.staff) {
     options.push({
       key: 'staff',
-      title: 'Venue dashboard',
-      description: 'Manage bookings, clients and your venue',
+      title: 'Business dashboard',
+      description: 'Manage bookings, clients and your business',
       onPress: () => choose('staff'),
     });
   }

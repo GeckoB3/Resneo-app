@@ -260,7 +260,7 @@ export default function ClassProductsScreen() {
         <Stack.Screen options={{ headerShown: true, title: 'Class products' }} />
         <EmptyState
           title="Class products not enabled"
-          message="Prepaid credit packs, courses and memberships aren't enabled for this venue yet. Contact support to turn on class commerce."
+          message="Prepaid credit packs, courses and memberships aren't enabled for this business yet. Contact support to turn on class commerce."
         />
       </Screen>
     );
@@ -430,7 +430,7 @@ export default function ClassProductsScreen() {
         <View style={styles.confirmSheet}>
           <Text variant="subheading">Delete product</Text>
           <Text variant="bodySmall" tone="secondary">
-            Delete &quot;{deleteTarget?.name}&quot;? Archive it instead if guests have used it
+            Delete &quot;{deleteTarget?.name}&quot;? Archive it instead if clients have used it
             before. Deletion is blocked while balances, enrollments or subscriptions reference it.
           </Text>
           <View style={styles.actionsRow}>

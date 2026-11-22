@@ -155,7 +155,7 @@ export function ClassRosterView({
             hapticSuccess();
             toast.success(`${row.guest_name} checked in.`);
           },
-          onError: (e) => handleAttendanceError(e, 'Could not check in this guest.'),
+          onError: (e) => handleAttendanceError(e, 'Could not check in this client.'),
           onSettled: () => setPendingBookingId(null),
         },
       );
@@ -173,7 +173,7 @@ export function ClassRosterView({
             hapticSuccess();
             toast.success(`${row.guest_name} marked as no-show.`);
           },
-          onError: (e) => handleAttendanceError(e, 'Could not mark this guest as no-show.'),
+          onError: (e) => handleAttendanceError(e, 'Could not mark this client as no-show.'),
           onSettled: () => setPendingBookingId(null),
         },
       );
@@ -198,9 +198,9 @@ export function ClassRosterView({
       return;
     }
     try {
-      const header = ['Guest', 'Status', 'Party size', 'Checked in', 'Phone', 'Email'];
+      const header = ['Client', 'Status', 'Party size', 'Checked in', 'Phone', 'Email'];
       const rows = attendees.map((row) => [
-        row.guest_name ?? 'Guest',
+        row.guest_name ?? 'Client',
         row.status ?? '',
         String(row.party_size ?? ''),
         formatTime(row.checked_in_at) ?? '',
@@ -307,7 +307,7 @@ export function ClassRosterView({
         {isAdmin ? (
           <IconButton
             icon={{ ios: 'xmark.circle', android: 'cancel', web: 'cancel' }}
-            accessibilityLabel="Cancel session and notify guests"
+            accessibilityLabel="Cancel session and notify clients"
             tint={colors.danger}
             iconSize={20}
             onPress={() => {
@@ -353,7 +353,7 @@ export function ClassRosterView({
           {attendees.length === 0 ? (
             <EmptyState
               title="No bookings yet"
-              message="When guests book this session, they will appear here."
+              message="When clients book this session, they will appear here."
             />
           ) : (
             attendees.map((row) => {
@@ -449,7 +449,7 @@ export function ClassRosterView({
               {commerceLocked
                 ? 'Class check-in is not included in this plan. Manage attendance on the web dashboard. Tap an attendee to update their booking (confirm, start or cancel).'
                 : isAdmin
-                  ? 'Tap an attendee to update their booking (confirm, start or cancel). Use the ✕ in the header to cancel the whole session and notify guests.'
+                  ? 'Tap an attendee to update their booking (confirm, start or cancel). Use the ✕ in the header to cancel the whole session and notify clients.'
                   : 'Tap an attendee to update their booking (confirm, start or cancel).'}
             </Text>
           </View>
@@ -471,11 +471,11 @@ export function ClassRosterView({
             Cancel &quot;{session.name}&quot; on {formatDayHeading(session.date)} at{' '}
             {session.startTime}?{' '}
             {activeSpots > 0
-              ? `${activeSpots} booking(s) will be cancelled, refunded per your policy, and the guests notified.`
-              : 'This frees the calendar slot and notifies any booked guests.'}
+              ? `${activeSpots} booking(s) will be cancelled, refunded per your policy, and the clients notified.`
+              : 'This frees the calendar slot and notifies any booked clients.'}
           </Text>
           <Input
-            label="Reason for guests"
+            label="Reason for clients"
             optional
             value={cancelReason}
             onChangeText={setCancelReason}

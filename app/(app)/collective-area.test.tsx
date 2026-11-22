@@ -149,7 +149,7 @@ const block = (role: 'master' | 'replica' | 'parked') => ({
   role,
   collective_id: 'col-1',
   collective_name: 'Northside',
-  host_venue_name: 'Host Venue',
+  host_venue_name: 'Host Business',
   item_id: role === 'parked' ? null : 'item-1',
   locked_fields: [],
   delegated_fields: [],
@@ -199,7 +199,7 @@ const hostView: VenueServicesResponse = {
   host_venue_id: 'v-host',
   host_name: null,
   venues: [
-    { venue_id: 'v-host', venue_name: 'Host Venue', is_host: true, services: [service('s1', 'Balayage', { on_page: true })] },
+    { venue_id: 'v-host', venue_name: 'Host Business', is_host: true, services: [service('s1', 'Balayage', { on_page: true })] },
     { venue_id: 'v-zen', venue_name: 'Zen Studio', is_host: false, services: [service('z1', 'Brows')] },
   ],
 };
@@ -227,27 +227,27 @@ describe('CollectiveAreaScreen', () => {
   it('is for admins only, as on the web', async () => {
     mockRole = 'staff';
     await render(<CollectiveAreaScreen />);
-    expect(screen.getByText('Only venue admins can manage a collective.')).toBeTruthy();
+    expect(screen.getByText('Only business admins can manage a collective.')).toBeTruthy();
   });
 
-  it('says so when the venue is in no collective', async () => {
+  it('says so when the business is in no collective', async () => {
     mockServices = [{ id: 's1', name: 'Cut', collective: null }];
     await render(<CollectiveAreaScreen />);
     expect(screen.getByText(/not part of a collective yet/)).toBeTruthy();
   });
 
-  it('gives a host the services across the venues, and the Venues tab', async () => {
+  it('gives a host the services across the businesses, and the Businesses tab', async () => {
     mockServices = [{ id: 's1', name: 'Balayage', collective: block('master') }];
     await render(<CollectiveAreaScreen />);
     await act(async () => {
       fireEvent.press(screen.getByTestId('collective-section-picker'));
     });
-    expect(screen.getByRole('menuitem', { name: 'Venues' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Businesses' })).toBeTruthy();
     expect(screen.getByText('Balayage')).toBeTruthy();
     expect(screen.getByPlaceholderText('Search services')).toBeTruthy();
   });
 
-  it("gives a member the host's grid in one section, its own calendars only, and no Venues tab (2026-11-05)", async () => {
+  it("gives a member the host's grid in one section, its own calendars only, and no Businesses tab (2026-11-05)", async () => {
     mockServices = [
       { id: 's1', name: 'Balayage', collective: block('replica') },
       { id: 's2', name: 'Old cut', collective: block('parked') },
@@ -257,7 +257,7 @@ describe('CollectiveAreaScreen', () => {
     await act(async () => {
       fireEvent.press(screen.getByTestId('collective-section-picker'));
     });
-    expect(screen.queryByRole('menuitem', { name: 'Venues' })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: 'Businesses' })).toBeNull();
     await act(async () => {
       fireEvent.press(screen.getByTestId('collective-section-picker'));
     });
@@ -272,7 +272,7 @@ describe('CollectiveAreaScreen', () => {
     expect(screen.queryByText('Not on the page')).toBeNull();
     expect(screen.getByText('Select')).toBeTruthy();
   });
-  it("lets a host switch to every venue's services, with the members' suggestions above (2026-10-27)", async () => {
+  it("lets a host switch to every business's services, with the members' suggestions above (2026-10-27)", async () => {
     mockServices = [{ id: 's1', name: 'Balayage', collective: block('master') }];
     mockVenueServices = hostView;
     mockSuggestions = [
@@ -287,35 +287,35 @@ describe('CollectiveAreaScreen', () => {
       },
     ];
     await render(<CollectiveAreaScreen />);
-    expect(screen.getByText(/^Suggested by your venues/)).toBeTruthy();
+    expect(screen.getByText(/^Suggested by your businesses/)).toBeTruthy();
     expect(screen.getByText('Add it')).toBeTruthy();
     // The grid first, as before.
     expect(screen.getByText('On the page')).toBeTruthy();
     expect(screen.getByText('All services')).toBeTruthy();
     await act(async () => {
-      fireEvent.press(screen.getByText("Every venue's services"));
+      fireEvent.press(screen.getByText("Every business's services"));
     });
-    expect(screen.getByText('All venues')).toBeTruthy();
+    expect(screen.getByText('All businesses')).toBeTruthy();
     expect(screen.getByText('1 of 1 on the page')).toBeTruthy();
     expect(screen.queryByText('All services')).toBeNull();
   });
 
-  it("opens straight onto every venue's services from a bell's link", async () => {
+  it("opens straight onto every business's services from a bell's link", async () => {
     mockServices = [{ id: 's1', name: 'Balayage', collective: block('master') }];
     mockVenueServices = hostView;
     mockParams = { view: 'venues', venue: 'v-zen', filter: 'suggested' };
     await render(<CollectiveAreaScreen />);
-    expect(screen.getByText('All venues')).toBeTruthy();
+    expect(screen.getByText('All businesses')).toBeTruthy();
     expect(screen.queryByText('All services')).toBeNull();
   });
 
-  it("keeps the grid alone on a server without every venue's services", async () => {
+  it("keeps the grid alone on a server without every business's services", async () => {
     mockServices = [{ id: 's1', name: 'Balayage', collective: block('master') }];
     mockVenueServices = null;
     mockParams = { view: 'venues' };
     await render(<CollectiveAreaScreen />);
-    expect(screen.queryByText("Every venue's services")).toBeNull();
-    expect(screen.queryByText(/^Suggested by your venues/)).toBeNull();
+    expect(screen.queryByText("Every business's services")).toBeNull();
+    expect(screen.queryByText(/^Suggested by your businesses/)).toBeNull();
     expect(screen.getByText('All services')).toBeTruthy();
   });
 
@@ -328,13 +328,13 @@ describe('CollectiveAreaScreen', () => {
       role: 'member',
       collective_name: 'Northside',
       host_venue_id: 'v-host',
-      host_name: 'Host Venue',
+      host_name: 'Host Business',
       venues: [{ venue_id: 'v-zen', venue_name: 'Zen Studio', is_host: false, services: [service('s2', 'Old cut')] }],
     };
     await render(<CollectiveAreaScreen />);
     expect(screen.getByText('Your services')).toBeTruthy();
-    expect(screen.getByText('Suggest to Host Venue (0)')).toBeTruthy();
-    expect(screen.queryByText("Every venue's services")).toBeNull();
+    expect(screen.getByText('Suggest to Host Business (0)')).toBeTruthy();
+    expect(screen.queryByText("Every business's services")).toBeNull();
     expect(screen.getByText(/^On the Northside page/)).toBeTruthy();
   });
   it("lets the host set a member calendar's own values from a service's sheet (2026-10-28)", async () => {
@@ -397,7 +397,7 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
   // Ada offers Balayage already, Ben does not.
   const hostGroup: CollectiveCalendarGroup = {
     venue_id: 'v-host',
-    venue_name: 'Host Venue',
+    venue_name: 'Host Business',
     is_host: true,
     sync,
     calendars: [
@@ -448,12 +448,12 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
       fireEvent.press(screen.getByRole('button', { name: 'Choose calendars' }));
     });
     expect(screen.getByText('For Balayage.')).toBeTruthy();
-    expect(screen.getByLabelText('Ada at Host Venue').props.accessibilityState).toMatchObject({ checked: true });
-    expect(screen.getByLabelText('Ben at Host Venue').props.accessibilityState).toMatchObject({ checked: false });
+    expect(screen.getByLabelText('Ada at Host Business').props.accessibilityState).toMatchObject({ checked: true });
+    expect(screen.getByLabelText('Ben at Host Business').props.accessibilityState).toMatchObject({ checked: false });
     // Ticking Ada again changes nothing, so nothing is offered to save.
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
     await act(async () => {
-      fireEvent.press(screen.getByLabelText('Ben at Host Venue'));
+      fireEvent.press(screen.getByLabelText('Ben at Host Business'));
     });
     await act(async () => {
       fireEvent.press(screen.getByRole('button', { name: 'Save 1 change' }));
@@ -472,7 +472,7 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
     });
     expect(screen.getByRole('button', { name: 'Done' })).toBeTruthy();
     await act(async () => {
-      fireEvent(screen.getByLabelText('Ben at Host Venue'), 'valueChange', true);
+      fireEvent(screen.getByLabelText('Ben at Host Business'), 'valueChange', true);
     });
     expect(screen.queryByRole('button', { name: 'Done' })).toBeNull();
     await act(async () => {
@@ -484,7 +484,7 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
       fireEvent.press(screen.getByLabelText('Balayage'));
     });
     await act(async () => {
-      fireEvent(screen.getByLabelText('Ben at Host Venue'), 'valueChange', true);
+      fireEvent(screen.getByLabelText('Ben at Host Business'), 'valueChange', true);
     });
     await act(async () => {
       fireEvent.press(screen.getByRole('button', { name: 'Save' }));
@@ -499,9 +499,9 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
     ];
     await render(<CollectiveAreaScreen />);
     expect(
-      screen.getByText('Switched off on your Services page, so nobody can book it at any venue, even though it is on the page.'),
+      screen.getByText('Switched off on your Services page, so nobody can book it at any business, even though it is on the page.'),
     ).toBeTruthy();
-    expect(screen.getByText('Hidden from guests')).toBeTruthy();
+    expect(screen.getByText('Hidden from clients')).toBeTruthy();
     // A parked one switched off says both, and has no switch of its own.
     expect(screen.getByText('Parked, switched off')).toBeTruthy();
     expect(screen.queryByLabelText('Switch it on: Old cut')).toBeNull();
@@ -511,7 +511,7 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
     expect(mockSwitchOn).toHaveBeenCalledWith('s1');
     // What needs you says so too, with the same switch (CQ-13).
     expect(
-      screen.getByText('Balayage is switched off on your Services page, so nobody can book it at any venue.'),
+      screen.getByText('Balayage is switched off on your Services page, so nobody can book it at any business.'),
     ).toBeTruthy();
     await act(async () => {
       fireEvent.press(screen.getByRole('button', { name: 'Switch it on' }));
@@ -535,7 +535,7 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
     expect(screen.getByText('Add a calendar to this service before switching it on.')).toBeTruthy();
   });
 
-  it('runs the updates of a venue that is behind with Update now', async () => {
+  it('runs the updates of a business that is behind with Update now', async () => {
     mockGroups = [
       hostGroup,
       {
@@ -565,7 +565,7 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
   });
 
   // Regression (CQ-10.7): the new venue's row had no button, so the host could not act on it here.
-  it("opens Choose calendars for a new venue's calendars from What needs you", async () => {
+  it("opens Choose calendars for a new business's calendars from What needs you", async () => {
     mockGroups = [
       hostGroup,
       {
@@ -583,12 +583,12 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
     });
     expect(screen.getByText('For Balayage.')).toBeTruthy();
     expect(screen.getByLabelText('Cy at Zen Studio')).toBeTruthy();
-    expect(screen.queryByLabelText('Ada at Host Venue')).toBeNull();
+    expect(screen.queryByLabelText('Ada at Host Business')).toBeNull();
     // The venue alone picked: never the page buttons (CQ-03).
     expect(screen.queryByRole('button', { name: 'Take off the page' })).toBeNull();
   });
 
-  it('opens straight on a venue\'s calendars with ?choose= (What needs you on Services)', async () => {
+  it('opens straight on a business\'s calendars with ?choose= (What needs you on Services)', async () => {
     mockGroups = [
       hostGroup,
       {
@@ -602,10 +602,10 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
     mockParams = { choose: 'v-zen' };
     await render(<CollectiveAreaScreen />);
     expect(screen.getByLabelText('Cy at Zen Studio')).toBeTruthy();
-    expect(screen.queryByLabelText('Ada at Host Venue')).toBeNull();
+    expect(screen.queryByLabelText('Ada at Host Business')).toBeNull();
   });
 
-  it("marks the host's own venue (you) on the Venues tab (CQ-07)", async () => {
+  it("marks the host's own business (you) on the Businesses tab (CQ-07)", async () => {
     mockCollectives = [
       {
         id: 'col-1',
@@ -620,14 +620,14 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
       },
     ];
     await render(<CollectiveAreaScreen />);
-    await openSection('Venues');
+    await openSection('Businesses');
     expect(screen.getByText('Aura Hair Studio (you)')).toBeTruthy();
     expect(screen.getByText('Aura Hair Studio in Holywood')).toBeTruthy();
   });
 
   // CQ-10.3 (R2-21): right after Create, or when the only member leaves, nothing is parked or on the
   // page, so the services carry no collective. The host used to read "No collective" here.
-  it('opens a host with nothing on the page and no other venue on Venues, from the collectives list', async () => {
+  it('opens a host with nothing on the page and no other business on Businesses, from the collectives list', async () => {
     mockServices = [{ id: 's1', name: 'Cut', collective: null }];
     mockCollectives = [
       {
@@ -640,7 +640,7 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
         serviceModel: 'replicas',
         activeMemberCount: 1,
         members: [
-          { venueId: 'v-host', venueName: 'Host Venue', status: 'active' },
+          { venueId: 'v-host', venueName: 'Host Business', status: 'active' },
           { venueId: 'v-zen', venueName: 'Zen Studio', status: 'invited' },
         ],
       },
@@ -649,11 +649,11 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
     expect(screen.queryByText(/not part of a collective yet/)).toBeNull();
     expect(screen.getByText('Northside')).toBeTruthy();
     // On Venues: invite a venue, or end it.
-    expect(screen.getByRole('button', { name: 'Invite a venue' })).toBeTruthy();
-    expect(screen.getByText('Host Venue (you)')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Invite a business' })).toBeTruthy();
+    expect(screen.getByText('Host Business (you)')).toBeTruthy();
   });
 
-  it("opens on Venues from Manage combined page's pointer (tab=venues)", async () => {
+  it("opens on Businesses from Manage combined page's pointer (tab=businesses)", async () => {
     mockServices = [{ id: 's1', name: 'Balayage', collective: block('master') }];
     mockParams = { tab: 'venues' };
     mockCollectives = [
@@ -663,11 +663,11 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
         hostVenueId: 'v-host',
         myVenueId: 'v-host',
         serviceModel: 'replicas',
-        members: [{ venueId: 'v-host', venueName: 'Host Venue', status: 'active' }],
+        members: [{ venueId: 'v-host', venueName: 'Host Business', status: 'active' }],
       },
     ];
     await render(<CollectiveAreaScreen />);
-    expect(screen.getByRole('button', { name: 'Invite a venue' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Invite a business' })).toBeTruthy();
     expect(screen.queryByText('Balayage')).toBeNull();
   });
 
@@ -694,13 +694,13 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
       { id: 's3', name: 'Brows', collective: block('replica'), is_active: false },
     ];
     await render(<CollectiveAreaScreen />);
-    expect(screen.getByText('Switched off by Host Venue, so nobody can book it')).toBeTruthy();
+    expect(screen.getByText('Switched off by Host Business, so nobody can book it')).toBeTruthy();
     expect(screen.queryByText('Turn it on')).toBeNull();
     // A member can leave from here, now the More tab shows one collective row.
     expect(screen.getByRole('button', { name: 'Leave Northside' })).toBeTruthy();
   });
 
-  it('shows under Venues joining only a link this venue set to less than full access, with the way to change it', async () => {
+  it('shows under Businesses joining only a link this business set to less than full access, with the way to change it', async () => {
     const todo = (venue: string, state: InviteeLinkTodo['state']): InviteeLinkTodo => ({
       collective_id: 'col-1',
       collective_name: 'Northside',
@@ -712,7 +712,7 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
     });
     mockLinkTodos = [todo('Light', 'none'), todo('Oak', 'my_request'), todo('Ash', 'their_request'), todo('Elm', 'not_full')];
     await render(<CollectiveAreaScreen />);
-    expect(screen.getByText('Venues joining')).toBeTruthy();
+    expect(screen.getByText('Businesses joining')).toBeTruthy();
     expect(
       screen.getByText(
         'Elm is invited to join Northside, but your link with them gives less than full access both ways, so they cannot join until you change it.',
@@ -722,7 +722,7 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
     expect(screen.queryByText(/^(Light|Oak|Ash) is invited/)).toBeNull();
     expect(screen.queryByRole('button', { name: /^Link with / })).toBeNull();
     await act(async () => {
-      fireEvent.press(screen.getByLabelText('Change it in Linked venues: Elm'));
+      fireEvent.press(screen.getByLabelText('Change it in Linked businesses: Elm'));
     });
     expect(mockPush).toHaveBeenCalledWith('/linked-venues');
   });
@@ -794,16 +794,16 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
     expect(screen.queryByTestId('client-sharing-todos')).toBeNull();
   });
 
-  it('shows nothing under Venues joining when every link is made as they join', async () => {
+  it('shows nothing under Businesses joining when every link is made as they join', async () => {
     mockLinkTodos = [
       { collective_id: 'col-1', collective_name: 'Northside', venue_id: 'v-oak', venue_name: 'Oak', venue_slug: 'oak', state: 'my_request', link_id: 'l' },
       { collective_id: 'col-1', collective_name: 'Northside', venue_id: 'v-ash', venue_name: 'Ash', venue_slug: 'ash', state: 'none', link_id: null },
     ];
     await render(<CollectiveAreaScreen />);
-    expect(screen.queryByText('Venues joining')).toBeNull();
+    expect(screen.queryByText('Businesses joining')).toBeNull();
   });
 
-  it('invites any venue from the Venues tab, showing what joining takes first', async () => {
+  it('invites any business from the Businesses tab, showing what joining takes first', async () => {
     mockCollectives = [
       {
         id: 'col-1',
@@ -812,7 +812,7 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
         myVenueId: 'v-host',
         serviceModel: 'replicas',
         members: [
-          { venueId: 'v-host', venueName: 'Host Venue', status: 'active' },
+          { venueId: 'v-host', venueName: 'Host Business', status: 'active' },
           { venueId: 'v-zen', venueName: 'Zen Studio', status: 'active' },
         ],
       },
@@ -826,16 +826,16 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
       already: null,
       standing: { standing: 'ok', reason: null, detail: null },
       links: [
-        { venue_id: 'v-host', venue_name: 'Host Venue', venue_slug: 'host', is_host: true, state: 'full', link_id: 'l1' },
+        { venue_id: 'v-host', venue_name: 'Host Business', venue_slug: 'host', is_host: true, state: 'full', link_id: 'l1' },
         { venue_id: 'v-zen', venue_name: 'Zen Studio', venue_slug: 'zen', is_host: false, state: 'none', link_id: null },
       ],
     });
     await render(<CollectiveAreaScreen />);
-    await openSection('Venues');
+    await openSection('Businesses');
     await act(async () => {
-      fireEvent.press(screen.getByRole('button', { name: 'Invite a venue' }));
+      fireEvent.press(screen.getByRole('button', { name: 'Invite a business' }));
     });
-    expect(screen.getByText('Invite a venue to Northside')).toBeTruthy();
+    expect(screen.getByText('Invite a business to Northside')).toBeTruthy();
     // A venue that cannot join says why, and cannot be chosen.
     expect(screen.getByText('In Europe/Paris, not Europe/London')).toBeTruthy();
     expect(screen.queryByLabelText('Choose Far Away')).toBeNull();
@@ -853,7 +853,7 @@ describe('CollectiveAreaScreen, 2026-10-28', () => {
     });
     expect(
       screen.getByText(
-        'Invitation sent to Light 3. When they accept it, they are linked with every venue here and join, in one step.',
+        'Invitation sent to Light 3. When they accept it, they are linked with every business here and join, in one step.',
       ),
     ).toBeTruthy();
   });
@@ -881,7 +881,7 @@ describe('CollectiveAreaScreen, the section control (card-on-file plan §21, D28
     expect(screen.getByTestId('collective-section-picker').props.accessibilityState).toEqual({ expanded: true });
     const names = screen.getAllByRole('menuitem').map((item) => item.props.accessibilityLabel);
     // The host offers shared client lists there, so Clients is listed too.
-    expect(names).toEqual(['Services', 'Classes & more', 'Venues', 'Clients', 'History', 'Settings']);
+    expect(names).toEqual(['Services', 'Classes & more', 'Businesses', 'Clients', 'History', 'Settings']);
     expect(screen.getByRole('menuitem', { name: 'Services' }).props.accessibilityState).toEqual({ selected: true });
   });
 

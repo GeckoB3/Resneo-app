@@ -151,11 +151,11 @@ describe('LinkSetupSheet with a collective', () => {
     expect(screen.getByText('Aura (/book/aura) leads to /book/c/riverside')).toBeTruthy();
     expect(screen.getByText('Bright Cuts (/book/bright-cuts) leads to /book/c/riverside')).toBeTruthy();
     // The wizard's link is the one being sent; Create's are in force already.
-    expect(screen.getByText(/The link you are sending is what lets the two venues see each other/)).toBeTruthy();
+    expect(screen.getByText(/The link you are sending is what lets the two businesses see each other/)).toBeTruthy();
     expect(screen.queryByText(/is already linked with the others/)).toBeNull();
 
     await act(async () => {
-      fireEvent.press(screen.getByRole('checkbox', { name: 'I understand what changes for Aura and for the venues I invite.' }));
+      fireEvent.press(screen.getByRole('checkbox', { name: 'I understand what changes for Aura and for the businesses I invite.' }));
     });
     await press('Continue');
     await press('Send request');
@@ -207,11 +207,11 @@ describe('the level step: nothing is picked for you (CQ-17.5)', () => {
   });
 });
 
-describe('a venue with a request already, either way (CQ-17.6)', () => {
+describe('a business with a request already, either way (CQ-17.6)', () => {
   const request = (state: 'their_request' | 'my_request'): VenueLookupResponse => ({
     ...BRIGHT,
     eligible: false,
-    reason: 'There is already a pending request with this venue.',
+    reason: 'There is already a pending request with this business.',
     link: { id: 'link-1', state, requested_at: '2026-10-30T10:00:00Z' },
     requester_collective: null,
     same_collective: false,
@@ -221,28 +221,28 @@ describe('a venue with a request already, either way (CQ-17.6)', () => {
     mockLookup = request('their_request');
     await open();
     expect(screen.getByText('Bright Cuts has already asked to link with you. Review their request to answer it.')).toBeTruthy();
-    expect(screen.queryByText('There is already a pending request with this venue.')).toBeNull();
+    expect(screen.queryByText('There is already a pending request with this business.')).toBeNull();
     expect(continueDisabled()).toBe(true);
     await press('Review their request');
     expect(mockReview).toHaveBeenCalledWith('link-1');
   });
 
-  it("says where a request of this venue's own is, with the app's name for it", async () => {
+  it("says where a request of this business's own is, with the app's name for it", async () => {
     mockLookup = request('my_request');
     await open();
     expect(
-      screen.getByText('You have already asked Bright Cuts to link. The request waits under Sent by you on the Linked venues screen, where you can cancel it.'),
+      screen.getByText('You have already asked Bright Cuts to link. The request waits under Sent by you on the Linked businesses screen, where you can cancel it.'),
     ).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Review their request' })).toBeNull();
   });
 });
 
-describe('a venue already linked (CQ-17.2)', () => {
+describe('a business already linked (CQ-17.2)', () => {
   const linked = (more: Partial<Extract<VenueLookupResponse, { found: true }>>): VenueLookupResponse => ({
     ...BRIGHT,
     eligible: false,
     alreadyLinked: true,
-    reason: 'You are already linked with this venue.',
+    reason: 'You are already linked with this business.',
     ...more,
   });
   const LINK = { id: 'link-2', requested_at: null };
@@ -260,7 +260,7 @@ describe('a venue already linked (CQ-17.2)', () => {
     mockLookup = linked({ link: { ...LINK, state: 'not_full' }, requester_collective: HOST, same_collective: false });
     await open();
     expect(
-      screen.getByText('You are already linked with Bright Cuts. To bring them onto the Plus 1 page, invite them in Manage Collective, under Venues.'),
+      screen.getByText('You are already linked with Bright Cuts. To bring them onto the Plus 1 page, invite them in Manage Collective, under Businesses.'),
     ).toBeTruthy();
   });
 
@@ -275,7 +275,7 @@ describe('a venue already linked (CQ-17.2)', () => {
   it('points a member at no way to start a page, whatever the link', async () => {
     mockLookup = linked({ link: { ...LINK, state: 'not_full' }, requester_collective: MEMBER, same_collective: false });
     await open();
-    expect(screen.getByText('You are already linked with this venue.')).toBeTruthy();
+    expect(screen.getByText('You are already linked with this business.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Edit permissions' })).toBeNull();
   });
 
@@ -283,7 +283,7 @@ describe('a venue already linked (CQ-17.2)', () => {
     mockLookup = linked({ link: { ...LINK, state: 'full' }, requester_collective: null, same_collective: false });
     await open();
     expect(
-      screen.getByText('You are already linked with Bright Cuts. To share one booking page with them, use Create venue collective, on the Venue collectives screen.'),
+      screen.getByText('You are already linked with Bright Cuts. To share one booking page with them, use Create business collective, on the Business collectives screen.'),
     ).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Edit permissions' })).toBeNull();
   });
@@ -296,7 +296,7 @@ describe('the shared page on the level step and after it (CQ-17.4, CQ-17.7)', ()
     expect(setupCopy('setup.level.collectiveReady')).toBe('Collective ready');
   });
 
-  it("says when the other venue cannot be on a shared page and why, and leaves the step out", async () => {
+  it("says when the other business cannot be on a shared page and why, and leaves the step out", async () => {
     mockLookup = { ...BRIGHT, collective: { standing: 'blocked', reason: 'In Europe/Paris, not Europe/London', detail: null } };
     await openAtLevel();
     expect(screen.getByText('No shared page with Bright Cuts')).toBeTruthy();
@@ -323,7 +323,7 @@ describe('the shared page on the level step and after it (CQ-17.4, CQ-17.7)', ()
     expect(screen.getByText('When Bright Cuts accepts, the link starts straight away.')).toBeTruthy();
   });
 
-  it("tells a member first, as the other venue's standing is not what stops them", async () => {
+  it("tells a member first, as the other business's standing is not what stops them", async () => {
     mockLookup = {
       ...BRIGHT,
       collective: { standing: 'blocked', reason: 'In Europe/Paris, not Europe/London', detail: null },
@@ -336,11 +336,11 @@ describe('the shared page on the level step and after it (CQ-17.4, CQ-17.7)', ()
     expect(screen.queryByText('No shared page with Bright Cuts')).toBeNull();
   });
 
-  it('tells a venue with an open invitation to answer it, in the app', async () => {
+  it('tells a business with an open invitation to answer it, in the app', async () => {
     mockLookup = { ...BRIGHT, collective: OK, link: null, requester_collective: { ...PLUS_1, role: 'invited' }, same_collective: false };
     await openAtLevel();
     expect(
-      screen.getByText('Your venue has been invited to Plus 1. Accept or decline the invitation on the Venue collectives screen first.'),
+      screen.getByText('Your business has been invited to Plus 1. Accept or decline the invitation on the Business collectives screen first.'),
     ).toBeTruthy();
     await pick(FULL_CARD);
     await press('Continue');
@@ -401,7 +401,7 @@ describe('the shared page on the level step and after it (CQ-17.4, CQ-17.7)', ()
       expect(mockSend.mock.calls[0][0].inviteTo).toBeUndefined();
     });
 
-    it('does not offer it when the other venue cannot join', async () => {
+    it('does not offer it when the other business cannot join', async () => {
       mockLookup = {
         ...BRIGHT,
         collective: { standing: 'blocked', reason: 'Already part of another collective', detail: null },
@@ -433,16 +433,16 @@ describe('at the request limit', () => {
 
 describe('an older server, which sends none of the new fields', () => {
   it('keeps the plain already-linked line', async () => {
-    mockLookup = { ...BRIGHT, eligible: false, alreadyLinked: true, reason: 'You are already linked with this venue.' };
+    mockLookup = { ...BRIGHT, eligible: false, alreadyLinked: true, reason: 'You are already linked with this business.' };
     await open();
-    expect(screen.getByText(/To share one booking page with them, use Create venue collective/)).toBeTruthy();
+    expect(screen.getByText(/To share one booking page with them, use Create business collective/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Edit permissions' })).toBeNull();
   });
 
   it("keeps the server's reason for a pending request", async () => {
-    mockLookup = { ...BRIGHT, eligible: false, reason: 'There is already a pending request with this venue.' };
+    mockLookup = { ...BRIGHT, eligible: false, reason: 'There is already a pending request with this business.' };
     await open();
-    expect(screen.getByText('There is already a pending request with this venue.')).toBeTruthy();
+    expect(screen.getByText('There is already a pending request with this business.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Review their request' })).toBeNull();
   });
 

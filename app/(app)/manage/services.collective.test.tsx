@@ -197,7 +197,7 @@ beforeEach(() => {
 });
 
 describe("the host's form for a page service", () => {
-  it('ticks calendars at every venue in place of "Offered by", and sends them as a diff with the save', async () => {
+  it('ticks calendars at every business in place of "Offered by", and sends them as a diff with the save', async () => {
     await openTheForm();
     expect(screen.getByText('Calendars that offer this service')).toBeTruthy();
     expect(screen.queryByText('Offered by')).toBeNull();
@@ -350,7 +350,7 @@ describe('the page control on a host card', () => {
     expect(screen.getByText('Add Gents cut to the Northside page?')).toBeTruthy();
     expect(
       screen.getByText(
-        'Gents cut is set up at Light 3 with your settings, and you control it for every venue. Next, choose which of their calendars offer it.',
+        'Gents cut is set up at Light 3 with your settings, and you control it for every business. Next, choose which of their calendars offer it.',
       ),
     ).toBeTruthy();
     expect(writes('/offerings')).toEqual([]);
@@ -440,12 +440,12 @@ describe('a new service at a host', () => {
     mockWrite = (call) => (call.method === 'POST' && call.path === '/api/venue/appointment-services' ? { id: 'new-1' } : undefined);
   });
 
-  it('goes on the page after it is created, with the calendars ticked at other venues', async () => {
+  it('goes on the page after it is created, with the calendars ticked at other businesses', async () => {
     await openNew();
     expect(tick().props.accessibilityState?.checked).toBe(true);
     expect(
       screen.getByText(
-        'Sets it up at Light 3 too, with your settings. Choose below which calendars offer it at each venue. If you untick this, the service is parked while Northside is live.',
+        'Sets it up at Light 3 too, with your settings. Choose below which calendars offer it at each business. If you untick this, the service is parked while Northside is live.',
       ),
     ).toBeTruthy();
     // Every venue's calendars, in place of the venue's own list.
@@ -466,10 +466,10 @@ describe('a new service at a host', () => {
     expect(await screen.findByText('Added to the Northside page.')).toBeTruthy();
   });
 
-  it('ticks every calendar with "All calendars at every venue"', async () => {
+  it('ticks every calendar with "All calendars at every business"', async () => {
     await openNew();
     await act(async () => {
-      fireEvent.press(screen.getByRole('checkbox', { name: 'All calendars at every venue' }));
+      fireEvent.press(screen.getByRole('checkbox', { name: 'All calendars at every business' }));
     });
     await pressName('Create service');
     const created = writes('/api/venue/appointment-services')[0]?.body as Record<string, unknown>;
@@ -480,7 +480,7 @@ describe('a new service at a host', () => {
     ]);
   });
 
-  it('may be offered only at other venues, with none of the host\'s calendars ticked', async () => {
+  it('may be offered only at other businesses, with none of the host\'s calendars ticked', async () => {
     await openNew();
     await act(async () => {
       fireEvent(screen.getByLabelText('Amy at Bright Cuts'), 'valueChange', false);
@@ -524,7 +524,7 @@ describe('a new service at a host', () => {
     expect(screen.getByLabelText('Staff may change: Description').props.disabled).toBe(true);
     expect(
       screen.getByText(
-        'Not available for services on the Northside page, so guests see the same name and description on every calendar.',
+        'Not available for services on the Northside page, so clients see the same name and description on every calendar.',
       ),
     ).toBeTruthy();
     await act(async () => {
@@ -591,19 +591,19 @@ describe('switching a permission off with values set (found on the phone, 2026-1
 });
 
 describe('switching a page service off (CQ-13)', () => {
-  it('reads "Switched on at every venue" and asks first, naming every venue, and Go back sends nothing', async () => {
+  it('reads "Switched on at every business" and asks first, naming every business, and Go back sends nothing', async () => {
     await openTheForm();
-    expect(screen.getByText('Switched on at every venue')).toBeTruthy();
+    expect(screen.getByText('Switched on at every business')).toBeTruthy();
     expect(screen.queryByText('Active (visible to clients)')).toBeNull();
     await act(async () => {
-      fireEvent(screen.getByLabelText('Switched on at every venue'), 'valueChange', false);
+      fireEvent(screen.getByLabelText('Switched on at every business'), 'valueChange', false);
     });
     await pressName('Save changes');
     expect(patches()).toEqual([]);
-    expect(screen.getByText('Switch off Balayage at every venue?')).toBeTruthy();
+    expect(screen.getByText('Switch off Balayage at every business?')).toBeTruthy();
     expect(
       screen.getByText(
-        'Guests will not be able to book Balayage on the Northside page, at your venue or at Light 3. Bookings already made are not changed. You can switch it on again at any time.',
+        'Clients will not be able to book Balayage on the Northside page, at your business or at Light 3. Bookings already made are not changed. You can switch it on again at any time.',
       ),
     ).toBeTruthy();
 
@@ -612,10 +612,10 @@ describe('switching a page service off (CQ-13)', () => {
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeTruthy();
 
     await pressName('Save changes');
-    await pressName('Switch off at every venue');
+    await pressName('Switch off at every business');
     expect((patches()[0]?.body as Record<string, unknown>).is_active).toBe(false);
     expect(mockToastSuccess).toHaveBeenCalledWith(
-      'Balayage is switched off at every venue. Bookings already made are not changed.',
+      'Balayage is switched off at every business. Bookings already made are not changed.',
     );
   });
 
@@ -623,11 +623,11 @@ describe('switching a page service off (CQ-13)', () => {
     master().is_active = false;
     await openTheForm();
     await act(async () => {
-      fireEvent(screen.getByLabelText('Switched on at every venue'), 'valueChange', true);
+      fireEvent(screen.getByLabelText('Switched on at every business'), 'valueChange', true);
     });
     await pressName('Save changes');
-    expect(screen.queryByText('Switch off Balayage at every venue?')).toBeNull();
-    expect(mockToastSuccess).toHaveBeenCalledWith('Balayage is on again at every venue in Northside.');
+    expect(screen.queryByText('Switch off Balayage at every business?')).toBeNull();
+    expect(mockToastSuccess).toHaveBeenCalledWith('Balayage is on again at every business in Northside.');
   });
 
   it("asks nothing about the host's own service outside the page", async () => {
@@ -642,11 +642,11 @@ describe('switching a page service off (CQ-13)', () => {
       fireEvent(screen.getByLabelText('Active (visible to clients)'), 'valueChange', false);
     });
     await pressName('Save changes');
-    expect(screen.queryByText('Switch off Balayage at every venue?')).toBeNull();
+    expect(screen.queryByText('Switch off Balayage at every business?')).toBeNull();
     expect((patches()[0]?.body as Record<string, unknown>).is_active).toBe(false);
   });
 
-  it('says on the card that nobody can book it, naming the venues, with Switch it on', async () => {
+  it('says on the card that nobody can book it, naming the businesses, with Switch it on', async () => {
     master().is_active = false;
     await renderTheScreen();
     await act(async () => {
@@ -659,13 +659,13 @@ describe('switching a page service off (CQ-13)', () => {
       fireEvent.press(within(screen.getByTestId('services-row-s1')).getByRole('button', { name: 'Switch it on' }));
     });
     expect(patches()[0]?.body).toEqual({ id: 's1', is_active: true });
-    expect(mockToastSuccess).toHaveBeenCalledWith('Balayage is on again at every venue in Northside.');
+    expect(mockToastSuccess).toHaveBeenCalledWith('Balayage is on again at every business in Northside.');
   });
 
   it('switches it on from What needs you too', async () => {
     master().is_active = false;
     await renderTheScreen();
-    await screen.findByText('Balayage is switched off on your Services page, so nobody can book it at any venue.');
+    await screen.findByText('Balayage is switched off on your Services page, so nobody can book it at any business.');
     await pressName('Switch it on');
     expect(patches()[0]?.body).toEqual({ id: 's1', is_active: true });
   });
@@ -730,7 +730,7 @@ describe('Put it back on the Services screen (CQ-11)', () => {
     ]);
     expect(
       await screen.findByText(
-        "We put Balayage's settings back at every venue. The calendars' own values that save cleared are back too.",
+        "We put Balayage's settings back at every business. The calendars' own values that save cleared are back too.",
       ),
     ).toBeTruthy();
   });
@@ -750,7 +750,7 @@ describe('Put it back on the Services screen (CQ-11)', () => {
       fireEvent.press(await screen.findByRole('button', { name: /^Put it back/ }));
     });
     expect((writes('/undo')[0]?.body as { audit_event_id: string }).audit_event_id).toBe('audit-1');
-    expect(await screen.findByText("We put Balayage's settings back at every venue.")).toBeTruthy();
+    expect(await screen.findByText("We put Balayage's settings back at every business.")).toBeTruthy();
 
     await pressName('Edit');
     await pressName('Save changes');
@@ -772,7 +772,7 @@ describe('Put it back on the Services screen (CQ-11)', () => {
     });
     expect(
       await screen.findByText(
-        "We put Balayage's settings back at every venue. The calendar changes from that save stay as they are.",
+        "We put Balayage's settings back at every business. The calendar changes from that save stay as they are.",
       ),
     ).toBeTruthy();
   });
@@ -807,7 +807,7 @@ describe('Choose calendars for a service at a member (CQ-06)', () => {
   });
 });
 
-describe("the other venues' prices and times in the host's form (2026-11-05)", () => {
+describe("the other businesses' prices and times in the host's form (2026-11-05)", () => {
   const LET_THEM = 'Let them set their own price, length, buffer and deposit';
   const lockCalls = () => mockCalls.filter((c) => c.method === 'PUT' && c.path === '/api/venue/collectives/col-1/member-values');
 

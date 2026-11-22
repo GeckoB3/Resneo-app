@@ -183,7 +183,7 @@ export function BookedRevenueSection({
    */
   const venueColumns: Column<BookedRevenueVenue>[] = [
     {
-      label: 'Venue',
+      label: 'Business',
       value: (v) => (
         <Text variant="bodyMedium">
           {v.venue_name}
@@ -512,7 +512,7 @@ export function BookedRevenueSection({
             {showVenues ? (
               <View style={styles.venueTable}>
                 <ReportTable
-                  caption="Booked revenue by venue"
+                  caption="Booked revenue by business"
                   columns={venueColumns}
                   rows={venues}
                   rowKey={(v) => v.venue_id}

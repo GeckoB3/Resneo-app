@@ -62,11 +62,11 @@ describe('CombinedPageNameSection', () => {
   it("reads the host's name by default, in the app's place names", async () => {
     await render(<CombinedPageNameSection collective={collective()} />);
     expect(screen.getByText('Name on your booking page')).toBeTruthy();
-    expect(screen.getByText('Guests see this name at the top of the page, in search results and in their booking emails.')).toBeTruthy();
+    expect(screen.getByText('Clients see this name at the top of the page, in search results and in their booking emails.')).toBeTruthy();
     expect(screen.getByRole('radio', { name: 'Aura Hair Studio' }).props.accessibilityState?.selected).toBe(true);
     expect(screen.getByRole('radio', { name: 'A different name' }).props.accessibilityState?.selected).toBe(false);
-    expect(screen.getByText(/If you rename your venue under More, Venue profile, the page follows\./)).toBeTruthy();
-    expect(screen.getByText(/What the collective is called inside ResNeo, for example on the Booking page and Linked venues screens/)).toBeTruthy();
+    expect(screen.getByText(/If you rename your business under More, Business profile, the page follows\./)).toBeTruthy();
+    expect(screen.getByText(/What the collective is called inside ResNeo, for example on the Booking page and Linked businesses screens/)).toBeTruthy();
     expect(screen.queryByLabelText('Name to show on the booking page')).toBeNull();
   });
 

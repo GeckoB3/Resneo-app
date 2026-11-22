@@ -60,7 +60,7 @@ beforeEach(() => {
 });
 
 describe('CollectiveCalendarsSection', () => {
-  it("lists the host's venue first, with what each calendar charges differently", async () => {
+  it("lists the host's business first, with what each calendar charges differently", async () => {
     await render(
       <CollectiveCalendarsSection
         groups={groups}
@@ -71,7 +71,7 @@ describe('CollectiveCalendarsSection', () => {
         onChange={jest.fn()}
       />,
     );
-    expect(screen.getByText('Tick the calendars that should offer this service, at any venue in Northside.')).toBeTruthy();
+    expect(screen.getByText('Tick the calendars that should offer this service, at any business in Northside.')).toBeTruthy();
     const venues = screen.getAllByText(/^(Bright Cuts \(you\)|Light 3)$/).map((n) => n.props.children);
     expect(venues).toEqual(['Bright Cuts (you)', 'Light 3']);
     expect(screen.getByText('Custom price £45.00')).toBeTruthy();
@@ -79,7 +79,7 @@ describe('CollectiveCalendarsSection', () => {
     expect(screen.getByLabelText('Nia at Light 3').props.value).toBe(false);
   });
 
-  it('holds a tick at another venue as a diff, and shows it is not saved yet', async () => {
+  it('holds a tick at another business as a diff, and shows it is not saved yet', async () => {
     const onChange = jest.fn();
     const { rerender } = await render(
       <CollectiveCalendarsSection
@@ -115,7 +115,7 @@ describe('CollectiveCalendarsSection', () => {
     expect(screen.getByText('Not saved yet: will stop offering')).toBeTruthy();
   });
 
-  it('offers Edit values on every calendar that offers it now, at any venue', async () => {
+  it('offers Edit values on every calendar that offers it now, at any business', async () => {
     const onEditValues = jest.fn();
     await render(
       <CollectiveCalendarsSection
@@ -136,7 +136,7 @@ describe('CollectiveCalendarsSection', () => {
     expect(onEditValues).toHaveBeenCalledWith('v-member', 'cal-m');
   });
 
-  it("says where guests cannot book it, from the service's hidden reasons", async () => {
+  it("says where clients cannot book it, from the service's hidden reasons", async () => {
     await render(
       <CollectiveCalendarsSection
         groups={groups}
@@ -150,7 +150,7 @@ describe('CollectiveCalendarsSection', () => {
     );
     expect(
       screen.getByText(
-        'Light 3 cannot take card payments yet, so guests cannot book its calendars for this service online. Its team can still book it.',
+        'Light 3 cannot take card payments yet, so clients cannot book its calendars for this service online. Its team can still book it.',
       ),
     ).toBeTruthy();
   });
@@ -174,7 +174,7 @@ describe('a copy that is behind (CQ-02)', () => {
       />,
     );
 
-  it('offers Update now beside a venue still updating, and says what it did', async () => {
+  it('offers Update now beside a business still updating, and says what it did', async () => {
     await renderBehind(behind({ pending: [{ venue_id: 'v-member', venue_name: 'Light 3' }] }));
     expect(mockRetryCollective.at(-1)).toBe('col-1');
     expect(screen.getByText('Updating at Light 3. Its calendars can take bookings for this again once it finishes.')).toBeTruthy();
@@ -188,7 +188,7 @@ describe('a copy that is behind (CQ-02)', () => {
     expect(screen.getByText('Light 3 is up to date.')).toBeTruthy();
   });
 
-  it('offers Retry now beside a venue that failed, and says when it did not go through', async () => {
+  it('offers Retry now beside a business that failed, and says when it did not go through', async () => {
     await renderBehind(
       behind({ failed: [{ venue_id: 'v-member', venue_name: 'Light 3', message: 'busy', code: 'busy' }] }),
     );
@@ -201,7 +201,7 @@ describe('a copy that is behind (CQ-02)', () => {
     expect(screen.getByText('That did not go through. Please check your connection and try again.')).toBeTruthy();
   });
 
-  it('offers nothing for a venue up to date', async () => {
+  it('offers nothing for a business up to date', async () => {
     await renderBehind(groups);
     expect(screen.queryByRole('button', { name: /^(Update|Retry) now/ })).toBeNull();
   });
@@ -291,7 +291,7 @@ describe('a service being added to the page (CQ-05)', () => {
     expect(onChange).toHaveBeenCalledWith({ add: [ref('cal-a', 'v-host'), ref('cal-n', 'v-member')], remove: [] });
   });
 
-  const all = () => screen.getByRole('checkbox', { name: 'All calendars at every venue' });
+  const all = () => screen.getByRole('checkbox', { name: 'All calendars at every business' });
   const every = [ref('cal-a', 'v-host'), ref('cal-m', 'v-member'), ref('cal-n', 'v-member')];
 
   it('ticks them all with one tick', async () => {

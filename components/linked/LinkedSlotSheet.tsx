@@ -94,7 +94,7 @@ export function LinkedSlotSheet({
           (web parity: the menu's "In {venue name}" heading). */}
       <Text variant="caption" tone="muted" style={styles.venue}>
         {target?.collective
-          ? `For ${target.collective.name}: every member venue's calendars and the combined services`
+          ? `For ${target.collective.name}: every member business's calendars and the combined services`
           : `In ${target?.venue.venueName ?? ''}`}
       </Text>
       <View style={styles.actions}>

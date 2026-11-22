@@ -13,7 +13,7 @@ const LOCATION_OPTIONS: {
 }[] = [
   {
     value: 'business_venue',
-    label: 'At your venue',
+    label: 'At your business',
     hint: 'Clients come to your business address.',
   },
   {
@@ -88,7 +88,7 @@ export function ServiceLocationSection({
       </Text>
       <Text variant="caption" tone="muted">
         Where this service is delivered. Confirmation and reminder emails show this instead of your
-        venue address for client-address and online services.
+        business address for client-address and online services.
       </Text>
 
       {LOCATION_OPTIONS.map((option) => {

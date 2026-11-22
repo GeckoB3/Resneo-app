@@ -118,8 +118,8 @@ function OnboardingExplainer() {
   const { colors } = useTheme();
   const bullets = [
     'You stay the sole owner of your bookings and clients: linking shares access, never data.',
-    'You choose, per direction, what each venue can see and do, down to specific calendars.',
-    'Either venue can reduce access or unlink at any time; nothing is shared after that.',
+    'You choose, per direction, what each business can see and do, down to specific calendars.',
+    'Either business can reduce access or unlink at any time; nothing is shared after that.',
   ];
   return (
     <Card style={styles.explainer}>
@@ -132,11 +132,11 @@ function OnboardingExplainer() {
           />
         </View>
         <Text variant="subheading" style={styles.flex1}>
-          Work alongside another venue
+          Work alongside another business
         </Text>
       </View>
       <Text variant="bodySmall" tone="secondary">
-        Linking lets two venues see each other’s calendars and (if you choose) manage each other’s
+        Linking lets two businesses see each other’s calendars and (if you choose) manage each other’s
         bookings. Ideal for chair-rental, co-located practitioners or a shared brand.
       </Text>
       <View style={styles.bullets}>
@@ -280,10 +280,10 @@ export default function LinkedVenuesScreen() {
   if (!staffQuery.isLoading && !isAdmin) {
     return (
       <Screen>
-        <Stack.Screen options={{ title: 'Linked venues' }} />
+        <Stack.Screen options={{ title: 'Linked businesses' }} />
         <EmptyState
           title="Admins only"
-          message="Linked venues are managed by venue admins. Ask an admin at your venue to set up links."
+          message="Linked businesses are managed by business admins. Ask an admin at your business to set up links."
         />
       </Screen>
     );
@@ -292,7 +292,7 @@ export default function LinkedVenuesScreen() {
   if (query.isLoading || staffQuery.isLoading) {
     return (
       <Screen padded={false}>
-        <Stack.Screen options={{ title: 'Linked venues' }} />
+        <Stack.Screen options={{ title: 'Linked businesses' }} />
         <ListSkeleton rows={5} />
       </Screen>
     );
@@ -301,10 +301,10 @@ export default function LinkedVenuesScreen() {
   if (query.isError) {
     return (
       <Screen>
-        <Stack.Screen options={{ title: 'Linked venues' }} />
+        <Stack.Screen options={{ title: 'Linked businesses' }} />
         <ErrorState
           message={
-            query.error instanceof ApiError ? query.error.message : 'Could not load linked venues.'
+            query.error instanceof ApiError ? query.error.message : 'Could not load linked businesses.'
           }
           onRetry={() => void query.refetch()}
         />
@@ -316,10 +316,10 @@ export default function LinkedVenuesScreen() {
   if (eligibility && !eligibility.feature) {
     return (
       <Screen>
-        <Stack.Screen options={{ title: 'Linked venues' }} />
+        <Stack.Screen options={{ title: 'Linked businesses' }} />
         <EmptyState
           title="Not available on this plan"
-          message={eligibility.reason ?? 'Linked venues is available to appointments-family venues only.'}
+          message={eligibility.reason ?? 'Linked businesses is available to appointments-family businesses only.'}
         />
       </Screen>
     );
@@ -351,7 +351,7 @@ export default function LinkedVenuesScreen() {
     <LinkSetupSheet
       visible={sendOpen}
       prefill={invitePrefill}
-      venueName={myVenue?.name ?? 'Your venue'}
+      venueName={myVenue?.name ?? 'Your business'}
       venueSlug={myVenue?.slug ?? null}
       onClose={closeWizard}
       onReviewRequest={(linkId) => void handleReviewRequest(linkId)}
@@ -381,7 +381,7 @@ export default function LinkedVenuesScreen() {
   if (links.length === 0) {
     return (
       <Screen scroll padded={false} contentContainerStyle={styles.emptyContent}>
-        <Stack.Screen options={{ title: 'Linked venues' }} />
+        <Stack.Screen options={{ title: 'Linked businesses' }} />
         <OnboardingExplainer />
         <View style={styles.emptyActions}>
           {eligibilityHint ? (
@@ -428,7 +428,7 @@ export default function LinkedVenuesScreen() {
           tintColor={colors.brand}
         />
       }>
-      <Stack.Screen options={{ title: 'Linked venues' }} />
+      <Stack.Screen options={{ title: 'Linked businesses' }} />
 
       <View style={styles.entryActions}>
         <Button
@@ -477,9 +477,9 @@ export default function LinkedVenuesScreen() {
                 proposedCollectives[link.id]
                   ? // A collective already running is joined, not started (banner.requestJoin, 2026-10-28).
                     proposedCollectives[link.id]!.live
-                    ? `Wants to link with your venue so you can join ${proposedCollectives[link.id]!.name}, its shared booking page`
-                    : `Wants to link with your venue and start ${proposedCollectives[link.id]!.name}, a shared booking page`
-                  : 'Wants to link with your venue'
+                    ? `Wants to link with your business so you can join ${proposedCollectives[link.id]!.name}, its shared booking page`
+                    : `Wants to link with your business and start ${proposedCollectives[link.id]!.name}, a shared booking page`
+                  : 'Wants to link with your business'
               }
               status={link.status}
               onPress={() => setReviewLink(link)}
@@ -544,7 +544,7 @@ export default function LinkedVenuesScreen() {
       <ReviewLinkRequestSheet
         link={reviewLink}
         visible={reviewLink !== null}
-        venueName={myVenue?.name ?? 'Your venue'}
+        venueName={myVenue?.name ?? 'Your business'}
         myCalendars={myCalendars}
         collective={reviewLink ? (proposedCollectives[reviewLink.id] ?? null) : null}
         onClose={() => setReviewLink(null)}

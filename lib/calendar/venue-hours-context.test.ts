@@ -11,7 +11,7 @@ describe('venueDayContext', () => {
     expect(venueDayContext({}, '1')).toEqual({ kind: 'unset' });
   });
 
-  it('reports unset for a day the venue has never configured', () => {
+  it('reports unset for a day the business has never configured', () => {
     const hours = { '1': { periods: [{ open: '09:00', close: '17:00' }] } } as OpeningHours;
     expect(venueDayContext(hours, '2')).toEqual({ kind: 'unset' });
   });
@@ -58,7 +58,7 @@ describe('venueDayContext', () => {
 describe('describeVenueDay', () => {
   it('describes each kind', () => {
     expect(describeVenueDay({ kind: 'unset' })).toBe('No business hours set');
-    expect(describeVenueDay({ kind: 'closed' })).toBe('Venue closed');
+    expect(describeVenueDay({ kind: 'closed' })).toBe('Business closed');
     expect(
       describeVenueDay({ kind: 'open', periods: [{ open: '09:00', close: '17:00' }] }),
     ).toBe('09:00 to 17:00');
@@ -80,7 +80,7 @@ describe('describeVenueDay', () => {
 describe('calendarHoursOutsideVenue', () => {
   const open9to17 = { kind: 'open' as const, periods: [{ open: '09:00', close: '17:00' }] };
 
-  it('is false when the calendar sits inside the venue hours', () => {
+  it('is false when the calendar sits inside the business hours', () => {
     expect(calendarHoursOutsideVenue([{ open: '10:00', close: '16:00' }], open9to17)).toBe(false);
   });
 
@@ -88,21 +88,21 @@ describe('calendarHoursOutsideVenue', () => {
     expect(calendarHoursOutsideVenue([{ open: '09:00', close: '17:00' }], open9to17)).toBe(false);
   });
 
-  it('is true when the calendar runs past the venue close', () => {
+  it('is true when the calendar runs past the business close', () => {
     expect(calendarHoursOutsideVenue([{ open: '10:00', close: '22:00' }], open9to17)).toBe(true);
   });
 
-  it('is true when the calendar opens before the venue', () => {
+  it('is true when the calendar opens before the business', () => {
     expect(calendarHoursOutsideVenue([{ open: '07:00', close: '12:00' }], open9to17)).toBe(true);
   });
 
-  it('never constrains a venue with no hours set', () => {
+  it('never constrains a business with no hours set', () => {
     expect(calendarHoursOutsideVenue([{ open: '00:00', close: '23:59' }], { kind: 'unset' })).toBe(
       false,
     );
   });
 
-  it('flags any calendar hours at all on a day the venue is closed', () => {
+  it('flags any calendar hours at all on a day the business is closed', () => {
     expect(calendarHoursOutsideVenue([{ open: '10:00', close: '11:00' }], { kind: 'closed' })).toBe(
       true,
     );
@@ -113,7 +113,7 @@ describe('calendarHoursOutsideVenue', () => {
     expect(calendarHoursOutsideVenue(null, { kind: 'closed' })).toBe(false);
   });
 
-  it('flags time falling in the venue lunch gap', () => {
+  it('flags time falling in the business lunch gap', () => {
     const split = {
       kind: 'open' as const,
       periods: [
@@ -125,7 +125,7 @@ describe('calendarHoursOutsideVenue', () => {
     expect(calendarHoursOutsideVenue([{ open: '09:30', close: '11:30' }], split)).toBe(false);
   });
 
-  it('accepts a calendar period spanning several venue windows only when they touch', () => {
+  it('accepts a calendar period spanning several business windows only when they touch', () => {
     const touching = {
       kind: 'open' as const,
       periods: [

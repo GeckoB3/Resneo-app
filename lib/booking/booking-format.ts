@@ -96,7 +96,7 @@ export function resourcePricePerSlotLabel(
 }
 
 /**
- * "From £15" / "£15 deposit" / "Pay at venue" / "Free" — a one-line price hint
+ * "From £15" / "£15 deposit" / "Pay at the business" / "Free" — a one-line price hint
  * for a per-person offering (classes/events). Mirrors the web's price labels.
  */
 export function offeringPriceLabel(
@@ -111,17 +111,17 @@ export function offeringPriceLabel(
     // "Free" (the no-show fee is surfaced by the card-hold toggle/notice).
     return paymentRequirement === 'none' || paymentRequirement === 'card_hold'
       ? 'Free'
-      : 'Pay at venue';
+      : 'Pay at the business';
   }
   if (paymentRequirement === 'deposit' && depositPence && depositPence > 0) {
     const deposit = formatPence(depositPence);
-    return deposit ? `${deposit} deposit` : (price ?? 'Pay at venue');
+    return deposit ? `${deposit} deposit` : (price ?? 'Pay at the business');
   }
   if (paymentRequirement === 'none') {
-    return options.fromPrefix ? `From ${price}` : (price ?? 'Pay at venue');
+    return options.fromPrefix ? `From ${price}` : (price ?? 'Pay at the business');
   }
   // full_payment
-  return options.fromPrefix ? `From ${price}` : (price ?? 'Pay at venue');
+  return options.fromPrefix ? `From ${price}` : (price ?? 'Pay at the business');
 }
 
 /**

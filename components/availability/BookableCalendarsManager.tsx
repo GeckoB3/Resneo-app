@@ -502,7 +502,7 @@ function CalendarCard({
           </>
         ) : (
           <Text variant="caption" tone="muted">
-            Set your venue booking slug under Settings → Booking page first to enable per-calendar
+            Set your business booking slug under Settings → Booking page first to enable per-calendar
             links.
           </Text>
         )}
@@ -948,7 +948,7 @@ export function BookableCalendarsManager() {
       <View style={styles.statePad}>
         <EmptyState
           title="Admins only"
-          message="Calendar management is available to venue admins."
+          message="Calendar management is available to business admins."
         />
       </View>
     );

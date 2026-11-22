@@ -32,7 +32,7 @@ export function terminationReasonLabel(reason: LinkTerminationReason | null): st
     case 'subscription_lapsed':
       return 'Subscription lapsed';
     case 'venue_deleted':
-      return 'Venue deleted';
+      return 'Business deleted';
     case 'plan_ineligible':
       return 'Plan no longer eligible';
     case 'request_expired':

@@ -61,8 +61,8 @@ export const CARD_PAYMENTS_COPY = {
 /** The group's heading and line (the web's "Payments at your venue" group), the same with Checkout on or off. */
 export const PAYMENTS_GROUP_COPY = {
   eyebrow: 'Payments',
-  title: 'Payments at your venue',
-  description: 'How your team takes payment from clients at your venue.',
+  title: 'Payments at your business',
+  description: 'How your team takes payment from clients at your business.',
 } as const;
 
 /**

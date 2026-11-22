@@ -83,7 +83,7 @@ import { TakingsSection } from '@/components/reports/pos/TakingsSection';
 import { ReportCalendarProvider } from '@/components/reports/ReportCalendarFilter';
 
 const HANNAH = { id: 'cal-1', name: 'Hannah' };
-const WHOLE_VENUE_TAB = 'These figures are for the whole venue. Hannah stays chosen on the other tabs.';
+const WHOLE_VENUE_TAB = 'These figures are for the whole business. Hannah stays chosen on the other tabs.';
 
 function renderFiltered() {
   return render(
@@ -108,7 +108,7 @@ it('never asks Takings, cash-ups or payouts for a calendar', async () => {
   expect(mockPayoutsArgs[0]).toEqual([week, 'day', { reportsVisible: true }]);
 });
 
-it('says once, in the web words, that the tab is the whole venue', async () => {
+it('says once, in the web words, that the tab is the whole business', async () => {
   await renderFiltered();
   expect(screen.getAllByText(WHOLE_VENUE_TAB)).toHaveLength(1);
   expect(screen.queryByText(/^Showing/)).toBeNull();
@@ -116,10 +116,10 @@ it('says once, in the web words, that the tab is the whole venue', async () => {
 
 it('says nothing about calendars while all calendars are chosen', async () => {
   await render(<TakingsSection canExport isAdmin today="2026-10-09" />);
-  expect(screen.queryByText(/whole venue/)).toBeNull();
+  expect(screen.queryByText(/whole business/)).toBeNull();
 });
 
-it('downloads the whole venue: no calendar on the CSVs, the tip records or cash-ups', async () => {
+it('downloads the whole business: no calendar on the CSVs, the tip records or cash-ups', async () => {
   await renderFiltered();
   await act(async () => {
     fireEvent.press(screen.getByLabelText('Export By payment method as CSV'));

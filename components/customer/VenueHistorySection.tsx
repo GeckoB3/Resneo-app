@@ -30,7 +30,7 @@ export function VenueHistorySection({ home }: Props) {
   return (
     <Card>
       <Text variant="overline" tone="secondary">
-        VENUES YOU HAVE BOOKED WITH
+        BUSINESSES YOU HAVE BOOKED WITH
       </Text>
 
       {history.map((entry) => (
@@ -73,8 +73,8 @@ export function VenueHistorySection({ home }: Props) {
         // wonder which two are missing.
         <Text variant="caption" tone="muted" style={styles.action}>
           {home.venue_history_hidden === 1
-            ? 'One more venue is not shown here.'
-            : `${home.venue_history_hidden} more venues are not shown here.`}
+            ? 'One more business is not shown here.'
+            : `${home.venue_history_hidden} more businesses are not shown here.`}
         </Text>
       ) : null}
     </Card>

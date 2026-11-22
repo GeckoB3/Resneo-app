@@ -17,7 +17,7 @@ export const TR_COPY = {
     'Only admins and team members with a diary can see records. Front desk staff can’t.',
   ],
   switchOnLinked: (names: string) =>
-    `These linked venues work with you as one team, so their admins and team members with a diary will also see and add records: ${names}.`,
+    `These linked businesses work with you as one team, so their admins and team members with a diary will also see and add records: ${names}.`,
   switchOnAcknowledge: 'I understand that my business is responsible for the health information it keeps in ResNeo.',
   switchOnButton: 'Switch on',
   switchOffTitle: 'Switch off treatment records?',

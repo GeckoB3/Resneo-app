@@ -50,7 +50,7 @@ import type { ResourceOption, ResourceSlot } from '@/types/booking-offerings';
 
 type StepKey = 'resource' | 'date' | 'duration' | 'time' | 'guest' | 'confirm';
 const STEPS: StepKey[] = ['resource', 'date', 'duration', 'time', 'guest', 'confirm'];
-const STEP_LABELS = ['Resource', 'Date', 'Length', 'Time', 'Guest', 'Confirm'];
+const STEP_LABELS = ['Resource', 'Date', 'Length', 'Time', 'Client', 'Confirm'];
 
 const EMPTY_GUEST: GuestDetails = {
   first_name: '',

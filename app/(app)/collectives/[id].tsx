@@ -40,7 +40,7 @@ export default function CollectiveDetailScreen() {
     return (
       <Screen>
         <Stack.Screen options={{ title: 'Combined page' }} />
-        <EmptyState title="Admins only" message="Venue collectives are managed by venue admins." />
+        <EmptyState title="Admins only" message="Business collectives are managed by business admins." />
       </Screen>
     );
   }

@@ -412,7 +412,7 @@ export function TimeSlotStep({
             title="No times available"
             message={
               unavailableReason ??
-              'There are no open slots on this date. Pick another day, or add the guest to the waitlist.'
+              'There are no open slots on this date. Pick another day, or add the client to the waitlist.'
             }
           />
           <Button

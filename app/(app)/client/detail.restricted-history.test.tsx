@@ -169,7 +169,7 @@ async function openHistory() {
     </ViewerAccessProvider>,
   );
   await act(async () => {
-    fireEvent.press(screen.getByLabelText('Guest bookings'));
+    fireEvent.press(screen.getByLabelText('Client bookings'));
   });
 }
 

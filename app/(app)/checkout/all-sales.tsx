@@ -45,7 +45,7 @@ export default function AllSalesScreen() {
     return (
       <Screen>
         {header}
-        <EmptyState title={t('till.off.title')} message={t('till.off.body', { venue: 'your venue' })} />
+        <EmptyState title={t('till.off.title')} message={t('till.off.body', { venue: 'your business' })} />
       </Screen>
     );
   }
@@ -57,7 +57,7 @@ export default function AllSalesScreen() {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={sales.isRefetching} onRefresh={() => void sales.refetch()} />}
         keyboardShouldPersistTaps="handled">
-        {history ? <Notice tone="warning">{t('hist.banner', { venue: venue?.name?.trim() || 'your venue' })}</Notice> : null}
+        {history ? <Notice tone="warning">{t('hist.banner', { venue: venue?.name?.trim() || 'your business' })}</Notice> : null}
         <SearchBar value={search} onChangeText={setSearch} placeholder={t('sales.search')} onClear={() => setSearch('')} />
         {sales.isLoading ? (
           <ListSkeleton />

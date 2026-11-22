@@ -46,7 +46,7 @@ const block = (itemId: string) => ({
   role: 'master' as const,
   collective_id: 'col-1',
   collective_name: 'Northside',
-  host_venue_name: 'Host Venue',
+  host_venue_name: 'Host Business',
   item_id: itemId,
   locked_fields: [],
   delegated_fields: [],
@@ -60,7 +60,7 @@ const services: AreaService[] = [{ id: 's1', name: 'Balayage', collective: block
 const groups: CollectiveCalendarGroup[] = [
   {
     venue_id: 'v-host',
-    venue_name: 'Host Venue',
+    venue_name: 'Host Business',
     is_host: true,
     sync,
     calendars: [
@@ -119,14 +119,14 @@ beforeEach(() => {
 
 describe('BulkCalendarsSheet', () => {
   // Regression (CQ-11): taking calendars off saved at once, with no ask.
-  it('asks before taking calendars off, naming each change and a venue left with nobody', async () => {
+  it('asks before taking calendars off, naming each change and a business left with nobody', async () => {
     await openPicker();
-    await press(screen.getByLabelText('Ada at Host Venue'));
+    await press(screen.getByLabelText('Ada at Host Business'));
     await press(screen.getByRole('button', { name: 'Save 1 change' }));
     expect(bulkCalls()).toHaveLength(0);
     expect(screen.getByText('Take these calendars off?')).toBeTruthy();
-    expect(screen.getByText('Balayage: Ada at Host Venue stops offering it.')).toBeTruthy();
-    expect(screen.getByText('Nobody at Host Venue will offer Balayage.')).toBeTruthy();
+    expect(screen.getByText('Balayage: Ada at Host Business stops offering it.')).toBeTruthy();
+    expect(screen.getByText('Nobody at Host Business will offer Balayage.')).toBeTruthy();
     // Go back keeps the choice.
     await press(screen.getByRole('button', { name: 'Go back' }));
     expect(screen.getByRole('button', { name: 'Save 1 change' })).toBeTruthy();
@@ -138,10 +138,10 @@ describe('BulkCalendarsSheet', () => {
 
   it('says so when no calendar anywhere would offer it', async () => {
     await openPicker();
-    await press(screen.getByLabelText('Ada at Host Venue'));
+    await press(screen.getByLabelText('Ada at Host Business'));
     await press(screen.getByLabelText('Cy at Zen Studio'));
     await press(screen.getByRole('button', { name: 'Save 2 changes' }));
-    expect(screen.getByText('Nobody will be able to book Balayage at any venue.')).toBeTruthy();
+    expect(screen.getByText('Nobody will be able to book Balayage at any business.')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Take them off' })).toBeTruthy();
   });
 
@@ -171,13 +171,13 @@ describe('BulkCalendarsSheet', () => {
       };
     };
     await openPicker();
-    await press(screen.getByLabelText('Ada at Host Venue'));
-    await press(screen.getByLabelText('Ben at Host Venue'));
+    await press(screen.getByLabelText('Ada at Host Business'));
+    await press(screen.getByLabelText('Ben at Host Business'));
     await press(screen.getByRole('button', { name: 'Save 2 changes' }));
     await press(screen.getByRole('button', { name: 'Take it off' }));
     expect(screen.getByText('Ada has upcoming bookings for Balayage')).toBeTruthy();
     expect(screen.getByText('Your other changes are saved.')).toBeTruthy();
-    expect(screen.getByText(/^Ada at Host Venue, Balayage: Tue 3 Nov.*, 10:30; Wed 4 Nov.*, 11:00$/)).toBeTruthy();
+    expect(screen.getByText(/^Ada at Host Business, Balayage: Tue 3 Nov.*, 10:30; Wed 4 Nov.*, 11:00$/)).toBeTruthy();
     await press(screen.getByRole('button', { name: 'Take it off and keep these bookings' }));
     expect(bulkCalls()).toHaveLength(2);
     expect(bulkCalls()[1]?.body).toEqual({
@@ -202,7 +202,7 @@ describe('BulkCalendarsSheet', () => {
       };
     };
     await openPicker();
-    await press(screen.getByRole('button', { name: 'Tick every calendar at Host Venue' }));
+    await press(screen.getByRole('button', { name: 'Tick every calendar at Host Business' }));
     await press(screen.getByLabelText('Cy at Zen Studio'));
     await press(screen.getByLabelText('Cy at Zen Studio'));
     // Ben goes on (Ada already offers it); Cy is cleared and ticked again, so it is unchanged.
@@ -211,7 +211,7 @@ describe('BulkCalendarsSheet', () => {
     await press(screen.getByRole('button', { name: 'Save 2 changes' }));
     await press(screen.getByRole('button', { name: 'Take it off' }));
     expect(screen.getByText('2 changes did not go through:')).toBeTruthy();
-    expect(screen.getByText('• Balayage, Ben at Host Venue: That service is not on the collective page.')).toBeTruthy();
+    expect(screen.getByText('• Balayage, Ben at Host Business: That service is not on the collective page.')).toBeTruthy();
     expect(screen.getByText('• Balayage, Cy at Zen Studio: Zen Studio is still being set up.')).toBeTruthy();
     expect(screen.getByText('They are still chosen here, so Save sends them again.')).toBeTruthy();
     // Only the one that can go through is counted for another Save.

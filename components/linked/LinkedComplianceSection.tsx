@@ -70,8 +70,8 @@ export function LinkedComplianceSection({ bookingId }: { bookingId: string }) {
     body = (
       <>
         <Text variant="caption" tone="muted">
-          Held by the linked venue and shown here read only. To capture, send or open a record, use
-          that venue&rsquo;s dashboard.
+          Held by the linked business and shown here read only. To capture, send or open a record, use
+          that business&rsquo;s dashboard.
         </Text>
         {!applicable && requirements.length === 0 && records.length === 0 ? (
           <Text variant="bodySmall" tone="muted">

@@ -64,10 +64,10 @@ describe('resource helpers', () => {
 });
 
 describe('offeringPriceLabel', () => {
-  it('handles free / pay-at-venue when there is no price', () => {
+  it('handles free / paying at the business when there is no price', () => {
     expect(offeringPriceLabel(0, 'none', null)).toBe('Free');
     expect(offeringPriceLabel(null, 'none', null)).toBe('Free');
-    expect(offeringPriceLabel(0, 'full_payment', null)).toBe('Pay at venue');
+    expect(offeringPriceLabel(0, 'full_payment', null)).toBe('Pay at the business');
   });
 
   it('shows a deposit label for deposit pricing', () => {

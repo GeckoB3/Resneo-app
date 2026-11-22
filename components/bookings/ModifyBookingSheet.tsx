@@ -73,6 +73,7 @@ import type {
   AppointmentCatalogService,
 } from '@/types/appointment-catalog';
 import type { ProcessingTimeBlock } from '@/types/services-manage';
+import { serviceWithPersonAt } from '@/lib/venue/member-label';
 
 export type ModifyBookingTarget = {
   id: string;
@@ -1779,7 +1780,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
           if (outcome.sent) toast.success(outcome.message);
           else toast.info(outcome.message);
         },
-        onError: () => toast.error('Could not notify the guest.'),
+        onError: () => toast.error('Could not notify the client.'),
       },
     );
     onClose();
@@ -2706,7 +2707,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
             <View style={[styles.moveAllBox, { borderColor: colors.border }]} testID="move-all-businesses">
               <Text variant="caption">
                 {`${target?.guestName || 'The client'} also has ${otherBusinessLines
-                  .map((l) => `${l.service_name}${l.person_name ? ` with ${l.person_name}` : ''} at ${l.venue_name} at ${l.start_time}`)
+                  .map((l) => `${serviceWithPersonAt(l.service_name, l.person_name, l.venue_name)} at ${l.start_time}`)
                   .join(', ')}.`}
               </Text>
               {moveAllOption.data?.can_move_all ? (

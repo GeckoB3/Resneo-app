@@ -28,6 +28,16 @@ import {
   readerErrorMessage,
 } from '@/lib/payments/reader-connect-errors';
 import {
+  cancelReaderUpdate,
+  dismissReaderUpdate,
+  installReaderUpdate,
+  isReaderUpdateInstalling,
+  noteAvailableUpdate,
+  noteReaderConnectStarted,
+  useReaderUpdateState,
+  type ReaderUpdateState,
+} from '@/lib/payments/reader-software-update';
+import {
   androidPermissionMessage,
   ensureTerminalInitialized,
   getTerminalSdk,
@@ -221,6 +231,19 @@ export interface UseBluetoothReader {
    * just awaited `reconnectRemembered` can say why it failed.
    */
   lastError: () => string | null;
+  /**
+   * The connected reader's optional software update, shared by every instance (READER-8). Only
+   * Reader settings offers it; the other flows read `updateInstalling` to say the reader is busy.
+   */
+  softwareUpdate: ReaderUpdateState;
+  /** True while an optional update is installing. `status` reads `'updating'` meanwhile. */
+  updateInstalling: boolean;
+  /** Install the reported optional update (Reader settings only). False when nothing started. */
+  installUpdate: () => Promise<boolean>;
+  /** Stop an optional update that is installing. False when the SDK would not stop it. */
+  cancelUpdate: () => Promise<boolean>;
+  /** "Not now": hide the offer until the app next connects a reader. */
+  dismissUpdate: () => void;
   /** Start scanning for nearby readers. */
   scan: () => Promise<void>;
   /** Connect to a specific discovered reader and remember it. */
@@ -242,6 +265,16 @@ export interface UseBluetoothReader {
  *  build can pair with a real WisePad instead of the simulator. */
 const USE_SIMULATED = shouldSimulateCardReaders();
 
+/**
+ * Development only: `EXPO_PUBLIC_TERMINAL_TEST_READER_UPDATE=available` asks Stripe (test mode) to
+ * announce an optional update on connect, so the Reader settings offer can be tried without
+ * waiting for a real one. Unset in store builds, so nothing is passed there.
+ */
+const TEST_READER_UPDATE =
+  process.env.EXPO_PUBLIC_TERMINAL_TEST_READER_UPDATE === 'available'
+    ? ({ type: 'available', components: ['firmware'] } as const)
+    : null;
+
 export function useBluetoothReader(): UseBluetoothReader {
   const sdk = getTerminalSdk();
   const accessToken = useAccessToken();
@@ -259,6 +292,8 @@ export function useBluetoothReader(): UseBluetoothReader {
   const [updateProgress, setUpdateProgress] = useState<number | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
+  /** Shared across instances: an optional update started in Reader settings (READER-8). */
+  const softwareUpdate = useReaderUpdateState();
 
   /** The error as of now, for `lastError()` (see the interface). */
   const errorRef = useRef<string | null>(null);
@@ -330,8 +365,12 @@ export function useBluetoothReader(): UseBluetoothReader {
     // Reader-update events are global, and setting up Tap to Pay on iPhone reports
     // its progress through them too. While the phone's reader is connecting they
     // are not this reader's firmware, and must not flip it to `updating`.
+    //
+    // An OPTIONAL update staff started in Reader settings is the shared store's
+    // (`reader-software-update.ts`), and every instance reads it from there. Kept out of
+    // `installActivityRef`, which is only for an install inside this instance's connect.
     onDidStartInstallingUpdate: () => {
-      if (isTapToPayConnectInFlight()) return;
+      if (isTapToPayConnectInFlight() || isReaderUpdateInstalling()) return;
       // A mandatory install runs INSIDE `connectReader`, so the connect's time
       // budget has to know about it (see `awaitReaderConnect`).
       installActivityRef.current = Date.now();
@@ -339,7 +378,7 @@ export function useBluetoothReader(): UseBluetoothReader {
       setStatus('updating');
     },
     onDidReportReaderSoftwareUpdateProgress: (progress: string | number) => {
-      if (isTapToPayConnectInFlight()) return;
+      if (isTapToPayConnectInFlight() || isReaderUpdateInstalling()) return;
       const value = typeof progress === 'number' ? progress : Number(progress);
       // Every progress report is proof the reader is alive and still flashing,
       // which is what re-arms the connect budget rather than expiring it.
@@ -677,6 +716,8 @@ export function useBluetoothReader(): UseBluetoothReader {
       return shareInFlight(connectInFlightRef, async () => {
       const generation = abortRef.current;
       setError(null);
+      // A new connection: the update offer (and any "Not now") starts afresh (READER-8).
+      noteReaderConnectStarted();
       try {
         const locationId = await prepare();
         // Terminal holds one reader at a time. If the phone's own Tap to Pay
@@ -719,7 +760,8 @@ export function useBluetoothReader(): UseBluetoothReader {
               // The SDK restores a dropped Bluetooth link by itself. iOS already defaults this
               // on; Android's bridge defaults it OFF for Bluetooth, so it is asked for here.
               autoReconnectOnUnexpectedDisconnect: true,
-            }),
+              ...(TEST_READER_UPDATE ? { testReaderUpdate: TEST_READER_UPDATE } : {}),
+            } as Parameters<TerminalHookApi['connectReader']>[0]),
             () => installActivityRef.current,
           );
           if (abortRef.current !== generation) return false;
@@ -763,6 +805,9 @@ export function useBluetoothReader(): UseBluetoothReader {
         setConnected(live);
         setLowBatteryWarned(false);
         if (typeof live.batteryLevel === 'number') setBatteryLevel(live.batteryLevel);
+        // The reader object also says whether an optional update is waiting, in case the event
+        // arrived before anything was listening.
+        if (live.availableUpdate) noteAvailableUpdate(live.availableUpdate);
         // A mandatory firmware update may have flipped us to 'updating'; only
         // claim ready when it has not.
         setStatus((prev) => (prev === 'updating' ? prev : 'ready'));
@@ -911,6 +956,15 @@ export function useBluetoothReader(): UseBluetoothReader {
 
   const lastError = useCallback(() => errorRef.current, []);
 
+  const cancelUpdate = useCallback((): Promise<boolean> => cancelReaderUpdate(terminal), [terminal]);
+  const dismissUpdate = useCallback(() => dismissReaderUpdate(), []);
+  /**
+   * An optional update installing makes this reader `updating` in EVERY instance, including one
+   * mounted after the install began (the payment sheet opened meanwhile), so its buttons are
+   * disabled and it says the reader is updating rather than failing a payment.
+   */
+  const updateInstalling = isReaderUpdateInstalling(softwareUpdate);
+
   /**
    * The level from the battery event when one has arrived, else the level the connected reader
    * reported. The second matters because the payment sheet's collect step is a different hook
@@ -919,8 +973,13 @@ export function useBluetoothReader(): UseBluetoothReader {
   const level =
     batteryLevel ?? (typeof connected?.batteryLevel === 'number' ? connected.batteryLevel : null);
 
+  const installUpdate = useCallback(
+    (): Promise<boolean> => installReaderUpdate(terminal, level),
+    [level, terminal],
+  );
+
   return {
-    status,
+    status: updateInstalling ? 'updating' : status,
     error,
     discovered,
     connected,
@@ -928,10 +987,15 @@ export function useBluetoothReader(): UseBluetoothReader {
     batteryLow:
       connected != null &&
       ((level != null && level < LOW_BATTERY_THRESHOLD) || lowBatteryWarned),
-    updateProgress,
+    updateProgress: updateInstalling ? softwareUpdate.progress : updateProgress,
     retrying,
     reconnecting,
     lastError,
+    softwareUpdate,
+    updateInstalling,
+    installUpdate,
+    cancelUpdate,
+    dismissUpdate,
     scan,
     connect,
     reconnectRemembered,

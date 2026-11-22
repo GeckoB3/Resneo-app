@@ -91,7 +91,7 @@ export default function CollectScreen() {
     return (
       <Screen>
         {header}
-        <EmptyState title={t('till.off.title')} message={t('till.off.body', { venue: 'your venue' })} />
+        <EmptyState title={t('till.off.title')} message={t('till.off.body', { venue: 'your business' })} />
       </Screen>
     );
   }
@@ -335,7 +335,7 @@ function CollectBody({
                     amountPence: collect.amount_pence,
                     balancePence: collect.amount_pence,
                     maxPaymentPence: bootstrap.settings.max_payment_pence ?? null,
-                    venueName: bootstrap.venue?.name ?? 'This venue',
+                    venueName: bootstrap.venue?.name ?? 'This business',
                     clientName: sale.guest ? sale.guest.name.split(' ')[0] || sale.guest.name : null,
                   }
                 : null

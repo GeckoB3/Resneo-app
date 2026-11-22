@@ -70,7 +70,7 @@ describe('BookingLocationCallout', () => {
         view={resolveStaffBookingLocation({ location_type: 'client_address', addressHidden: true })}
       />,
     );
-    expect(screen.getByText(/hidden because this booking belongs to a linked venue/)).toBeTruthy();
+    expect(screen.getByText(/hidden because this booking belongs to a linked business/)).toBeTruthy();
   });
 
   it('shows the join link and joining instructions, and opens the meeting on tap', async () => {

@@ -38,7 +38,7 @@ export function CreditsSection() {
       <View style={styles.list}>
         <EmptyState
           title="No class credits"
-          message="Credits you buy from a venue will appear here, with anything you have left."
+          message="Credits you buy from a business will appear here, with anything you have left."
         />
         {/* Still offered with none held: somebody looking at an empty credits
             tab is very often looking for how to get some. */}

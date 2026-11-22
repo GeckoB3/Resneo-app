@@ -266,7 +266,7 @@ export default function SignInScreen() {
         */}
         <Text variant="caption" tone="muted" style={styles.center}>
           Nothing arriving? Check the address for a typo. Your ResNeo account is created the first
-          time you book with a venue, so if you have never booked there may not be one yet.
+          time you book with a business, so if you have never booked there may not be one yet.
         </Text>
 
         <View style={styles.formBlock}>

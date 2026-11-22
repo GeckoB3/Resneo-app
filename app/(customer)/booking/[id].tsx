@@ -5,6 +5,7 @@ import { RefreshControl, StyleSheet, View } from 'react-native';
 import { BookingActions } from '@/components/customer/BookingActions';
 import { BookingCardHoldCard } from '@/components/customer/BookingCardHoldCard';
 import { BookingDetailBody } from '@/components/customer/BookingDetailBody';
+import { GroupActions } from '@/components/customer/GroupActions';
 import { RescheduleSheet } from '@/components/customer/RescheduleSheet';
 import { VisitActions } from '@/components/customer/VisitActions';
 import { Button } from '@/components/ui/Button';
@@ -24,6 +25,7 @@ import {
   type BookingCardOnFile,
 } from '@/lib/queries/useBookingCardActions';
 import { useCustomerBookingDetail, type CustomerBookingDetail } from '@/lib/queries/useCustomerBookings';
+import { useCustomerGroup } from '@/lib/queries/useCustomerGroup';
 import { useCustomerVisit } from '@/lib/queries/useCustomerVisit';
 import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
@@ -54,7 +56,11 @@ export default function CustomerBookingDetailScreen() {
   const { colors } = useTheme();
   const [rescheduling, setRescheduling] = useState(false);
   const { data, isLoading, isError, refetch } = useCustomerBookingDetail(id);
-  const inVisit = data?.in_visit === true;
+  // One person's appointment of a group booking shows the whole group (web PUBLIC-19).
+  const inGroup = data?.in_group === true;
+  const inVisit = data?.in_visit === true && !inGroup;
+  const groupQuery = useCustomerGroup(id, inGroup);
+  const refetchGroup = groupQuery.refetch;
   const visitQuery = useCustomerVisit(id, inVisit);
   const refetchVisit = visitQuery.refetch;
   // A visit of one service is just a booking: today's screen, unchanged.
@@ -63,12 +69,14 @@ export default function CustomerBookingDetailScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    void Promise.all([refetch(), inVisit ? refetchVisit() : null])
+    void Promise.all([refetch(), inVisit ? refetchVisit() : null, inGroup ? refetchGroup() : null])
       .catch(() => undefined)
       .finally(() => setRefreshing(false));
-  }, [refetch, refetchVisit, inVisit]);
+  }, [refetch, refetchVisit, refetchGroup, inVisit, inGroup]);
 
-  if (isLoading || (inVisit && visitQuery.isLoading)) return <LoadingState message="Loading your booking…" />;
+  if (isLoading || (inVisit && visitQuery.isLoading) || (inGroup && groupQuery.isLoading)) {
+    return <LoadingState message="Loading your booking…" />;
+  }
 
   if (isError || !data) {
     return (
@@ -83,6 +91,22 @@ export default function CustomerBookingDetailScreen() {
   const refreshControl = (
     <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand} />
   );
+
+  if (inGroup && groupQuery.data) {
+    return (
+      <Screen scroll padded refreshControl={refreshControl}>
+        <Stack.Screen options={{ title: 'Your group booking' }} />
+        <View style={styles.stack}>
+          <GroupActions bookingId={data.booking_id} group={groupQuery.data} />
+          <BookingDetailBody booking={data} inGroup />
+          <BookingCardSection booking={data} />
+        </View>
+      </Screen>
+    );
+  }
+
+  // A group that could not be read falls through to this person's own appointment and its own
+  // actions, which act on this person only, as they always have.
 
   if (inVisit && visit) {
     return (

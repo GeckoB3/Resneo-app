@@ -31,7 +31,7 @@ export const ASSISTANT_COPY = {
   rateLimited:
     "You've asked a lot of questions in a short time. Please try again in a few minutes, or use the Support form.",
   dailyCap:
-    "This venue has reached today's limit for Ask ResNeo. It resets at midnight. The Support form is always available.",
+    "This business has reached today's limit for Ask ResNeo. It resets at midnight. The Support form is always available.",
   error: 'Something went wrong while answering. Please try again, or send your question to Support.',
   unavailable: 'Ask ResNeo is not available right now. The Support form is always available.',
   emptyTitle: 'Ask how to do something in ResNeo',

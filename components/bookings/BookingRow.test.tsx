@@ -114,3 +114,21 @@ describe('BookingRow deposit pill', () => {
     expect(screen.queryByText('Not Required')).toBeNull();
   });
 });
+
+describe('BookingRow party size', () => {
+  it('counts people on an appointment, never "guest" (client rename, 2026-11-22)', async () => {
+    await render(
+      <BookingRow booking={bk({ id: 'p1', party_size: 2, service_variant_name: 'Cut' })} isAppointment onPress={() => {}} />,
+    );
+    expect(screen.getByText(/2 people/)).toBeTruthy();
+    expect(screen.queryByText(/guest/)).toBeNull();
+  });
+
+  it('says nothing about size for a one-person appointment, as the web list does', async () => {
+    await render(
+      <BookingRow booking={bk({ id: 'p2', party_size: 1, service_variant_name: 'Cut' })} isAppointment onPress={() => {}} />,
+    );
+    expect(screen.getByText('Cut')).toBeTruthy();
+    expect(screen.queryByText(/person|guest/)).toBeNull();
+  });
+});

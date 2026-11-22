@@ -93,7 +93,7 @@ export function BookingBulkBar({
     const tag = tagInput.trim();
     if (!tag) return;
     if (guestIds.length === 0) {
-      toast.error('Selected bookings have no linked guest contacts.');
+      toast.error('Selected bookings have no linked client contacts.');
       return;
     }
     try {

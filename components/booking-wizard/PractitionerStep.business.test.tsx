@@ -98,6 +98,17 @@ describe('practitionerBusinessLine', () => {
     expect(practitionerBusinessLine({ name: 'Andrew' })).toBeNull();
   });
 
+  it('names Jenny once: her business by its name under her (web 2026-11-22)', () => {
+    expect(
+      practitionerBusinessLine({
+        name: 'Jenny',
+        owning_venue_id: 'v',
+        owning_venue_name: 'Aura Hair Studio',
+        owning_venue_label: 'Aura Hair Studio (Jenny)',
+      }),
+    ).toBe('Aura Hair Studio');
+  });
+
   it('groups by first appearance and keeps order within a business', () => {
     expect(groupedByBusiness(['a1', 'b1', 'a2', 'c1', 'b2'], (x) => x[0])).toEqual(['a1', 'a2', 'b1', 'b2', 'c1']);
   });

@@ -323,7 +323,7 @@ export function ComplianceRequirementsEditor({
                     </View>
                   ) : (
                     <Text variant="caption" tone="muted">
-                      Your team completes this in venue. It is not shown to clients online.
+                      Your team completes this in person. It is not shown to clients online.
                     </Text>
                   )}
                 </View>

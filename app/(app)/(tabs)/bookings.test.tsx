@@ -81,25 +81,25 @@ describe('computeBookingSummary', () => {
  * venue it had left out (device test, 2026-09-12).
  */
 describe('defaultVenueSelection', () => {
-  it('shows this venue and every linked one when nothing is in context', () => {
+  it('shows this business and every linked one when nothing is in context', () => {
     const sel = defaultVenueSelection(null, ['v1', 'v2']);
     expect(sel.own).toBe(true);
     expect([...sel.linked]).toEqual(['v1', 'v2']);
   });
 
-  it('shows only the linked venue being acted as, when one is in context', () => {
+  it('shows only the linked business being acted as, when one is in context', () => {
     const sel = defaultVenueSelection('v2', ['v1', 'v2']);
     expect(sel.own).toBe(false);
     expect([...sel.linked]).toEqual(['v2']);
   });
 
-  it('falls back to this venue when the context venue is no longer linked', () => {
+  it('falls back to this business when the context business is no longer linked', () => {
     const sel = defaultVenueSelection('gone', ['v1']);
     expect(sel.own).toBe(true);
     expect([...sel.linked]).toEqual(['v1']);
   });
 
-  it('is just this venue when there are no linked venues at all', () => {
+  it('is just this business when there are no linked businesses at all', () => {
     const sel = defaultVenueSelection(null, []);
     expect(sel.own).toBe(true);
     expect(sel.linked.size).toBe(0);
@@ -113,17 +113,17 @@ describe('venueSelectionLabel', () => {
     { venueId: 'v2', venueName: 'Light 16' },
   ];
 
-  it('is null while everything is shown, or with no linked venues', () => {
+  it('is null while everything is shown, or with no linked businesses', () => {
     expect(venueSelectionLabel({ own: true, linked: new Set(['v1', 'v2']) }, venues)).toBeNull();
     expect(venueSelectionLabel({ own: true, linked: new Set() }, [])).toBeNull();
   });
 
-  it('names the partner the diary picked, which hides this venue\'s own bookings', () => {
+  it('names the partner the diary picked, which hides this business\'s own bookings', () => {
     expect(venueSelectionLabel(defaultVenueSelection('v1', ['v1', 'v2']), venues)).toBe('Jenny at Aura');
   });
 
   it('names every business still shown', () => {
-    expect(venueSelectionLabel({ own: true, linked: new Set(['v2']) }, venues)).toBe('My venue and Light 16');
+    expect(venueSelectionLabel({ own: true, linked: new Set(['v2']) }, venues)).toBe('My business and Light 16');
   });
 });
 

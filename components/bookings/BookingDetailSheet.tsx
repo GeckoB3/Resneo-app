@@ -148,7 +148,10 @@ export function BookingDetailSheet({
           <Text variant="subheading">{bookingSheetTitle(booking?.inferred_booking_model, isAppointmentVenue)}</Text>
           {linked ? (
             <Text variant="caption" tone="muted" numberOfLines={1}>
-              {`Linked · ${linked.venueName}`}
+              {/* A member of our collective reads by its name alone (2026-11-22). */}
+              {linked.inCollective || booking?.viewer_link?.in_collective === true
+                ? linked.venueName
+                : `Linked · ${linked.venueName}`}
             </Text>
           ) : null}
         </View>

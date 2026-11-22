@@ -77,7 +77,7 @@ export function CombinedPageNameSection({ collective, onChanged }: { collective:
     [mutateAsync, collectiveId, onChanged],
   );
 
-  const host = collective.members.find((m) => m.venueId === collective.hostVenueId)?.venueName ?? 'The host venue';
+  const host = collective.members.find((m) => m.venueId === collective.hostVenueId)?.venueName ?? 'The host business';
   const initialCustom = collectiveCustomPublicName(collective.bookingPageConfig);
   // What each name was last saved as from here (undefined: nothing saved yet, so the collective's).
   const [savedHere, setSavedHere] = useState<{ custom?: string | null; name?: string }>({});

@@ -81,7 +81,7 @@ function displayVal(v: string | null | undefined): string {
 function guestName(g: GuestDetailProfile | GuestListItem | null | undefined): string {
   if (!g) return 'Unnamed';
   const parts = [g.first_name, g.last_name].filter(Boolean);
-  return parts.length > 0 ? parts.join(' ') : 'Unnamed guest';
+  return parts.length > 0 ? parts.join(' ') : 'Unnamed client';
 }
 
 function marketingLabel(optOut: boolean, consent: boolean): string {
@@ -742,7 +742,7 @@ export function MergeContactDetailSheet({
                 { backgroundColor: colors.warningSurface, borderColor: colors.warning },
               ]}>
               <Text variant="caption" tone="secondary">
-                Booking guest snapshots (names on past confirmations) are not rewritten. Only the linked guest record changes.
+                Booking client snapshots (names on past confirmations) are not rewritten. Only the linked client record changes.
               </Text>
             </View>
           </View>

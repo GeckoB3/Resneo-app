@@ -19,6 +19,7 @@ import {
   ANY_AVAILABLE_PRACTITIONER_ID,
   type AppointmentCatalogPractitioner,
 } from '@/types/appointment-catalog';
+import { businessBesidePerson } from '@/lib/venue/member-label';
 
 type VisitPeopleStepProps = {
   /** The visit's services in order: the first, then each extra. */
@@ -112,7 +113,11 @@ export function VisitPeopleStep({
                       key={person.id}
                       name={person.name}
                       avatar={person.name}
-                      detail={isCollective ? person.owning_venue_label?.trim() || person.owning_venue_name || null : null}
+                      detail={
+                        isCollective
+                          ? businessBesidePerson(person.name, person.owning_venue_label?.trim() || person.owning_venue_name) || null
+                          : null
+                      }
                       price={personPrice(person, svc.serviceId)}
                       selected={chosen === person.id}
                       onPress={() => onChoose(index, person.id)}

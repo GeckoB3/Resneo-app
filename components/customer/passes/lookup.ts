@@ -9,7 +9,7 @@
 export function nameById(
   items: { id: string; name: string }[] | undefined,
   id: string | null | undefined,
-  fallback = 'your venue',
+  fallback = 'the business',
 ): string {
   if (!id) return fallback;
   return items?.find((i) => i.id === id)?.name ?? fallback;

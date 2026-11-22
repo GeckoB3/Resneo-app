@@ -96,8 +96,14 @@ describe('canChangeVisitServiceStatus', () => {
 describe('linkedContextFromBooking', () => {
   it('builds the context from the booking for a partner booking', () => {
     expect(
-      linkedContextFromBooking({ venue_id: 'v-b', venue_name: ' Jenny at Aura ', act: 'create_edit_cancel', pii: true }),
-    ).toEqual({ act: 'create_edit_cancel', venueId: 'v-b', venueName: 'Jenny at Aura', pii: true });
+      linkedContextFromBooking({ venue_id: 'v-b', venue_name: ' Aura Hair Studio (Jenny) ', act: 'create_edit_cancel', pii: true }),
+    ).toEqual({ act: 'create_edit_cancel', venueId: 'v-b', venueName: 'Aura Hair Studio (Jenny)', pii: true, inCollective: false });
+  });
+
+  it('carries whether the partner is in the same collective (web 2026-11-22)', () => {
+    expect(
+      linkedContextFromBooking({ venue_id: 'v-b', venue_name: 'Light 16', act: 'none', pii: false, in_collective: true })?.inCollective,
+    ).toBe(true);
   });
 
   it('is null for an own booking, an older server or an unknown grant', () => {
@@ -111,8 +117,9 @@ describe('linkedContextFromBooking', () => {
     expect(linkedContextFromBooking({ venue_id: 'v-b', venue_name: null, act: 'none' })).toEqual({
       act: 'none',
       venueId: 'v-b',
-      venueName: 'Linked venue',
+      venueName: 'Linked business',
       pii: false,
+      inCollective: false,
     });
   });
 });

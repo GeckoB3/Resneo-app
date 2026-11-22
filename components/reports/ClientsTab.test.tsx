@@ -136,7 +136,7 @@ describe('ClientsTab list controls', () => {
     expect(lastGuestsParams().tags).toEqual(['regular']);
   });
 
-  it('renders no tag row, and sends no tags, when the venue has none', async () => {
+  it('renders no tag row, and sends no tags, when the business has none', async () => {
     mockTags = [];
     await render(<ClientsTab />);
     expect(screen.queryByText('Filter by tags')).toBeNull();
@@ -155,10 +155,10 @@ describe('ClientsTab rows', () => {
     expect(screen.getByText('Last visit: 2026-06-01')).toBeTruthy();
   });
 
-  it('calls a row with no name on it Guest', async () => {
+  it('calls a row with no name on it Client', async () => {
     mockGuest = { ...mockGuest, first_name: null, last_name: null };
     await render(<ClientsTab />);
-    expect(screen.getByText('Guest')).toBeTruthy();
+    expect(screen.getByText('Client')).toBeTruthy();
   });
 
   it('calls a walk-in row Anonymous', async () => {
@@ -168,7 +168,7 @@ describe('ClientsTab rows', () => {
   });
 });
 
-describe('ClientsTab guest history export', () => {
+describe('ClientsTab client history export', () => {
   it('uses the web’s columns, deposit status and filename', async () => {
     mockDetail.data = {
       guest: {

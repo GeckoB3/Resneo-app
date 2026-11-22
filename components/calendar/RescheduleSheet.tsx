@@ -26,6 +26,7 @@ import { useMoveWholeVisit, useMoveWholeVisitOption } from '@/lib/queries/useMov
 import { useVisitPartnerLines } from '@/lib/queries/useVisitPartnerLines';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
+import { serviceWithPersonAt } from '@/lib/venue/member-label';
 
 export type RescheduleTarget = {
   id: string;
@@ -322,7 +323,7 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
                 <View style={[styles.complianceBlock, { borderColor: colors.border }]} testID="move-all-businesses">
                   <Text variant="caption">
                     {`${target.guestName || 'The client'} also has ${otherBusinessLines
-                      .map((l) => `${l.service_name}${l.person_name ? ` with ${l.person_name}` : ''} at ${l.venue_name} at ${l.start_time}`)
+                      .map((l) => `${serviceWithPersonAt(l.service_name, l.person_name, l.venue_name)} at ${l.start_time}`)
                       .join(', ')}.`}
                   </Text>
                   {moveAllOption.data?.can_move_all ? (

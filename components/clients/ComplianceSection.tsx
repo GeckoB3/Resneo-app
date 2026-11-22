@@ -293,7 +293,7 @@ export function ComplianceSection({ guestId }: ComplianceSectionProps) {
 
             {records.length === 0 ? (
               <Text variant="bodySmall" tone="muted">
-                No compliance records on file for this guest yet.
+                No compliance records on file for this client yet.
               </Text>
             ) : (
               <View style={styles.recordList}>

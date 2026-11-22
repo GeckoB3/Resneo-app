@@ -83,7 +83,7 @@ describe('BookingNotesSection — web parity', () => {
     expect(mockUpdateGuest).not.toHaveBeenCalled();
   });
 
-  it('edits customer notes and saves them to the GUEST (persist across bookings)', async () => {
+  it('edits customer notes and saves them to the CLIENT (persist across bookings)', async () => {
     await render(<BookingNotesSection booking={makeBooking()} isTable={false} />);
 
     // The persistent-notes scope is clearly labelled and explained.
@@ -123,7 +123,7 @@ describe('BookingNotesSection — web parity', () => {
     expect(mockUpdateBooking).toHaveBeenCalledWith({ special_requests: null });
   });
 
-  it('does NOT surface guest contact fields in the notes section (web parity)', async () => {
+  it('does NOT surface client contact fields in the notes section (web parity)', async () => {
     await render(<BookingNotesSection booking={makeBooking()} isTable={false} />);
 
     // The old bundled "Edit" form exposed these — they belong on the contact screen now.
@@ -140,6 +140,6 @@ describe('BookingNotesSection — web parity', () => {
 
     await screen.rerender(<BookingNotesSection booking={makeBooking()} isTable />);
     expect(screen.getByText('Dietary notes')).toBeTruthy();
-    expect(screen.getByText('Guest requests')).toBeTruthy();
+    expect(screen.getByText('Client requests')).toBeTruthy();
   });
 });

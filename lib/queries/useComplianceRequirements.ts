@@ -89,7 +89,7 @@ export const COMPLIANCE_ONLINE_COLLECTION_OPTIONS: {
   {
     value: 'none',
     label: 'Do not collect online',
-    description: 'The form is never shown to the client online. Your team collects it in venue.',
+    description: 'The form is never shown to the client online. Your team collects it in person.',
   },
 ];
 

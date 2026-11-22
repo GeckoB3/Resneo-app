@@ -210,8 +210,8 @@ export function StaffServiceOverrideSheet({
 
           <Text variant="caption" tone="muted">
             {multipleCalendars
-              ? 'Changes apply only to the calendar selected above. Match the venue default to clear your override for a field.'
-              : 'Changes apply only to your calendar. Match the venue default to clear your override for a field.'}
+              ? 'Changes apply only to the calendar selected above. Match the business default to clear your override for a field.'
+              : 'Changes apply only to your calendar. Match the business default to clear your override for a field.'}
           </Text>
 
           {flags.name ? (
@@ -220,7 +220,7 @@ export function StaffServiceOverrideSheet({
               value={name}
               onChangeText={setName}
               maxLength={200}
-              helper={`Venue default: ${service.name}`}
+              helper={`Business default: ${service.name}`}
             />
           ) : null}
 

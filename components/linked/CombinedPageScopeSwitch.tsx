@@ -37,13 +37,13 @@ export function CombinedPageScopeSwitch({
   return (
     <Card style={[styles.card, { borderColor: colors.brand }]}>
       <Text variant="overline" tone="muted">
-        Venue collective
+        Business collective
       </Text>
-      <Text variant="subheading">{`This venue is part of ${collective.name}`}</Text>
+      <Text variant="subheading">{`This business is part of ${collective.name}`}</Text>
       <Text variant="bodySmall" tone="secondary">
         {collective.isHost
-          ? `This venue shares one booking page with the other members of ${collective.name}, and hosts it. Guests who book with you use the combined page.`
-          : `This venue shares one booking page with the other members of ${collective.name}. ${collective.hostVenueName} hosts it. Guests who book with you use the combined page.`}
+          ? `This business shares one booking page with the other members of ${collective.name}, and hosts it. Clients who book with you use the combined page.`
+          : `This business shares one booking page with the other members of ${collective.name}. ${collective.hostVenueName} hosts it. Clients who book with you use the combined page.`}
       </Text>
       {statusLine ? (
         <Text variant="bodySmall" tone="secondary" testID="own-page-status">
@@ -52,7 +52,7 @@ export function CombinedPageScopeSwitch({
       ) : null}
       {collective.adoptedThisVenue ? (
         <Text variant="bodySmall" tone="secondary">
-          The combined page is served at this venue’s own address, so its settings are what guests
+          The combined page is served at this business’s own address, so its settings are what clients
           see there.
         </Text>
       ) : null}
@@ -69,7 +69,7 @@ export function CombinedPageScopeSwitch({
         <Segmented<BookingPageScope>
           options={[
             { value: 'combined', label: `Combined page (${collective.name})` },
-            { value: 'own', label: 'This venue’s own page' },
+            { value: 'own', label: 'This business’s own page' },
           ]}
           value={scope}
           onChange={onScopeChange}

@@ -29,13 +29,13 @@ export function StaffRequired({ onRetry, retrying = false }: StaffRequiredProps)
       </Text>
       <Text variant="body" tone="secondary" style={styles.subtitle}>
         {user?.email
-          ? `${user.email} is signed in, but this app is only for ResNeo venue staff.`
-          : 'This app is only for ResNeo venue staff.'}
+          ? `${user.email} is signed in, but this app is only for ResNeo business staff.`
+          : 'This app is only for ResNeo business staff.'}
       </Text>
 
       <Card style={styles.card}>
         <Text variant="bodySmall" tone="secondary">
-          Ask your venue admin to invite you as staff, or sign in with a different email. If you are a
+          Ask your business admin to invite you as staff, or sign in with a different email. If you are a
           customer, sign out and back in to see your bookings.
         </Text>
       </Card>

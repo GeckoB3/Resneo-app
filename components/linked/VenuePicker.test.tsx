@@ -28,7 +28,7 @@ import { VenuePicker } from './VenuePicker';
 const picker = <VenuePicker onPick={jest.fn()} onBack={jest.fn()} />;
 
 describe('VenuePicker', () => {
-  it('shows each venue with its town and booking page address, the shared page, and why not', async () => {
+  it('shows each business with its town and booking page address, the shared page, and why not', async () => {
     mockSearch = {
       truncated: false,
       query_kind: 'address',
@@ -38,7 +38,7 @@ describe('VenuePicker', () => {
           name: 'Aura Hair Studio',
           slug: 'light-3',
           eligible: false,
-          reason: 'This is your own venue.',
+          reason: 'This is your own business.',
           town: 'Holywood',
           collective_name: 'Plus 1',
         },
@@ -51,29 +51,29 @@ describe('VenuePicker', () => {
     expect(screen.getByText('/book/light-16')).toBeTruthy();
     expect(screen.getAllByText('On the Plus 1 page')).toHaveLength(2);
     expect(screen.getByText('Unavailable')).toBeTruthy();
-    expect(screen.getByText('This is your own venue.')).toBeTruthy();
+    expect(screen.getByText('This is your own business.')).toBeTruthy();
   });
 
   it('says a pasted address found nothing', async () => {
     mockSearch = { truncated: false, query_kind: 'address', results: [] };
     await render(picker);
-    expect(screen.getByText('We could not find a venue at that address. Check it, or search for them by name.')).toBeTruthy();
+    expect(screen.getByText('We could not find a business at that address. Check it, or search for them by name.')).toBeTruthy();
   });
 
   it('keeps the name line for a name, and for an older server', async () => {
     mockSearch = { truncated: false, query_kind: 'name', results: [] };
     await render(picker);
-    expect(screen.getByText('No venues found. Check the name, or ask them for their booking page address.')).toBeTruthy();
+    expect(screen.getByText('No businesses found. Check the name, or ask them for their booking page address.')).toBeTruthy();
     mockSearch = { truncated: false, results: [] };
     await render(picker);
-    expect(screen.getAllByText('No venues found. Check the name, or ask them for their booking page address.').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('No businesses found. Check the name, or ask them for their booking page address.').length).toBeGreaterThan(0);
   });
 
-  it('says why not on a venue found by its address too (CQ-17.2)', async () => {
+  it('says why not on a business found by its address too (CQ-17.2)', async () => {
     mockSearch = { truncated: false, results: [] };
-    mockLookup = { found: true, name: 'Light 3', slug: 'light-3', eligible: false, reason: 'You are already linked with this venue.' };
+    mockLookup = { found: true, name: 'Light 3', slug: 'light-3', eligible: false, reason: 'You are already linked with this business.' };
     await render(picker);
-    expect(screen.getByText('Unavailable: You are already linked with this venue.')).toBeTruthy();
+    expect(screen.getByText('Unavailable: You are already linked with this business.')).toBeTruthy();
     mockLookup = undefined;
   });
 });

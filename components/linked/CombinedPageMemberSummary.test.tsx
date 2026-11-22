@@ -86,7 +86,7 @@ describe('CombinedPageMemberSummary address adoption', () => {
   const ASK =
     'Aura Hair Studio would like the Plus 1 page to use your page address, https://resneo.test/book/aura-2. Nothing changes unless you agree, and you get the address back if you leave.';
 
-  it('asks the venue it is waiting for, and says nothing changes unless it agrees', async () => {
+  it('asks the business it is waiting for, and says nothing changes unless it agrees', async () => {
     await render(<CombinedPageMemberSummary collective={asked()} />);
     expect(screen.getByText(ASK)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Agree' })).toBeTruthy();
@@ -135,7 +135,7 @@ describe('CombinedPageMemberSummary address adoption', () => {
 });
 
 describe('CombinedPageMemberSummary', () => {
-  it('points a member on shared services to Manage Collective, not Linked venues', async () => {
+  it('points a member on shared services to Manage Collective, not Linked businesses', async () => {
     const onOpenManageCollective = jest.fn();
     const onOpenLinkedVenues = jest.fn();
     await render(
@@ -145,8 +145,8 @@ describe('CombinedPageMemberSummary', () => {
         onOpenLinkedVenues={onOpenLinkedVenues}
       />,
     );
-    expect(screen.queryByRole('button', { name: 'Open Linked venues' })).toBeNull();
-    expect(screen.queryByText(/leave the collective under Linked venues/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open Linked businesses' })).toBeNull();
+    expect(screen.queryByText(/leave the collective under Linked businesses/)).toBeNull();
     expect(
       screen.getByText(
         'None of your calendars offers a service on the Plus 1 page yet. You or Aura Hair Studio can choose them in Manage Collective.',
@@ -176,9 +176,9 @@ describe('CombinedPageMemberSummary', () => {
     ).toBeTruthy();
   });
 
-  it('keeps the older words and Linked venues for an older collective', async () => {
+  it('keeps the older words and Linked businesses for an older collective', async () => {
     await render(<CombinedPageMemberSummary collective={collective('legacy_copies')} onOpenLinkedVenues={jest.fn()} />);
-    expect(screen.getByRole('button', { name: 'Open Linked venues' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Open Linked businesses' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Open Manage Collective' })).toBeNull();
   });
 });

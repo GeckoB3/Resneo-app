@@ -37,7 +37,7 @@ type HouseholdSectionProps = {
 
 function memberName(g: GuestListItem): string {
   const parts = [g.first_name, g.last_name].filter(Boolean);
-  return parts.length > 0 ? parts.join(' ') : 'Unnamed guest';
+  return parts.length > 0 ? parts.join(' ') : 'Unnamed client';
 }
 
 /**
@@ -200,7 +200,7 @@ export function HouseholdSection({
                   disabled={isSelf}
                   onPress={() => onNavigateToGuest?.(m.guest_id)}
                   accessibilityRole="button">
-                  <Avatar name={m.name ?? 'Guest'} size={32} />
+                  <Avatar name={m.name ?? 'Client'} size={32} />
                   <View style={styles.memberText}>
                     <Text variant="bodySmall" numberOfLines={1}>
                       {m.name ?? 'Unnamed'}

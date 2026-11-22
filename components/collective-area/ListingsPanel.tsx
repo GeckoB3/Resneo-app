@@ -90,11 +90,11 @@ export function ListingsPanel({
         <Text variant="label">Classes, events and resources on the {collectiveName} page</Text>
         <Text variant="bodySmall" tone="secondary" style={styles.gapTop}>
           {data.is_host
-            ? "Switch an item on to show it on the combined page. Guests see which venue runs it, and the booking lands on that venue's calendar. Prices and payment rules are set by the venue that runs each item."
+            ? "Switch an item on to show it on the combined page. Clients see which business runs it, and the booking lands on that business's calendar. Prices and payment rules are set by the business that runs each item."
             : 'The host chooses what appears on the combined page. You can take any of your own items off it here. Prices and payment rules stay yours.'}
         </Text>
         <Text variant="caption" tone="muted" style={styles.gapTop}>
-          Rooms and equipment are never shared between venues. Listing a room only says where it can be
+          Rooms and equipment are never shared between businesses. Listing a room only says where it can be
           booked from; bookings still land on your own calendar.
         </Text>
       </Card>
@@ -102,7 +102,7 @@ export function ListingsPanel({
       {!anyItems ? (
         <EmptyState
           title="Nothing to list yet"
-          message="Set up classes, events or resources on each venue first, then come back here."
+          message="Set up classes, events or resources on each business first, then come back here."
         />
       ) : null}
 
@@ -143,7 +143,7 @@ export function ListingsPanel({
                               {item.name}
                               {!item.isActive ? (
                                 <Text variant="caption" tone="danger">
-                                  {'  Inactive at the venue'}
+                                  {'  Inactive at the business'}
                                 </Text>
                               ) : null}
                             </Text>

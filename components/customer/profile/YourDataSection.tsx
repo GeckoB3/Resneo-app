@@ -104,7 +104,7 @@ export function YourDataSection() {
           who reads "delete" as "erase every trace" and later finds a venue
           still holds a record has been misled by this dialog.
         */
-        message="Your ResNeo account and your access to it are removed. Venues keep their own records of bookings you made with them, which they need for their accounts. Nothing happens immediately, and you can change your mind here until it does."
+        message="Your ResNeo account and your access to it are removed. Businesses keep their own records of bookings you made with them, which they need for their accounts. Nothing happens immediately, and you can change your mind here until it does."
         confirmLabel="Delete my account"
         cancelLabel="Keep it"
         loading={requestDeletion.isPending}

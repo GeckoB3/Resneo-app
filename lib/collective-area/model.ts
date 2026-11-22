@@ -608,7 +608,7 @@ export function listNames(names: readonly string[], max = 6): string {
 
 function lookups(services: readonly DescribeService[], groups: readonly CollectiveCalendarGroup[]) {
   const serviceName = (id: string) => services.find((s) => s.id === id)?.name ?? 'A service';
-  const venueName = (id: string | undefined) => groups.find((g) => g.venue_id === id)?.venue_name ?? 'a venue';
+  const venueName = (id: string | undefined) => groups.find((g) => g.venue_id === id)?.venue_name ?? 'a business';
   const calendarName = (venueId: string | undefined, calendarId: string | undefined) =>
     groups.find((g) => g.venue_id === venueId)?.calendars.find((c) => c.id === calendarId)?.name ?? 'A calendar';
   return { serviceName, venueName, calendarName };

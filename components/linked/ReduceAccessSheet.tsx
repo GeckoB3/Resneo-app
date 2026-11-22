@@ -172,8 +172,8 @@ export function ReduceAccessSheet({
         <View>
           <Text variant="subheading">{`Reduce ${name}’s access`}</Text>
           <Text variant="bodySmall" tone="secondary">
-            Lower the access your venue grants. This takes effect immediately and does not need the
-            other venue’s consent.
+            Lower the access your business grants. This takes effect immediately and does not need the
+            other business’s consent.
           </Text>
         </View>
 

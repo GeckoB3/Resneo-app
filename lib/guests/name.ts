@@ -20,5 +20,5 @@ export function formatGuestDisplayName(
   if (first && last) return `${first} ${last}`;
   if (first) return first;
   if (last) return last;
-  return fallback === 'walk-in' ? 'Walk-in' : 'Guest';
+  return fallback === 'walk-in' ? 'Walk-in' : 'Client';
 }

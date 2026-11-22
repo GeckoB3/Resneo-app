@@ -86,7 +86,7 @@ export function ProfileDetailsSection() {
         autoComplete="tel"
         maxLength={32}
         optional
-        helper="Venues use this to reach you about a booking."
+        helper="Businesses use this to reach you about a booking."
       />
       {/*
         The web has this and the app did not, so a name chosen there was

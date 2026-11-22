@@ -59,7 +59,7 @@ export function bannerItemsFromFeed(feed: Partial<IncomingLinksResponse> | null 
     ...(feed.collectiveSetup ?? []).map((s) => ({
       id: `setup:${s.collectiveId}`,
       kind: 'setup' as const,
-      text: setupCopy('banner.setup', { venueList: formatVenueList(s.memberNames, 2) || 'Your partner venue', collective: s.name }),
+      text: setupCopy('banner.setup', { venueList: formatVenueList(s.memberNames, 2) || 'Your partner business', collective: s.name }),
       cta: setupCopy('banner.setup.cta'),
       href: `/collectives?setup=${encodeURIComponent(s.collectiveId)}`,
     })),

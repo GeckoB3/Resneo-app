@@ -397,7 +397,7 @@ describe('what the screen says', () => {
     await show();
     const theirs = section('partners');
     expect(within(theirs).getByText(/When you link with another business/)).toBeTruthy();
-    await press(within(theirs).getByText('Go to Linked venues'));
+    await press(within(theirs).getByText('Go to Linked businesses'));
     expect(mockPush).toHaveBeenCalledWith('/linked-venues');
     expect(within(section('calendars')).queryByText('Share with a business')).toBeNull();
   });

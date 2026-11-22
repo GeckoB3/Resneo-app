@@ -142,12 +142,12 @@ export function EditPermissionsSheet({
     action === 'reduce' && breakInfo ? linkBreakConfirmLabel('reduce', breakInfo, myVenueId) : submitLabel;
 
   const description = needsNegotiation
-    ? 'Changes that affect what you can do on their data, or both directions at once, are proposed to the other venue and take effect once they accept. Expanding or reducing only what you grant takes effect immediately.'
+    ? 'Changes that affect what you can do on their data, or both directions at once, are proposed to the other business and take effect once they accept. Expanding or reducing only what you grant takes effect immediately.'
     : action === 'grant'
-      ? 'You are expanding access your venue grants. This takes effect immediately.'
+      ? 'You are expanding access your business grants. This takes effect immediately.'
       : action === 'reduce'
-        ? 'You are reducing access your venue grants. This takes effect immediately.'
-        : 'Adjust what each venue can do, then save your changes.';
+        ? 'You are reducing access your business grants. This takes effect immediately.'
+        : 'Adjust what each business can do, then save your changes.';
 
   const handleSubmit = () => {
     if (action === 'grant') {

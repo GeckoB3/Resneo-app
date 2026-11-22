@@ -67,7 +67,7 @@ describe('ReportCalendarPicker', () => {
       'Jenny',
       'Jo (no longer active)',
     ]);
-    expect(screen.getByText('Some figures always cover the whole venue. They say so when you choose a calendar.')).toBeTruthy();
+    expect(screen.getByText('Some figures always cover the whole business. They say so when you choose a calendar.')).toBeTruthy();
     await act(async () => {
       fireEvent.press(screen.getByRole('radio', { name: 'Jo (no longer active)' }));
     });
@@ -76,7 +76,7 @@ describe('ReportCalendarPicker', () => {
     expect(screen.queryByTestId('calendar-sheet')).toBeNull();
   });
 
-  it('is greyed out on a whole-venue tab, reading All calendars, and does not open', async () => {
+  it('is greyed out on a whole-business tab, reading All calendars, and does not open', async () => {
     const onChange = jest.fn();
     await render(
       <ReportCalendarPicker options={OWN_ONLY} value={show(OWN_ONLY, { kind: 'calendar', calendarId: 'c1' })} onChange={onChange} disabled />,
@@ -109,7 +109,7 @@ describe('ReportCalendarPicker', () => {
     expect(onChange).toHaveBeenCalledWith({ kind: 'venue' });
   });
 
-  it('groups your venue, each business and everyone together, in that order', async () => {
+  it('groups your business, each business and everyone together, in that order', async () => {
     const onChange = jest.fn();
     await render(<ReportCalendarPicker options={WITH_BUSINESSES} value={show(WITH_BUSINESSES, { kind: 'venue' })} onChange={onChange} />);
     expect(screen.getByRole('button', { name: 'Showing, Plus 1 (you): all calendars' })).toBeTruthy();
@@ -178,33 +178,33 @@ describe('what a section says', () => {
     expect(screen.getByText('Showing Hannah only. The commission and tips of the person on this calendar.')).toBeTruthy();
   });
 
-  it('says the whole venue when the answer carries no calendar while one is chosen', async () => {
+  it('says the whole business when the answer carries no calendar while one is chosen', async () => {
     await render(withCalendar(HANNAH, <CalendarScopeNote echoed={null} />));
-    expect(screen.getByText('These figures are for the whole venue.')).toBeTruthy();
+    expect(screen.getByText('These figures are for the whole business.')).toBeTruthy();
   });
 
   it('says nothing for all calendars, and nothing without the Reports screen around it', async () => {
     await render(withCalendar(null, <CalendarScopeNote echoed={undefined} />));
-    expect(screen.queryByText(/whole venue|Showing/)).toBeNull();
+    expect(screen.queryByText(/whole business|Showing/)).toBeNull();
     await render(
       <>
         <CalendarScopeNote echoed={undefined} />
         <WholeVenueNote />
       </>,
     );
-    expect(screen.queryByText(/whole venue|Showing/)).toBeNull();
+    expect(screen.queryByText(/whole business|Showing/)).toBeNull();
   });
 
-  it('puts the whole-venue line on a report that never splits by calendar, only while one is chosen', async () => {
+  it('puts the whole-business line on a report that never splits by calendar, only while one is chosen', async () => {
     await render(withCalendar(HANNAH, <WholeVenueNote />));
-    expect(screen.getByText('These figures are for the whole venue.')).toBeTruthy();
+    expect(screen.getByText('These figures are for the whole business.')).toBeTruthy();
     // A whole tab (Takings, Vouchers) and the data export, in the web's words.
     await render(withCalendar(HANNAH, <WholeVenueNote variant="tab" />));
-    expect(screen.getByText('These figures are for the whole venue. Hannah stays chosen on the other tabs.')).toBeTruthy();
+    expect(screen.getByText('These figures are for the whole business. Hannah stays chosen on the other tabs.')).toBeTruthy();
     await render(withCalendar(HANNAH, <WholeVenueNote variant="files" />));
-    expect(screen.getByText('These files are for the whole venue, whichever calendar you chose above.')).toBeTruthy();
+    expect(screen.getByText('These files are for the whole business, whichever calendar you chose above.')).toBeTruthy();
     await render(withCalendar(null, <WholeVenueNote variant="tab" />));
-    expect(screen.queryByText(/whole venue/)).toBeNull();
+    expect(screen.queryByText(/whole business/)).toBeNull();
   });
 
   it("shows the server's sentence and the way back to all calendars", async () => {
@@ -286,12 +286,12 @@ describe('a linked business and everyone together', () => {
     expect(screen.getByText(/^Showing Everyone together: Plus 1 and Light 3\./)).toBeTruthy();
   });
 
-  it('reads an answer that applied nothing as the whole venue', async () => {
+  it('reads an answer that applied nothing as the whole business', async () => {
     await render(withShowing({ kind: 'business', venueId: 'v2' }, <CalendarScopeNote echoed={null} scope={null} />));
-    expect(screen.getByText('These figures are for the whole venue.')).toBeTruthy();
+    expect(screen.getByText('These figures are for the whole business.')).toBeTruthy();
   });
 
-  it("never hands a till report a partner's calendar, and says the till figures are your venue's", async () => {
+  it("never hands a till report a partner's calendar, and says the till figures are your business's", async () => {
     function Reader() {
       const { calendar } = useReportCalendar();
       const scope = useReportScopeQuery();
@@ -307,7 +307,7 @@ describe('a linked business and everyone together', () => {
     expect(screen.getByText('till: c2; bookings: c2 - previous')).toBeTruthy();
 
     const till =
-      "These figures are your venue's only: takings and sales are never shared between businesses. Jess at Light 3 stays chosen on the other tabs.";
+      "These figures are your business's only: takings and sales are never shared between businesses. Jess at Light 3 stays chosen on the other tabs.";
     await render(withShowing({ kind: 'partner-calendar', venueId: 'v2', calendarId: 'p1' }, <CalendarScopeNote echoed={null} till />));
     expect(screen.getByText(till)).toBeTruthy();
     await render(withShowing({ kind: 'partner-calendar', venueId: 'v2', calendarId: 'p1' }, <WholeVenueNote variant="tab" />));
@@ -315,12 +315,12 @@ describe('a linked business and everyone together', () => {
     await render(withShowing({ kind: 'together' }, <WholeVenueNote variant="tab" />));
     expect(screen.getByText(/Everyone together stays chosen on the other tabs\.$/)).toBeTruthy();
     await render(withShowing({ kind: 'business', venueId: 'v2' }, <WholeVenueNote />));
-    expect(screen.getByText('These figures are for the whole venue.')).toBeTruthy();
+    expect(screen.getByText('These figures are for the whole business.')).toBeTruthy();
     await render(withShowing({ kind: 'business', venueId: 'v2' }, <WholeVenueNote variant="files" />));
-    expect(screen.getByText('These files are for the whole venue, whichever calendar you chose above.')).toBeTruthy();
+    expect(screen.getByText('These files are for the whole business, whichever calendar you chose above.')).toBeTruthy();
   });
 
-  it('offers the way back to your venue from a partner, in the web words', async () => {
+  it('offers the way back to your business from a partner, in the web words', async () => {
     const clear = jest.fn();
     await render(
       <ReportCalendarProvider showing={show(WITH_BUSINESSES, { kind: 'business', venueId: 'v2' })} options={WITH_BUSINESSES} onClear={clear}>
@@ -328,7 +328,7 @@ describe('a linked business and everyone together', () => {
       </ReportCalendarProvider>,
     );
     await act(async () => {
-      fireEvent.press(screen.getByText('Show your venue'));
+      fireEvent.press(screen.getByText('Show your business'));
     });
     expect(clear).toHaveBeenCalled();
   });

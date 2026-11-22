@@ -277,7 +277,7 @@ export function ClassTypesManagerSheet({ visible, onClose }: ClassTypesManagerSh
               <Text variant="caption" tone="muted">
                 {linkedCalendarIds.length === 0
                   ? "Your account isn't linked to a calendar yet. Ask an admin to assign one before you can manage classes."
-                  : 'You can create, edit and schedule classes on the calendars assigned to you. Cancelling a class with guest notifications is admin-only.'}
+                  : 'You can create, edit and schedule classes on the calendars assigned to you. Cancelling a class with client notifications is admin-only.'}
               </Text>
             ) : null}
 
@@ -299,7 +299,7 @@ export function ClassTypesManagerSheet({ visible, onClose }: ClassTypesManagerSh
                 message={
                   canManageClasses
                     ? 'Create your first class type, then schedule sessions for it.'
-                    : 'No class types have been created yet. A venue admin can add them.'
+                    : 'No class types have been created yet. A business admin can add them.'
                 }
               />
             ) : (
@@ -454,12 +454,12 @@ export function ClassTypesManagerSheet({ visible, onClose }: ClassTypesManagerSh
               {formatDayHeading(cancelTarget.instance.instance_date)} at{' '}
               {shortTime(cancelTarget.instance.start_time)}?
               {(cancelTarget.instance.booked_spots ?? 0) > 0
-                ? ` ${cancelTarget.instance.booked_spots} booking(s) will be cancelled, refunded per your policy, and the guests notified.`
-                : ' This frees the calendar slot and notifies any booked guests.'}
+                ? ` ${cancelTarget.instance.booked_spots} booking(s) will be cancelled, refunded per your policy, and the clients notified.`
+                : ' This frees the calendar slot and notifies any booked clients.'}
             </Text>
           ) : null}
           <Input
-            label="Reason for guests (optional)"
+            label="Reason for clients (optional)"
             optional
             value={cancelReason}
             onChangeText={setCancelReason}
@@ -499,7 +499,7 @@ export function ClassTypesManagerSheet({ visible, onClose }: ClassTypesManagerSh
               Remove &quot;{removeSessionTarget.classType.name}&quot; on{' '}
               {formatDayHeading(removeSessionTarget.instance.instance_date)} at{' '}
               {shortTime(removeSessionTarget.instance.start_time)} from the calendar? This deletes the
-              session without notifying guests, and is blocked if it has active bookings. Cancel the
+              session without notifying clients, and is blocked if it has active bookings. Cancel the
               session instead to refund and notify them.
             </Text>
           ) : null}

@@ -13,9 +13,9 @@ export const STAFF_ONLY_LABEL = 'Staff bookings only';
 export function staffOnlyHelp(collectiveName?: string | null): string {
   const name = collectiveName?.trim();
   if (name) {
-    return `Teams at every venue in ${name} can book this from the diary. Guests do not see it on the ${name} page.`;
+    return `Teams at every business in ${name} can book this from the diary. Clients do not see it on the ${name} page.`;
   }
-  return 'Your team can book this from the diary. Guests do not see it on your booking page.';
+  return 'Your team can book this from the diary. Clients do not see it on your booking page.';
 }
 
 /** True when the stored service is staff-only. Absent (older server) or true means guests can book. */

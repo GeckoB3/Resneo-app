@@ -249,7 +249,7 @@ export function ComplianceCard({ bookingId, guestId, guestEmail, guestPhone }: C
               result.reused
                 ? 'An existing open link was re-used.'
                 : result.dispatched
-                  ? 'Form link sent to the guest.'
+                  ? 'Form link sent to the client.'
                   : 'Form link issued.',
             );
           }
@@ -434,7 +434,7 @@ export function ComplianceCard({ bookingId, guestId, guestEmail, guestPhone }: C
               </Text>
               {records.length === 0 ? (
                 <Text variant="bodySmall" tone="muted">
-                  No compliance records on file for this guest yet.
+                  No compliance records on file for this client yet.
                 </Text>
               ) : (
                 records.map((rec) => {
@@ -510,7 +510,7 @@ export function ComplianceCard({ bookingId, guestId, guestEmail, guestPhone }: C
       <Sheet visible={sendTarget !== null} onClose={() => setSendTarget(null)}>
         <Text variant="subheading">Send {sendTarget?.typeName} form</Text>
         <Text variant="bodySmall" tone="muted">
-          How should the guest receive the form link?
+          How should the client receive the form link?
         </Text>
         <View style={styles.sendOptions}>
           {guestEmail ? (

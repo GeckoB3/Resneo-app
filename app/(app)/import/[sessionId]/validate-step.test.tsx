@@ -125,7 +125,7 @@ describe('Validate step', () => {
     await press(screen.getByText('Update existing'));
     expect(mockApi.decideIssue).toHaveBeenCalledWith('s1', 'i1', 'update_existing');
     await press(screen.getByText('Review and approve'));
-    expect(screen.getByText(/This creates real clients and bookings in your venue/)).toBeTruthy();
+    expect(screen.getByText(/This creates real clients and bookings in your business/)).toBeTruthy();
     await press(screen.getByText('Approve and start import'));
     expect(mockApi.approve).toHaveBeenCalledWith('s1');
     expect(mockPush).toHaveBeenCalledWith('/import/s1/importing');

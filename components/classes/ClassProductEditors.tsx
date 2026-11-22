@@ -468,7 +468,7 @@ export function CourseEditorSheet({
         <Input
           label="Cancellation window (days)"
           optional
-          helper="Days before the first session a guest can self-cancel for a full refund. Blank = non-refundable."
+          helper="Days before the first session a client can self-cancel for a full refund. Blank = non-refundable."
           value={state.cancellation_window_days}
           onChangeText={(v) =>
             setState((s) => ({ ...s, cancellation_window_days: v.replace(/[^0-9]/g, '') }))
@@ -623,7 +623,7 @@ export function MembershipEditorSheet({
           optional
           value={state.description}
           onChangeText={(description) => setState((s) => ({ ...s, description }))}
-          placeholder="Best for guests who attend multiple times per week."
+          placeholder="Best for clients who attend multiple times per week."
           multiline
         />
 
@@ -632,7 +632,7 @@ export function MembershipEditorSheet({
             Recurring billing
           </Text>
           <Text variant="caption" tone="muted">
-            Enter a price + interval to auto-create a Stripe Product + Price on your venue account,
+            Enter a price + interval to auto-create a Stripe Product + Price on your business account,
             or leave blank and paste a manual Price ID below.
           </Text>
           <Input

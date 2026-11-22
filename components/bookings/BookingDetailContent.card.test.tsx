@@ -6,6 +6,7 @@
  *
  * jest hoists mock factories above imports, so every closed-over variable is prefixed `mock*`.
  */
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 
@@ -220,5 +221,31 @@ describe('the booking detail Card section', () => {
     await renderBooking(makeBooking({ guest_id: undefined, guest: null, card_hold: hold({ state: 'awaiting' }) }));
     await fireEvent.press(screen.getByText('Card actions'));
     expect((mockDepositTargets[mockDepositTargets.length - 1] as { canAddCard: boolean }).canAddCard).toBe(false);
+  });
+});
+
+describe('the partner note on a member booking (2026-11-22)', () => {
+  const partner = { venue_id: 'v-jenny', venue_name: 'Aura Hair Studio (Jenny)', act: 'create_edit_cancel', pii: true };
+
+  // A partner's booking also draws the linked client's records, which read through react-query.
+  async function renderPartner(booking: BookingDetail) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>
+        <ViewerAccessProvider value={FULL}>{children}</ViewerAccessProvider>
+      </QueryClientProvider>
+    );
+    await render(<BookingDetailContent booking={booking} isAppointmentVenue isAdmin onStatusChange={jest.fn()} />, { wrapper });
+  }
+
+  it('drops the Linked pill for a member of our collective', async () => {
+    await renderPartner(makeBooking({ viewer_link: { ...partner, in_collective: true } }));
+    expect(screen.getByTestId('linked-owner-venue')).toBeTruthy();
+    expect(screen.queryByText('Linked')).toBeNull();
+  });
+
+  it('keeps the Linked pill for a plain account link, and on an older server', async () => {
+    await renderPartner(makeBooking({ viewer_link: { ...partner, in_collective: false } }));
+    expect(screen.getByText('Linked')).toBeTruthy();
   });
 });

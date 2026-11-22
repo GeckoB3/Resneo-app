@@ -46,7 +46,7 @@ export function buildAlertMessage(alert: WaitlistAlert): string {
   const when = whenParts ? ` on ${whenParts}` : '';
   const count = alert.matching_waitlist_count;
   const guestNote =
-    count === 1 ? '1 guest on the waitlist matches.' : `${count} guests on the waitlist match.`;
+    count === 1 ? '1 client on the waitlist matches.' : `${count} clients on the waitlist match.`;
   return `Availability opened for ${service}${calendarPart}${when}. ${guestNote}`;
 }
 
@@ -113,7 +113,7 @@ export function WaitlistAvailabilityBanner() {
               toast.info('Alert dismissed.');
               return;
             }
-            const guest = data.guest_name ?? 'the guest';
+            const guest = data.guest_name ?? 'the client';
             if (data.email_sent || data.sms_sent) {
               toast.success(`Offer sent to ${guest}. They have been notified.`);
             } else {

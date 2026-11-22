@@ -84,22 +84,22 @@ function HowItWorksCard() {
         <HowItWorksStep
           index={1}
           title="Share your link"
-          body="Send your referral code or link to another venue that isn’t on ResNeo yet."
+          body="Send your referral code or link to another business that isn’t on ResNeo yet."
         />
         <HowItWorksStep
           index={2}
           title="They sign up"
-          body="When they create a venue using your link, the referral appears in the list below."
+          body="When they create a business using your link, the referral appears in the list below."
         />
         <HowItWorksStep
           index={3}
           title="You both earn"
-          body="You and the venue you referred each get one month of subscription credit, applied once they’re an active, paying venue."
+          body="You and the business you referred each get one month of subscription credit, applied once they’re an active, paying business."
         />
       </View>
       <Text variant="caption" tone="muted" style={styles.howFootnote}>
         Credit is applied automatically and shown under “Credit remaining”. Referrals may be voided
-        if the venue already had an account or doesn’t stay active.
+        if the business already had an account or doesn’t stay active.
       </Text>
     </Card>
   );
@@ -214,7 +214,7 @@ export default function ReferEarnScreen() {
     return (
       <Screen>
         {header}
-        <ErrorState message="Refer & Earn is only available to venue admins." />
+        <ErrorState message="Refer & Earn is only available to business admins." />
       </Screen>
     );
   }
@@ -236,7 +236,7 @@ export default function ReferEarnScreen() {
         {header}
         <EmptyState
           title="Refer & Earn isn’t available"
-          message="The referral programme isn’t enabled for your venue yet. Contact the ResNeo team to take part."
+          message="The referral programme isn’t enabled for your business yet. Contact the ResNeo team to take part."
         />
       </Screen>
     );

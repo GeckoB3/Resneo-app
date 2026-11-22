@@ -19,7 +19,7 @@ import {
 } from '@/lib/reports/report-calendar';
 
 describe('withCalendarParam', () => {
-  it('adds calendar_id for one calendar and leaves the whole venue as it was', () => {
+  it('adds calendar_id for one calendar and leaves the whole business as it was', () => {
     expect(withCalendarParam('grain=day&preset=this-week', 'cal-1')).toBe('grain=day&preset=this-week&calendar_id=cal-1');
     expect(withCalendarParam('grain=day&preset=this-week', null)).toBe('grain=day&preset=this-week');
     expect(withCalendarParam('grain=day', undefined)).toBe('grain=day');
@@ -98,12 +98,12 @@ describe('what a section says about its figures', () => {
     expect(calendarScopeText(scope)).toBe('Showing Hannah only.');
   });
 
-  it('reads an answer without a calendar as the whole venue while one is chosen', () => {
-    expect(calendarScopeText(calendarScope(hannah, undefined))).toBe('These figures are for the whole venue.');
-    expect(calendarScopeText(calendarScope(hannah, null))).toBe('These figures are for the whole venue.');
+  it('reads an answer without a calendar as the whole business while one is chosen', () => {
+    expect(calendarScopeText(calendarScope(hannah, undefined))).toBe('These figures are for the whole business.');
+    expect(calendarScopeText(calendarScope(hannah, null))).toBe('These figures are for the whole business.');
   });
 
-  it('says nothing for the whole venue with all calendars chosen, as before the filter', () => {
+  it('says nothing for the whole business with all calendars chosen, as before the filter', () => {
     expect(calendarScope(null, null)).toBeNull();
     expect(calendarScope(null, undefined)).toBeNull();
     expect(calendarScopeText(null)).toBeNull();
@@ -156,7 +156,7 @@ describe('retryReport', () => {
     expect(retryReport(0, new Error('timeout'))).toBe(true);
   });
 
-  it('applies only while a calendar is chosen, leaving the whole venue on the app default', () => {
+  it('applies only while a calendar is chosen, leaving the whole business on the app default', () => {
     expect(calendarRetryOption('cal-1')).toEqual({ retry: retryReport });
     // No `retry` key at all: an explicit undefined would replace the app's default with three retries.
     expect(calendarRetryOption(null)).toEqual({});
@@ -177,6 +177,6 @@ describe('the words', () => {
 
   it('use the contract words', () => {
     expect(REPORT_CALENDAR_COPY['cal.all']).toBe('All calendars');
-    expect(REPORT_CALENDAR_COPY['cal.wholeVenue']).toBe('These figures are for the whole venue.');
+    expect(REPORT_CALENDAR_COPY['cal.wholeVenue']).toBe('These figures are for the whole business.');
   });
 });

@@ -178,7 +178,7 @@ export function buildReport3Csv(
       [
         appt
           ? `Cancelled (${terminology.client.toLowerCase()}-initiated)`
-          : 'Cancelled (guest-initiated)',
+          : 'Cancelled (client-initiated)',
         String(cancellation.cancelled_guest_initiated),
       ],
       ['Cancelled (auto)', String(cancellation.cancelled_auto)],

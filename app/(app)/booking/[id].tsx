@@ -58,7 +58,7 @@ export default function BookingDetailScreen() {
     return {
       act,
       venueId: linkedVenueId,
-      venueName: typeof linkedVenueName === 'string' && linkedVenueName ? linkedVenueName : 'Linked venue',
+      venueName: typeof linkedVenueName === 'string' && linkedVenueName ? linkedVenueName : 'Linked business',
       pii: linkedPii === '1',
       practitionerName:
         typeof linkedPractitionerName === 'string' && linkedPractitionerName

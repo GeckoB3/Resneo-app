@@ -55,7 +55,7 @@ export function LoginDestinationSection() {
         options={[
           { value: 'ask', label: 'Ask me' },
           { value: 'account', label: 'My bookings' },
-          { value: 'dashboard', label: 'Venue dashboard' },
+          { value: 'dashboard', label: 'Business dashboard' },
         ]}
         value={value}
         onChange={(next) =>
@@ -78,7 +78,7 @@ export function LoginDestinationSection() {
       */}
       <Text variant="caption" tone="muted" style={styles.gap}>
         {value === 'ask'
-          ? 'In the app, "Ask me" opens the venue dashboard with a switcher to your bookings. The website asks you outright.'
+          ? 'In the app, "Ask me" opens the business dashboard with a switcher to your bookings. The website asks you outright.'
           : 'You can still switch between the two at any time.'}
       </Text>
     </Card>

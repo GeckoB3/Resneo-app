@@ -47,9 +47,9 @@ jest.mock('@/providers/VenueProvider', () => ({
 import { EventEditorSheet } from '@/components/events/EventEditorSheet';
 
 const MOVE_NOTE =
-  "Changing the date or times moves this event's bookings, and those guests are sent the new details.";
+  "Changing the date or times moves this event's bookings, and those clients are sent the new details.";
 const HIDE_HELPER =
-  'Turn this off to hide this event from guests. Bookings it already has stay as they are, and nobody is contacted.';
+  'Turn this off to hide this event from clients. Bookings it already has stay as they are, and nobody is contacted.';
 
 const event: ManagedEvent = {
   id: 'ev-1',
@@ -80,7 +80,7 @@ describe('EventEditorSheet copy', () => {
     await render(<EventEditorSheet target={{ mode: 'edit', event }} onClose={jest.fn()} />);
     expect(screen.getByText('Show on booking page')).toBeTruthy();
     expect(screen.getByText(HIDE_HELPER)).toBeTruthy();
-    expect(screen.queryByText('Active (bookable by guests)')).toBeNull();
+    expect(screen.queryByText('Active (bookable by clients)')).toBeNull();
     // A hidden event opens with the switch off.
     expect(screen.getByLabelText('Show on booking page').props.value).toBe(false);
   });

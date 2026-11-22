@@ -73,8 +73,8 @@ const partlyLinked: CollectiveCandidate = {
   reason: 'Your link with Partial does not share full calendar details yet.',
   detail: null,
 };
-const NOTE = 'You can invite venues you have an active link with. Set one up on the Linked venues screen first.';
-const createButton = () => screen.queryByRole('button', { name: 'Create venue collective' });
+const NOTE = 'You can invite businesses you have an active link with. Set one up on the Linked businesses screen first.';
+const createButton = () => screen.queryByRole('button', { name: 'Create business collective' });
 
 beforeEach(() => {
   mockCollectives = [];
@@ -84,22 +84,22 @@ beforeEach(() => {
   mockPush.mockClear();
 });
 
-describe('Create venue collective', () => {
-  it('opens for a partly linked venue, with no note', async () => {
+describe('Create business collective', () => {
+  it('opens for a partly linked business, with no note', async () => {
     mockCandidates = { data: [partlyLinked], isSuccess: true, isError: false };
     await render(<CollectivesScreen />);
     expect(createButton()?.props.accessibilityState?.disabled).toBeFalsy();
     expect(screen.queryByText(NOTE)).toBeNull();
     expect(screen.queryByText(/you need a link granting create, edit/)).toBeNull();
-    expect(screen.getByText('No venue collectives yet. Create one to offer a combined booking page.')).toBeTruthy();
+    expect(screen.getByText('No business collectives yet. Create one to offer a combined booking page.')).toBeTruthy();
   });
 
-  it('is disabled, with the note, only when there are no linked venues at all', async () => {
+  it('is disabled, with the note, only when there are no linked businesses at all', async () => {
     mockCandidates = { data: [], isSuccess: true, isError: false };
     await render(<CollectivesScreen />);
     expect(createButton()?.props.accessibilityState?.disabled).toBe(true);
     expect(screen.getByText(NOTE)).toBeTruthy();
-    expect(screen.queryByText(/No venue collectives yet/)).toBeNull();
+    expect(screen.queryByText(/No business collectives yet/)).toBeNull();
   });
 
   it('does not say there are no links while the list loads, or when it fails', async () => {
@@ -110,7 +110,7 @@ describe('Create venue collective', () => {
     mockCandidates = { isSuccess: false, isError: true };
     await render(<CollectivesScreen />);
     expect(screen.queryByText(NOTE)).toBeNull();
-    expect(screen.getByText('Could not load your linked venues. Please try again.')).toBeTruthy();
+    expect(screen.getByText('Could not load your linked businesses. Please try again.')).toBeTruthy();
   });
 
   it('is not offered to a member of a live collective, and its candidates are not asked for', async () => {
@@ -142,7 +142,7 @@ describe('Create venue collective', () => {
     expect(mockCandidateOptions).toHaveBeenLastCalledWith({ enabled: false });
   });
 
-  it("gives the sheet this venue's address, and closes it before going to another screen", async () => {
+  it("gives the sheet this business's address, and closes it before going to another screen", async () => {
     mockCandidates = { data: [partlyLinked], isSuccess: true, isError: false };
     await render(<CollectivesScreen />);
     const props = mockSheetProps[mockSheetProps.length - 1];

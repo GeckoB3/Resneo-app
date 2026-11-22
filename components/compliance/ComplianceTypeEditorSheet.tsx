@@ -677,7 +677,7 @@ export function ComplianceTypeEditorSheet({
               onChangeText={setExpiryDaysText}
               keyboardType="number-pad"
               placeholder="Default"
-              helper="How long a client form link stays valid. Leave blank for the venue default."
+              helper="How long a client form link stays valid. Leave blank for the business default."
             />
 
             <Input
@@ -917,7 +917,7 @@ function ReadonlySummary({
         />
         <ReadonlyRow
           label="Form link expiry"
-          value={type.form_link_expiry_days != null ? `${type.form_link_expiry_days} days` : 'Venue default'}
+          value={type.form_link_expiry_days != null ? `${type.form_link_expiry_days} days` : 'Business default'}
         />
         {type.description ? <ReadonlyRow label="Description" value={type.description} /> : null}
         {type.online_unmet_message ? (

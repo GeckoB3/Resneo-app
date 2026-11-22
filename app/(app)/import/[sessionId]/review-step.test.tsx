@@ -85,7 +85,7 @@ describe('Review step', () => {
     expect(screen.getByText('How your "Status" values map to booking status')).toBeTruthy();
     expect(screen.getByText('"CXL" becomes')).toBeTruthy();
     expect(screen.getByText('Kept on the client profile as a custom field.')).toBeTruthy();
-    expect(screen.getByText(/split into several client fields: Guest First Name \+ Guest Surname/)).toBeTruthy();
+    expect(screen.getByText(/split into several client fields: Client First Name \+ Client Surname/)).toBeTruthy();
   });
 
   it("saves a custom field's name and type", async () => {

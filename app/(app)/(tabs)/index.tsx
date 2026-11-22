@@ -209,6 +209,7 @@ import type { CalendarScheduleBlock, ScheduleBlockDTO } from '@/types/schedule-b
 import type { LinkedBooking, LinkedVenueCalendar } from '@/types/linked-venues';
 import type { BookingDetail } from '@/types/booking-detail';
 import type { GuestBookingHistoryRow } from '@/types/guest-detail';
+import { businessBesidePerson, showsLinkedPill } from '@/lib/venue/member-label';
 
 /** A row with no usable end reads as this long, as on the grids. */
 const DEFAULT_SERVICE_MINUTES = 30;
@@ -675,7 +676,7 @@ export default function CalendarScreen() {
           if (outcome.sent) toast.success(outcome.message);
           else toast.info(outcome.message);
         },
-        onError: () => toast.error('Could not notify the guest.'),
+        onError: () => toast.error('Could not notify the client.'),
       },
     );
     moveNoticeRef.current = null;
@@ -2385,7 +2386,7 @@ export default function CalendarScreen() {
         sourceVenueId !== targetVenueId && inCollective(sourceVenueId) && inCollective(targetVenueId) && targetCalendarId
           ? {
               targetCalendarId,
-              targetVenueName: targetHit?.venue.venueName ?? venue?.name ?? 'your venue',
+              targetVenueName: targetHit?.venue.venueName ?? venue?.name ?? 'your business',
             }
           : null;
       setCrossVenueMove({
@@ -2874,7 +2875,8 @@ export default function CalendarScreen() {
         // after the venue and the caption would only repeat it.
         caption:
           col.practitionerId && !linkedNameRepeatsVenue(col.name, v.venueName)
-            ? v.venueName
+            ? // "Aura Hair Studio" under "Jenny", not "Aura Hair Studio (Jenny)" (2026-11-22).
+              businessBesidePerson(col.name, v.venueName)
             : undefined,
         workingHours: closures.workingHours ?? rangesToWorkingHours(col.openRanges),
         // The header names the calendar, so a bar keeps the bare service.
@@ -2894,8 +2896,9 @@ export default function CalendarScreen() {
         linked: true,
         linkedClosures: closures.source,
         // Drawn like an own column, marked by the small Linked pill next to
-        // the calendar's name (the owner wants no amber, 2026-09-06).
-        badge: 'Linked',
+        // the calendar's name (the owner wants no amber, 2026-09-06). A member
+        // of our collective is named like any member, with no pill (2026-11-22).
+        badge: showsLinkedPill(v.venueId, staffCollective?.member_venue_ids) ? 'Linked' : undefined,
         // A link that shares full details and grants edits joins the
         // interactive grid (web `linkedColumnUsesNativeGrid`): the same bars,
         // tray, move and resize as our own columns, moving only among this
@@ -2907,7 +2910,7 @@ export default function CalendarScreen() {
         processingPatternFor: patternLookupFromLinkedServices(v.services),
       };
     });
-  }, [linkedColumnsShown, anchor]);
+  }, [linkedColumnsShown, anchor, staffCollective]);
 
   // Own practitioner columns + linked venue columns, side by side in one grid.
   const allColumnsForDay = useMemo(
@@ -3603,7 +3606,7 @@ export default function CalendarScreen() {
             ) : !activeLinkedVenue ? (
               <View style={styles.weekBody}>
                 <EmptyState
-                  title="Linked venue unavailable"
+                  title="Linked business unavailable"
                   message="This linked calendar is no longer shared with you."
                   actionLabel="Back to my calendar"
                   onAction={clearOwnerVenue}
@@ -3618,6 +3621,7 @@ export default function CalendarScreen() {
                 <View style={styles.weekBody}>
                   <LinkedVenueWeekGrid
                     venue={activeLinkedView ?? activeLinkedVenue}
+                    inCollective={!showsLinkedPill(activeLinkedVenue?.venueId, staffCollective?.member_venue_ids)}
                     showCreateButton={linkedCreateButton}
                     weekDays={week.days}
                     today={today}
@@ -3667,6 +3671,7 @@ export default function CalendarScreen() {
                   embedded
                   compact={compactDay}
                   venue={activeLinkedView ?? activeLinkedVenue}
+                  inCollective={!showsLinkedPill(activeLinkedVenue?.venueId, staffCollective?.member_venue_ids)}
                   showCreateButton={linkedCreateButton}
                   visitPositions={dayVisitPositions}
                   date={anchor}
@@ -3871,7 +3876,7 @@ export default function CalendarScreen() {
             with the linked slot sheet: the destination is said out loud). */}
         {addSheetCollective ? (
           <Text variant="caption" tone="muted" style={styles.addSheetSectionLabel}>
-            {`For ${addSheetCollective.name}: every member venue's calendars and the combined services`}
+            {`For ${addSheetCollective.name}: every member business's calendars and the combined services`}
           </Text>
         ) : null}
         <View style={styles.addSheetActions}>
@@ -4085,6 +4090,10 @@ export default function CalendarScreen() {
         visible={linkedSheet?.kind === 'detail'}
         venue={linkedSheet?.kind === 'detail' ? linkedSheet.venue : null}
         booking={linkedSheet?.kind === 'detail' ? linkedSheet.booking : null}
+        inCollective={
+          linkedSheet?.kind === 'detail' &&
+          !showsLinkedPill(linkedSheet.venue.venueId, staffCollective?.member_venue_ids)
+        }
         onClose={() => setLinkedSheet(null)}
         onSaved={() => void linkedQuery.refetch()}
       />
@@ -4103,7 +4112,7 @@ export default function CalendarScreen() {
               const copy = collectiveMoveCopy({
                 targetCalendarName: crossVenueMove.targetCalendarName,
                 targetVenueName: target.targetVenueName,
-                ownVenueName: crossVenueMove.sourceVenueName ?? venue?.name ?? 'your venue',
+                ownVenueName: crossVenueMove.sourceVenueName ?? venue?.name ?? 'your business',
                 time: crossVenueMove.time,
                 visitServiceName:
                   crossVenueMove.booking.group_booking_id && !crossVenueMove.booking.person_label

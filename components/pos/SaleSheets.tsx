@@ -94,7 +94,7 @@ function AddItemsSheetBody({
   const voucherSettings =
     canSellVouchers && voucherSettingsQ.data?.settings.set_up ? voucherSettingsQ.data.settings : null;
   const timeZone = bootstrap.venue?.timezone ?? 'Europe/London';
-  const venueName = bootstrap.venue?.name ?? 'This venue';
+  const venueName = bootstrap.venue?.name ?? 'This business';
   const [voucherPick, setVoucherPick] = useState<{ presetPence: number | null } | null>(null);
   const [chosenTab, setTab] = useState<AddTab | null>(null);
   const [query, setQuery] = useState('');

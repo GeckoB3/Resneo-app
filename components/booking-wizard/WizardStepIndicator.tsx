@@ -4,7 +4,7 @@ import { Text } from '@/components/ui/Text';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
-const DEFAULT_LABELS = ['Service', 'Date', 'Time', 'Guest', 'Confirm'];
+const DEFAULT_LABELS = ['Service', 'Date', 'Time', 'Client', 'Confirm'];
 
 type WizardStepIndicatorProps = {
   currentStep: number;

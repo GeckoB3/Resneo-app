@@ -33,6 +33,11 @@ export interface LinkedBookingContext {
    * own server could resolve it — so it stays optional.
    */
   serviceName?: string | null;
+  /**
+   * The partner is a member of the caller's collective (web `viewer_link.in_collective`, 2026-11-22):
+   * named like any member, without the "Linked" pill. Unset from an older server or a plain link.
+   */
+  inCollective?: boolean;
 }
 
 const LINK_ACTS: readonly LinkActionLevel[] = ['none', 'edit_existing', 'create_edit_cancel'];
@@ -44,7 +49,10 @@ const LINK_ACTS: readonly LinkActionLevel[] = ['none', 'edit_existing', 'create_
  * an older server, or an unknown grant.
  */
 export function linkedContextFromBooking(
-  viewerLink: { venue_id?: string | null; venue_name?: string | null; act?: string | null; pii?: boolean | null } | null | undefined,
+  viewerLink:
+    | { venue_id?: string | null; venue_name?: string | null; act?: string | null; pii?: boolean | null; in_collective?: boolean | null }
+    | null
+    | undefined,
 ): LinkedBookingContext | null {
   if (!viewerLink?.venue_id) return null;
   const act = LINK_ACTS.find((a) => a === viewerLink.act);
@@ -52,8 +60,9 @@ export function linkedContextFromBooking(
   return {
     act,
     venueId: viewerLink.venue_id,
-    venueName: viewerLink.venue_name?.trim() || 'Linked venue',
+    venueName: viewerLink.venue_name?.trim() || 'Linked business',
     pii: viewerLink.pii === true,
+    inCollective: viewerLink.in_collective === true,
   };
 }
 

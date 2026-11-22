@@ -63,7 +63,7 @@ const link = (id: string, more: Partial<AccountLinkView> = {}): AccountLinkView 
     id,
     status: 'pending',
     initiatedByMe: true,
-    otherVenue: { id: `v-${id}`, name: `Venue ${id}`, slug: `venue-${id}` },
+    otherVenue: { id: `v-${id}`, name: `Business ${id}`, slug: `venue-${id}` },
     iCan: GRANT,
     theyCan: GRANT,
     ...more,
@@ -79,7 +79,7 @@ const list = (links: AccountLinkView[], outgoingPendingCount: number): AccountLi
   }) as unknown as AccountLinksListResponse;
 
 const LIMIT = 'You have 10 link requests waiting, the most you can have at once. Cancel one under Sent by you to send another.';
-const linkButton = () => screen.getByRole('button', { name: 'Link a venue' });
+const linkButton = () => screen.getByRole('button', { name: 'Link a business' });
 const wizard = () => mockWizard.current as { visible: boolean; prefill: unknown; onReviewRequest: (id: string) => void; onEditPermissions: (id: string) => void };
 
 beforeEach(() => {
@@ -92,7 +92,7 @@ beforeEach(() => {
   mockAccept.current = null;
 });
 
-describe('Link a venue at the request limit (CQ-17.3)', () => {
+describe('Link a business at the request limit (CQ-17.3)', () => {
   const ten = Array.from({ length: 10 }, (_, i) => link(`s${i}`));
 
   it('is greyed out at the limit, with the reason under it', async () => {

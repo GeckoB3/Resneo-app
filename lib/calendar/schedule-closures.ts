@@ -382,12 +382,12 @@ export function scheduleClosureBlockLabel(
   if (blockType === 'practitioner_leave') {
     return `${opts?.leaveLabel?.trim() || 'On leave'}${range}`;
   }
-  if (blockType === 'venue_closed') return `Venue closed${range}`;
+  if (blockType === 'venue_closed') return `Business closed${range}`;
   if (blockType === 'practitioner_closed') {
     const who = opts?.columnName?.trim() || 'Calendar';
     return `${who} unavailable${range}`;
   }
-  if (blockType === 'linked_venue_closed') return `Linked venue closed${range}`;
+  if (blockType === 'linked_venue_closed') return `Linked business closed${range}`;
   if (blockType === 'venue_and_calendar_closed') {
     const who = opts?.columnName?.trim() || 'Calendar';
     return `${who} closed${range}`;

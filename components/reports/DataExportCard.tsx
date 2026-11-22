@@ -81,7 +81,7 @@ export function presetRange(preset: RangePreset, today = new Date()): { from: st
 
 export function DataExportCard({
   bookingWord = 'Booking',
-  clientLabel = 'Guest',
+  clientLabel = 'Client',
   today,
   posKinds = false,
 }: {
@@ -209,7 +209,7 @@ export function DataExportCard({
       {/* The export is the whole venue's; the Reports calendar filter never applies to it. */}
       <WholeVenueNote variant="files" />
       <Text variant="bodySmall" tone="secondary">
-        {`Take a copy of everything ResNeo holds for your venue: your ${bookingWord.toLowerCase()}s, your ${clientLabel.toLowerCase()}s and your services. Choose what to export, which dates, and the file type. Every file includes the full details, so you can move to another system or keep a backup at any time.`}
+        {`Take a copy of everything ResNeo holds for your business: your ${bookingWord.toLowerCase()}s, your ${clientLabel.toLowerCase()}s and your services. Choose what to export, which dates, and the file type. Every file includes the full details, so you can move to another system or keep a backup at any time.`}
       </Text>
 
       {!canExportClients ? (
@@ -277,7 +277,7 @@ export function DataExportCard({
         fullWidth
       />
       <Text variant="caption" tone="muted">
-        {"Files are built from your venue's data at the moment you tap. Times are shown in your venue's time zone. Admins only."}
+        {"Files are built from your business's data at the moment you tap. Times are shown in your business's time zone. Admins only."}
       </Text>
     </Card>
   );

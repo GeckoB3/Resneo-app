@@ -117,7 +117,7 @@ export const POS_COPY = {
   'sale.payNow': 'Pay Now',
   'sale.pay.open': 'Take payment',
   'sale.notFound.title': "We can't find this sale",
-  'sale.notFound.body': 'It may belong to another venue, or the link is wrong.',
+  'sale.notFound.body': 'It may belong to another business, or the link is wrong.',
   'sale.notFound.back': 'Back to Checkout',
   'sale.completedLine': 'Paid on {date} at {time}. Served by {staffName}.',
   'sale.voidedLine': 'Voided on {date} at {time} by {staffName}: {reason}',
@@ -985,7 +985,7 @@ export const POS_COPY = {
   'vat.rate.reduced': 'Reduced (5%)',
   'vat.rate.zero': 'Zero (0%)',
   'vat.rate.exempt': 'Exempt',
-  'x.notFound': "We couldn't find that product. It may have been removed, or belong to another venue.",
+  'x.notFound': "We couldn't find that product. It may have been removed, or belong to another business.",
   'x.addTitle': 'Add product',
   'x.basics': 'Basics',
   'x.photos': 'Photos',
@@ -1398,7 +1398,7 @@ export const POS_COPY = {
   'app.till.eod.none': 'Nothing yet.', // (added)
   'app.till.eod.cashRow': '{amount} at {time}, by {staffName}', // (added)
   'app.till.otherVenue': 'This till is at another business. Switch to it in the app, then open it again.', // (added) a cash-up push for another venue
-  'app.till.notCounting': "This venue doesn't count cash in till sessions. An admin can turn it on in Settings, Checkout, on the web.", // (added)
+  'app.till.notCounting': "This business doesn't count cash in till sessions. An admin can turn it on in Settings, Checkout, on the web.", // (added)
   // ── App step 4b: suppliers, purchase orders and Use stock (UX spec §6.12 to §6.14, §18.20) ──
   // Word for word from the web's `src/components/retail/stock/purchasing-copy.ts` and
   // `src/components/retail/copy.ts` (the `sup.*` ids).

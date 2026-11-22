@@ -36,11 +36,11 @@ export const REPORT_CALENDAR_COPY = {
   'cal.inactive': '{name} (no longer active)',
   'cal.sheetTitle': 'Show figures for',
   'cal.hint': 'Opens the calendar choices',
-  'cal.sheetNote': 'Some figures always cover the whole venue. They say so when you choose a calendar.',
+  'cal.sheetNote': 'Some figures always cover the whole business. They say so when you choose a calendar.',
   'cal.showing': 'Showing {calendar} only.',
-  'cal.wholeVenue': 'These figures are for the whole venue.',
-  'cal.wholeVenueTab': 'These figures are for the whole venue. {calendar} stays chosen on the other tabs.',
-  'cal.wholeVenueFiles': 'These files are for the whole venue, whichever calendar you chose above.',
+  'cal.wholeVenue': 'These figures are for the whole business.',
+  'cal.wholeVenueTab': 'These figures are for the whole business. {calendar} stays chosen on the other tabs.',
+  'cal.wholeVenueFiles': 'These files are for the whole business, whichever calendar you chose above.',
   'cal.showAll': 'Show all calendars',
   'cal.csvShowing': 'Showing {calendar} only',
   // What one calendar's figures are, under "Showing {calendar} only." (the web's words).
@@ -50,7 +50,7 @@ export const REPORT_CALENDAR_COPY = {
     '{client}s who booked on this calendar in these dates. Known {clientLower}s are those who have ever booked on it. The directory below lists all your {clientLower}s.',
   'cal.detail.newBookings':
     'Bookings with a service on this calendar. A visit with services on more than one calendar counts once on each.',
-  'cal.detail.bookedValue': "Just this calendar's column. Other calendars and linked venues are left out.",
+  'cal.detail.bookedValue': "Just this calendar's column. Other calendars and linked businesses are left out.",
   'cal.detail.sales':
     'The services and sales credited to this calendar. When a sale is shared, its payments and discounts are split in proportion.',
   'cal.detail.commission': 'The commission and tips of the person on this calendar.',

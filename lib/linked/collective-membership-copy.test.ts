@@ -18,7 +18,7 @@ describe('collective membership words', () => {
     expect(isConsentRequired(new Error('offline'))).toBe(false);
   });
 
-  it('marks your own venue "(you)" in the members line, beside a member of the same name (CQ-07)', () => {
+  it('marks your own business "(you)" in the members line, beside a member of the same name (CQ-07)', () => {
     const line = collectiveMembersLine({
       activeMemberCount: 3,
       myVenueId: 'v-me',
@@ -37,17 +37,17 @@ describe('collective membership words', () => {
 
   it('tells a shared-services member its own page comes back, and keeps the older wording otherwise', () => {
     expect(leaveCollectiveMessage({ name: 'Northside', serviceModel: 'replicas' })).toMatch(
-      /Guests who visit your own booking page will book your own services there again\.$/,
+      /Clients who visit your own booking page will book your own services there again\.$/,
     );
     expect(leaveCollectiveMessage({ name: 'Northside', serviceModel: 'replicas' })).not.toContain('unaffected');
     expect(leaveCollectiveMessage({ name: 'Northside' })).toBe(
-      'Your venue will be removed from "Northside". Your own booking page is unaffected.',
+      'Your business will be removed from "Northside". Your own booking page is unaffected.',
     );
   });
 
   it('says the host sets services and sign-in on shared services, and keeps the older notes otherwise', () => {
-    expect(hostSettingsNote({ serviceModel: 'replicas' }, 'Bright Cuts')).toMatch(/are Bright Cuts's, and apply at every venue/);
-    expect(hostSettingsNote({ serviceModel: 'legacy_copies' }, 'Bright Cuts')).toMatch(/each member venue/);
+    expect(hostSettingsNote({ serviceModel: 'replicas' }, 'Bright Cuts')).toMatch(/are Bright Cuts's, and apply at every business/);
+    expect(hostSettingsNote({ serviceModel: 'legacy_copies' }, 'Bright Cuts')).toMatch(/each member business/);
     // Members choose their calendars in Manage Collective, and so can the host (CQ-10.6, R2-15).
     expect(memberSummaryIntro({ name: 'Northside', serviceModel: 'replicas' }, 'Bright Cuts')).toMatch(
       /You and Bright Cuts can each choose which of your calendars offer each one, in Manage Collective/,

@@ -13,6 +13,7 @@ import {
   type TerminalSdkModule,
 } from '@/lib/payments/terminal-sdk';
 import { getCardAccountOwner } from '@/lib/payments/card-account';
+import { readerUpdateSdkCallbacks } from '@/lib/payments/reader-software-update';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { onBeforeSiteChange } from '@/lib/sites/active-site';
 import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
@@ -44,6 +45,17 @@ function TerminalSiteReset({ sdk }: { sdk: TerminalSdkModule }) {
     [],
   );
 
+  return null;
+}
+
+/**
+ * Feeds the card reader's optional-update events into the shared store
+ * (`lib/payments/reader-software-update.ts`). Always mounted inside the SDK provider, so an update
+ * staff started in Reader settings still finishes cleanly after they close it, and the payment
+ * sheet opened meanwhile knows the reader is busy. Registers listeners only; renders nothing.
+ */
+function ReaderUpdateWatcher({ sdk }: { sdk: TerminalSdkModule }) {
+  sdk.useStripeTerminal(readerUpdateSdkCallbacks);
   return null;
 }
 
@@ -119,6 +131,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       logLevel={isDiagnosticBuild() ? 'verbose' : 'error'}
       tokenProvider={tokenProvider}>
       <TerminalSiteReset sdk={sdk} />
+      <ReaderUpdateWatcher sdk={sdk} />
       {/* Tap to Pay on iPhone warm-up and status (iOS; inert elsewhere). Inside
           the SDK provider because it drives the reader. */}
       <TapToPayProvider>{children}</TapToPayProvider>

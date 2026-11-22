@@ -43,6 +43,7 @@ import type {
   ResolvedAppointmentsFeatureFlags,
   VenueFeatureFlagsRaw,
 } from '@/types/venue';
+import { personAtBusiness } from '@/lib/venue/member-label';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -164,19 +165,19 @@ const WAITLIST_MODES: { mode: WaitlistMode; title: string; description: string }
     mode: 'staff_choose',
     title: 'Staff choose',
     description:
-      'When a slot opens, staff see a banner and choose who to offer it to, or use Offer appointment for the first matching guest.',
+      'When a slot opens, staff see a banner and choose who to offer it to, or use Offer appointment for the first matching client.',
   },
   {
     mode: 'notify_in_order',
     title: 'First in line, notify in order',
     description:
-      'The first matching guest is notified by email and SMS. If they do not book within 30 minutes, the next guest is notified. The slot stays open on your booking page throughout.',
+      'The first matching client is notified by email and SMS. If they do not book within 30 minutes, the next client is notified. The slot stays open on your booking page throughout.',
   },
   {
     mode: 'notify_all',
     title: 'Offer to all',
     description:
-      'Every matching guest is notified at once. The slot stays open, and whoever books first gets it.',
+      'Every matching client is notified at once. The slot stays open, and whoever books first gets it.',
   },
 ];
 
@@ -191,25 +192,25 @@ const FLAG_META: {
     key: 'any_available_practitioner',
     title: 'Any available practitioner',
     description:
-      'Guests can book the next available slot without choosing a specific person. Available times are shared across everyone who offers that service.',
+      'Clients can book the next available slot without choosing a specific person. Available times are shared across everyone who offers that service.',
   },
   {
     key: 'staff_first_booking_flow',
     title: 'Staff-first booking',
     description:
-      "Guests choose a team member first, then that person's services. Applies to your booking pages and to bookings you take yourself.",
+      "Clients choose a team member first, then that person's services. Applies to your booking pages and to bookings you take yourself.",
   },
   {
     key: 'guest_self_reschedule',
-    title: 'Guest self-reschedule',
+    title: 'Client self-reschedule',
     description:
-      'Guests can change their appointment date and time from the link in their confirmation email.',
+      'Clients can change their appointment date and time from the link in their confirmation email.',
   },
   {
     key: 'waitlist_v2',
     title: 'Appointment waitlist',
     description:
-      'When fully booked, guests can join a waitlist for their preferred date, time, and service.',
+      'When fully booked, clients can join a waitlist for their preferred date, time, and service.',
   },
   {
     key: 'class_commerce_enabled',
@@ -500,7 +501,7 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
         patch,
         key === 'waitlist_v2'
           ? forCollective && collectiveParams
-            ? `Waitlist is on for ${collectiveParams.collective}. Each venue can adjust email and SMS under Settings, Communications, Waitlist invites.`
+            ? `Waitlist is on for ${collectiveParams.collective}. Each business can adjust email and SMS under Settings, Communications, Waitlist invites.`
             : 'Waitlist is on. Adjust email/SMS under Settings → Communications → Waitlist invites.'
           : forCollective && collectiveParams
             ? collectiveSettingsCopy.savedForCollective(collectiveParams)
@@ -597,7 +598,7 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
     <Card>
       <Text variant="label">Optional booking features</Text>
       <Text variant="caption" tone="muted" style={styles.cardCaption}>
-        Optional tools that change how guests experience booking online.
+        Optional tools that change how clients experience booking online.
       </Text>
 
       {error ? (
@@ -645,7 +646,7 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
                     <Text variant="caption" tone="brand" style={styles.webOnlyBadge}>
                       {readOnly
                         ? collectiveSettingsCopy.setByHost(collectiveParams)
-                        : `For every venue in ${collectiveParams.collective}`}
+                        : `For every business in ${collectiveParams.collective}`}
                     </Text>
                   ) : null}
                   {byCollective && collectiveParams ? <SeeAllCollectiveSettings /> : null}
@@ -702,7 +703,7 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
                         CALENDAR PRIORITY
                       </Text>
                       <Text variant="caption" tone="muted">
-                        Top of the list is checked first when a guest picks a time.
+                        Top of the list is checked first when a client picks a time.
                       </Text>
 
                       {featureFlags.isLoading ? (
@@ -743,8 +744,7 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
                                   numberOfLines={1}
                                   style={styles.priorityName}
                                 >
-                                  {index + 1}. {cal.name}
-                                  {cal.venue_name ? ` at ${cal.venue_name}` : ''}
+                                  {index + 1}. {personAtBusiness(cal.name, cal.venue_name)}
                                 </Text>
                                 <View style={styles.priorityControls}>
                                   <IconButton
@@ -945,7 +945,7 @@ export default function BookingSettingsScreen() {
     return (
       <Screen>
         {header}
-        <ErrorState message="Booking settings can only be changed by venue admins." />
+        <ErrorState message="Booking settings can only be changed by business admins." />
       </Screen>
     );
   }
@@ -1044,7 +1044,7 @@ export default function BookingSettingsScreen() {
         refetch();
       }
       toast.error(
-        e instanceof ApiError ? e.message : 'Could not update guest sign-in requirement.',
+        e instanceof ApiError ? e.message : 'Could not update client sign-in requirement.',
       );
     } finally {
       setLoginSaving(false);
@@ -1257,22 +1257,22 @@ export default function BookingSettingsScreen() {
         {renderBookingModels()}
         {collective && appointmentsPlan ? (
           <Text variant="caption" tone="muted">
-            {collectiveSettingsCopy.appointmentsLocked(venue.name ?? 'your venue')}
+            {collectiveSettingsCopy.appointmentsLocked(venue.name ?? 'your business')}
           </Text>
         ) : null}
 
         <Card>
-          <Text variant="label">Guest accounts</Text>
+          <Text variant="label">Client accounts</Text>
           <SettingRow
             label="Require sign-in to book"
             hint={
               collectiveParams
-                ? `Guests must verify their email before completing an online booking. ${
+                ? `Clients must verify their email before completing an online booking. ${
                     signInReadOnly
                       ? collectiveSettingsCopy.setByHost(collectiveParams)
-                      : `For every venue in ${collectiveParams.collective}.`
+                      : `For every business in ${collectiveParams.collective}.`
                   }`
-                : 'Guests must verify their email before completing an online booking.'
+                : 'Clients must verify their email before completing an online booking.'
             }
             value={requireLogin}
             onValueChange={(v) => handleRequireLoginChange(v)}

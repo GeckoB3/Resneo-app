@@ -116,7 +116,7 @@ export function EventAttendees({
       // 8-column parity with the web event-manager export
       // (Guest/Email/Phone/Qty/Status/Deposit pence/Ticket lines/Arrived).
       const header = [
-        'Guest',
+        'Client',
         'Email',
         'Phone',
         'Qty',
@@ -126,7 +126,7 @@ export function EventAttendees({
         'Arrived (UTC)',
       ];
       const csvRows = rows.map((row) => [
-        row.guest_name || 'Guest',
+        row.guest_name || 'Client',
         row.guest_email ?? '',
         row.guest_phone ?? '',
         String(row.party_size ?? ''),
@@ -201,7 +201,7 @@ export function EventAttendees({
     return (
       <View style={styles.stateBlock}>
         <Text variant="bodySmall" tone="secondary">
-          No ticket holders yet. Bookings appear here as guests book this event.
+          No ticket holders yet. Bookings appear here as clients book this event.
         </Text>
       </View>
     );
@@ -243,12 +243,12 @@ export function EventAttendees({
             style={[styles.row, { borderBottomColor: colors.border }]}>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={`Open booking for ${row.guest_name ?? 'guest'}`}
+              accessibilityLabel={`Open booking for ${row.guest_name ?? 'client'}`}
               onPress={() => onOpenBooking(row.booking_id)}
               style={({ pressed }) => [styles.rowMain, pressed && { opacity: 0.7 }]}>
               <View style={styles.rowHeader}>
                 <Text variant="bodyMedium" numberOfLines={1} style={styles.rowName}>
-                  {row.guest_name || 'Guest'}
+                  {row.guest_name || 'Client'}
                 </Text>
                 <CardStatePill row={row} />
                 <StatusPill status={row.status} />

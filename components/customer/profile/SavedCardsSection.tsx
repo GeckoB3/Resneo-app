@@ -59,7 +59,7 @@ export function LegacySavedCardsSection() {
 
       {venues.length > 1 ? (
         <Segmented
-          options={venues.map((v) => ({ value: v.venue_id, label: v.venue_name ?? 'Venue' }))}
+          options={venues.map((v) => ({ value: v.venue_id, label: v.venue_name ?? 'Business' }))}
           value={activeVenueId ?? ''}
           onChange={(v) => setVenueId(v)}
           wrapLabels
@@ -72,7 +72,7 @@ export function LegacySavedCardsSection() {
         </Text>
       ) : cards.length === 0 ? (
         <Text variant="bodySmall" tone="secondary" style={styles.gap}>
-          No card saved with {activeVenue?.venue_name ?? 'this venue'}.
+          No card saved with {activeVenue?.venue_name ?? 'this business'}.
         </Text>
       ) : (
         cards.map((card) => (
@@ -122,7 +122,7 @@ export function LegacySavedCardsSection() {
               {
                 kind: 'save_card',
                 venueId: activeVenueId,
-                venueName: activeVenue?.venue_name ?? 'this venue',
+                venueName: activeVenue?.venue_name ?? 'this business',
               },
               {
                 onSuccess: (outcome) => {

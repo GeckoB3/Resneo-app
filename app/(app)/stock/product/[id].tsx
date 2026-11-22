@@ -103,7 +103,7 @@ export default function ProductScreen() {
     return (
       <Screen>
         {header(t('prod.title'))}
-        <EmptyState title={t('till.off.title')} message={t('till.off.body', { venue: 'your venue' })} />
+        <EmptyState title={t('till.off.title')} message={t('till.off.body', { venue: 'your business' })} />
       </Screen>
     );
   }

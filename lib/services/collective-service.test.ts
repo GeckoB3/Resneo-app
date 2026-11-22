@@ -32,7 +32,7 @@ describe('collective services', () => {
     expect(isManagedByHost({})).toBe(false);
   });
 
-  it('marks a member copy as the host’s, with only the calendar choice left to the venue', () => {
+  it('marks a member copy as the host’s, with only the calendar choice left to the business', () => {
     const service = { collective: block() };
     expect(isManagedByHost(service)).toBe(true);
     expect(collectiveBadge(service)).toEqual({ label: 'From Bright Cuts', tone: 'brand' });
@@ -42,18 +42,18 @@ describe('collective services', () => {
     );
   });
 
-  it('treats a retired copy as the host’s too, and a parked service as the venue’s own', () => {
+  it('treats a retired copy as the host’s too, and a parked service as the business’s own', () => {
     expect(isManagedByHost({ collective: block({ role: 'retired' }) })).toBe(true);
     const parked = { collective: block({ role: 'parked', status: 'hidden' }) };
     expect(isManagedByHost(parked)).toBe(false);
     expect(isParked(parked)).toBe(true);
     expect(collectiveBadge(parked)).toEqual({ label: 'Parked', tone: 'warning' });
     expect(collectiveStatusBadge(parked)).toBeNull();
-    expect(collectiveServiceLines(parked)[0]).toMatch(/^Parked while your venue is part of Northside/);
+    expect(collectiveServiceLines(parked)[0]).toMatch(/^Parked while your business is part of Northside/);
   });
 
-  it('names the one venue where guests cannot book, and explains why', () => {
-    const reason = 'Guests cannot book this at Light 3, because card payments are not set up there.';
+  it('names the one business where clients cannot book, and explains why', () => {
+    const reason = 'Clients cannot book this at Light 3, because card payments are not set up there.';
     const service = {
       collective: block({
         role: 'master',
@@ -65,12 +65,12 @@ describe('collective services', () => {
     expect(collectiveBadge(service)).toEqual({ label: 'Collective', tone: 'brand' });
     expect(collectiveStatusBadge(service)).toEqual({ label: 'Hidden at Light 3', tone: 'warning' });
     expect(collectiveServiceLines(service)).toEqual([
-      'This service is on the Northside page. Saving it updates it at every venue.',
+      'This service is on the Northside page. Saving it updates it at every business.',
       reason,
     ]);
   });
 
-  it('keeps the pill plain when the reason is not one venue', () => {
+  it('keeps the pill plain when the reason is not one business', () => {
     const staffOnly = {
       collective: block({ status: 'hidden', hidden_reasons: [{ venue_id: 'v3', venue_name: 'Light 3', reason: 'staff_only' }] }),
     };
@@ -79,19 +79,19 @@ describe('collective services', () => {
   });
 
   // CQ-13 (regression): a switched-off page service used to read as any other, with its copies' state.
-  it("says a switched-off page service cannot be booked anywhere, naming every venue, in place of how its copies are", () => {
+  it("says a switched-off page service cannot be booked anywhere, naming every business, in place of how its copies are", () => {
     const master = {
       is_active: false,
       collective: block({ role: 'master', status: 'updating', status_reason: 'Updating at Light 3.' }),
     };
     expect(collectiveStatusBadge(master)).toBeNull();
     expect(collectiveServiceLines(master, { memberVenueNames: ['Light 3', 'Aura Hair Studio'] })).toEqual([
-      'This service is on the Northside page. Saving it updates it at every venue.',
+      'This service is on the Northside page. Saving it updates it at every business.',
       'Switched off, so nobody can book it on the Northside page or at Light 3 and Aura Hair Studio.',
     ]);
     // Without the names (a member, or an older server), the line still reads.
     expect(collectiveServiceLines(master)[1]).toBe(
-      'Switched off, so nobody can book it on the Northside page or at the other venues.',
+      'Switched off, so nobody can book it on the Northside page or at the other businesses.',
     );
   });
 
@@ -134,20 +134,20 @@ describe('venueCollectiveOf', () => {
 });
 
 describe('suggestActionFor (web "Suggest to {host}")', () => {
-  const member = { id: 'col-1', name: 'Northside', hostVenueName: 'Host Venue', isHost: false };
+  const member = { id: 'col-1', name: 'Northside', hostVenueName: 'Host Business', isHost: false };
   const parked = { id: 'svc-3', collective: block({ role: 'parked' }) };
   const none = new Set<string>();
 
   it("offers a member admin's parked service to the host", () => {
     expect(suggestActionFor(parked, { isAdmin: true, collective: member, suggestedIds: none })).toEqual({
-      label: 'Suggest to Host Venue',
+      label: 'Suggest to Host Business',
       canSuggest: true,
     });
   });
 
   it('says it was suggested while the host has not answered, instead of offering it again', () => {
     expect(suggestActionFor(parked, { isAdmin: true, collective: member, suggestedIds: new Set(['svc-3']) })).toEqual({
-      label: 'Suggested to Host Venue',
+      label: 'Suggested to Host Business',
       canSuggest: false,
     });
   });

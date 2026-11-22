@@ -366,7 +366,7 @@ export function CollectiveSetupSheet({
       footer={footer}>
       {step === 'intro' ? (
         <View style={styles.section}>
-          <Text variant="bodyMedium">{setupCopy('finish.intro.heading', { venueList: formatVenueList(memberNames, 3) || 'Your partner venue' })}</Text>
+          <Text variant="bodyMedium">{setupCopy('finish.intro.heading', { venueList: formatVenueList(memberNames, 3) || 'Your partner business' })}</Text>
           <Text variant="bodySmall" tone="secondary">
             {setupCopy('finish.intro.body', { collective: collectiveName })}
           </Text>

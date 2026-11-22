@@ -230,7 +230,7 @@ export function InviteVenueSheet({
               value={input}
               onChangeText={setInput}
               onClear={() => setInput('')}
-              placeholder="Venue name or booking-page address"
+              placeholder="Business name or booking-page address"
               autoCapitalize="none"
               autoCorrect={false}
               editable={!busy}
@@ -249,7 +249,7 @@ export function InviteVenueSheet({
               </View>
             ) : search.isError ? (
               <Text variant="caption" tone="danger">
-                {search.error instanceof ApiError ? search.error.message : 'Could not search venues.'}
+                {search.error instanceof ApiError ? search.error.message : 'Could not search businesses.'}
               </Text>
             ) : null}
             {results.length > 0 || looked ? (

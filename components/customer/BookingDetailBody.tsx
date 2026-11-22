@@ -20,6 +20,12 @@ type Props = {
    * each business in place of "Call the venue".
    */
   visit?: CustomerVisit | null;
+  /**
+   * True when `booking` is one person's appointment of a group booking (web PUBLIC-19): the group
+   * card beside this body lists every person with their service, time and money, so this body
+   * leaves out the one person's summary and deposit lines.
+   */
+  inGroup?: boolean;
 };
 
 /**
@@ -29,11 +35,11 @@ type Props = {
  * CUSTOMER's address or online, and a screen that always printed the venue's
  * address would send a mobile practitioner's client to the wrong place.
  */
-export function BookingDetailBody({ booking, visit }: Props) {
+export function BookingDetailBody({ booking, visit, inGroup = false }: Props) {
   const contactLinks = useContactLinks();
   return (
     <View style={styles.stack}>
-      {visit ? <VisitSummaryCard visit={visit} /> : <BookingSummaryCard booking={booking} />}
+      {visit ? <VisitSummaryCard visit={visit} /> : inGroup ? null : <BookingSummaryCard booking={booking} />}
 
       <Card>
         <Text variant="overline" tone="secondary">
@@ -57,7 +63,7 @@ export function BookingDetailBody({ booking, visit }: Props) {
         ) : null}
         {booking.venue_phone && !visit ? (
           <Button
-            label="Call the venue"
+            label="Call the business"
             variant="secondary"
             onPress={() => contactLinks.call(booking.venue_phone)}
             style={styles.gap}
@@ -69,7 +75,7 @@ export function BookingDetailBody({ booking, visit }: Props) {
 
       {formsCard(booking)}
 
-      {booking.deposit_amount_pence ? (
+      {booking.deposit_amount_pence && !inGroup ? (
         <Card>
           <Text variant="overline" tone="secondary">
             DEPOSIT
@@ -150,7 +156,7 @@ function formsCard(booking: CustomerBookingDetail) {
           FORMS
         </Text>
         <Text variant="body" style={styles.gap}>
-          We could not check whether this booking needs a form. Please check with the venue.
+          We could not check whether this booking needs a form. Please check with the business.
         </Text>
       </Card>
     );
@@ -190,7 +196,7 @@ function titleFor(booking: CustomerBookingDetail): string {
 function whereLine(booking: CustomerBookingDetail): string {
   if (booking.location.type === 'online') return 'Online';
   if (booking.location.type === 'client_address') return 'At your address';
-  return booking.venue_name ?? 'At the venue';
+  return booking.venue_name ?? 'At the business';
 }
 
 function statusLabel(status: string): string {

@@ -122,7 +122,7 @@ export function useCustomerHome() {
 
 /** Venue name for a booking, falling back to a neutral word rather than an id. */
 export function venueNameFor(home: CustomerHome | undefined, venueId: string): string {
-  return home?.venues.find((v) => v.id === venueId)?.name ?? 'your venue';
+  return home?.venues.find((v) => v.id === venueId)?.name ?? 'the business';
 }
 
 /**

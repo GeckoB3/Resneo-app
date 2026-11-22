@@ -89,16 +89,16 @@ describe('BaselineMetricsCard', () => {
     );
     expect(
       screen.getByText(
-        '2 guests did not arrive out of 10 appointments that were due to take place (walk-ins excluded).',
+        '2 clients did not arrive out of 10 appointments that were due to take place (walk-ins excluded).',
       ),
     ).toBeTruthy();
-    expect(screen.getByText(/Among 3 where we know who moved it: 1 by the guest online, 2 by your team\./)).toBeTruthy();
+    expect(screen.getByText(/Among 3 where we know who moved it: 1 by the client online, 2 by your team\./)).toBeTruthy();
     expect(
       screen.getByText(
-        /None of the 4 moves triggered an automatic email or text to the guest\. Staff moves often send an update when configured in Settings\./,
+        /None of the 4 moves triggered an automatic email or text to the client\. Staff moves often send an update when configured in Settings\./,
       ),
     ).toBeTruthy();
-    expect(screen.getByText('Guest moved online (share of known moves)')).toBeTruthy();
+    expect(screen.getByText('Client moved online (share of known moves)')).toBeTruthy();
     expect(screen.getByText('Median time to create an appointment')).toBeTruthy();
     expect(screen.getByText(/A saved reference snapshot \(updated weekly\)/)).toBeTruthy();
   });

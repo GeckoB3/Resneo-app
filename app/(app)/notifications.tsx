@@ -117,7 +117,7 @@ function EmailPrefRow({
 }) {
   const { colors } = useTheme();
   const label = LINKED_NOTIFICATION_LABELS[category];
-  const sentence = `Email me when a linked venue ${label.charAt(0).toLowerCase()}${label.slice(1)}`;
+  const sentence = `Email me when a linked business ${label.charAt(0).toLowerCase()}${label.slice(1)}`;
 
   return (
     <View style={[styles.prefRow, { borderBottomColor: colors.border }]}>
@@ -197,7 +197,7 @@ function EmailPrefsSection() {
 
       <Text variant="caption" tone="muted" style={styles.prefsNote}>
         Notes-only edits can be noisy; they email only if you turn the last option on.
-        Emails go to your venue&apos;s contact address and active admins.
+        Emails go to your business&apos;s contact address and active admins.
       </Text>
     </View>
   );
@@ -361,7 +361,7 @@ export default function NotificationsScreen() {
           <EmptyState
             illustration="inbox"
             title="No notifications"
-            message="Activity from your linked venues will appear here."
+            message="Activity from your linked businesses will appear here."
           />
           {isAdmin ? <EmailPrefsSection /> : null}
         </View>

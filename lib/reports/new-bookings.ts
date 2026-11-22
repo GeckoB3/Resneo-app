@@ -13,7 +13,7 @@ export const NEW_BOOKING_CHANNEL_LABELS: Record<NewBookingChannel, string> = {
   online: 'Online',
   team: 'By your team',
   walk_in: 'Walk-ins',
-  linked_venue: 'By a linked venue',
+  linked_venue: 'By a linked business',
 };
 
 /** One colour per channel, on the brand navy and teal like the Revenue chart. */

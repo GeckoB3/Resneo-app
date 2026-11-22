@@ -124,7 +124,7 @@ export function CheckoutLanding({ variant = 'checkout' }: { variant?: 'checkout'
         {header}
         <EmptyState
           title={t('till.off.title')}
-          message={t('till.off.body', { venue: venue?.name?.trim() || 'your venue' })}
+          message={t('till.off.body', { venue: venue?.name?.trim() || 'your business' })}
           actionLabel={salesHistory ? t('hist.link') : undefined}
           onAction={salesHistory}
         />

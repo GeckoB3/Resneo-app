@@ -80,7 +80,7 @@ function waitingLine(entry: WaitlistEntry): string {
   const when = entry.desired_date ? formatDayHeading(entry.desired_date) : 'any date';
   const time = entry.desired_time ? ` at ${entry.desired_time.slice(0, 5)}` : '';
   if (entry.offered_at) {
-    return `A place has come up for ${when}${time}. The venue will be in touch.`;
+    return `A place has come up for ${when}${time}. The business will be in touch.`;
   }
   return `Waiting for ${when}${time}.`;
 }

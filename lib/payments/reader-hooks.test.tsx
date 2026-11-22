@@ -17,7 +17,7 @@ type SdkCallbacks = {
   onUpdateDiscoveredReaders?: (readers: Reader.Type[]) => void;
   onDidStartInstallingUpdate?: () => void;
   onDidReportReaderSoftwareUpdateProgress?: (p: number) => void;
-  onDidFinishInstallingUpdate?: () => void;
+  onDidFinishInstallingUpdate?: (result?: { update?: unknown; error?: { code: string; message: string } }) => void;
   onDidUpdateBatteryLevel?: (r: { batteryLevel: number }) => void;
   onDidReportLowBatteryWarning?: () => void;
   onDidStartReaderReconnect?: (r: Reader.Type) => void;
@@ -38,6 +38,8 @@ const mockApi = {
   collectPaymentMethod: jest.fn(async () => ({})),
   confirmPaymentIntent: jest.fn(async () => ({})),
   cancelCollectPaymentMethod: jest.fn(async () => ({})),
+  installAvailableUpdate: jest.fn(async (): Promise<{ error?: { code: string; message: string } }> => ({})),
+  cancelInstallingUpdate: jest.fn(async (): Promise<{ error?: { code: string; message: string } }> => ({})),
   supportsReadersOfType: jest.fn(
     async (): Promise<{ readerSupportResult?: boolean; error?: { message: string } }> => ({
       readerSupportResult: true,
@@ -124,6 +126,14 @@ import {
 } from '@/lib/payments/tap-to-pay-device-support';
 import { __resetTapToPayConnectForTests, useTapToPayReader } from '@/lib/payments/terminal';
 import { __resetTerminalInitForTests } from '@/lib/payments/terminal-sdk';
+import {
+  __resetReaderSoftwareUpdateForTests,
+  READER_UPDATE_BATTERY_MESSAGE,
+  READER_UPDATE_DISCONNECTED_MESSAGE,
+  READER_UPDATE_FAILED_MESSAGE,
+  readerUpdateSdkCallbacks,
+  shouldOfferReaderUpdate,
+} from '@/lib/payments/reader-software-update';
 
 /** Build a reader row of the given device type. */
 function reader(over: Partial<Reader.Type> & { deviceType: Reader.DeviceType }): Reader.Type {
@@ -159,6 +169,8 @@ beforeEach(() => {
   // Discovery ownership is module-level (one global SDK command), so it has to be
   // reset between cases or an abandoned scan leaks into the next one.
   __resetDiscoverySessionForTests();
+  // The optional-update offer is module-level too (shared by every hook instance).
+  __resetReaderSoftwareUpdateForTests();
   Object.values(mockApi).forEach((v) => {
     if (typeof v === 'function' && 'mockClear' in v) (v as jest.Mock).mockClear();
   });
@@ -1752,5 +1764,250 @@ describe('connecting to a reader that has just been switched on', () => {
     expect(mockApi.connectReader).not.toHaveBeenCalled();
     // The other reader is still listed for staff to pick.
     expect(result.current.discovered).toEqual([OTHER]);
+  });
+});
+
+/**
+ * READER-8 (21 Nov review): optional reader updates were never offered, so staff first met one
+ * when it became required and blocked a payment for minutes. Reader settings now offers it; every
+ * other flow only learns the reader is busy. The SDK's events reach BOTH the always-mounted
+ * watcher in `TerminalProvider` (`readerUpdateSdkCallbacks`) and every hook instance, as here.
+ */
+describe('optional reader software updates', () => {
+  const UPDATE = { deviceSoftwareVersion: '2.1.0', estimatedUpdateTime: 'estimate2To5Minutes' };
+
+  const emit = {
+    available: (u: unknown) => readerUpdateSdkCallbacks.onDidReportAvailableUpdate(u),
+    start: () => {
+      readerUpdateSdkCallbacks.onDidStartInstallingUpdate();
+      mockCallbacks.forEach((c) => c.onDidStartInstallingUpdate?.());
+    },
+    progress: (p: string) => {
+      readerUpdateSdkCallbacks.onDidReportReaderSoftwareUpdateProgress(p);
+      mockCallbacks.forEach((c) => c.onDidReportReaderSoftwareUpdateProgress?.(Number(p)));
+    },
+    finish: (result: { update?: unknown; error?: { code: string; message: string } }) => {
+      readerUpdateSdkCallbacks.onDidFinishInstallingUpdate(result as never);
+      mockCallbacks.forEach((c) => c.onDidFinishInstallingUpdate?.(result));
+    },
+    disconnect: () => {
+      readerUpdateSdkCallbacks.onDidDisconnect();
+      mockCallbacks.forEach((c) => c.onDidDisconnect?.());
+    },
+  };
+
+  /** A connected reader with the battery it reports. */
+  async function connected(batteryLevel = 0.9) {
+    const hook = await renderHook(() => useBluetoothReader());
+    mockApi.connectReader.mockResolvedValue({ reader: { ...WISEPAD, batteryLevel } } as never);
+    await act(async () => {
+      await hook.result.current.connect(WISEPAD);
+      mockApi.connectedReader = { ...WISEPAD, batteryLevel } as Reader.Type;
+    });
+    await hook.rerender({});
+    return hook;
+  }
+
+  beforeEach(() => {
+    mockApi.installAvailableUpdate.mockResolvedValue({});
+    mockApi.cancelInstallingUpdate.mockResolvedValue({});
+  });
+
+  it('offers an update the reader reports after connecting', async () => {
+    const { result } = await connected();
+    expect(shouldOfferReaderUpdate(result.current.softwareUpdate)).toBe(false);
+    // The development-only simulated update is never asked for unless its env flag is set.
+    expect(mockApi.connectReader).toHaveBeenCalledWith(
+      expect.not.objectContaining({ testReaderUpdate: expect.anything() }),
+    );
+
+    await act(async () => emit.available(UPDATE));
+
+    expect(result.current.softwareUpdate.available).toEqual(UPDATE);
+    expect(shouldOfferReaderUpdate(result.current.softwareUpdate)).toBe(true);
+    // Offering is not installing: payments still work.
+    expect(result.current.updateInstalling).toBe(false);
+    expect(result.current.status).toBe('ready');
+  });
+
+  it("also offers the update on the connected reader's own record", async () => {
+    const { result } = await renderHook(() => useBluetoothReader());
+    mockApi.connectReader.mockResolvedValue({ reader: { ...WISEPAD, availableUpdate: UPDATE } } as never);
+    await act(async () => {
+      await result.current.connect(WISEPAD);
+    });
+    expect(result.current.softwareUpdate.available).toEqual(UPDATE);
+  });
+
+  it('ignores an empty update object (iOS sends {} for none)', async () => {
+    const { result } = await connected();
+    await act(async () => emit.available({}));
+    expect(result.current.softwareUpdate.available).toBeNull();
+  });
+
+  it('installs with progress, tells a payment sheet opened meanwhile, then says up to date', async () => {
+    const settings = await connected();
+    await act(async () => emit.available(UPDATE));
+
+    let started = false;
+    await act(async () => {
+      started = await settings.result.current.installUpdate();
+    });
+    expect(started).toBe(true);
+    expect(mockApi.installAvailableUpdate).toHaveBeenCalledTimes(1);
+    expect(settings.result.current.updateInstalling).toBe(true);
+
+    await act(async () => {
+      emit.start();
+      emit.progress('0.4');
+    });
+    expect(settings.result.current.status).toBe('updating');
+    expect(settings.result.current.updateProgress).toBeCloseTo(0.4);
+
+    // Staff close Reader settings and open the payment sheet: a NEW instance, mounted mid-install,
+    // must already say the reader is updating (its buttons key off `status`).
+    const sheet = await renderHook(() => useBluetoothReader());
+    expect(sheet.result.current.status).toBe('updating');
+    expect(sheet.result.current.updateProgress).toBeCloseTo(0.4);
+    // And it is never offered there: no offer while installing.
+    expect(shouldOfferReaderUpdate(sheet.result.current.softwareUpdate)).toBe(false);
+
+    await act(async () => emit.finish({ update: UPDATE }));
+
+    expect(settings.result.current.softwareUpdate.phase).toBe('done');
+    expect(settings.result.current.softwareUpdate.available).toBeNull();
+    expect(settings.result.current.updateInstalling).toBe(false);
+    expect(sheet.result.current.status).not.toBe('updating');
+    // An optional install is not one inside a connect: a later connect retry is not blocked.
+    expect(sheet.result.current.updateProgress).toBeNull();
+  });
+
+  it('shows a plain failure and installs again on retry', async () => {
+    const { result } = await connected();
+    await act(async () => emit.available(UPDATE));
+    await act(async () => {
+      await result.current.installUpdate();
+      emit.start();
+    });
+    await act(async () =>
+      emit.finish({ error: { code: 'READER_SOFTWARE_UPDATE_FAILED_SERVER_ERROR', message: 'Server error' } }),
+    );
+
+    expect(result.current.softwareUpdate.phase).toBe('failed');
+    expect(result.current.softwareUpdate.failure).toBe(READER_UPDATE_FAILED_MESSAGE);
+    // Still offered, as a retry.
+    expect(shouldOfferReaderUpdate(result.current.softwareUpdate)).toBe(true);
+    expect(result.current.status).toBe('ready');
+
+    await act(async () => {
+      await result.current.installUpdate();
+    });
+    expect(mockApi.installAvailableUpdate).toHaveBeenCalledTimes(2);
+    expect(result.current.softwareUpdate.phase).toBe('starting');
+  });
+
+  it('will not start with the battery under 50%, and says to charge it', async () => {
+    const { result } = await connected(0.3);
+    await act(async () => emit.available(UPDATE));
+
+    let started = true;
+    await act(async () => {
+      started = await result.current.installUpdate();
+    });
+
+    expect(started).toBe(false);
+    expect(mockApi.installAvailableUpdate).not.toHaveBeenCalled();
+    expect(result.current.softwareUpdate.failure).toBe(READER_UPDATE_BATTERY_MESSAGE);
+  });
+
+  it("reads the SDK's own low-battery refusal the same way", async () => {
+    const { result } = await connected();
+    await act(async () => emit.available(UPDATE));
+    await act(async () => {
+      await result.current.installUpdate();
+    });
+    await act(async () =>
+      emit.finish({ error: { code: 'READER_SOFTWARE_UPDATE_FAILED_BATTERY_LOW', message: 'Battery low' } }),
+    );
+    expect(result.current.softwareUpdate.failure).toBe(READER_UPDATE_BATTERY_MESSAGE);
+  });
+
+  it('remembers "Not now" until the app next connects the reader', async () => {
+    const { result } = await connected();
+    await act(async () => emit.available(UPDATE));
+    await act(async () => result.current.dismissUpdate());
+    expect(shouldOfferReaderUpdate(result.current.softwareUpdate)).toBe(false);
+
+    // The same connection reporting again does not bring it back.
+    await act(async () => emit.available(UPDATE));
+    expect(shouldOfferReaderUpdate(result.current.softwareUpdate)).toBe(false);
+
+    // Next connection: offered again.
+    mockApi.connectedReader = null;
+    await act(async () => {
+      await result.current.connect(WISEPAD);
+    });
+    await act(async () => emit.available(UPDATE));
+    expect(shouldOfferReaderUpdate(result.current.softwareUpdate)).toBe(true);
+  });
+
+  it('leaves a required update inside connect to the connect, not the offer', async () => {
+    const { result } = await renderHook(() => useBluetoothReader());
+    await act(async () => {
+      emit.start();
+    });
+    // The connect's own `updating` state, as before.
+    expect(result.current.status).toBe('updating');
+    expect(result.current.updateInstalling).toBe(false);
+    expect(result.current.softwareUpdate.phase).toBe('idle');
+    await act(async () => emit.finish({ update: UPDATE }));
+    expect(result.current.softwareUpdate.phase).toBe('idle');
+  });
+
+  it('fails plainly when the reader drops mid-install', async () => {
+    const { result } = await connected();
+    await act(async () => emit.available(UPDATE));
+    await act(async () => {
+      await result.current.installUpdate();
+      emit.start();
+    });
+    await act(async () => emit.disconnect());
+    expect(result.current.softwareUpdate.phase).toBe('failed');
+    expect(result.current.softwareUpdate.failure).toBe(READER_UPDATE_DISCONNECTED_MESSAGE);
+    expect(result.current.updateInstalling).toBe(false);
+  });
+
+  it('stops an install when staff ask, keeping the offer', async () => {
+    const { result } = await connected();
+    await act(async () => emit.available(UPDATE));
+    await act(async () => {
+      await result.current.installUpdate();
+      emit.start();
+    });
+    let stopped = false;
+    await act(async () => {
+      stopped = await result.current.cancelUpdate();
+    });
+    expect(stopped).toBe(true);
+    expect(mockApi.cancelInstallingUpdate).toHaveBeenCalledTimes(1);
+    expect(result.current.updateInstalling).toBe(false);
+    expect(shouldOfferReaderUpdate(result.current.softwareUpdate)).toBe(true);
+    // The SDK's late "cancelled" finish changes nothing.
+    await act(async () => emit.finish({ error: { code: 'CANCELED', message: 'Cancelled' } }));
+    expect(result.current.softwareUpdate.phase).toBe('idle');
+  });
+
+  it('keeps installing when the SDK will not stop it', async () => {
+    mockApi.cancelInstallingUpdate.mockResolvedValue({ error: { code: 'GENERIC_ERROR', message: 'no' } });
+    const { result } = await connected();
+    await act(async () => emit.available(UPDATE));
+    await act(async () => {
+      await result.current.installUpdate();
+      emit.start();
+    });
+    await act(async () => {
+      await result.current.cancelUpdate();
+    });
+    expect(result.current.updateInstalling).toBe(true);
   });
 });

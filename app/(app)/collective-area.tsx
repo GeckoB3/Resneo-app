@@ -139,7 +139,7 @@ export default function CollectiveAreaScreen() {
     return (
       <Screen>
         {header}
-        <EmptyState title="Admins only" message="Only venue admins can manage a collective." />
+        <EmptyState title="Admins only" message="Only business admins can manage a collective." />
       </Screen>
     );
   }
@@ -178,7 +178,7 @@ export default function CollectiveAreaScreen() {
         {header}
         <EmptyState
           title="No collective"
-          message="Your venue is not part of a collective yet. When it is, this is where you will run it."
+          message="Your business is not part of a collective yet. When it is, this is where you will run it."
         />
       </Screen>
     );
@@ -344,7 +344,7 @@ function AreaBody({
   // Update now says what it did either way (web `retryVenue`, CQ-11): up to date, still updating,
   // or why that venue could not be updated.
   const onRetry = (venueId: string) => {
-    const venueName = groups.find((g) => g.venue_id === venueId)?.venue_name ?? 'That venue';
+    const venueName = groups.find((g) => g.venue_id === venueId)?.venue_name ?? 'That business';
     retry.mutate(venueId, {
       onSuccess: (data) => {
         const outcome = retryOutcome(data?.collective_sync, venueName);

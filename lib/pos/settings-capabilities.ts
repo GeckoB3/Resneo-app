@@ -42,12 +42,12 @@ export function capabilityGroups(words: { client: string }): CapabilityGroup[] {
         {
           key: 'refund',
           label: 'Give refunds',
-          help: 'Refunds send money back. Most venues keep this for admins. Team members without it can see what was paid, and an admin gives the refund.',
+          help: 'Refunds send money back. Most businesses keep this for admins. Team members without it can see what was paid, and an admin gives the refund.',
         },
         {
           key: 'charge_saved_card',
           label: `Charge a ${words.client}'s saved card when they're not here`,
-          help: `The ${words.client} is sent a receipt straight away. Most venues keep this for admins.`,
+          help: `The ${words.client} is sent a receipt straight away. Most businesses keep this for admins.`,
         },
         { key: 'edit_tips', label: 'Change tip splits after a sale' },
         { key: 'edit_credit', label: 'Change who gets credit after a sale' },

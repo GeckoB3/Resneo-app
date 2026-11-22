@@ -66,7 +66,7 @@ export default function ProductsAndStockScreen() {
     return (
       <Screen>
         {header}
-        <EmptyState title={t('till.off.title')} message={t('till.off.body', { venue: 'your venue' })} />
+        <EmptyState title={t('till.off.title')} message={t('till.off.body', { venue: 'your business' })} />
       </Screen>
     );
   }
@@ -84,7 +84,7 @@ export default function ProductsAndStockScreen() {
       <Screen>
         {header}
         {off ? (
-          <EmptyState title={t('till.off.title')} message={t('till.off.body', { venue: 'your venue' })} />
+          <EmptyState title={t('till.off.title')} message={t('till.off.body', { venue: 'your business' })} />
         ) : (
           <ErrorState
             title={t('prod.error')}

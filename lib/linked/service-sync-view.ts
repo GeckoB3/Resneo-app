@@ -217,7 +217,7 @@ export function pageWideSyncWords(items: readonly CatalogueItemView[]): {
         ? {
             label: `Link all copies (${out})`,
             confirmText:
-              `Link every copy at another venue that is not linked, or has fallen behind, to its original and ` +
+              `Link every copy at another business that is not linked, or has fallen behind, to its original and ` +
               `update it now? ${out === 1 ? 'Its' : 'Their'} ${SYNCED_FIELDS_COPY} will match the original's ` +
               `and follow it from now on. Prices and descriptions stay as they are.`,
             payload: { action: 'sync_all_providers' },

@@ -87,7 +87,7 @@ export default function StocktakeScreen() {
     return (
       <Screen>
         {header(t('stock.tab.stocktakes'))}
-        <EmptyState title={t('till.off.title')} message={t('till.off.body', { venue: 'your venue' })} />
+        <EmptyState title={t('till.off.title')} message={t('till.off.body', { venue: 'your business' })} />
       </Screen>
     );
   }

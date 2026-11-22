@@ -126,6 +126,13 @@ export interface TerminalHookApi {
    * build's SDK may lack it.
    */
   setTapToPayUxConfiguration?: (config: TapToPayUxConfig) => Promise<SdkResult>;
+  /**
+   * Starts the connected reader's optional update (Reader settings only, READER-8). Resolves at
+   * once; the install reports through the update events. Optional so test doubles may omit it.
+   */
+  installAvailableUpdate?: () => Promise<SdkResult>;
+  /** Stops an optional update that is installing. */
+  cancelInstallingUpdate?: () => Promise<SdkResult>;
   supportsReadersOfType: (params: {
     deviceType: Reader.DeviceType;
     discoveryMethod: Reader.DiscoveryMethod;

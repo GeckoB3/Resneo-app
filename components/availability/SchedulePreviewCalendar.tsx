@@ -186,7 +186,7 @@ export function summariseScheduleDay(input: {
     const weekly = venueWeekDayHours(input.venueOpeningHours, date);
     return {
       ...base,
-      text: 'Venue closed',
+      text: 'Business closed',
       reason: weekly.kind === 'closed' ? 'venue-closed' : 'venue-closure',
       overrideReason,
     };

@@ -58,7 +58,7 @@ export function BookingActions({ booking, onReschedule, onCancelled }: Props) {
           loading={confirmAttendance.isPending}
           onPress={() => {
             confirmAttendance.mutate(undefined, {
-              onSuccess: () => toast.success('Thanks, the venue knows you are coming.'),
+              onSuccess: () => toast.success('Thanks, the business knows you are coming.'),
               onError: () => toast.error('Could not confirm. Please try again.'),
             });
           }}
@@ -110,7 +110,7 @@ export function BookingActions({ booking, onReschedule, onCancelled }: Props) {
             },
             onError: () => {
               setConfirmingCancel(false);
-              toast.error('Could not cancel. Please ring the venue.');
+              toast.error('Could not cancel. Please ring the business.');
             },
           });
         }}

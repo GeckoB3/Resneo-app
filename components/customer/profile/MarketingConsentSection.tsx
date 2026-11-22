@@ -34,22 +34,22 @@ export function MarketingConsentSection() {
   return (
     <Card>
       <Text variant="overline" tone="secondary">
-        OFFERS FROM VENUES
+        OFFERS FROM BUSINESSES
       </Text>
       <Text variant="caption" tone="muted" style={styles.gap}>
-        Each venue asks separately, so turning one off does not affect the others.
+        Each business asks separately, so turning one off does not affect the others.
       </Text>
       {venues.map((venue) => {
         const on = isOptedIn(venue.marketing_consent, venue.marketing_opt_out);
         return (
           <View key={venue.venue_id} style={styles.row}>
             <Text variant="body" style={styles.name}>
-              {venue.venue_name ?? 'Venue'}
+              {venue.venue_name ?? 'Business'}
             </Text>
             <Switch
               value={on}
               disabled={setConsent.isPending}
-              accessibilityLabel={`Offers from ${venue.venue_name ?? 'this venue'}`}
+              accessibilityLabel={`Offers from ${venue.venue_name ?? 'this business'}`}
               onValueChange={(next) =>
                 setConsent.mutate(
                   { guestId: venue.guest_id, consent: next },

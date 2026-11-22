@@ -82,11 +82,11 @@ function venueNotice(venue: VenueChoice): { text: string; plain: boolean; review
   });
   if (venue.link?.state === 'their_request') return line(setupCopy('setup.venue.theyAsked', params), { plain: true, review: true });
   if (venue.link?.state === 'my_request') return line(setupCopy('setup.venue.youAsked', params), { plain: true });
-  if (!venue.alreadyLinked) return line(venue.reason ?? 'This venue is not available to link right now.');
+  if (!venue.alreadyLinked) return line(venue.reason ?? 'This business is not available to link right now.');
   if (venue.sameCollective && venue.requesterCollective) return line(setupCopy('setup.venue.alreadyLinked.sameCollective', params));
   if (venue.requesterCollective?.role === 'host') return line(setupCopy('setup.venue.alreadyLinked.hosts', params));
   // A member or an invited venue cannot start a shared page, so it is pointed at no way to start one (as the web).
-  if (venue.requesterCollective) return line(venue.reason ?? 'You are already linked with this venue.');
+  if (venue.requesterCollective) return line(venue.reason ?? 'You are already linked with this business.');
   if (venue.link?.state === 'not_full') return line(setupCopy('setup.venue.alreadyLinked.notFull', params), { edit: true });
   return line(setupCopy('setup.venue.alreadyLinked', params));
 }
@@ -180,7 +180,7 @@ export function LinkSetupSheet({
     return { ...picked, alreadyLinked: false, collective: null, link: null, requesterCollective: null, sameCollective: false };
   }, [picked, lookup.data]);
 
-  const otherName = venue?.name ?? 'the other venue';
+  const otherName = venue?.name ?? 'the other business';
   const grants = useMemo(
     () =>
       customising
@@ -367,7 +367,7 @@ export function LinkSetupSheet({
                 </Text>
                 {lookup.isFetching ? (
                   <Text variant="caption" tone="muted">
-                    Checking the venue...
+                    Checking the business...
                   </Text>
                 ) : notice ? (
                   <Text variant="caption" tone={notice.plain ? 'secondary' : 'danger'}>
@@ -375,14 +375,14 @@ export function LinkSetupSheet({
                   </Text>
                 ) : null}
               </View>
-              <Pressable accessibilityRole="button" accessibilityLabel="Change venue" disabled={busy} onPress={() => setMode('picker')} hitSlop={8}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Change business" disabled={busy} onPress={() => setMode('picker')} hitSlop={8}>
                 <Text variant="label" tone="brand">
                   Change
                 </Text>
               </Pressable>
             </View>
           ) : (
-            <Button label="Find a venue" variant="secondary" onPress={() => setMode('picker')} />
+            <Button label="Find a business" variant="secondary" onPress={() => setMode('picker')} />
           )}
           {notice?.review && venue?.link ? (
             <Button label={setupCopy('setup.venue.theyAsked.cta')} variant="secondary" onPress={() => onReviewRequest(venue.link!.id)} />

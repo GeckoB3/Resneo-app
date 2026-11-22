@@ -44,8 +44,8 @@ const ENROLLMENT_TONE: Record<string, BadgeTone> = {
 
 /** Human name from the best-effort guest row. */
 function guestDisplayName(g: CourseEnrollment['guest']): string {
-  if (!g) return 'Guest';
-  return [g.first_name, g.last_name].filter(Boolean).join(' ').trim() || g.email || 'Guest';
+  if (!g) return 'Client';
+  return [g.first_name, g.last_name].filter(Boolean).join(' ').trim() || g.email || 'Client';
 }
 
 /** "Cancelled. £45.00 refunded." style success copy from the cancel result. */
@@ -192,7 +192,7 @@ export function CourseEnrollmentsSheet({ course, onClose }: CourseEnrollmentsShe
             {enrollments.length === 0 ? (
               <EmptyState
                 title="No enrollments yet"
-                message="When guests enroll in this course, they will appear here."
+                message="When clients enroll in this course, they will appear here."
               />
             ) : (
               active.map((e) => {

@@ -68,7 +68,7 @@ function PracticeAddSheetBody({
   const rules = readStockRules(catalogue.data?.stock);
   const search = useProductSearch(debounced, { enabled: productsOn && tab === 'products' });
   const products = search.data?.products ?? [];
-  const venueName = bootstrap.venue?.name ?? 'This venue';
+  const venueName = bootstrap.venue?.name ?? 'This business';
   const { add: addProduct, busy: adding } = useAddProduct({ sale, send, rules, venueName, onNotice: setNotice });
 
   function pickProduct(p: PosCatalogueProduct) {

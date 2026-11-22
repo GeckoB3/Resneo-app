@@ -111,7 +111,7 @@ function BlockedClientWarning({ guestId, bookingVenueId }: { guestId: string; bo
 }
 
 function guestDisplayName(guest: GuestListItem): string {
-  return [guest.first_name, guest.last_name].filter(Boolean).join(' ').trim() || 'Unnamed guest';
+  return [guest.first_name, guest.last_name].filter(Boolean).join(' ').trim() || 'Unnamed client';
 }
 
 function guestMeta(guest: GuestListItem, showContact: boolean): string {
@@ -257,7 +257,7 @@ export function GuestDetailsStep({
       scrollEventThrottle={16}
       showsVerticalScrollIndicator={false}>
       <Animated.View style={[styles.container, spacerStyle]}>
-        <Text variant="heading">Guest details</Text>
+        <Text variant="heading">Client details</Text>
 
         {source && onSourceChange ? (
           <View style={styles.sourceBlock}>
@@ -277,7 +277,7 @@ export function GuestDetailsStep({
 
         {!readOnlyContact ? (
           <Input
-            label="Find an existing guest"
+            label="Find an existing client"
             optional
             placeholder={canSeeClientContact ? 'Search name or phone' : ROLES_COPY['search.names_only']}
             value={searchInput}
@@ -322,7 +322,7 @@ export function GuestDetailsStep({
               <View
                 style={[styles.loadingRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
                 accessibilityRole="progressbar"
-                accessibilityLabel="Searching guests">
+                accessibilityLabel="Searching clients">
                 <ActivityIndicator size="small" color={colors.brand} />
                 <Text variant="caption" tone="muted">
                   Searching…
@@ -330,7 +330,7 @@ export function GuestDetailsStep({
               </View>
             ) : debouncedSearch.length >= MIN_SEARCH_LENGTH ? (
               <Text variant="caption" tone="muted">
-                No matching guests. Enter their details below.
+                No matching clients. Enter their details below.
               </Text>
             ) : null}
 

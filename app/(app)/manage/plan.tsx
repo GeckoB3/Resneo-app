@@ -483,7 +483,7 @@ export default function PlanScreen() {
           <StatusBanner
             tone="brand"
             title="Complimentary ResNeo access"
-            message="Your venue has complimentary access to ResNeo, so there are no subscription charges while this is active. Billing actions are disabled."
+            message="Your business has complimentary access to ResNeo, so there are no subscription charges while this is active. Billing actions are disabled."
           />
         )}
 
@@ -538,8 +538,8 @@ export default function PlanScreen() {
             title="Your subscription has ended"
             message={
               manageOnWeb
-                ? 'Venue changes and public online booking are paused until you start a new subscription. Resubscribe on the ResNeo website. Your plan reactivates here automatically.'
-                : 'Venue changes and public online booking are paused until you start a new subscription. Use Resubscribe to pay again with Stripe Checkout.'
+                ? 'Business changes and public online booking are paused until you start a new subscription. Resubscribe on the ResNeo website. Your plan reactivates here automatically.'
+                : 'Business changes and public online booking are paused until you start a new subscription. Use Resubscribe to pay again with Stripe Checkout.'
             }
             buttonLabel={
               manageOnWeb
@@ -780,10 +780,10 @@ export default function PlanScreen() {
               </Text>
             </View>
             <Text variant="subheading" style={styles.tierName}>
-              Delete this venue
+              Delete this business
             </Text>
             <Text variant="bodySmall" tone="secondary">
-              Schedule a 30-day grace-period deletion of this venue and all of its data. You can
+              Schedule a 30-day grace-period deletion of this business and all of its data. You can
               cancel any time before the grace period ends.
             </Text>
             {!canManageBilling ? (
@@ -793,7 +793,7 @@ export default function PlanScreen() {
             ) : null}
             <View style={styles.actions}>
               <Button
-                label={canManageBilling ? 'Delete this venue…' : 'See closure status'}
+                label={canManageBilling ? 'Delete this business…' : 'See closure status'}
                 variant={canManageBilling ? 'danger' : 'secondary'}
                 fullWidth
                 onPress={() => setShowDeleteVenue(true)}

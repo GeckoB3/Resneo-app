@@ -82,7 +82,7 @@ describe('firstFullDayLeaveDate and the leave note', () => {
 });
 
 describe('amendedHoursVenueNote', () => {
-  it('says nothing when the hours sit inside the venue’s', () => {
+  it('says nothing when the hours sit inside the business’s', () => {
     expect(
       amendedHoursVenueNote({
         dateStart: '2026-09-22',
@@ -94,7 +94,7 @@ describe('amendedHoursVenueNote', () => {
     ).toBeNull();
   });
 
-  it('names a closed venue day and hours past the venue’s close', () => {
+  it('names a closed business day and hours past the business’s close', () => {
     expect(
       amendedHoursVenueNote({
         dateStart: '2026-09-27',
@@ -103,7 +103,7 @@ describe('amendedHoursVenueNote', () => {
         venueHours: OPEN_MON_TO_FRI,
         venueBlocks: [],
       }),
-    ).toContain('Your venue is closed on');
+    ).toContain('Your business is closed on');
     expect(
       amendedHoursVenueNote({
         dateStart: '2026-09-22',

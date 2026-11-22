@@ -58,7 +58,7 @@ describe('ComplianceWarningNotice', () => {
     expect(screen.queryByText('Outstanding compliance forms')).toBeNull();
   });
 
-  it("states a required record as the venue's requirement, and offers capture", async () => {
+  it("states a required record as the business's requirement, and offers capture", async () => {
     const onCapture = jest.fn();
     await render(
       <ComplianceWarningNotice
@@ -68,10 +68,10 @@ describe('ComplianceWarningNotice', () => {
     );
     expect(screen.getByText('Outstanding compliance forms')).toBeTruthy();
     expect(
-      screen.getByText(/this venue requires Consent form for this booking and it is not on file/),
+      screen.getByText(/this business requires Consent form for this booking and it is not on file/),
     ).toBeTruthy();
     expect(screen.getByText(/Patch test is not on file yet/)).toBeTruthy();
-    fireEvent.press(screen.getByText('Capture in venue'));
+    fireEvent.press(screen.getByText('Capture in person'));
     expect(onCapture).toHaveBeenCalledTimes(1);
   });
 
@@ -84,12 +84,12 @@ describe('ComplianceWarningNotice', () => {
     expect(
       screen.getByText(/requires Consent form and Medical history for this booking and they are not on file/),
     ).toBeTruthy();
-    expect(screen.queryByText('Capture in venue')).toBeNull();
+    expect(screen.queryByText('Capture in person')).toBeNull();
   });
 
   it('keeps the softer reminder copy for advisory-only warnings', async () => {
     await render(<ComplianceWarningNotice warnings={[warning('Patch test')]} />);
     expect(screen.getByText(/Patch test is not on file yet/)).toBeTruthy();
-    expect(screen.queryByText(/this venue requires/)).toBeNull();
+    expect(screen.queryByText(/this business requires/)).toBeNull();
   });
 });

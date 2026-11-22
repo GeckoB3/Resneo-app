@@ -84,13 +84,13 @@ beforeEach(() => {
 });
 
 describe('buildAlertMessage', () => {
-  it('reads slot_time_hm + calendar_name and pluralises the guest count', () => {
+  it('reads slot_time_hm + calendar_name and pluralises the client count', () => {
     expect(buildAlertMessage(ALERT)).toContain('Haircut');
     expect(buildAlertMessage(ALERT)).toContain('on Alex');
     expect(buildAlertMessage(ALERT)).toContain('14:30');
-    expect(buildAlertMessage(ALERT)).toContain('2 guests on the waitlist match.');
+    expect(buildAlertMessage(ALERT)).toContain('2 clients on the waitlist match.');
     expect(buildAlertMessage({ ...ALERT, matching_waitlist_count: 1 })).toContain(
-      '1 guest on the waitlist matches.',
+      '1 client on the waitlist matches.',
     );
   });
 
@@ -139,7 +139,7 @@ describe('WaitlistAvailabilityBanner actions', () => {
     expect(screen.getByText('+1 more open slot on the waitlist')).toBeTruthy();
   });
 
-  it('offers the appointment and toasts that the guest was notified', async () => {
+  it('offers the appointment and toasts that the client was notified', async () => {
     mockActMutate.mockImplementation((_input, opts) =>
       opts.onSuccess({ guest_name: 'Pat', email_sent: true }),
     );

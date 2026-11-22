@@ -130,11 +130,11 @@ export function CollectiveCatalogueBuilder({ collectiveId }: { collectiveId: str
       <View style={styles.section}>
         <Text variant="label">Offerings on your combined page</Text>
         <Text variant="caption" tone="muted">
-          Each offering lists the calendars that provide it. A calendar at another venue uses that
-          venue’s own copy of the service. A copy that is linked to the original follows the
+          Each offering lists the calendars that provide it. A calendar at another business uses that
+          business’s own copy of the service. A copy that is linked to the original follows the
           original’s duration, buffer, processing periods and options whenever the original is
           saved, and its add-ons are matched whenever it is linked or updated; price and
-          description are always the venue’s own.
+          description are always the business’s own.
         </Text>
         {pageSync.link || pageSync.unlink ? (
           <View style={styles.syncRow}>
@@ -174,7 +174,7 @@ export function CollectiveCatalogueBuilder({ collectiveId }: { collectiveId: str
         ) : null}
         {activeItems.length === 0 ? (
           <Text variant="bodySmall" tone="muted">
-            Nothing on the page yet. Add services from your venues above, or create a custom
+            Nothing on the page yet. Add services from your businesses above, or create a custom
             offering below.
           </Text>
         ) : (
@@ -300,14 +300,14 @@ function VenueServicesPicker({
     <Card style={styles.card}>
       <Text variant="label">Choose services to offer</Text>
       <Text variant="caption" tone="muted">
-        Tick services from any venue and add them together. To offer one at more than one venue,
-        open the offering below and tick that venue&apos;s calendars. The service is created there
+        Tick services from any business and add them together. To offer one at more than one business,
+        open the offering below and tick that business&apos;s calendars. The service is created there
         automatically if it doesn&apos;t have it yet.
       </Text>
 
       {!anyServices ? (
         <Text variant="bodySmall" tone="muted">
-          No bookable services found in the member venues.
+          No bookable services found in the member businesses.
         </Text>
       ) : (
         <>
@@ -490,9 +490,9 @@ function ItemCard({
       </View>
 
       <Text variant="caption" tone="muted">
-        Price, description and photo come from each venue&apos;s own service settings (Services).
-        To offer it at more than one venue, open the calendars below and tick that venue&apos;s
-        calendars. If the venue does not have the service, an exact copy is created there and
+        Price, description and photo come from each business&apos;s own service settings (Services).
+        To offer it at more than one business, open the calendars below and tick that business&apos;s
+        calendars. If the business does not have the service, an exact copy is created there and
         linked to the original; if it already has one with the same name, you are asked whether
         to link it.
       </Text>
@@ -538,7 +538,7 @@ function ItemCard({
         title="Calendars offering this"
         summary={item.providers.length > 0 ? `${item.providers.length} assigned` : 'None yet'}>
         <Text variant="caption" tone="muted">
-          Tick the calendars that offer it. Each row at another venue shows whether that venue&apos;s
+          Tick the calendars that offer it. Each row at another business shows whether that business&apos;s
           copy is linked to the original and up to date, with a button for the next step.
         </Text>
         <CalendarAssignment
@@ -589,7 +589,7 @@ function CalendarAssignment({
   if (!anyCalendars) {
     return (
       <Text variant="caption" tone="muted">
-        No calendars available in the member venues.
+        No calendars available in the member businesses.
       </Text>
     );
   }

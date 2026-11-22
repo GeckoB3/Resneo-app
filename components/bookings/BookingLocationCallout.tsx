@@ -149,7 +149,7 @@ function AddressBody({
   return (
     <Text variant="bodySmall" color={colors.warning} style={styles.body}>
       {view.gap === 'address_hidden'
-        ? 'The address is hidden because this booking belongs to a linked venue.'
+        ? 'The address is hidden because this booking belongs to a linked business.'
         : 'No address was recorded. Contact the client to confirm where to go.'}
     </Text>
   );

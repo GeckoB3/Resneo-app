@@ -101,7 +101,7 @@ const toChanges = async () => {
 };
 const toCheck = async () => {
   await toChanges();
-  await tick('I understand what changes for Aura and for the venues I invite.');
+  await tick('I understand what changes for Aura and for the businesses I invite.');
   await press('Continue');
 };
 
@@ -125,7 +125,7 @@ describe('CreateCollectiveSheet', () => {
     expect(screen.getByText('What a collective is')).toBeTruthy();
     expect(screen.getByText('Aura will be the host.')).toBeTruthy();
     // The web's sentence, with the app's place name (CQ-10.11).
-    expect(screen.getByText(/What the collective is called inside ResNeo and in messages between the venues/)).toBeTruthy();
+    expect(screen.getByText(/What the collective is called inside ResNeo and in messages between the businesses/)).toBeTruthy();
   });
 
   it('holds the first step until the name and a free address are in', async () => {
@@ -145,7 +145,7 @@ describe('CreateCollectiveSheet', () => {
     expect(screen.getByRole('button', { name: 'Continue' }).props.accessibilityState?.disabled).toBeFalsy();
   });
 
-  it('lists every linked venue, with its standing and why it cannot join', async () => {
+  it('lists every linked business, with its standing and why it cannot join', async () => {
     await render(sheet());
     await toVenues();
     expect(screen.getByText('Can join')).toBeTruthy();
@@ -163,12 +163,12 @@ describe('CreateCollectiveSheet', () => {
     expect(screen.getByRole('checkbox', { name: 'No Pay' }).props.accessibilityState?.disabled).toBe(false);
   });
 
-  it('needs a venue chosen, and a partly linked one opens its link to change it', async () => {
+  it('needs a business chosen, and a partly linked one opens its link to change it', async () => {
     await render(sheet());
     await toVenues();
     expect(screen.getByRole('button', { name: 'Continue' }).props.accessibilityState?.disabled).toBe(true);
     await tick('Bright Cuts');
-    expect(screen.getByText('1 venue selected')).toBeTruthy();
+    expect(screen.getByText('1 business selected')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Continue' }).props.accessibilityState?.disabled).toBeFalsy();
 
     // Only the partly linked venue offers it.
@@ -177,23 +177,23 @@ describe('CreateCollectiveSheet', () => {
     expect(onOpen).toHaveBeenCalledWith('/linked-venues/link-p');
   });
 
-  it('says what changes for each venue, and asks for the one acknowledgement', async () => {
+  it('says what changes for each business, and asks for the one acknowledgement', async () => {
     await render(sheet());
     await toChanges();
     expect(screen.getByText('What changes when Riverside starts')).toBeTruthy();
     expect(screen.getByText('Aura (/book/aura) leads to /book/c/riverside')).toBeTruthy();
     expect(screen.getByText('Bright Cuts (/book/bright-cuts) leads to /book/c/riverside')).toBeTruthy();
     // Create's own account links card: the wizard's says the link is being sent.
-    expect(screen.getByText(/Every venue in Riverside is already linked with the others/)).toBeTruthy();
+    expect(screen.getByText(/Every business in Riverside is already linked with the others/)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Continue' }).props.accessibilityState?.disabled).toBe(true);
-    await tick('I understand what changes for Aura and for the venues I invite.');
+    await tick('I understand what changes for Aura and for the businesses I invite.');
     expect(screen.getByRole('button', { name: 'Continue' }).props.accessibilityState?.disabled).toBeFalsy();
   });
 
   it('checks, creates and ends on the receipt with the address and what to do next', async () => {
     await render(sheet());
     await toCheck();
-    expect(screen.getByText('The Riverside page is not live yet. It goes live once an invited venue accepts and at least one calendar offers a service.')).toBeTruthy();
+    expect(screen.getByText('The Riverside page is not live yet. It goes live once an invited business accepts and at least one calendar offers a service.')).toBeTruthy();
     expect(screen.getByText('What Bright Cuts will read')).toBeTruthy();
     expect(screen.getByText('Aura invited you to join Riverside')).toBeTruthy();
     expect(screen.getByText('Host')).toBeTruthy();
@@ -212,7 +212,7 @@ describe('CreateCollectiveSheet', () => {
     expect(Clipboard.setStringAsync).toHaveBeenCalledWith('https://resneo.test/book/c/riverside');
     expect(screen.getByRole('button', { name: 'Copied' })).toBeTruthy();
 
-    await press('Waiting for the invited venue');
+    await press('Waiting for the invited business');
     expect(onOpen).toHaveBeenLastCalledWith('/collective-area?tab=venues');
     await press('Put services on the page');
     expect(onOpen).toHaveBeenLastCalledWith('/collective-area?view=venues');
@@ -228,7 +228,7 @@ describe('CreateCollectiveSheet', () => {
     await render(sheet());
     await toCheck();
     const row = screen.getByLabelText('Share client lists');
-    expect(screen.getByText('Your venues see one client list. Nothing is deleted.')).toBeTruthy();
+    expect(screen.getByText('Your businesses see one client list. Nothing is deleted.')).toBeTruthy();
     expect(row.props.value).toBe(false);
     await act(async () => {
       fireEvent(row, 'valueChange', true);
@@ -257,34 +257,34 @@ describe('CreateCollectiveSheet', () => {
     expect(screen.queryByText('That booking-page address is already in use. Choose another.')).toBeNull();
   });
 
-  it('sends a refused venue back to the venues step', async () => {
+  it('sends a refused business back to the businesses step', async () => {
     mockCreateError = new ApiError('Bright Cuts is already part of another collective.', 409, { field: 'venues' });
     await render(sheet());
     await toCheck();
     await press('Create and send invitations');
-    await press('Change the venues');
+    await press('Change the businesses');
     expect(screen.getByText('Step 2 of 4')).toBeTruthy();
     expect(screen.getByText('Bright Cuts is already part of another collective.')).toBeTruthy();
   });
 
-  it('shows the server sentence, with no way back, for a venue already in a collective', async () => {
-    mockCreateError = new ApiError('Your venue is already part of Plus 1.', 409, { field: 'collective' });
+  it('shows the server sentence, with no way back, for a business already in a collective', async () => {
+    mockCreateError = new ApiError('Your business is already part of Plus 1.', 409, { field: 'collective' });
     await render(sheet());
     await toCheck();
     await press('Create and send invitations');
-    expect(screen.getByText('Your venue is already part of Plus 1.')).toBeTruthy();
+    expect(screen.getByText('Your business is already part of Plus 1.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Change the name or address' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Change the venues' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Change the businesses' })).toBeNull();
     expect(onCreated).not.toHaveBeenCalled();
   });
 
-  it('points to Linked venues when nothing is linked', async () => {
+  it('points to Linked businesses when nothing is linked', async () => {
     mockCandidates = [];
     await render(sheet());
     await toVenues();
-    expect(screen.getByText('No venues to invite yet')).toBeTruthy();
-    expect(screen.getByText('You can invite venues you have an active link with. Set one up on the Linked venues screen first.')).toBeTruthy();
-    await press('Open Linked venues');
+    expect(screen.getByText('No businesses to invite yet')).toBeTruthy();
+    expect(screen.getByText('You can invite businesses you have an active link with. Set one up on the Linked businesses screen first.')).toBeTruthy();
+    await press('Open Linked businesses');
     expect(onOpen).toHaveBeenCalledWith('/linked-venues');
   });
 

@@ -177,7 +177,7 @@ function ImportHub() {
         message={
           pending?.kind === 'undo'
             ? `This takes out what the import added and puts back any ${clientWord}s it updated. A ${clientWord} who has bookings, forms or files that did not come from this import is kept, and you will be told who.`
-            : `Its uploaded files are deleted. This does not remove ${clientWord}s or bookings it already added to your venue. Use Undo on a finished import if you need to take those out.`
+            : `Its uploaded files are deleted. This does not remove ${clientWord}s or bookings it already added to your business. Use Undo on a finished import if you need to take those out.`
         }
         confirmLabel={pending?.kind === 'undo' ? 'Undo import' : 'Remove'}
         destructive

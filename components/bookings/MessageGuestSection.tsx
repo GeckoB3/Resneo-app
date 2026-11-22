@@ -41,9 +41,9 @@ function commChannelTone(channel: string): BadgeTone {
 function successCaption(channel: GuestMessageChannel): string {
   switch (channel) {
     case 'email':
-      return 'Email sent to the guest.';
+      return 'Email sent to the client.';
     case 'sms':
-      return 'SMS sent to the guest.';
+      return 'SMS sent to the client.';
     case 'both':
       return 'Message sent by email and/or SMS (where contact details exist).';
     default:
@@ -112,7 +112,7 @@ function MessageGuestCompose({ bookingId }: { bookingId: string }) {
         disabled={sendMessage.isPending}
       />
       <Input
-        placeholder="Write a message to the guest…"
+        placeholder="Write a message to the client…"
         value={message}
         onChangeText={setMessage}
         multiline
@@ -191,23 +191,23 @@ export function MessageGuestSection({
             : 'No contact';
 
   return (
-    <CollapsibleCard title="SMS / Email guest" summary={summary}>
+    <CollapsibleCard title="Text or email client" summary={summary}>
       {canMessage ? (
         <MessageGuestCompose bookingId={booking.id} />
       ) : contactHidden ? null : readOnly ? (
         <Text variant="bodySmall" tone="muted" style={styles.noContact}>
-          This link is view only, so the guest cannot be messaged from here.
+          This link is view only, so the client cannot be messaged from here.
         </Text>
       ) : (
         <Text variant="bodySmall" tone="muted" style={styles.noContact}>
-          No email or phone on file. Add contact details to message this guest.
+          No email or phone on file. Add contact details to message this client.
         </Text>
       )}
 
       <View style={styles.log}>
         {communications.length === 0 ? (
           <Text variant="bodySmall" tone="muted">
-            No emails or SMS have been sent to the guest for this booking yet.
+            No emails or SMS have been sent to the client for this booking yet.
           </Text>
         ) : null}
         {communications.map((row) => {

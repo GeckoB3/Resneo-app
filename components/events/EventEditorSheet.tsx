@@ -35,7 +35,7 @@ import type {
  * hold (spec 6.2) is a standard option; it is no longer gated by a venue flag.
  */
 const PAYMENT_OPTIONS: { value: EventPaymentRequirement; label: string; hint: string }[] = [
-  { value: 'none', label: 'No online payment', hint: 'Pay at the venue or arrange separately' },
+  { value: 'none', label: 'No online payment', hint: 'Pay at the business or arrange separately' },
   { value: 'deposit', label: 'Custom deposit', hint: 'Fixed amount paid online when booking' },
   { value: 'full_payment', label: 'Pay in full online', hint: 'Full ticket price taken at booking' },
   {
@@ -543,7 +543,7 @@ export function EventEditorSheet({ target, onClose, onSaved }: EventEditorSheetP
           {editing ? (
             // E-1 (web 2026-09-23): a date or time change moves the bookings and tells the guests.
             <Text variant="caption" tone="muted">
-              {"Changing the date or times moves this event's bookings, and those guests are sent the new details."}
+              {"Changing the date or times moves this event's bookings, and those clients are sent the new details."}
             </Text>
           ) : null}
           <Input
@@ -875,7 +875,7 @@ export function EventEditorSheet({ target, onClose, onSaved }: EventEditorSheetP
           {paymentReq !== 'none' && !stripeConnected ? (
             <Text variant="caption" color={colors.warning}>
               Connect Stripe (Plan &amp; payments) to take online payments. Bookings will fall
-              back to pay-at-venue until then.
+              back to paying at the business until then.
             </Text>
           ) : null}
 
@@ -884,7 +884,7 @@ export function EventEditorSheet({ target, onClose, onSaved }: EventEditorSheetP
             <View style={styles.switchText}>
               <Text variant="bodyMedium">Show on booking page</Text>
               <Text variant="caption" tone="muted">
-                Turn this off to hide this event from guests. Bookings it already has stay as they
+                Turn this off to hide this event from clients. Bookings it already has stay as they
                 are, and nobody is contacted.
               </Text>
             </View>

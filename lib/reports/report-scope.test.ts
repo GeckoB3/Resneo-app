@@ -78,7 +78,7 @@ describe('the picker', () => {
     ]);
   });
 
-  it('with businesses groups your venue, each business, then together', () => {
+  it('with businesses groups your business, each business, then together', () => {
     const groups = showingPickerGroups(OPTIONS);
     expect(groups.map((g) => g.heading)).toEqual(['Plus 1 (you)', 'Light 3', 'Aura', 'Together']);
     expect(groups.flatMap((g) => g.rows.map((r) => r.label))).toEqual([
@@ -111,7 +111,7 @@ describe('the picker', () => {
     expect(showingPickerLabel(OPTIONS, resolveShowing(OPTIONS, { kind: 'together' }))).toBe('Everyone together');
   });
 
-  it('reads a choice that has gone from the list as your whole venue', () => {
+  it('reads a choice that has gone from the list as your whole business', () => {
     expect(resolveShowing(OPTIONS, { kind: 'calendar', calendarId: 'gone' })).toBe(WHOLE_VENUE);
     expect(resolveShowing(OPTIONS, { kind: 'business', venueId: 'gone' })).toBe(WHOLE_VENUE);
     expect(resolveShowing(OPTIONS, { kind: 'partner-calendar', venueId: 'v2', calendarId: 'p2' })).toBe(WHOLE_VENUE);
@@ -135,7 +135,7 @@ describe('what each choice sends', () => {
     expect(isPartnerShowing(showing)).toBe(choice.kind === 'partner-calendar' || choice.kind === 'business' || choice.kind === 'together');
   });
 
-  it('adds the comparison, never both a calendar and a business, and nothing for the whole venue', () => {
+  it('adds the comparison, never both a calendar and a business, and nothing for the whole business', () => {
     expect(withScopeParams('from=a&to=b', { business: 'all', compare: 'last_year' })).toBe('from=a&to=b&business=all&compare=last_year');
     expect(withScopeParams('from=a&to=b', { calendarId: 'c1', business: 'v2' })).toBe('from=a&to=b&calendar_id=c1');
     expect(withScopeParams('from=a&to=b', {})).toBe('from=a&to=b');
@@ -209,9 +209,9 @@ describe('what a section says', () => {
     expect(scopeNote(own, { calendar: { id: 'c1', name: 'Hannah' } })).toEqual({ kind: 'scoped', lead: 'Showing Hannah only.', detail: null });
   });
 
-  it('says on a till tab that the figures are your venue only', () => {
+  it('says on a till tab that the figures are your business only', () => {
     expect(tillScopeText(resolveShowing(OPTIONS, { kind: 'business', venueId: 'v2' }))).toBe(
-      "These figures are your venue's only: takings and sales are never shared between businesses. Light 3 stays chosen on the other tabs.",
+      "These figures are your business's only: takings and sales are never shared between businesses. Light 3 stays chosen on the other tabs.",
     );
     expect(tillScopeText(resolveShowing(OPTIONS, { kind: 'calendar', calendarId: 'c1' }))).toBeNull();
     expect(tillScopeText(WHOLE_VENUE)).toBeNull();

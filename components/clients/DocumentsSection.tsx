@@ -341,7 +341,7 @@ export function DocumentsSection({
         </Text>
       ) : notSharedThroughLink ? (
         <Text variant="bodySmall" tone="muted" style={styles.emptyText}>
-          {`Held by ${ownerVenueName ?? 'the linked venue'} and not shared through this link yet.`}
+          {`Held by ${ownerVenueName ?? 'the linked business'} and not shared through this link yet.`}
         </Text>
       ) : docsQuery.isError ? (
         <Text variant="bodySmall" tone="danger" style={styles.emptyText}>

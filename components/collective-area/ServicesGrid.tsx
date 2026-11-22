@@ -106,6 +106,7 @@ import {
 } from '@/lib/services/calendar-values';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
+import { personAtBusiness } from '@/lib/venue/member-label';
 
 const CELL_TONE: Record<CellState, BadgeTone> = { all: 'success', some: 'warning', none: 'neutral' };
 
@@ -728,7 +729,7 @@ export function ServicesGridList({ grid, currencySymbol }: { grid: ServicesGridS
       {grid.selecting ? (
         <View style={styles.venueChips}>
           <Text variant="caption" tone="secondary">
-            Venues (none chosen means every venue)
+            Businesses (none chosen means every business)
           </Text>
           <View style={styles.chipWrap}>
             {groups.map((group) => (
@@ -1227,7 +1228,7 @@ function ServiceSheet({ grid, currencySymbol }: { grid: ServicesGridState; curre
                         ) : null}
                         <Switch
                           value={on}
-                          accessibilityLabel={`${calendar.name} at ${group.venue_name}`}
+                          accessibilityLabel={personAtBusiness(calendar.name, group.venue_name)}
                           disabled={busy}
                           onValueChange={(next) =>
                             grid.setStaged(toggleCalendar(grid.staged, service.id, group.venue_id, calendar, itemId, next))

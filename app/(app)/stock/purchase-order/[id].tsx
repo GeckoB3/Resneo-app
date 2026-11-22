@@ -72,7 +72,7 @@ export default function PurchaseOrderScreen() {
     return (
       <Screen>
         {header(t('app.po.tab'))}
-        <EmptyState title={t('till.off.title')} message={t('till.off.body', { venue: 'your venue' })} />
+        <EmptyState title={t('till.off.title')} message={t('till.off.body', { venue: 'your business' })} />
       </Screen>
     );
   }

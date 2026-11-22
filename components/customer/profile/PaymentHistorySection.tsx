@@ -47,7 +47,7 @@ export function PaymentHistorySection() {
       </Text>
       {payments.length === 0 ? (
         <Text variant="bodySmall" tone="secondary" style={styles.gap}>
-          Nothing paid through ResNeo yet. Payments you make to a venue will be listed here.
+          Nothing paid through ResNeo yet. Payments you make to a business will be listed here.
         </Text>
       ) : (
         payments.map((payment) => (

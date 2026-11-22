@@ -99,7 +99,7 @@ export function RescheduleSheet({ booking, visible, onClose }: Props) {
               <LoadingState message="Finding free times…" />
             ) : slots.isError ? (
               <Text variant="bodySmall" tone="secondary">
-                Could not load times for that day. Try another, or ring the venue.
+                Could not load times for that day. Try another, or ring the business.
               </Text>
             ) : (slots.data ?? []).length === 0 ? (
               <Text variant="bodySmall" tone="secondary">

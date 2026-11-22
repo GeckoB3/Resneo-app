@@ -28,43 +28,43 @@ export function collectiveSettingsParams(c: FeatureFlagsCollective): CollectiveS
 
 export const collectiveSettingsCopy = {
   hostBanner: (p: CollectiveSettingsParams) =>
-    `You host ${p.collective}. Settings marked ${p.collective} apply to the ${p.collective} page and to online bookings at every venue in it.`,
+    `You host ${p.collective}. Settings marked ${p.collective} apply to the ${p.collective} page and to online bookings at every business in it.`,
   memberBanner: (p: CollectiveSettingsParams) =>
     `You're part of ${p.collective}, hosted by ${p.host}. Your clients book on the ${p.collective} page. ${p.host} sets the settings marked ${p.collective}.`,
   savedForCollective: (p: CollectiveSettingsParams) => `Saved for ${p.collective}.`,
   setByHost: (p: CollectiveSettingsParams) => `${p.host} sets this for ${p.collective}.`,
   ownKept: (p: CollectiveSettingsParams) =>
-    `Your venue's own settings are kept and apply again if you leave ${p.collective}.`,
+    `Your business's own settings are kept and apply again if you leave ${p.collective}.`,
   perVenuePayments: (p: CollectiveSettingsParams) =>
-    `Your venue's own setting. It applies to payments for bookings with your calendars, including on the ${p.collective} page.`,
+    `Your business's own setting. It applies to payments for bookings with your calendars, including on the ${p.collective} page.`,
   perVenueMessages: (p: CollectiveSettingsParams) =>
-    `Your venue's own messages. They go to clients booked with your calendars, including on the ${p.collective} page.`,
+    `Your business's own messages. They go to clients booked with your calendars, including on the ${p.collective} page.`,
   perVenueSms: (p: CollectiveSettingsParams) =>
     `Text messages depend on your own plan, including for bookings made on the ${p.collective} page.`,
   perVenueHours: (p: CollectiveSettingsParams) =>
     `Your hours decide when your calendars can be booked, including on the ${p.collective} page.`,
   hostHours: (p: CollectiveSettingsParams) =>
-    `Also shown on the ${p.collective} page, for guests. Each venue's own hours decide when its calendars can be booked.`,
+    `Also shown on the ${p.collective} page, for clients. Each business's own hours decide when its calendars can be booked.`,
   hostProfile: (p: CollectiveSettingsParams) =>
     `Your address, phone number and website can also show on the ${p.collective} page. You choose which on your Booking page.`,
   contactHostBody: (host: string) =>
-    `The name guests see comes from Name on your booking page above. This page shows ${host}’s address, phone, email and website. Venue profile edits them, and your emails and receipts use them too.`,
+    `The name clients see comes from Name on your booking page above. This page shows ${host}’s address, phone, email and website. Business profile edits them, and your emails and receipts use them too.`,
   contactHostEmailNote:
-    'Email is off until you switch it on. Guests who reply to a booking confirmation reach the venue they booked with, not this address.',
-  contactMemberTitle: 'Your venue’s details',
+    'Email is off until you switch it on. Clients who reply to a booking confirmation reach the business they booked with, not this address.',
+  contactMemberTitle: 'Your business’s details',
   contactMemberBody:
-    'Guests see these under your team’s names and in “You are booking with”, and your emails and receipts use them too. Venue profile edits them.',
+    'Clients see these under your team’s names and in “You are booking with”, and your emails and receipts use them too. Business profile edits them.',
   contactMemberPageNote: (host: string) =>
     `The top of the page and its About tab show ${host}’s details, and ${host} chooses which.`,
   contactMemberListTitle: 'What the Our locations list shows about you',
   contactMemberListBody:
-    'The list is on the page’s About tab when the venues are at different addresses. Confirmations and emails still include your address, so guests know where to go.',
+    'The list is on the page’s About tab when the businesses are at different addresses. Confirmations and emails still include your address, so clients know where to go.',
   appointmentsLocked: (venue: string) =>
     `You cannot switch appointments off while ${venue} is in a collective, because the collective page needs them.`,
   timezoneLocked: (p: CollectiveSettingsParams) =>
-    `You cannot change your timezone while you are part of ${p.collective}, because every venue in it uses the same timezone.`,
+    `You cannot change your timezone while you are part of ${p.collective}, because every business in it uses the same timezone.`,
   ownHandedOver: (p: CollectiveSettingsParams) =>
-    `Guests who open your own page are taken to the ${p.collective} page, so they don't see these settings. One thing here still shows there: your people's photos and a few words about them, under Meet the team. Everything else is kept for if you leave ${p.collective}.`,
+    `Clients who open your own page are taken to the ${p.collective} page, so they don't see these settings. One thing here still shows there: your people's photos and a few words about them, under Meet the team. Everything else is kept for if you leave ${p.collective}.`,
   ownPartial: (p: CollectiveSettingsParams & { list: string }) =>
     `Your own page still shows ${p.list}. Everything else is on the ${p.collective} page. Your people's photos and a few words about them, under Meet the team, show there too.`,
   yourPeopleTitle: 'Your people on the page',
@@ -80,10 +80,10 @@ export function ownPageStatusLine(
   names: { collective: string; host: string },
 ): string {
   if (ownPage.resting) {
-    return `Your own booking page is resting while you are part of ${names.collective}. Guests who open it go to the ${names.collective} page, and your design comes back if you leave.`;
+    return `Your own booking page is resting while you are part of ${names.collective}. Clients who open it go to the ${names.collective} page, and your design comes back if you leave.`;
   }
   if (ownPage.status !== 'showing') {
-    return `Guests who visit your own booking page are sent to the ${names.collective} page.`;
+    return `Clients who visit your own booking page are sent to the ${names.collective} page.`;
   }
   const reasons: Record<string, string> = {
     notLive: `the ${names.collective} page is not live yet`,

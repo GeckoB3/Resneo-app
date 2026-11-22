@@ -223,7 +223,7 @@ export function describeDatedMismatch(mismatches: DatedHoursMismatch[]): string 
         : `${names[0]}, ${names[1]} and ${names.length - 2} more`;
   const where =
     first.venueHours === 'closed'
-      ? `the venue is closed on ${dateLabel(first.date)}`
+      ? `the business is closed on ${dateLabel(first.date)}`
       : `business hours on ${dateLabel(first.date)} are ${first.venueHours}`;
   return (
     `${who} ${names.length === 1 ? 'is' : 'are'} still scheduled to work outside these hours ` +

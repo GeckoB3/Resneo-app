@@ -7,6 +7,7 @@ import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 
 import { BookingNotesSection } from '@/components/bookings/BookingNotesSection';
 import { BookingPaymentHistory } from '@/components/bookings/BookingPaymentHistory';
+import { VisitPayLinkNote } from '@/components/bookings/VisitPayLinkNote';
 import { BookingPriceSummary } from '@/components/bookings/BookingPriceSummary';
 import { ComplianceCard } from '@/components/bookings/ComplianceCard';
 import { DepositSheet, type DepositTarget } from '@/components/bookings/DepositSheet';
@@ -137,6 +138,7 @@ import type { BookingListRow } from '@/types/booking-list';
 import { CONFIRM_ARM_MS } from '@/lib/ui/confirm-arm';
 import { useVisitPartnerLines } from '@/lib/queries/useVisitPartnerLines';
 import { useContactLinks } from '@/lib/phone/contact-links';
+import { serviceWithPersonAt } from '@/lib/venue/member-label';
 
 type SymbolName = SymbolViewProps['name'];
 
@@ -219,7 +221,7 @@ function formatGuestName(booking: BookingDetail): string {
       return parts.join(' ');
     }
   }
-  return 'Guest';
+  return 'Client';
 }
 
 /** "Friday 13 June" — the appointment's day, headline-style. */
@@ -375,7 +377,7 @@ function GuestHistoryBody({
         </Text>
       ) : history.length === 0 ? (
         <Text variant="bodySmall" tone="muted">
-          No other bookings for this guest.
+          No other bookings for this client.
         </Text>
       ) : (
         history.map((row) =>
@@ -527,11 +529,11 @@ function LinkedGuestHistoryBody({
         </Text>
       ) : history.isError ? (
         <Text variant="bodySmall" tone="muted">
-          {`Could not load the guest's bookings at ${linked.venueName}.`}
+          {`Could not load the client's bookings at ${linked.venueName}.`}
         </Text>
       ) : rows.length === 0 ? (
         <Text variant="bodySmall" tone="muted">
-          No other bookings for this guest.
+          No other bookings for this client.
         </Text>
       ) : (
         rows.map((row) => (
@@ -1207,7 +1209,7 @@ export function BookingDetailContent({
     setResendArmed(false);
     if (resendTimer.current) clearTimeout(resendTimer.current);
     resend.mutate(undefined, {
-      onSuccess: () => toast.success('Confirmation resent to the guest.'),
+      onSuccess: () => toast.success('Confirmation resent to the client.'),
       onError: (error) =>
         toast.error(error instanceof ApiError ? error.message : 'Could not resend the confirmation.'),
     });
@@ -1334,7 +1336,7 @@ export function BookingDetailContent({
   const attendanceBadges =
     attendanceRelevant && (guestConfirmed || staffConfirmed || arrived) ? (
       <View style={styles.heroBadges}>
-        {guestConfirmed ? <Badge label="Guest confirmed" tone="success" /> : null}
+        {guestConfirmed ? <Badge label="Client confirmed" tone="success" /> : null}
         {staffConfirmed ? <Badge label="Staff confirmed" tone="success" /> : null}
         {arrived ? <Badge label="Arrived" tone="accent" /> : null}
       </View>
@@ -1350,7 +1352,11 @@ export function BookingDetailContent({
             styles.linkedNote,
             { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
           ]}>
-          <Badge label="Linked" tone="warning" />
+          {/* A member of our collective is named like any member, without the old linked-accounts
+              pill (web parity, 2026-11-22); a plain account link keeps it. */}
+          {linked.inCollective || viewerLink?.in_collective === true ? null : (
+            <Badge label="Linked" tone="warning" />
+          )}
           <View style={styles.linkedNoteText}>
             {/* Whose booking this is, named as the diary names that venue: a partner that shares
                 your name carries its town (CQ-07, W6-12; web `staff.partner.at`). */}
@@ -1485,7 +1491,7 @@ export function BookingDetailContent({
                 {isTable && booking.occasion?.trim() ? (
                   <Badge label={booking.occasion} tone="accent" />
                 ) : null}
-                {guestConfirmed ? <Badge label="Guest confirmed" tone="success" /> : null}
+                {guestConfirmed ? <Badge label="Client confirmed" tone="success" /> : null}
                 {staffConfirmed ? <Badge label="Staff confirmed" tone="success" /> : null}
                 {arrived ? <Badge label="Arrived" tone="accent" /> : null}
               </View>
@@ -1664,7 +1670,7 @@ export function BookingDetailContent({
                 {booking.guest_id && policy.canRebook ? (
                   <QuickAction
                     icon={{ ios: 'plus.circle', android: 'add_circle', web: 'add_circle' }}
-                    label="New for guest"
+                    label="New for client"
                     onPress={() => {
                       // Blank new booking pre-seeded with ONLY this guest's
                       // contact (no service/practitioner) so staff can pick a
@@ -1818,7 +1824,7 @@ export function BookingDetailContent({
               (pendingConfirm === 'Cancelled' || (cancelChoiceOpen && cancelNeedsChoice)) ? (
                 <Text variant="bodySmall" testID="cancel-keeps-other-parts" style={styles.cancelKeeps}>
                   {`${guestName} keeps ${otherPartLines
-                    .map((l) => `${l.service_name}${l.person_name ? ` with ${l.person_name}` : ''} at ${l.venue_name}`)
+                    .map((l) => serviceWithPersonAt(l.service_name, l.person_name, l.venue_name))
                     .join(', ')}. ${cancelNoticeLine({
                     policy: linked
                       ? null
@@ -1991,7 +1997,7 @@ export function BookingDetailContent({
       {/* Guest history — other visits, lazy-loaded on first expand. A partner's
           guest's visits are read at the partner's venue (web `historyVenueId`). */}
       {booking.guest_id ? (
-        <CollapsibleCard title="Guest history" lazy>
+        <CollapsibleCard title="Client history" lazy>
           {linked ? (
             <LinkedGuestHistoryBody
               guestId={booking.guest_id}
@@ -2036,6 +2042,7 @@ export function BookingDetailContent({
       {/* Payments & confirmation — deposit state, actions, resend (web parity) */}
       {showDepositActions ||
       hasDeposit ||
+      booking.visit_pay_link ||
       canResend ||
       canTakePayment ||
       priceRows.length > 0 ||
@@ -2065,6 +2072,8 @@ export function BookingDetailContent({
               : booking.deposit_status === 'Pending')
           }>
           <View style={styles.manage}>
+            {/* A visit across businesses on one pay link: what it covers and what is still owed. */}
+            {booking.visit_pay_link ? <VisitPayLinkNote link={booking.visit_pay_link} /> : null}
             {/* What the visit costs, what has been paid, what is left. */}
             <BookingPriceSummary rows={priceRows} />
             {hasPendingCard ? (
@@ -2185,8 +2194,8 @@ export function BookingDetailContent({
             {booking.cancellation_deadline && !TERMINAL_STATUSES.has(booking.status) ? (
               <Text variant="caption" tone="muted">
                 {Date.parse(booking.cancellation_deadline) > openedAt
-                  ? 'Guest can self-cancel until '
-                  : 'Guest self-cancellation closed '}
+                  ? 'Client can self-cancel until '
+                  : 'Client self-cancellation closed '}
                 {formatTimelineEventTime(booking.cancellation_deadline)}
               </Text>
             ) : null}
@@ -2225,7 +2234,7 @@ export function BookingDetailContent({
             </Text>
             {booking.cancellation_deadline ? (
               <Text variant="caption" tone="muted">
-                Guest could self-cancel until{' '}
+                Client could self-cancel until{' '}
                 {formatTimelineEventTime(booking.cancellation_deadline)}
               </Text>
             ) : null}

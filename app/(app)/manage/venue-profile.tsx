@@ -556,7 +556,7 @@ export default function VenueProfileScreen() {
         setWebsiteError(WEBSITE_ERROR_MESSAGE);
         return;
       }
-      setError(e instanceof ApiError ? e.message : 'Could not save venue details. Please try again.');
+      setError(e instanceof ApiError ? e.message : 'Could not save business details. Please try again.');
     }
   }
 
@@ -648,7 +648,7 @@ export default function VenueProfileScreen() {
   // ------------------------------------------------------------------
   // Render
   // ------------------------------------------------------------------
-  const header = <Stack.Screen options={{ headerShown: true, title: 'Venue profile' }} />;
+  const header = <Stack.Screen options={{ headerShown: true, title: 'Business profile' }} />;
 
   if (isLoading || !venue || !seeded) {
     return (
@@ -663,7 +663,7 @@ export default function VenueProfileScreen() {
     return (
       <Screen>
         {header}
-        <ErrorState message="Venue details can only be edited by admins." />
+        <ErrorState message="Business details can only be edited by admins." />
       </Screen>
     );
   }
@@ -702,7 +702,7 @@ export default function VenueProfileScreen() {
           <View style={[styles.fieldset, { borderLeftColor: colors.border }]}>
             <Text variant="label" tone="secondary">Address</Text>
             <Input
-              label="Building / venue name"
+              label="Building / business name"
               value={addrName}
               onChangeText={setAddrName}
               maxLength={200}
@@ -759,18 +759,18 @@ export default function VenueProfileScreen() {
             autoCapitalize="none"
             autoCorrect={false}
             maxLength={255}
-            helper={guestEmail.trim() ? 'Your booking alerts come to this address.' : 'Guest replies to your emails, and your booking alerts, come to this address.'}
+            helper={guestEmail.trim() ? 'Your booking alerts come to this address.' : 'Client replies to your emails, and your booking alerts, come to this address.'}
             error={emailError ?? undefined}
           />
           <Input
-            label="Email for guests (optional)"
+            label="Email for clients (optional)"
             value={guestEmail}
             onChangeText={(v) => { setGuestEmail(v); setGuestEmailError(null); }}
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
             maxLength={255}
-            helper="Shown on your booking page if you switch it on, and guest replies come here too. Leave blank to use the email above."
+            helper="Shown on your booking page if you switch it on, and client replies come here too. Leave blank to use the email above."
             error={guestEmailError ?? undefined}
           />
           <Input
@@ -919,7 +919,7 @@ export default function VenueProfileScreen() {
           <SectionHeader title="Branding" />
 
           <ImageUploadRow
-            label="Venue logo"
+            label="Business logo"
             imageUrl={ext.logo_url ?? null}
             onPress={() => void handleLogoUpload()}
             loading={uploadLogo.isPending}

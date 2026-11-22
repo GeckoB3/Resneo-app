@@ -42,7 +42,7 @@ describe('staffPaymentLinkLines', () => {
 
   it('an older server that does not say reads as sent, as before', () => {
     expect(staffPaymentLinkLines({ cardHold: false, paymentUrl: 'https://x/l', linkSent: undefined, walkIn: false }).sent).toBe(
-      'A deposit payment link has been sent to the guest.',
+      'A deposit payment link has been sent to the client.',
     );
   });
 

@@ -71,18 +71,18 @@ it("asks for the chosen calendar's bookings and says so from the answer", async 
   expect(screen.getByText('Showing Hannah only.')).toBeTruthy();
 });
 
-it('asks for the whole venue with all calendars chosen, and says nothing about calendars', async () => {
+it('asks for the whole business with all calendars chosen, and says nothing about calendars', async () => {
   mockReport = report();
   await renderWith(null);
   expect(mockScopes[0]).toEqual({ calendarId: null, business: null, compare: 'previous' });
   expect(screen.queryByText(/^Showing/)).toBeNull();
-  expect(screen.queryByText('These figures are for the whole venue.')).toBeNull();
+  expect(screen.queryByText('These figures are for the whole business.')).toBeNull();
 });
 
-it('reads an answer without a calendar as the whole venue', async () => {
+it('reads an answer without a calendar as the whole business', async () => {
   mockReport = report();
   await renderWith(HANNAH);
-  expect(screen.getByText('These figures are for the whole venue.')).toBeTruthy();
+  expect(screen.getByText('These figures are for the whole business.')).toBeTruthy();
 });
 
 it("shows the server's sentence when filtering is not ready yet, with the way back", async () => {

@@ -147,7 +147,7 @@ describe('a link that holds a collective together', () => {
     expect(screen.getByText('This also changes Plus 1')).toBeTruthy();
     expect(screen.getByText(/^You leave Plus 1\. You keep every service, calendar and booking/)).toBeTruthy();
     expect(screen.getByText('Plus 1 carries on with Aura Hair Studio and Light 16.')).toBeTruthy();
-    expect(screen.getByText('Your links with the other venues in Plus 1 stay as they are.')).toBeTruthy();
+    expect(screen.getByText('Your links with the other businesses in Plus 1 stay as they are.')).toBeTruthy();
 
     await act(async () => {
       fireEvent.press(screen.getByRole('button', { name: 'Unlink and leave Plus 1' }));

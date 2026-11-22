@@ -77,7 +77,7 @@ beforeEach(() => {
 });
 
 describe('AddFromVenueSheet', () => {
-  it("lists the first venue's own services and copies the chosen one with two ids only", async () => {
+  it("lists the first business's own services and copies the chosen one with two ids only", async () => {
     const onAdded = jest.fn();
     await renderSheet(
       <AddFromVenueSheet
@@ -90,7 +90,7 @@ describe('AddFromVenueSheet', () => {
       />,
     );
     expect(mockCalls[0]?.path).toBe('/api/venue/collectives/col-1/offerings?source_venue_id=v-zen');
-    expect(screen.getByText('Add a service from another venue')).toBeTruthy();
+    expect(screen.getByText('Add a service from another business')).toBeTruthy();
     expect(await screen.findByText('120 min, £95.00')).toBeTruthy();
     expect(screen.getByText('15 min, Free')).toBeTruthy();
 
@@ -117,7 +117,7 @@ describe('AddFromVenueSheet', () => {
     );
   });
 
-  it('opens a suggestion with its venue and service chosen, and says when a venue has nothing to add', async () => {
+  it('opens a suggestion with its business and service chosen, and says when a business has nothing to add', async () => {
     await renderSheet(
       <AddFromVenueSheet
         onClose={jest.fn()}

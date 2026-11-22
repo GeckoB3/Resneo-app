@@ -26,6 +26,7 @@ import type {
 } from '@/types/calendar-grid';
 import type { CalendarScheduleBlock } from '@/types/schedule-blocks';
 import type { LinkedBooking, LinkedPractitioner, LinkedVenueCalendar } from '@/types/linked-venues';
+import { businessBesidePerson } from '@/lib/venue/member-label';
 
 /** "HH:mm:ss" / "HH:mm" → "HH:mm" (empty string when absent). */
 export function fmtTime(t: string | null | undefined): string {
@@ -287,7 +288,7 @@ export function linkedColumnPractitionerIdForPatch(columnId: string): string {
 }
 
 /** The web's refusal when a drag would take a booking to another venue's column. */
-export const LINKED_MOVE_SAME_VENUE_ERROR = 'A booking can only be moved within the same venue.';
+export const LINKED_MOVE_SAME_VENUE_ERROR = 'A booking can only be moved within the same business.';
 
 /** The web's note when an empty slot is tapped on a linked column that may be edited but not booked. */
 export function linkedCreateNotGrantedMessage(venueName: string): string {
@@ -404,9 +405,12 @@ export function linkedNameRepeatsVenue(calendarName: string, venueName: string):
   return calendarName.trim().toLowerCase() === venueName.trim().toLowerCase();
 }
 
-/** The venue as a caption under a calendar's name, unless it would only repeat the name. */
+/**
+ * The venue as a caption under a calendar's name, unless it would only repeat the name. A member told
+ * apart by its people reads "Aura Hair Studio" under "Jenny", not "Aura Hair Studio (Jenny)" (2026-11-22).
+ */
 function venueCaptionUnder(calendarName: string, venue: LinkedVenueCalendar): string | undefined {
-  return linkedNameRepeatsVenue(calendarName, venue.venueName) ? undefined : venue.venueName;
+  return linkedNameRepeatsVenue(calendarName, venue.venueName) ? undefined : businessBesidePerson(calendarName, venue.venueName);
 }
 
 /**

@@ -81,7 +81,7 @@ jest.mock('@/providers/VenueProvider', () => ({
 import BookingSettingsScreen from '@/app/(app)/manage/booking-settings';
 
 const SWITCH = 'Take card payments in person';
-const GROUP = 'Payments at your venue';
+const GROUP = 'Payments at your business';
 const DESCRIPTION_CHECKOUT_OFF =
   'Your team can take card payments for an appointment in the ResNeo app, with Tap to Pay on their phone or a Bluetooth card reader. Money goes straight to your own Stripe account and ResNeo takes no cut.';
 const DESCRIPTION_CHECKOUT_ON =
@@ -108,24 +108,24 @@ beforeEach(() => {
   mockToast.error.mockClear();
 });
 
-describe('Booking settings: Payments at your venue', () => {
+describe('Booking settings: Payments at your business', () => {
   it('sits in Booking settings with the Checkout switch under it', async () => {
     await render(<BookingSettingsScreen />);
     expect(screen.getByText(GROUP)).toBeTruthy();
-    expect(screen.getByText('How your team takes payment from clients at your venue.')).toBeTruthy();
+    expect(screen.getByText('How your team takes payment from clients at your business.')).toBeTruthy();
     expect(screen.getByText('Card payments in person')).toBeTruthy();
     expect(screen.getByText(SWITCH)).toBeTruthy();
     expect(screen.getByLabelText(SWITCH)).toBeTruthy();
     expect(screen.getByText('Checkout switch card')).toBeTruthy();
     expect(screen.queryByText('Taking payment in person')).toBeNull();
-    expect(screen.queryByText('Take card payments at your venue')).toBeNull();
+    expect(screen.queryByText('Take card payments at your business')).toBeNull();
   });
 
   it('keeps the group heading and line the same with Checkout on', async () => {
     mockPosOn = true;
     await render(<BookingSettingsScreen />);
     expect(screen.getByText(GROUP)).toBeTruthy();
-    expect(screen.getByText('How your team takes payment from clients at your venue.')).toBeTruthy();
+    expect(screen.getByText('How your team takes payment from clients at your business.')).toBeTruthy();
   });
 
   it('is not there on a plan without appointments, as on the web', async () => {
@@ -179,7 +179,7 @@ describe('Booking settings: Payments at your venue', () => {
     ).toBeTruthy();
   });
 
-  it('does not nag about Stripe when the venue is connected', async () => {
+  it('does not nag about Stripe when the business is connected', async () => {
     mockEnabled = true;
     await render(<BookingSettingsScreen />);
     expect(screen.queryByText(/Connect Stripe first/)).toBeNull();
@@ -250,7 +250,7 @@ describe('Booking settings: Payments at your venue', () => {
     });
   });
 
-  it('keeps the reader row hidden until the venue flag is actually on, then opens its sheet', async () => {
+  it('keeps the reader row hidden until the business flag is actually on, then opens its sheet', async () => {
     await render(<BookingSettingsScreen />);
     expect(screen.queryByText('Bluetooth card reader')).toBeNull();
 

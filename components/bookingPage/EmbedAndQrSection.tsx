@@ -101,14 +101,14 @@ export function EmbedAndQrSection({
               What to embed
             </Text>
             <RadioRow
-              label={`My venue only (${venueName})`}
+              label={`My business only (${venueName})`}
               selected={chosen === null}
               onPress={() => setTarget('venue')}
             />
             {collectiveOptions.map((c) => (
               <RadioRow
                 key={c.slug}
-                label={`Venue collective: ${c.name}`}
+                label={`Business collective: ${c.name}`}
                 selected={chosen?.slug === c.slug}
                 onPress={() => setTarget(c.slug)}
               />
@@ -116,7 +116,7 @@ export function EmbedAndQrSection({
             <Text variant="caption" tone="muted">
               {chosen
                 ? 'This embeds the combined collective booking page.'
-                : 'This embeds only your own venue’s booking flow.'}
+                : 'This embeds only your own business’s booking flow.'}
             </Text>
           </View>
         ) : null}
@@ -130,7 +130,7 @@ export function EmbedAndQrSection({
         />
         <Text variant="caption" tone="muted">
           {locked
-            ? 'Buttons and highlights in the embedded widget. Enter a 6-digit hex value, saved automatically. Leave it empty to use the combined page’s own colour. This venue’s own widget uses the same setting.'
+            ? 'Buttons and highlights in the embedded widget. Enter a 6-digit hex value, saved automatically. Leave it empty to use the combined page’s own colour. This business’s own widget uses the same setting.'
             : 'Buttons and highlights in the embedded widget. Enter a 6-digit hex value, saved automatically.'}
         </Text>
         {accent.invalid ? (

@@ -12,13 +12,13 @@ const groups = [
 ] as CollectiveCalendarGroup[];
 
 describe('saveSummaryLines', () => {
-  it('says every venue is up to date, once', () => {
+  it('says every business is up to date, once', () => {
     expect(saveSummaryLines(sync, 'Balayage', ['Zen Studio', 'Light 3'])).toEqual([
       { key: 'all-done', tone: 'ok', text: 'Saved. Balayage is up to date at Zen Studio and Light 3.' },
     ]);
   });
 
-  it('has a line for each venue still updating, each that failed, and each calendar refused', () => {
+  it('has a line for each business still updating, each that failed, and each calendar refused', () => {
     const lines = saveSummaryLines(
       {
         venues: 3,
@@ -43,7 +43,7 @@ describe('saveSummaryLines', () => {
 });
 
 describe('clearedValuesFrom', () => {
-  it("names each with its calendar and the values cleared, the host's own without a venue", () => {
+  it("names each with its calendar and the values cleared, the host's own without a business", () => {
     expect(
       clearedValuesFrom(
         [
@@ -75,16 +75,16 @@ describe('undoDoneText', () => {
 
   it('says the settings are back, and that calendar changes stay when there were some', () => {
     expect(undoDoneText({ serviceName: 'Balayage', calendarsChanged: false, cleared: [] })).toBe(
-      "We put Balayage's settings back at every venue.",
+      "We put Balayage's settings back at every business.",
     );
     expect(undoDoneText({ serviceName: 'Balayage', calendarsChanged: true, cleared: [] })).toBe(
-      "We put Balayage's settings back at every venue. The calendar changes from that save stay as they are.",
+      "We put Balayage's settings back at every business. The calendar changes from that save stay as they are.",
     );
   });
 
   it('says the cleared values are back, or names the ones that are not', () => {
     expect(undoDoneText({ serviceName: 'Balayage', calendarsChanged: false, cleared, notRestored: [] })).toBe(
-      "We put Balayage's settings back at every venue. The calendars' own values that save cleared are back too.",
+      "We put Balayage's settings back at every business. The calendars' own values that save cleared are back too.",
     );
     expect(
       undoDoneText({
@@ -94,7 +94,7 @@ describe('undoDoneText', () => {
         notRestored: [{ calendar_id: 'cal-m', service_id: 'r1' }],
       }),
     ).toBe(
-      "We put Balayage's settings back at every venue. These could not be put back, so set them again with Edit values: Mo at Zen Studio (price).",
+      "We put Balayage's settings back at every business. These could not be put back, so set them again with Edit values: Mo at Zen Studio (price).",
     );
   });
 });

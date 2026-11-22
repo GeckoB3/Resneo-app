@@ -27,7 +27,7 @@ function renderedHours(): string[] {
 }
 
 describe('CalendarDayGrid — header, bounds and stripes', () => {
-  it('widens to the venue hours when they run past the calendar, and says which side is closed', async () => {
+  it('widens to the business hours when they run past the calendar, and says which side is closed', async () => {
     await render(
       <CalendarDayGrid
         bookings={[]}
@@ -63,10 +63,10 @@ describe('CalendarDayGrid — header, bounds and stripes', () => {
     // The venue is open 08–20 and Hannah works 10–16: her own stripes name her.
     expect(screen.getByText('Hannah unavailable 08:00 to 10:00')).toBeTruthy();
     expect(screen.getByText('Hannah unavailable 16:00 to 20:00')).toBeTruthy();
-    expect(screen.queryByText(/Venue closed/)).toBeNull();
+    expect(screen.queryByText(/Business closed/)).toBeNull();
   });
 
-  it('widens to the calendar hours when they run past the venue, with a venue-closed stripe', async () => {
+  it('widens to the calendar hours when they run past the business, with a business-closed stripe', async () => {
     await render(
       <CalendarDayGrid
         bookings={[]}
@@ -81,8 +81,8 @@ describe('CalendarDayGrid — header, bounds and stripes', () => {
     const hours = renderedHours();
     expect(hours[0]).toBe('08:00');
     expect(hours[hours.length - 1]).toBe('20:00');
-    expect(screen.getByText('Venue closed 08:00 to 09:00')).toBeTruthy();
-    expect(screen.getByText('Venue closed 18:00 to 20:00')).toBeTruthy();
+    expect(screen.getByText('Business closed 08:00 to 09:00')).toBeTruthy();
+    expect(screen.getByText('Business closed 18:00 to 20:00')).toBeTruthy();
   });
 
   it('marks minutes both are shut as the calendar closed', async () => {

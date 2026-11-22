@@ -10,6 +10,7 @@ import { formatPence } from '@/lib/format';
 import type { CustomerVisit, CustomerVisitService } from '@/lib/queries/useCustomerVisit';
 import { spacing } from '@/theme/index';
 import { useContactLinks } from '@/lib/phone/contact-links';
+import { businessBesidePerson } from '@/lib/venue/member-label';
 
 /**
  * The whole visit on the booking screen (web split-visit plan 6.5; G2, G5): the day, start to
@@ -60,7 +61,9 @@ function VisitServiceLine({ service, business }: { service: CustomerVisitService
   const state = customerBookingState(service.status);
   const gone = state === 'cancelled' || state === 'missed';
   const badge = serviceBadge(service);
-  const who = [service.person_name ? `with ${service.person_name}` : null, business ? `at ${business}` : null]
+  // The person is named once: "with Jenny at Aura Hair Studio" (web 2026-11-22).
+  const where = business ? businessBesidePerson(service.person_name, business) : null;
+  const who = [service.person_name ? `with ${service.person_name}` : null, where ? `at ${where}` : null]
     .filter(Boolean)
     .join(' ');
 

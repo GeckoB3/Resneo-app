@@ -53,7 +53,7 @@ export function RecurringSection() {
     return (
       <EmptyState
         title="No weekly classes"
-        message="If a venue books you into the same class each week, it will show up here."
+        message="If a business books you into the same class each week, it will show up here."
       />
     );
   }
@@ -96,7 +96,7 @@ export function RecurringSection() {
           if (!target) return;
           cancel.mutate(target.id, {
             onSuccess: () => toast.success('No new classes will be booked for you.'),
-            onError: () => toast.error('Could not stop that. Please ring the venue.'),
+            onError: () => toast.error('Could not stop that. Please ring the business.'),
           });
         }}
       />

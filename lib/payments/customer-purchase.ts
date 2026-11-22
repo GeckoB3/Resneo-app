@@ -73,7 +73,7 @@ export async function startPurchase(args: StartPurchaseArgs): Promise<PaymentInt
       Payment Element opened against the wrong account, or none, either refuses
       in a way the customer cannot act on or charges the wrong venue.
     */
-    throw new Error('The venue could not start this payment.');
+    throw new Error('The business could not start this payment.');
   }
 
   return ticket;

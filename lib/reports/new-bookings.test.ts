@@ -53,7 +53,7 @@ describe('new bookings helpers (web new-bookings.ts)', () => {
       totals: { total: 3, by_channel: { online: 1, team: 1, walk_in: 1, linked_venue: 0 }, cancelled: 1, awaiting_payment: 0 },
     };
     const rows = newBookingsCsvRows(report);
-    expect(rows[0]).toEqual(['Period', 'From', 'To', 'New bookings', 'Online', 'By your team', 'Walk-ins', 'By a linked venue', 'Since cancelled', 'Awaiting payment']);
+    expect(rows[0]).toEqual(['Period', 'From', 'To', 'New bookings', 'Online', 'By your team', 'Walk-ins', 'By a linked business', 'Since cancelled', 'Awaiting payment']);
     expect(rows[1]).toEqual(['18 Sep 2026', '2026-09-18', '2026-09-18', '2', '1', '1', '0', '0', '0', '0']);
     expect(rows[3]).toEqual(['Total', '2026-09-18', '2026-09-19', '3', '1', '1', '1', '0', '1', '0']);
     expect(newBookingsCsvFilename(report)).toBe('new-bookings-2026-09-18-2026-09-19-day.csv');

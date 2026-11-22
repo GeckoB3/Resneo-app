@@ -48,7 +48,7 @@ import type { EventAvailabilitySlot, EventOfferingSummary } from '@/types/bookin
 
 type StepKey = 'event' | 'date' | 'tickets' | 'guest' | 'confirm';
 const STEPS: StepKey[] = ['event', 'date', 'tickets', 'guest', 'confirm'];
-const STEP_LABELS = ['Event', 'Date', 'Tickets', 'Guest', 'Confirm'];
+const STEP_LABELS = ['Event', 'Date', 'Tickets', 'Client', 'Confirm'];
 
 const EMPTY_GUEST: GuestDetails = {
   first_name: '',

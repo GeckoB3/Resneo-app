@@ -71,7 +71,7 @@ beforeEach(() => {
   mockCalls.length = 0;
 });
 
-describe('removing the last other venue (COL-F21)', () => {
+describe('removing the last other business (COL-F21)', () => {
   it('says the collective ends, and removes only once its name is typed', async () => {
     const { onEnded } = await renderPanel([venue('host', 'Plus 5', true), venue('member', 'Light Co')]);
     await act(async () => {
@@ -79,7 +79,7 @@ describe('removing the last other venue (COL-F21)', () => {
     });
     expect(
       screen.getByText(
-        'TEST QA1108 COL C3 needs at least two venues, so removing Light Co ends TEST QA1108 COL C3. The TEST QA1108 COL C3 page stops taking bookings straight away, and every venue keeps its services, calendars, clients and bookings.',
+        'TEST QA1108 COL C3 needs at least two businesses, so removing Light Co ends TEST QA1108 COL C3. The TEST QA1108 COL C3 page stops taking bookings straight away, and every business keeps its services, calendars, clients and bookings.',
       ),
     ).toBeTruthy();
     await act(async () => {
@@ -102,14 +102,14 @@ describe('removing the last other venue (COL-F21)', () => {
     await act(async () => {
       fireEvent.press(screen.getAllByText('Remove')[0]!);
     });
-    expect(screen.queryByText(/needs at least two venues/)).toBeNull();
+    expect(screen.queryByText(/needs at least two businesses/)).toBeNull();
     expect(screen.queryByText(/Remove and end/)).toBeNull();
   });
 });
 
 describe('removeEndsCollective', () => {
   const row = (venue_id: string, status: string) => ({ venue_id, status });
-  it('follows the engine: two venues end, an open invitation keeps it', () => {
+  it('follows the engine: two businesses end, an open invitation keeps it', () => {
     expect(removeEndsCollective([row('host', 'active'), row('a', 'active')], 'a')).toBe(true);
     expect(removeEndsCollective([row('host', 'active'), row('a', 'active'), row('b', 'active')], 'a')).toBe(false);
     expect(removeEndsCollective([row('host', 'active'), row('a', 'active'), row('b', 'invited')], 'a')).toBe(false);

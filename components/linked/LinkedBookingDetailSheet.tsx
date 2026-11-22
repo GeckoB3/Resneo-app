@@ -106,6 +106,7 @@ export function LinkedBookingDetailSheet({
   visible,
   onClose,
   onSaved,
+  inCollective = false,
 }: {
   venue: LinkedVenueCalendar | null;
   booking: LinkedBooking | null;
@@ -113,6 +114,11 @@ export function LinkedBookingDetailSheet({
   onClose: () => void;
   /** Called after a successful edit/cancel so the host can refetch. */
   onSaved?: () => void;
+  /**
+   * The partner is a member of our collective (2026-11-22): named like any member, without the
+   * old linked-accounts "Linked" pill. A plain account link keeps it.
+   */
+  inCollective?: boolean;
 }) {
   const contactLinks = useContactLinks();
   const { colors } = useTheme();
@@ -238,7 +244,11 @@ export function LinkedBookingDetailSheet({
                     {title}
                   </Text>
                   <View style={styles.chipRow}>
-                    <Badge label={`Linked · ${venueName}`} tone="warning" />
+                    {inCollective ? (
+                      <Badge label={venueName} />
+                    ) : (
+                      <Badge label={`Linked · ${venueName}`} tone="warning" />
+                    )}
                     {!timeOnly && !canEdit ? (
                       <View style={styles.lockRow}>
                         <SymbolView
@@ -366,7 +376,7 @@ export function LinkedBookingDetailSheet({
                   {booking.specialRequests?.trim() ? (
                     <View style={styles.notesBlock}>
                       <Text variant="overline" tone="muted">
-                        Guest notes
+                        Client notes
                       </Text>
                       <Text variant="bodySmall">{booking.specialRequests}</Text>
                     </View>
@@ -439,7 +449,7 @@ export function LinkedBookingDetailSheet({
                     optional
                     value={note}
                     onChangeText={setNote}
-                    placeholder="Visible to both venues"
+                    placeholder="Visible to both businesses"
                     multiline
                     numberOfLines={2}
                     maxLength={2000}
@@ -454,7 +464,7 @@ export function LinkedBookingDetailSheet({
                     onPress={() => save()}
                   />
                   <Text variant="caption" tone="muted" style={styles.auditNote}>
-                    Changes are recorded in the cross-venue audit log visible to both venues.
+                    Changes are recorded in the cross-business audit log visible to both businesses.
                   </Text>
                 </Card>
               ) : (
@@ -488,7 +498,7 @@ export function LinkedBookingDetailSheet({
       <ConfirmSheet
         visible={cancelOpen}
         title={`Cancel this booking in ${venueName}?`}
-        message="The booking is set to Cancelled in the linked venue and recorded in the cross-venue audit log."
+        message="The booking is set to Cancelled in the linked business and recorded in the cross-business audit log."
         confirmLabel="Cancel booking"
         cancelLabel="Keep booking"
         destructive

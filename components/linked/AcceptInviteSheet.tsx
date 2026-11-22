@@ -101,13 +101,13 @@ export function AcceptInviteSheet({
     if (!data) return undefined;
     if (!data.valid) {
       if (data.reason === 'expired')
-        return 'This invite link has expired. Ask the venue for a fresh one.';
+        return 'This invite link has expired. Ask the business for a fresh one.';
       if (data.reason === 'misconfigured')
-        return 'This invite link isn’t set up correctly. Ask the venue to send a new one.';
+        return 'This invite link isn’t set up correctly. Ask the business to send a new one.';
       return 'That doesn’t look like a valid invite link.';
     }
-    if (data.self) return 'That’s your own venue’s invite link.';
-    if (!data.eligible) return data.reason ?? 'You can’t link with this venue right now.';
+    if (data.self) return 'That’s your own business’s invite link.';
+    if (!data.eligible) return data.reason ?? 'You can’t link with this business right now.';
     return undefined; // eligible & not self → the effect above closes the sheet
   }, [token, verify.isError, verify.error, verify.data]);
 
@@ -119,7 +119,7 @@ export function AcceptInviteSheet({
         <View>
           <Text variant="subheading">Have an invite link?</Text>
           <Text variant="bodySmall" tone="secondary">
-            Paste the link a venue shared with you. We’ll check it and pre-fill your request.
+            Paste the link a business shared with you. We’ll check it and pre-fill your request.
           </Text>
         </View>
 

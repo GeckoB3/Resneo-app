@@ -45,7 +45,7 @@ import type { ClassAvailabilitySlot, ClassOfferingSummary } from '@/types/bookin
 
 type StepKey = 'class' | 'date' | 'session' | 'guest' | 'confirm';
 const STEPS: StepKey[] = ['class', 'date', 'session', 'guest', 'confirm'];
-const STEP_LABELS = ['Class', 'Date', 'Session', 'Guest', 'Confirm'];
+const STEP_LABELS = ['Class', 'Date', 'Session', 'Client', 'Confirm'];
 const MAX_SPOTS = 10;
 
 const EMPTY_GUEST: GuestDetails = {

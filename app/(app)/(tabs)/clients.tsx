@@ -121,9 +121,9 @@ const MARKETING_LABELS: Record<string, string> = {
 };
 
 function formatGuestName(guest: GuestListItem): string {
-  if (guest.identifiability_tier === 'anonymous') return 'Anonymous guest';
+  if (guest.identifiability_tier === 'anonymous') return 'Anonymous client';
   const parts = [guest.first_name, guest.last_name].filter(Boolean);
-  return parts.length > 0 ? parts.join(' ') : 'Unnamed guest';
+  return parts.length > 0 ? parts.join(' ') : 'Unnamed client';
 }
 
 /** Compact "d MMM" calendar date, or the raw string if it won't parse. */

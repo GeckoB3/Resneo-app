@@ -148,10 +148,10 @@ export default function CollectivesScreen() {
   if (!staffQuery.isLoading && !isAdmin) {
     return (
       <Screen>
-        <Stack.Screen options={{ title: 'Venue collectives' }} />
+        <Stack.Screen options={{ title: 'Business collectives' }} />
         <EmptyState
           title="Admins only"
-          message="Venue collectives are managed by venue admins. Ask an admin at your venue to set one up."
+          message="Business collectives are managed by business admins. Ask an admin at your business to set one up."
         />
       </Screen>
     );
@@ -160,7 +160,7 @@ export default function CollectivesScreen() {
   if (query.isLoading || staffQuery.isLoading) {
     return (
       <Screen padded={false}>
-        <Stack.Screen options={{ title: 'Venue collectives' }} />
+        <Stack.Screen options={{ title: 'Business collectives' }} />
         <ListSkeleton rows={4} />
       </Screen>
     );
@@ -169,7 +169,7 @@ export default function CollectivesScreen() {
   if (query.isError) {
     return (
       <Screen>
-        <Stack.Screen options={{ title: 'Venue collectives' }} />
+        <Stack.Screen options={{ title: 'Business collectives' }} />
         <ErrorState
           message={
             query.error instanceof ApiError ? query.error.message : 'Could not load collectives.'
@@ -197,14 +197,14 @@ export default function CollectivesScreen() {
           tintColor={colors.brand}
         />
       }>
-      <Stack.Screen options={{ title: 'Venue collectives' }} />
+      <Stack.Screen options={{ title: 'Business collectives' }} />
 
       {/* After leaving, being removed or the end of a collective: the services to look over (web
           shows it on the Venue collectives panel; CQ-10.1). Nothing shows otherwise. */}
       <ReleaseReviewCard enabled={isAdmin} />
 
       <Text variant="bodySmall" tone="secondary">
-        A venue collective is a shared public booking page joining two or more fully linked venues
+        A business collective is a shared public booking page joining two or more fully linked businesses
         under one brand.
       </Text>
 
@@ -212,7 +212,7 @@ export default function CollectivesScreen() {
           venue has no linked venues at all. */}
       {!hasLiveCollective ? (
         <Button
-          label="Create venue collective"
+          label="Create business collective"
           variant="primary"
           fullWidth
           disabled={!hasCandidates}
@@ -238,7 +238,7 @@ export default function CollectivesScreen() {
         // The amber note above already explains having no linked venues.
         noLinkedVenues ? null : (
           <Text variant="bodySmall" tone="muted">
-            No venue collectives yet. Create one to offer a combined booking page.
+            No business collectives yet. Create one to offer a combined booking page.
           </Text>
         )
       ) : (
@@ -285,7 +285,7 @@ export default function CollectivesScreen() {
 
       <CreateCollectiveSheet
         visible={createOpen}
-        venueName={venueName ?? 'your venue'}
+        venueName={venueName ?? 'your business'}
         venueSlug={linksQuery.data?.venue?.slug ?? null}
         onClose={() => setCreateOpen(false)}
         // The sheet stays open on its receipt; the list behind it now holds the new collective.
@@ -308,7 +308,7 @@ export default function CollectivesScreen() {
         visible={joinTarget !== null}
         collectiveId={joinTarget?.id ?? null}
         collectiveName={joinTarget?.name ?? 'the collective'}
-        venueName={venueName ?? 'your venue'}
+        venueName={venueName ?? 'your business'}
         onClose={() => setJoinTarget(null)}
         onJoined={() => void query.refetch()}
         onOpenLinked={() => {
@@ -320,7 +320,7 @@ export default function CollectivesScreen() {
       <CollectiveSetupSheet
         visible={setupTarget !== null}
         collectiveId={setupTarget}
-        venueName={venueName ?? 'your venue'}
+        venueName={venueName ?? 'your business'}
         onClose={() => setSetupTarget(null)}
         onChanged={() => {
           void query.refetch();

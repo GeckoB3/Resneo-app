@@ -116,7 +116,7 @@ describe('Clients tab (app)', () => {
     expect(screen.getByText(clientSharingCopy('cs.state.waiting', { venue: 'Studio 3' }))).toBeTruthy();
     expect(screen.getAllByText(clientSharingCopy('cs.state.sharing')).length).toBeGreaterThan(0);
     expect(
-      screen.getByText(new RegExp('1,240 clients here, 310 from the other venues, 96 in both\\.')),
+      screen.getByText(new RegExp('1,240 clients here, 310 from the other businesses, 96 in both\\.')),
     ).toBeTruthy();
     expect(screen.getByText(clientSharingCopy('cs.todo.check', { count: 3 }))).toBeTruthy();
     fireEvent.press(screen.getByText(clientSharingCopy('cs.todo.open')));

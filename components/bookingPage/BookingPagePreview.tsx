@@ -85,7 +85,7 @@ export function BookingPagePreview({
   };
 
   const trimmedName = venueName.trim();
-  const displayName = trimmedName.length > 0 ? trimmedName : 'Your venue';
+  const displayName = trimmedName.length > 0 ? trimmedName : 'Your business';
   const showAnnouncement = announcement.trim().length > 0;
   const hasLogo = Boolean(logoUrl);
 

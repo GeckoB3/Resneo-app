@@ -97,7 +97,7 @@ function formatBookingDate(dateStr: string): string {
 
 function formatGuestName(guest: GuestDetailProfile): string {
   const parts = [guest.first_name, guest.last_name].filter(Boolean);
-  return parts.length > 0 ? parts.join(' ') : 'Unnamed guest';
+  return parts.length > 0 ? parts.join(' ') : 'Unnamed client';
 }
 
 const formatCurrencyPence = (pence: number): string => formatPence(pence) ?? 'None';
@@ -179,7 +179,7 @@ function HistoryRow({
   }
   const party =
     typeof booking.party_size === 'number' && booking.party_size > 0
-      ? ` · ${booking.party_size} guest${booking.party_size === 1 ? '' : 's'}`
+      ? ` · ${booking.party_size} ${booking.party_size === 1 ? 'person' : 'people'}`
       : '';
   // How it was made ("Online", "Phone", "Walk-in"), so the history reads at a glance (web #190).
   const sourceLabel = bookingSourceLabel(booking.source);
@@ -630,7 +630,7 @@ export default function ClientDetailScreen() {
           Opening it renders the Upcoming / Previous sections below this header
           (the list's sections), so the rows stay virtualised. */}
       <CollapsibleCard
-        title="Guest bookings"
+        title="Client bookings"
         summary={booking_history.length === 0 ? 'No bookings yet' : guestBookingsSummary(historySections)}
         marker={<LiveDot state={liveState} />}
         expanded={bookingsOpen}

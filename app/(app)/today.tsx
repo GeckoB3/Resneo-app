@@ -167,10 +167,10 @@ export function SetupChecklistCard() {
 
   const heading = onboardingComplete
     ? `What's next · ${completedCount}/${totalCount}`
-    : `Get your venue ready · ${completedCount}/${totalCount}`;
+    : `Get your business ready · ${completedCount}/${totalCount}`;
   const subheading = onboardingComplete
     ? 'Showing only what still needs attention.'
-    : 'Outstanding tasks to get your venue live for guests.';
+    : 'Outstanding tasks to get your business live for clients.';
 
   return (
     <Card>

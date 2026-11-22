@@ -113,10 +113,10 @@ describe('WorkingHoursEditor — adding a split shift', () => {
   });
 });
 
-describe('WorkingHoursEditor — venue hours context', () => {
+describe('WorkingHoursEditor — business hours context', () => {
   const mondayOnly = { '1': [{ start: '09:00', end: '17:00' }] };
 
-  it('shows nothing when the venue has never set opening hours', async () => {
+  it('shows nothing when the business has never set opening hours', async () => {
     await render(
       <WorkingHoursEditor
         practitionerId="prac_1"
@@ -125,10 +125,10 @@ describe('WorkingHoursEditor — venue hours context', () => {
         onClose={onClose}
       />,
     );
-    expect(screen.queryByText(/^Venue: /)).toBeNull();
+    expect(screen.queryByText(/^Business: /)).toBeNull();
   });
 
-  it('prints the venue hours for the day without a warning when they contain the calendar', async () => {
+  it('prints the business hours for the day without a warning when they contain the calendar', async () => {
     const venueHours = { '1': { periods: [{ open: '08:00', close: '18:00' }] } } as OpeningHours;
     await render(
       <WorkingHoursEditor
@@ -139,11 +139,11 @@ describe('WorkingHoursEditor — venue hours context', () => {
         onClose={onClose}
       />,
     );
-    expect(screen.getByText('Venue: 08:00 to 18:00')).toBeTruthy();
+    expect(screen.getByText('Business: 08:00 to 18:00')).toBeTruthy();
     expect(screen.queryByText(/not bookable/)).toBeNull();
   });
 
-  it('warns when the calendar reaches past the venue hours', async () => {
+  it('warns when the calendar reaches past the business hours', async () => {
     const venueHours = { '1': { periods: [{ open: '09:00', close: '12:00' }] } } as OpeningHours;
     await render(
       <WorkingHoursEditor
@@ -155,11 +155,11 @@ describe('WorkingHoursEditor — venue hours context', () => {
       />,
     );
     expect(
-      screen.getByText('Venue: 09:00 to 12:00 (hours outside this are not bookable)'),
+      screen.getByText('Business: 09:00 to 12:00 (hours outside this are not bookable)'),
     ).toBeTruthy();
   });
 
-  it('warns on a day the venue is closed but the calendar works', async () => {
+  it('warns on a day the business is closed but the calendar works', async () => {
     const venueHours = { '1': { closed: true } } as OpeningHours;
     await render(
       <WorkingHoursEditor
@@ -171,11 +171,11 @@ describe('WorkingHoursEditor — venue hours context', () => {
       />,
     );
     expect(
-      screen.getByText('Venue: Venue closed (hours outside this are not bookable)'),
+      screen.getByText('Business: Business closed (hours outside this are not bookable)'),
     ).toBeTruthy();
   });
 
-  it('does not warn about a venue-closed day the calendar is also closed on', async () => {
+  it('does not warn about a business-closed day the calendar is also closed on', async () => {
     const venueHours = { '0': { closed: true } } as OpeningHours;
     await render(
       <WorkingHoursEditor
@@ -186,7 +186,7 @@ describe('WorkingHoursEditor — venue hours context', () => {
         onClose={onClose}
       />,
     );
-    expect(screen.getByText('Venue: Venue closed')).toBeTruthy();
+    expect(screen.getByText('Business: Business closed')).toBeTruthy();
     expect(screen.queryByText(/not bookable/)).toBeNull();
   });
 });

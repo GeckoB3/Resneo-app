@@ -58,13 +58,13 @@ async function renderWeek(v: LinkedVenueCalendar, showCreateButton?: boolean): P
 }
 
 describe('LinkedVenueWeekGrid', () => {
-  it("heads a single shared calendar with the calendar's name, the venue under it", async () => {
+  it("heads a single shared calendar with the calendar's name, the business under it", async () => {
     await renderWeek(venue());
     expect(screen.getByText('Jenny')).toBeTruthy();
     expect(screen.getByText('light2')).toBeTruthy();
   });
 
-  it('keeps the venue name over several calendars and lists them', async () => {
+  it('keeps the business name over several calendars and lists them', async () => {
     await renderWeek(venue({ practitioners: [practitioner(), practitioner({ id: 'p2', name: 'Sam' })] }));
     expect(screen.getByText('light2')).toBeTruthy();
     expect(screen.getByText('Jenny, Sam')).toBeTruthy();
@@ -92,8 +92,8 @@ describe('LinkedVenueWeekGrid closure stripes', () => {
         practitioners: [practitioner({ workingHours }), practitioner({ id: 'p2', name: 'Sam', workingHours })],
       }),
     );
-    expect(screen.getAllByLabelText(/^Linked venue closed/).length).toBeGreaterThan(0);
-    expect(screen.queryByLabelText(/^Venue closed/)).toBeNull();
+    expect(screen.getAllByLabelText(/^Linked business closed/).length).toBeGreaterThan(0);
+    expect(screen.queryByLabelText(/^Business closed/)).toBeNull();
   });
 
   it("resolves a single shared calendar's week from the partner's own hours", async () => {
@@ -119,6 +119,6 @@ describe('LinkedVenueWeekGrid closure stripes', () => {
       }),
     );
     expect(screen.getByLabelText('Closed 12:00 to 13:00')).toBeTruthy();
-    expect(screen.queryByLabelText(/^Linked venue closed/)).toBeNull();
+    expect(screen.queryByLabelText(/^Linked business closed/)).toBeNull();
   });
 });

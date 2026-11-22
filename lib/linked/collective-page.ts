@@ -92,7 +92,7 @@ export function settingsCollectiveNote(
     name: live.name,
     isHost: live.isHost,
     hostVenueName:
-      live.members.find((m) => m.venueId === live.hostVenueId)?.venueName ?? 'The host venue',
+      live.members.find((m) => m.venueId === live.hostVenueId)?.venueName ?? 'The host business',
     adoptedThisVenue: live.slugStrategy === 'adopt_member' && live.adoptedVenueId === myVenueId,
     publicPath: collectivePublicPath(live),
   };

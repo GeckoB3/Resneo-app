@@ -95,12 +95,12 @@ beforeEach(() => {
 });
 
 describe('SetupChecklistCard — onboarding incomplete (pinned first-run)', () => {
-  it('renders the "Get your venue ready" heading, progress %, and incomplete steps', async () => {
+  it('renders the "Get your business ready" heading, progress %, and incomplete steps', async () => {
     // USE venue, profile done → 1/5 = 20%.
     mockSetup.data = status({ profile_complete: true });
     await render(<SetupChecklistCard />);
 
-    expect(screen.getByText('Get your venue ready · 1/5')).toBeTruthy();
+    expect(screen.getByText('Get your business ready · 1/5')).toBeTruthy();
     expect(screen.getByText('20%')).toBeTruthy();
     // Completed step is hidden; incomplete ones surface their label.
     expect(screen.queryByText('Business profile')).toBeNull();

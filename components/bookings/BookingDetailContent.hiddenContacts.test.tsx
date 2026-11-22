@@ -152,10 +152,10 @@ describe('the booking detail for someone whose client contacts are hidden', () =
     });
     expect(screen.getByText('Resend confirmation')).toBeTruthy();
     await act(async () => {
-      fireEvent.press(screen.getByLabelText('SMS / Email guest'));
+      fireEvent.press(screen.getByLabelText('Text or email client'));
     });
     expect(screen.queryByText('Send message')).toBeNull();
-    expect(screen.queryByText('No email or phone on file. Add contact details to message this guest.')).toBeNull();
+    expect(screen.queryByText('No email or phone on file. Add contact details to message this client.')).toBeNull();
   });
 
   it('rebooks the same client by id', async () => {

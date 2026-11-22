@@ -306,7 +306,7 @@ export const CARD_HOLD_LATE_CANCELLED_LINE =
 export function cardHoldReleaseDialogBody(guestName: string): string {
   return (
     `This releases ${guestName}'s card without charging the no-show fee. ` +
-    "Use it when the cancellation was the venue's choice. It cannot be undone."
+    "Use it when the cancellation was the business's choice. It cannot be undone."
   );
 }
 
@@ -680,7 +680,7 @@ export const STAFF_CARD_HOLD_TOGGLE_LABEL = 'Card hold';
 export const CARD_HOLD_LINK_TIMEOUT_HOURS = 24;
 
 /** Sublabel while the switch is ON: what the guest gets and when the card is charged (web #187). */
-export const STAFF_CARD_HOLD_TOGGLE_SUBLABEL_ON = `On: the guest gets a link to add their card, charged only if they do not show. The booking is cancelled if no card is added within ${CARD_HOLD_LINK_TIMEOUT_HOURS} hours.`;
+export const STAFF_CARD_HOLD_TOGGLE_SUBLABEL_ON = `On: the client gets a link to add their card, charged only if they do not show. The booking is cancelled if no card is added within ${CARD_HOLD_LINK_TIMEOUT_HOURS} hours.`;
 /** Sublabel while the switch is OFF (the default since web #187): what leaving it off means. */
 export const STAFF_CARD_HOLD_TOGGLE_SUBLABEL_OFF =
   'Off: no card is taken, so a no-show cannot be charged.';
@@ -689,7 +689,7 @@ export const STAFF_CARD_HOLD_TOGGLE_SUBLABEL_OFF =
  * straight away with the card request open, and is never cancelled for a missing card.
  */
 export const STAFF_CARD_HOLD_TOGGLE_SUBLABEL_ON_WALK_IN =
-  'On: the guest gets a link to add their card, charged only if they do not show. A walk-in is booked straight away and is not cancelled if no card is added.';
+  'On: the client gets a link to add their card, charged only if they do not show. A walk-in is booked straight away and is not cancelled if no card is added.';
 /** The sublabel for the switch's current state, so staff can see what each position does. */
 export function staffCardHoldToggleSublabel(checked: boolean, walkIn = false): string {
   if (!checked) return STAFF_CARD_HOLD_TOGGLE_SUBLABEL_OFF;
@@ -700,7 +700,7 @@ export function staffCardHoldToggleSublabel(checked: boolean, walkIn = false): s
 export const STAFF_CARD_HOLD_CREATED_TOAST = 'Booking created - card request link sent';
 
 /** Confirmation-screen line for flows that show an inline panel instead of a toast. */
-export const STAFF_CARD_HOLD_LINK_SENT_LINE = 'A card request link was sent to the guest.';
+export const STAFF_CARD_HOLD_LINK_SENT_LINE = 'A card request link was sent to the client.';
 
 /** "No-show fee up to £X" — on the confirmation line (no longer under the toggle, web #187). */
 export function staffCardHoldFeeLine(feePence: number): string {

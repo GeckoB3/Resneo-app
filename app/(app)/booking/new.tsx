@@ -236,7 +236,7 @@ function NewBookingForm() {
   if (form.isLoading) {
     return (
       <Screen>
-        <LoadingState message="Loading venue…" />
+        <LoadingState message="Loading business…" />
       </Screen>
     );
   }
@@ -266,7 +266,7 @@ function NewBookingForm() {
   if (!form.venueId) {
     return (
       <Screen>
-        <ErrorState message="Venue details are not available yet." />
+        <ErrorState message="Business details are not available yet." />
       </Screen>
     );
   }
@@ -277,7 +277,7 @@ function NewBookingForm() {
       <Screen>
         <EmptyState
           title="No booking types enabled"
-          message="Enable Appointments, Classes, Events or Resources for this venue to start taking bookings."
+          message="Enable Appointments, Classes, Events or Resources for this business to start taking bookings."
         />
       </Screen>
     );
@@ -295,10 +295,10 @@ function NewBookingForm() {
           // offer. The booking lands in the owning venue.
           <Text variant="caption" tone="muted" style={styles.collectiveNote}>
             {tab === 'service'
-              ? `Booking for ${form.venueName ?? 'the collective'}: every member venue's calendars and the combined services.`
+              ? `Booking for ${form.venueName ?? 'the collective'}: every member business's calendars and the combined services.`
               : tab === 'resource'
-                ? `Resources are booked with ${ownVenue?.name ?? 'your own venue'}, not the collective.`
-                : `Booking for ${form.venueName ?? 'the collective'}: your own ${tab === 'class' ? 'classes' : 'events'}, and the ones other members list on the combined page, each booked with the venue that runs it.`}
+                ? `Resources are booked with ${ownVenue?.name ?? 'your own business'}, not the collective.`
+                : `Booking for ${form.venueName ?? 'the collective'}: your own ${tab === 'class' ? 'classes' : 'events'}, and the ones other members list on the combined page, each booked with the business that runs it.`}
           </Text>
         ) : null}
         {/* The route's own chrome, one line: what to book, and the way out. */}

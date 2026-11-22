@@ -97,7 +97,7 @@ export function accountEmailLabel(key: AccountEmailKey): string {
 export function accountEmailDescription(key: AccountEmailKey): string {
   return key === 'operational_email'
     ? 'Service notices and changes to your account. Security emails, like sign-in links and password changes, are always sent.'
-    : 'Updates about ResNeo itself. Not offers from the venues you book with.';
+    : 'Updates about ResNeo itself. Not offers from the businesses you book with.';
 }
 
 /**
@@ -108,7 +108,7 @@ export function accountEmailDescription(key: AccountEmailKey): string {
  * the question the withdrawn matrix pretended to answer.
  */
 export const BOOKING_EMAIL_NOTE =
-  'Messages about a booking, such as confirmations, reminders and changes, are set by the venue you booked with. Offers from a venue are under Offers from venues below.';
+  'Messages about a booking, such as confirmations, reminders and changes, are set by the business you booked with. Offers from a business are under Offers from businesses below.';
 
 /** Both keys, in the order the web shows them. */
 export const ACCOUNT_EMAIL_KEYS: readonly AccountEmailKey[] = [

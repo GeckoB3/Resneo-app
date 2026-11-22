@@ -28,7 +28,7 @@ export const LINK_LEVELS: readonly LinkLevel[] = [
   {
     id: 'view',
     title: "See each other's diaries",
-    summary: "Each venue sees the other's calendar in full, but cannot change anything.",
+    summary: "Each business sees the other's calendar in full, but cannot change anything.",
     bullets: ["See each other's bookings, services and times", 'No client names or contact details', 'No changes to bookings'],
     grant: { calendar: 'full_details', pii: false, act: 'none' },
     unlocksCollective: false,
@@ -36,7 +36,7 @@ export const LINK_LEVELS: readonly LinkLevel[] = [
   {
     id: 'manage',
     title: "Manage each other's bookings",
-    summary: 'Each venue can see client details and change bookings that already exist.',
+    summary: 'Each business can see client details and change bookings that already exist.',
     bullets: ["See each other's bookings and client details", 'Move, edit or change existing bookings', 'No new bookings for each other'],
     grant: { calendar: 'full_details', pii: true, act: 'edit_existing' },
     unlocksCollective: false,
@@ -44,7 +44,7 @@ export const LINK_LEVELS: readonly LinkLevel[] = [
   {
     id: 'full',
     title: 'Work as one team',
-    summary: "Each venue can book, change and cancel appointments in the other's calendar.",
+    summary: "Each business can book, change and cancel appointments in the other's calendar.",
     bullets: [
       "See each other's bookings and client details",
       'Make, move and cancel bookings for each other',

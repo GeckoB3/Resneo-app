@@ -7,6 +7,7 @@
  *
  * House rules (CLAUDE.md): no em-dashes, plain second person, straight apostrophes.
  */
+import { personAtBusiness } from '@/lib/venue/member-label';
 export const SPLITS_COPY = {
   // Settings page
   'page.title': 'Commission splits',
@@ -332,7 +333,7 @@ export const SPLITS_COPY = {
   'app.calendars.add': 'Add a calendar',
   'app.calendars.none': 'There are no calendars to choose yet. Add a calendar first, then come back to set up a split.',
   // (app) The app's screen is called Linked venues (the web's 'cal.theirs.emptyAction' names its own).
-  'app.linkedVenues': 'Go to Linked venues',
+  'app.linkedVenues': 'Go to Linked businesses',
 } as const;
 
 export type SplitsCopyId = keyof typeof SPLITS_COPY;
@@ -343,8 +344,16 @@ export type SplitsCopyVars = Record<string, string | number | null | undefined>;
  * value stays as written. No imports, so light modules (the More tab's list) can use it.
  */
 export function splitsT(id: SplitsCopyId, vars: SplitsCopyVars = {}): string {
-  return SPLITS_COPY[id].replace(/\{(\w+)\}/g, (whole, key: string) => {
+  const filled = (key: string): string | null => {
     const v = vars[key];
-    return v === undefined || v === null ? whole : String(v);
+    return v === undefined || v === null ? null : String(v);
+  };
+  // "{calendar} at {business}" names the person once (web `splitsCopy`, 2026-11-22).
+  return SPLITS_COPY[id].replace(/\{calendar\} at \{business\}|\{(\w+)\}/g, (whole, key: string | undefined) => {
+    if (key !== undefined) return filled(key) ?? whole;
+    const calendar = filled('calendar');
+    const business = filled('business');
+    if (calendar !== null && business !== null) return personAtBusiness(calendar, business);
+    return `${calendar ?? '{calendar}'} at ${business ?? '{business}'}`;
   });
 }

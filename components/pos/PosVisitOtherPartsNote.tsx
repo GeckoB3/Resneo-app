@@ -1,5 +1,23 @@
 import { Notice, money, usePosT } from '@/components/pos/parts';
 import { useVisitDetail } from '@/lib/queries/useVisitPartnerLines';
+import { businessBesidePerson } from '@/lib/venue/member-label';
+
+/**
+ * One service in the note, "Root Tint with Jenny", followed by " at {business}". When the business
+ * is already named after the person ("Jenny at Aura"), the person is not named again: "Root Tint at
+ * Jenny at Aura", never "Root Tint with Jenny at Jenny at Aura" (live app QA 2026-11-22).
+ */
+export function otherPartServiceLabel(
+  serviceName: string,
+  personName: string | null | undefined,
+  businessName: string,
+): string {
+  if (!personName) return serviceName;
+  if (businessBesidePerson(personName, businessName) !== businessName.replace(/\s+/g, ' ').trim()) {
+    return serviceName;
+  }
+  return `${serviceName} with ${personName}`;
+}
 
 /**
  * On a sale for a visit across businesses (web `PosVisitOtherPartsNote`, 2026-11-05): each other
@@ -16,7 +34,7 @@ export function PosVisitOtherPartsNote({ linkedVisitId }: { linkedVisitId: strin
     .map((part) => {
       const services = detail.lines
         .filter((l) => l.venue_id === part.venue_id && l.status !== 'Cancelled')
-        .map((l) => `${l.service_name}${l.person_name ? ` with ${l.person_name}` : ''}`);
+        .map((l) => otherPartServiceLabel(l.service_name, l.person_name, part.venue_name));
       if (services.length === 0) return null;
       const list =
         services.length === 1 ? services[0]! : `${services.slice(0, -1).join(', ')} and ${services[services.length - 1]}`;

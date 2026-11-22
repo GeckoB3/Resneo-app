@@ -46,7 +46,7 @@ const TYPE_SUGGESTIONS = [
  * hold (spec 6.2) is a standard option; it is no longer gated by a venue flag.
  */
 const PAYMENT_OPTIONS: { value: ResourcePaymentRequirement; label: string; hint: string }[] = [
-  { value: 'none', label: 'No online payment', hint: 'Pay at the venue or arrange separately' },
+  { value: 'none', label: 'No online payment', hint: 'Pay at the business or arrange separately' },
   { value: 'deposit', label: 'Custom deposit', hint: 'Fixed amount paid online when booking' },
   { value: 'full_payment', label: 'Pay in full online', hint: 'Full price taken at booking' },
   {
@@ -128,7 +128,7 @@ function resourceHoursOutsideCalendar(
 
 /** Web `RESOURCE_CALENDAR_LIMIT_WARNING`. */
 const CALENDAR_RESTRICTION_WARNING =
-  'This resource has hours outside the selected calendar. It will only be bookable when venue, calendar, and resource hours all allow it.';
+  'This resource has hours outside the selected calendar. It will only be bookable when business, calendar, and resource hours all allow it.';
 
 /**
  * Per-field help copy ported verbatim from the web resource form
@@ -137,10 +137,10 @@ const CALENDAR_RESTRICTION_WARNING =
  * so the longer explanation is available without crowding the inline helper text.
  */
 const RESOURCE_SLOT_INTERVAL_HELP =
-  'How often a guest may start a booking: start times move forward in steps of this many minutes from the beginning of each open period (e.g. 60 = on the hour only; 30 = on the hour and :30). This is not extra buffer after a booking ends. If a session ends between grid times, that gap can stay empty until the next allowed start. Online pricing uses the same step: total price = (price per step) × (booking length ÷ this many minutes).';
+  'How often a client may start a booking: start times move forward in steps of this many minutes from the beginning of each open period (e.g. 60 = on the hour only; 30 = on the hour and :30). This is not extra buffer after a booking ends. If a session ends between grid times, that gap can stay empty until the next allowed start. Online pricing uses the same step: total price = (price per step) × (booking length ÷ this many minutes).';
 
 const RESOURCE_MIN_BOOKING_HELP =
-  'Shortest session length you allow for availability checks. By default it matches the start-time step; use “Advanced” only when you want a finer grid but a longer minimum (e.g. start every 15 minutes, book at least 60). Guest duration choices increase from this value in steps of the start-time step.';
+  'Shortest session length you allow for availability checks. By default it matches the start-time step; use “Advanced” only when you want a finer grid but a longer minimum (e.g. start every 15 minutes, book at least 60). Client duration choices increase from this value in steps of the start-time step.';
 
 /**
  * True when a save error reads like a host-calendar clash — the server's 409s
@@ -813,18 +813,18 @@ export function ResourceEditorSheet({
           {paymentReq !== 'none' && !stripeConnected ? (
             <Text variant="caption" color={colors.warning}>
               Connect Stripe (Plan &amp; payments) to take online payments. Bookings will fall
-              back to pay-at-venue until then.
+              back to paying at the business until then.
             </Text>
           ) : null}
           <View style={styles.switchRow}>
-            <Text variant="bodyMedium">Active (bookable by guests)</Text>
+            <Text variant="bodyMedium">Active (bookable by clients)</Text>
             <Switch value={isActive} onValueChange={setIsActive} />
           </View>
 
           {/* Weekly hours */}
           <Text variant="overline" tone="muted">Weekly availability</Text>
           <Text variant="caption" tone="muted">
-            Guests can only book when resource, venue, and host calendar hours all overlap.
+            Clients can only book when resource, business, and host calendar hours all overlap.
           </Text>
           {hoursOutsideCalendar ? (
             <View

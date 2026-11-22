@@ -41,6 +41,7 @@ import { useWebDashboardLink } from '@/lib/sites/useWebDashboardLink';
 import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
+import { personAtBusiness } from '@/lib/venue/member-label';
 
 /**
  * The app screen for a web settings link the payload names (`COLLECTIVE_SETTINGS_LINKS` on the
@@ -304,7 +305,7 @@ function BookingRulesPart({ data, collectiveId }: { data: CollectiveSettingsPayl
                         {order.map((cal, i) => (
                           <View key={cal.id} style={[styles.orderRow, { borderColor: colors.border }]}>
                             <Text variant="bodySmall" numberOfLines={1} style={styles.flex1}>
-                              {`${i + 1}. ${cal.name}${cal.venue_name ? ` at ${cal.venue_name}` : ''}`}
+                              {`${i + 1}. ${personAtBusiness(cal.name, cal.venue_name)}`}
                             </Text>
                             <IconButton
                               icon={{ ios: 'chevron.up', android: 'keyboard_arrow_up', web: 'keyboard_arrow_up' }}

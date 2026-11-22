@@ -87,7 +87,7 @@ export function SuggestionsReviewCard({
             return;
           }
           const nameOf = (id: string) => list.find((s) => s.service_id === id)?.service_name ?? 'A service';
-          const venueOf = (id: string) => list.find((s) => s.service_id === id)?.venue_name ?? 'a venue';
+          const venueOf = (id: string) => list.find((s) => s.service_id === id)?.venue_name ?? 'a business';
           const outcome = curateOutcome(
             'add',
             results,

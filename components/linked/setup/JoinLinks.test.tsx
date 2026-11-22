@@ -105,7 +105,7 @@ describe('JoinCollectiveSheet held up by a link with less than full access', () 
     links: [need('Bright Cuts', 'full', 'l0', true), need('Zen', 'none'), need('Oak', 'not_full', 'l2')],
   };
 
-  it('reads the plain preview, says which link holds it up, and opens Linked venues', async () => {
+  it('reads the plain preview, says which link holds it up, and opens Linked businesses', async () => {
     mockPreview = blocked;
     const onOpenLinked = jest.fn();
     await render(
@@ -120,7 +120,7 @@ describe('JoinCollectiveSheet held up by a link with less than full access', () 
     );
     // No `withPendingLink` any more: the server counts every link joining makes.
     expect(mockPreviewCalls[0]).toEqual(['col-1', { enabled: true }]);
-    expect(screen.getByText('Your links with the venues in it')).toBeTruthy();
+    expect(screen.getByText('Your links with the businesses in it')).toBeTruthy();
     expect(screen.getByText('Already linked at full access')).toBeTruthy();
     expect(screen.getByText('Linked when you join')).toBeTruthy();
     expect(screen.getByText('Linked with less than full access both ways. Change it first.')).toBeTruthy();
@@ -129,7 +129,7 @@ describe('JoinCollectiveSheet held up by a link with less than full access', () 
     expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
 
     await act(async () => {
-      fireEvent.press(screen.getByRole('button', { name: 'Change it in Linked venues' }));
+      fireEvent.press(screen.getByRole('button', { name: 'Change it in Linked businesses' }));
     });
     expect(onOpenLinked).toHaveBeenCalled();
     expect(mockApiFetch).not.toHaveBeenCalled();
@@ -141,7 +141,7 @@ describe('JoinCollectiveSheet held up by a link with less than full access', () 
       <JoinCollectiveSheet visible collectiveId="col-1" collectiveName="Northside" venueName="Light 3" onClose={jest.fn()} />,
     );
     expect(screen.getByText('Linked with less than full access both ways. Change it first.')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Change it in Linked venues' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Change it in Linked businesses' })).toBeNull();
   });
 });
 
@@ -165,16 +165,16 @@ describe('JoinCollectiveSheet with links to make', () => {
     // Step 1 still says which links joining makes, what they let each venue do, and that they last
     // (CQ-08): host first, each with where its link stands.
     const disclosure = screen.getByTestId('join-links-disclosure');
-    expect(within(disclosure).getByText('Your links with the venues in it')).toBeTruthy();
+    expect(within(disclosure).getByText('Your links with the businesses in it')).toBeTruthy();
     expect(within(disclosure).getAllByText('Linked when you join')).toHaveLength(3);
     expect(within(disclosure).getByText('Already linked at full access')).toBeTruthy();
     expect(
-      within(disclosure).getByText(/^These links stay if you leave Northside, or if it ends, until one of you unlinks in Linked venues\./),
+      within(disclosure).getByText(/^These links stay if you leave Northside, or if it ends, until one of you unlinks in Linked businesses\./),
     ).toBeTruthy();
     await walkToCheck();
-    expect(screen.getByText('Joining also links your venue with Ash, Zen and Oak, with full access both ways.')).toBeTruthy();
+    expect(screen.getByText('Joining also links your business with Ash, Zen and Oak, with full access both ways.')).toBeTruthy();
     await act(async () => {
-      fireEvent.press(screen.getByText(/^I understand that guests who visit Light 3/));
+      fireEvent.press(screen.getByText(/^I understand that clients who visit Light 3/));
     });
     await act(async () => {
       fireEvent.press(screen.getByRole('button', { name: 'Join Northside' }));
@@ -189,21 +189,21 @@ describe('JoinCollectiveSheet with links to make', () => {
     expect(mockApiFetch).not.toHaveBeenCalled();
   });
 
-  it('shows a refusal inside the sheet, naming the venue', async () => {
+  it('shows a refusal inside the sheet, naming the business', async () => {
     mockPreview = toMake;
     mockJoin.mockImplementation((_vars: unknown, options: { onError: (err: unknown) => void }) => {
       options.onError(
-        new ApiError('Could not link your venue with Zen, so you have not joined Northside yet. Please try again.', 409),
+        new ApiError('Could not link your business with Zen, so you have not joined Northside yet. Please try again.', 409),
       );
     });
     await joinThrough();
     expect(
-      screen.getByText('Could not link your venue with Zen, so you have not joined Northside yet. Please try again.'),
+      screen.getByText('Could not link your business with Zen, so you have not joined Northside yet. Please try again.'),
     ).toBeTruthy();
   });
 });
 
-describe('ReviewLinkRequestSheet with other venues in the collective', () => {
+describe('ReviewLinkRequestSheet with other businesses in the collective', () => {
   const full = { calendar: 'full_details' as const, pii: true, act: 'create_edit_cancel' as const };
   const link: AccountLinkView = {
     id: 'l0',
@@ -221,7 +221,7 @@ describe('ReviewLinkRequestSheet with other venues in the collective', () => {
   } as AccountLinkView;
   const collective = { id: 'col-1', name: 'Northside', slug: 'northside', serviceModel: 'replicas', live: true };
 
-  it('says "invited you to join", names the other venues it links with, and accepts only this request', async () => {
+  it('says "invited you to join", names the other businesses it links with, and accepts only this request', async () => {
     mockPreview = {
       ...basePreview,
       links: [need('Bright Cuts', 'their_request', 'l0', true), need('Zen', 'their_request', 'l2'), need('Oak', 'none')],
@@ -231,12 +231,12 @@ describe('ReviewLinkRequestSheet with other venues in the collective', () => {
     expect(screen.getByText('Bright Cuts invited you to join Northside')).toBeTruthy();
     expect(
       screen.getByText(
-        'Bright Cuts has also invited you to join Northside, one booking page for the venues in it. Here is what that means for Light 3.',
+        'Bright Cuts has also invited you to join Northside, one booking page for the businesses in it. Here is what that means for Light 3.',
       ),
     ).toBeTruthy();
     await walkToCheck(3);
     // The request under review is described by the sheet itself, so only Zen and Oak are named.
-    expect(screen.getByText('Joining also links your venue with Zen and Oak, with full access both ways.')).toBeTruthy();
+    expect(screen.getByText('Joining also links your business with Zen and Oak, with full access both ways.')).toBeTruthy();
     await act(async () => {
       fireEvent.press(screen.getByText(/^I understand what Bright Cuts will be able to see and do/));
     });
@@ -274,11 +274,11 @@ describe('ReviewLinkRequestSheet with other venues in the collective', () => {
         onOpenLinked={onOpenLinked}
       />,
     );
-    expect(screen.getByText('Your links with the venues in it')).toBeTruthy();
+    expect(screen.getByText('Your links with the businesses in it')).toBeTruthy();
     expect(screen.getByText('Linked with less than full access both ways. Change it first.')).toBeTruthy();
     expect(screen.queryByText('Linked when you join')).toBeNull();
     await act(async () => {
-      fireEvent.press(screen.getByRole('button', { name: 'Change it in Linked venues' }));
+      fireEvent.press(screen.getByRole('button', { name: 'Change it in Linked businesses' }));
     });
     expect(onOpenLinked).toHaveBeenCalled();
   });

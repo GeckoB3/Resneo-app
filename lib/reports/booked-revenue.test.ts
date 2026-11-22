@@ -63,7 +63,7 @@ describe('bookedRevenueQuery', () => {
     );
   });
 
-  it('asks for one calendar with calendar_id, and for the whole venue without it', () => {
+  it('asks for one calendar with calendar_id, and for the whole business without it', () => {
     expect(bookedRevenueQuery({ kind: 'preset', preset: 'this_week' }, 'day', 'cal-1')).toBe(
       'grain=day&preset=this_week&calendar_id=cal-1',
     );
@@ -166,7 +166,7 @@ describe('net and CSV', () => {
     expect(bookedRevenueNetPence(undefined, true)).toBe(0);
   });
 
-  it('exports the web CSV: a column per calendar (linked ones with their venue), a total, the no-shows', () => {
+  it('exports the web CSV: a column per calendar (linked ones with their business), a total, the no-shows', () => {
     const rows = bookedRevenueCsvRows(report, false);
     expect(rows[0]).toEqual(['Period', 'Hannah', 'Jenny (Partner)', 'Total', 'No-shows']);
     expect(rows[1]).toEqual(['Mon 7 Sept', '50.00', '0.00', '50.00', '15.00']);
@@ -208,8 +208,8 @@ const collectiveReport: BookedRevenueReport = {
   },
 };
 
-describe('the venue breakdown (web, collectives D49)', () => {
-  it('shows with more than one venue or a collective, and not for an older server', () => {
+describe('the business breakdown (web, collectives D49)', () => {
+  it('shows with more than one business or a collective, and not for an older server', () => {
     expect(showBookedRevenueVenues(collectiveReport)).toBe(true);
     expect(showBookedRevenueVenues({ venues: [{ venue_id: 'v', venue_name: 'Ours', access: 'own' }], collective: { id: 'c', name: 'C' } })).toBe(true);
     expect(showBookedRevenueVenues({ venues: [{ venue_id: 'v', venue_name: 'Ours', access: 'own' }], collective: null })).toBe(false);
@@ -218,14 +218,14 @@ describe('the venue breakdown (web, collectives D49)', () => {
 
   it('names collective members as members, with the web words', () => {
     expect(bookedRevenueCollectiveNote(collectiveReport)).toBe(
-      "Includes Member Studio, which is part of Aura Collective with you. Every venue in a collective sees each venue's booked revenue, venue by venue.",
+      "Includes Member Studio, which is part of Aura Collective with you. Every business in a collective sees each business's booked revenue, business by business.",
     );
     const two = {
       ...collectiveReport,
       venues: [...collectiveReport.venues!, { venue_id: 'n', venue_name: 'North', access: 'collective' as const }],
     };
     expect(bookedRevenueCollectiveNote(two)).toBe(
-      "Includes Member Studio and North, which are part of Aura Collective with you. Every venue in a collective sees each venue's booked revenue, venue by venue.",
+      "Includes Member Studio and North, which are part of Aura Collective with you. Every business in a collective sees each business's booked revenue, business by business.",
     );
     expect(bookedRevenueCollectiveNote(report)).toBeNull();
   });
@@ -254,12 +254,12 @@ describe('the venue breakdown (web, collectives D49)', () => {
     expect(bookedRevenueCollectiveNetPence(undefined, true)).toBe(0);
   });
 
-  it('exports the venue breakdown after the totals, as the web CSV does', () => {
+  it('exports the business breakdown after the totals, as the web CSV does', () => {
     const rows = bookedRevenueCsvRows(collectiveReport, false);
     expect(rows[3]).toEqual(['Total', '50.00', '20.00', '70.00', '15.00']);
     expect(rows.slice(4)).toEqual([
       [],
-      ['Venue', 'Booked revenue', 'Through Aura Collective'],
+      ['Business', 'Booked revenue', 'Through Aura Collective'],
       ['Ours', '50.00', '10.00'],
       ['Member Studio', '30.00', '30.00'],
       ['Partner', '20.00', '0.00'],
@@ -268,16 +268,16 @@ describe('the venue breakdown (web, collectives D49)', () => {
     expect(bookedRevenueCsvRows(collectiveReport, true)[6]).toEqual(['Ours', '65.00', '15.00']);
   });
 
-  it('names the column "Through a collective page" when linked venues are split without a collective', () => {
+  it('names the column "Through a collective page" when linked businesses are split without a collective', () => {
     const linkedOnly: BookedRevenueReport = {
       ...collectiveReport,
       collective: null,
       venues: collectiveReport.venues!.filter((v) => v.access !== 'collective'),
     };
-    expect(bookedRevenueCsvRows(linkedOnly, false).slice(4, 6)).toEqual([[], ['Venue', 'Booked revenue', 'Through a collective page']]);
+    expect(bookedRevenueCsvRows(linkedOnly, false).slice(4, 6)).toEqual([[], ['Business', 'Booked revenue', 'Through a collective page']]);
   });
 
-  it('adds nothing for an older server with no venue list', () => {
+  it('adds nothing for an older server with no business list', () => {
     expect(bookedRevenueCsvRows(report, false)).toHaveLength(4);
   });
 });
@@ -285,15 +285,15 @@ describe('the venue breakdown (web, collectives D49)', () => {
 describe('one calendar (web 90ff4d17)', () => {
   const jess = { name: 'Jess' };
 
-  it('has no venue breakdown: one calendar is one column of your own', () => {
+  it('has no business breakdown: one calendar is one column of your own', () => {
     expect(showBookedRevenueVenues(collectiveReport, jess)).toBe(false);
     expect(showBookedRevenueVenues(collectiveReport, null)).toBe(true);
   });
 
-  it("starts the CSV with the calendar, leaves the venues out, and names it in the file", () => {
+  it("starts the CSV with the calendar, leaves the businesses out, and names it in the file", () => {
     const rows = bookedRevenueCsvRows(collectiveReport, false, jess);
     expect(rows.slice(0, 3)).toEqual([['Showing Jess only'], [], ['Period', 'Hannah', 'Jenny (Partner)', 'Total', 'No-shows']]);
-    expect(rows.some((row) => row[0] === 'Venue')).toBe(false);
+    expect(rows.some((row) => row[0] === 'Business')).toBe(false);
     expect(bookedRevenueCsvFilename(collectiveReport, jess)).toBe('booked-revenue-jess-2026-09-07-2026-09-08-day.csv');
     expect(bookedRevenueCsvFilename(collectiveReport)).toBe('booked-revenue-2026-09-07-2026-09-08-day.csv');
   });

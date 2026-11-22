@@ -62,8 +62,8 @@ export function ComplianceWarningNotice({
       </Text>
       {required.length > 0 ? (
         <Text variant="caption" tone="default">
-          The booking is made, but this venue requires {joinNames(required)} for this booking and{' '}
-          {required.length === 1 ? 'it is' : 'they are'} not on file. Capture the record in venue or
+          The booking is made, but this business requires {joinNames(required)} for this booking and{' '}
+          {required.length === 1 ? 'it is' : 'they are'} not on file. Capture the record in person or
           send the form before the appointment.
         </Text>
       ) : null}
@@ -74,7 +74,7 @@ export function ComplianceWarningNotice({
         </Text>
       ) : null}
       {onCapture ? (
-        <Button label="Capture in venue" variant="secondary" onPress={onCapture} />
+        <Button label="Capture in person" variant="secondary" onPress={onCapture} />
       ) : null}
     </View>
   );

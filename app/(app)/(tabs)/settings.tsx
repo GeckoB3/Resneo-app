@@ -502,12 +502,12 @@ export default function MoreScreen() {
       <Group title="Your own bookings">
         <View style={styles.switchBody}>
           <Button
-            label="Switch to my account"
+            label="My bookings as a client"
             variant="secondary"
             onPress={() => switchAppMode("customer")}
           />
           <Text variant="caption" tone="muted" style={styles.switchNote}>
-            See the bookings you have made as a customer. You can switch back at
+            See the bookings you have made as a client. You can switch back at
             any time.
           </Text>
         </View>

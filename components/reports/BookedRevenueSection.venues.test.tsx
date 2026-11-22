@@ -107,7 +107,7 @@ function collectiveReport(over: Partial<BookedRevenueReport> = {}): BookedRevenu
 }
 
 const COLLECTIVE_NOTE =
-  "Includes Member Studio, which is part of Aura Collective with you. Every venue in a collective sees each venue's booked revenue, venue by venue.";
+  "Includes Member Studio, which is part of Aura Collective with you. Every business in a collective sees each business's booked revenue, business by business.";
 const LINKED_NOTE = 'Includes calendars from Partner, shared with you through a linked account.';
 
 beforeEach(() => {
@@ -118,10 +118,10 @@ beforeEach(() => {
   mockReport = collectiveReport();
 });
 
-describe('BookedRevenueSection: linked and collective venues', () => {
-  it('splits the figures by venue, marks yours, and shows the part through the collective', async () => {
+describe('BookedRevenueSection: linked and collective businesses', () => {
+  it('splits the figures by business, marks yours, and shows the part through the collective', async () => {
     await render(<BookedRevenueSection bookingWord="Appointment" today="2026-09-11" />);
-    const table = screen.getByLabelText('Booked revenue by venue');
+    const table = screen.getByLabelText('Booked revenue by business');
     expect(within(table).getByText('Ours (you)')).toBeTruthy();
     expect(within(table).getByText('Member Studio')).toBeTruthy();
     expect(within(table).getByText('Partner')).toBeTruthy();
@@ -139,7 +139,7 @@ describe('BookedRevenueSection: linked and collective venues', () => {
     expect(within(table).getByText('6')).toBeTruthy();
   });
 
-  it('names collective members as members and only link venues as shared through a linked account', async () => {
+  it('names collective members as members and only link businesses as shared through a linked account', async () => {
     await render(<BookedRevenueSection bookingWord="Appointment" today="2026-09-11" />);
     expect(screen.getByText(COLLECTIVE_NOTE)).toBeTruthy();
     expect(screen.getByText(LINKED_NOTE)).toBeTruthy();
@@ -168,24 +168,24 @@ describe('BookedRevenueSection: linked and collective venues', () => {
       ],
     });
     await render(<BookedRevenueSection bookingWord="Appointment" today="2026-09-11" />);
-    const table = screen.getByLabelText('Booked revenue by venue');
+    const table = screen.getByLabelText('Booked revenue by business');
     expect(within(table).queryByText(/^Through/)).toBeNull();
     expect(screen.queryByText(/part of/)).toBeNull();
     expect(screen.getByText(LINKED_NOTE)).toBeTruthy();
   });
 
-  it('shows no venue table for one venue on its own', async () => {
+  it('shows no business table for one business on its own', async () => {
     mockReport = collectiveReport({
       collective: null,
       venues: [{ venue_id: 'v', venue_name: 'Ours', access: 'own' }],
       columns: collectiveReport().columns.slice(0, 1),
     });
     await render(<BookedRevenueSection bookingWord="Appointment" today="2026-09-11" />);
-    expect(screen.queryByLabelText('Booked revenue by venue')).toBeNull();
+    expect(screen.queryByLabelText('Booked revenue by business')).toBeNull();
     expect(screen.queryByText(/Includes/)).toBeNull();
   });
 
-  it('exports the venue breakdown after the totals, as the web CSV does', async () => {
+  it('exports the business breakdown after the totals, as the web CSV does', async () => {
     await render(<BookedRevenueSection bookingWord="Appointment" today="2026-09-11" />);
     await act(async () => {
       fireEvent.press(screen.getByText('Export CSV'));
@@ -193,7 +193,7 @@ describe('BookedRevenueSection: linked and collective venues', () => {
     const rows = (buildAndShareCsv as jest.Mock).mock.calls[0][1] as string[][];
     expect(rows.slice(-5)).toEqual([
       [],
-      ['Venue', 'Booked revenue', 'Through Aura Collective'],
+      ['Business', 'Booked revenue', 'Through Aura Collective'],
       ['Ours', '50.00', '10.00'],
       ['Member Studio', '30.00', '30.00'],
       ['Partner', '20.00', '0.00'],
@@ -205,11 +205,11 @@ describe('BookedRevenueSection: the Reports calendar filter', () => {
   const hannah = { id: 'cal-1', name: 'Hannah' };
   const onClear = jest.fn();
 
-  it('asks for the whole venue when no calendar is chosen', async () => {
+  it('asks for the whole business when no calendar is chosen', async () => {
     await render(<BookedRevenueSection bookingWord="Appointment" today="2026-09-11" />);
     expect(mockQueries[0]).toBe('grain=day&preset=this_week&compare=previous');
     expect(screen.queryByText(/^Showing/)).toBeNull();
-    expect(screen.queryByText('These figures are for the whole venue.')).toBeNull();
+    expect(screen.queryByText('These figures are for the whole business.')).toBeNull();
   });
 
   /** A filtered answer (web 90ff4d17): just that column, `venues: [own]`, `collective` unchanged. */
@@ -235,18 +235,18 @@ describe('BookedRevenueSection: the Reports calendar filter', () => {
     expect(mockQueries[0]).toBe('grain=day&preset=this_week&calendar_id=cal-1&compare=previous');
     expect(screen.getByText('Showing Hannah only.')).toBeTruthy();
     expect(
-      screen.getByText("Showing Hannah only. Just this calendar's column. Other calendars and linked venues are left out."),
+      screen.getByText("Showing Hannah only. Just this calendar's column. Other calendars and linked businesses are left out."),
     ).toBeTruthy();
   });
 
-  it('shows no venue table and no venue notes for one calendar, though the collective is still sent', async () => {
+  it('shows no business table and no business notes for one calendar, though the collective is still sent', async () => {
     mockReport = filteredReport();
     await render(
       <ReportCalendarProvider calendar={hannah} onClear={onClear}>
         <BookedRevenueSection bookingWord="Appointment" today="2026-09-11" />
       </ReportCalendarProvider>,
     );
-    expect(screen.queryByLabelText('Booked revenue by venue')).toBeNull();
+    expect(screen.queryByLabelText('Booked revenue by business')).toBeNull();
     expect(screen.queryByText(/part of Aura Collective/)).toBeNull();
     expect(screen.queryByText(/linked account/)).toBeNull();
   });
@@ -265,16 +265,16 @@ describe('BookedRevenueSection: the Reports calendar filter', () => {
     expect(filename).toBe('booked-revenue-hannah-2026-09-07-2026-09-13-day.csv');
     expect(rows.slice(0, 3)).toEqual([['Showing Hannah only'], [], ['Period', 'Hannah', 'Total', 'No-shows']]);
     // No venue breakdown for one calendar.
-    expect(rows.some((row) => row[0] === 'Venue')).toBe(false);
+    expect(rows.some((row) => row[0] === 'Business')).toBe(false);
   });
 
-  it('says the figures are the whole venue when the answer carries no calendar', async () => {
+  it('says the figures are the whole business when the answer carries no calendar', async () => {
     await render(
       <ReportCalendarProvider calendar={hannah} onClear={onClear}>
         <BookedRevenueSection bookingWord="Appointment" today="2026-09-11" />
       </ReportCalendarProvider>,
     );
-    expect(screen.getByText('These figures are for the whole venue.')).toBeTruthy();
+    expect(screen.getByText('These figures are for the whole business.')).toBeTruthy();
   });
 
   it("shows the server's sentence when filtering is not ready yet, and offers all calendars", async () => {
@@ -311,7 +311,7 @@ describe('BookedRevenueSection: the Reports calendar filter', () => {
     expect(screen.getByText(sentence)).toBeTruthy();
     expect(screen.getByText('Show all calendars')).toBeTruthy();
     // The figures kept on screen are the whole venue's, and say so.
-    expect(screen.getByText('These figures are for the whole venue.')).toBeTruthy();
+    expect(screen.getByText('These figures are for the whole business.')).toBeTruthy();
   });
 });
 
@@ -339,11 +339,11 @@ describe('BookedRevenueSection: Showing a business or everyone together (release
     totals: { booked_pence: 8000, no_show_pence: 2000, booked_count: 4, no_show_count: 1, unpriced_count: 0 },
   };
 
-  it('asks for everyone together and the comparison, keeps the venue table, and lists each business', async () => {
+  it('asks for everyone together and the comparison, keeps the business table, and lists each business', async () => {
     mockReport = collectiveReport({ scope: { kind: 'together', name: 'Aura Collective', business: null }, comparison });
     await renderShowing({ kind: 'together' }, 'last_year');
     expect(mockQueries[0]).toBe('grain=day&preset=this_week&business=all&compare=last_year');
-    expect(screen.getByLabelText('Booked revenue by venue')).toBeTruthy();
+    expect(screen.getByLabelText('Booked revenue by business')).toBeTruthy();
     expect(screen.getByText(/^Showing Aura Collective: Ours, Member Studio and Partner\./)).toBeTruthy();
     // 10000 against 8000 (no-shows deducted): +25%.
     expect(screen.getByLabelText('+25%')).toBeTruthy();
@@ -360,26 +360,26 @@ describe('BookedRevenueSection: Showing a business or everyone together (release
     expect(screen.getByLabelText('No change')).toBeTruthy();
   });
 
-  it('asks for one business, with its venue table (as the web), and says what a business shows', async () => {
+  it('asks for one business, with its business table (as the web), and says what a business shows', async () => {
     mockReport = collectiveReport({
       scope: { kind: 'business', name: 'Partner', business: { venue_id: 'p', name: 'Partner', access: 'link' } },
       venues: [{ venue_id: 'p', venue_name: 'Partner', access: 'link' }],
     });
     await renderShowing({ kind: 'business', venueId: 'p' });
     expect(mockQueries[0]).toBe('grain=day&preset=this_week&business=p&compare=previous');
-    expect(screen.getByLabelText('Booked revenue by venue')).toBeTruthy();
+    expect(screen.getByLabelText('Booked revenue by business')).toBeTruthy();
     expect(
       screen.getByText('Showing Partner. Bookings on the calendars Partner shares with you. Takings and sales are not shared between businesses.'),
     ).toBeTruthy();
   });
 
-  it('keeps the venue table for your own venue in a collective, for its Through column (as the web)', async () => {
+  it('keeps the business table for your own business in a collective, for its Through column (as the web)', async () => {
     mockReport = collectiveReport({
       scope: { kind: 'venue', name: 'Ours', business: null },
       venues: [{ venue_id: 'v', venue_name: 'Ours', access: 'own' }],
     });
     await renderShowing({ kind: 'venue' });
-    expect(screen.getByLabelText('Booked revenue by venue')).toBeTruthy();
+    expect(screen.getByLabelText('Booked revenue by business')).toBeTruthy();
     // No comparison from this answer: no pill.
     expect(screen.queryByTestId('change-pill')).toBeNull();
   });

@@ -52,4 +52,21 @@ describe('PosVisitOtherPartsNote', () => {
     await render(<PosVisitOtherPartsNote linkedVisitId="lv" />);
     expect(screen.queryByText(/This visit also has/)).toBeNull();
   });
+
+  it('never names the person twice at a business named after them (live app QA 2026-11-22)', async () => {
+    mockVisitDetail = {
+      lines: [lines[0], { ...lines[1], venue_id: 'v-jenny', venue_name: 'Jenny at Aura', person_name: 'Jenny' }],
+      parts: [
+        part(0)[0],
+        { venue_id: 'v-jenny', venue_name: 'Jenny at Aura', own: false, total_pence: 6500, paid_pence: 0, outstanding_pence: 6500 },
+      ],
+    };
+    await render(<PosVisitOtherPartsNote linkedVisitId="lv" />);
+    expect(
+      screen.getByText(
+        'This visit also has Root Tint at Jenny at Aura (£65.00). Jenny at Aura takes that payment, so it is not on this sale.',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Jenny at Jenny/)).toBeNull();
+  });
 });

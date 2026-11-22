@@ -260,7 +260,7 @@ describe('partitionClosureBands', () => {
     end,
   });
 
-  it('gives every minute one cause: venue only, calendar only, or both', () => {
+  it('gives every minute one cause: business only, calendar only, or both', () => {
     // Hannah works 10:00–19:00: shut before 10 (both 8–9, hers 9–10) and after
     // 19 (venue 18–19 while she works, both 19–20).
     const out = partitionClosureBands({
@@ -270,19 +270,19 @@ describe('partitionClosureBands', () => {
       keyPrefix: 'cal-1',
     });
     expect(out.map((e) => [e.block.blockType, e.start, e.end, e.block.label])).toEqual([
-      ['venue_closed', 18 * 60, 19 * 60, 'Venue closed 18:00 to 19:00'],
+      ['venue_closed', 18 * 60, 19 * 60, 'Business closed 18:00 to 19:00'],
       ['practitioner_closed', 9 * 60, 10 * 60, 'Hannah unavailable 09:00 to 10:00'],
       ['venue_and_calendar_closed', 8 * 60, 9 * 60, 'Hannah closed 08:00 to 09:00'],
       ['venue_and_calendar_closed', 19 * 60, 20 * 60, 'Hannah closed 19:00 to 20:00'],
     ]);
   });
 
-  it('draws the venue stripes alone when the calendar works the whole window', () => {
+  it('draws the business stripes alone when the calendar works the whole window', () => {
     const out = partitionClosureBands({ venueClosed: VENUE_SHUT, entries: [], keyPrefix: 'cal-1' });
     expect(out.map((e) => e.block.blockType)).toEqual(['venue_closed', 'venue_closed']);
   });
 
-  it("names a partner's shut hours as the linked venue's when only its weekly template is known", () => {
+  it("names a partner's shut hours as the linked business's when only its weekly template is known", () => {
     const out = partitionClosureBands({
       venueClosed: VENUE_SHUT,
       entries: [],
@@ -291,7 +291,7 @@ describe('partitionClosureBands', () => {
     });
     expect(out[0]!.block).toMatchObject({
       blockType: 'linked_venue_closed',
-      label: 'Linked venue closed 08:00 to 09:00',
+      label: 'Linked business closed 08:00 to 09:00',
     });
   });
 
@@ -312,7 +312,7 @@ describe('partitionClosureBands', () => {
       keyPrefix: 'linked:v:c',
     });
     expect(out.map((e) => [e.block.blockType, e.start, e.end, e.block.label])).toEqual([
-      ['linked_business_closed', 18 * 60, 19 * 60, 'Venue closed 18:00 to 19:00'],
+      ['linked_business_closed', 18 * 60, 19 * 60, 'Business closed 18:00 to 19:00'],
       ['linked_calendar_closed', 9 * 60, 10 * 60, 'Jenny unavailable 09:00 to 10:00'],
       ['linked_both_closed', 8 * 60, 9 * 60, 'Jenny closed 08:00 to 09:00'],
       ['linked_both_closed', 19 * 60, 20 * 60, 'Jenny closed 19:00 to 20:00'],
@@ -330,7 +330,7 @@ describe('partitionClosureBands', () => {
     expect(out.map((e) => e.block.blockType)).toEqual(['venue_closed', 'venue_closed', 'practitioner_leave']);
   });
 
-  it('keeps leave whole — over the venue-closed minutes too — and passes breaks and manual blocks through', () => {
+  it('keeps leave whole — over the business-closed minutes too — and passes breaks and manual blocks through', () => {
     type Entry = { block: { id: string; blockType: string; label: string | null }; start: number; end: number };
     const leave: Entry = { block: { id: 'l', blockType: 'practitioner_leave', label: 'On leave' }, start: 8 * 60, end: 20 * 60 };
     const brk: Entry = { block: { id: 'k', blockType: 'break', label: 'Break' }, start: 12 * 60, end: 13 * 60 };
@@ -379,7 +379,7 @@ describe('partitionClosureBands', () => {
 describe('scheduleClosureBlockLabel', () => {
   it('says why and which minutes, naming the calendar where it is the cause', () => {
     const range = { startTime: '08:00:00', endTime: '09:00:00' };
-    expect(scheduleClosureBlockLabel('venue_closed', range)).toBe('Venue closed 08:00 to 09:00');
+    expect(scheduleClosureBlockLabel('venue_closed', range)).toBe('Business closed 08:00 to 09:00');
     expect(scheduleClosureBlockLabel('practitioner_closed', { columnName: 'Hannah', ...range })).toBe(
       'Hannah unavailable 08:00 to 09:00',
     );
@@ -394,12 +394,12 @@ describe('scheduleClosureBlockLabel', () => {
     expect(scheduleClosureBlockLabel('practitioner_leave', { ...range, leaveLabel: '  ' })).toBe(
       'On leave 08:00 to 09:00',
     );
-    expect(scheduleClosureBlockLabel('linked_venue_closed')).toBe('Linked venue closed');
+    expect(scheduleClosureBlockLabel('linked_venue_closed')).toBe('Linked business closed');
   });
 
   it("words a linked column's resolved states as their own-column counterparts (web parity)", () => {
     const range = { startTime: '08:00', endTime: '09:00' };
-    expect(scheduleClosureBlockLabel('linked_business_closed', range)).toBe('Venue closed 08:00 to 09:00');
+    expect(scheduleClosureBlockLabel('linked_business_closed', range)).toBe('Business closed 08:00 to 09:00');
     expect(scheduleClosureBlockLabel('linked_calendar_closed', { columnName: 'Jenny', ...range })).toBe(
       'Jenny unavailable 08:00 to 09:00',
     );

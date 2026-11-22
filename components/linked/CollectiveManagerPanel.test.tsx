@@ -78,7 +78,7 @@ describe('CollectiveManagerPanel', () => {
     expect(screen.queryByText('Name section')).toBeNull();
   });
 
-  it('never shows the names to a venue that is not the host', async () => {
+  it('never shows the names to a business that is not the host', async () => {
     await render(panel({ ...collective('replicas'), isHost: false }));
     expect(screen.queryByText('Name section')).toBeNull();
   });
@@ -90,7 +90,7 @@ describe('CollectiveManagerPanel', () => {
     expect(screen.queryByRole('tab', { name: 'Members' })).toBeNull();
     expect(screen.queryByRole('tab', { name: 'Services' })).toBeNull();
     expect(
-      screen.getByText('The services on the Plus 1 page, its venues, the hosting and ending it are all in Manage Collective.'),
+      screen.getByText('The services on the Plus 1 page, its businesses, the hosting and ending it are all in Manage Collective.'),
     ).toBeTruthy();
     await act(async () => {
       fireEvent.press(screen.getByRole('button', { name: 'Open Manage Collective' }));

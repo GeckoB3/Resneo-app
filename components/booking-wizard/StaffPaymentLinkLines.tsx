@@ -31,7 +31,7 @@ export function staffPaymentLinkLines(input: {
       : 'The client has no email or phone number, so the deposit link was not sent. Open the link on this device, or copy it to send.'
     : input.cardHold
       ? 'A card request was sent to the client. No payment is taken.'
-      : 'A deposit payment link has been sent to the guest.';
+      : 'A deposit payment link has been sent to the client.';
   const cancel =
     input.paymentUrl && !input.walkIn
       ? input.cardHold

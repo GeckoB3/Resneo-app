@@ -284,7 +284,7 @@ describe('linkedGridBooking on a per-calendar column', () => {
 });
 
 describe('linkedColumnKey / parseLinkedColumnKey', () => {
-  it('namespaces a calendar under its venue and parses both shapes back', () => {
+  it('namespaces a calendar under its business and parses both shapes back', () => {
     expect(linkedColumnKey('v1', 'p1')).toBe('linked:v1:p1');
     expect(linkedColumnKey('v1')).toBe('linked:v1');
     expect(parseLinkedColumnKey('linked:v1:p1')).toEqual({ venueId: 'v1', practitionerId: 'p1' });
@@ -335,7 +335,7 @@ describe('linkedVenueColumns', () => {
     expect(linkedVenueColumns(withBooking, DATE).map((c) => c.name)).toEqual(['Jenny', 'Idle']);
   });
 
-  it('keeps a venue-level column for bookings that name no listed calendar', () => {
+  it('keeps a business-level column for bookings that name no listed calendar', () => {
     const v = venue({
       venueName: 'light2',
       practitioners: [jenny],
@@ -353,7 +353,7 @@ describe('linkedVenueColumns', () => {
     expect(cols[1]!.openRanges).toEqual([{ start: 540, end: 1020 }]);
   });
 
-  it('keeps one venue column when the partner lists no calendars at all', () => {
+  it('keeps one business column when the partner lists no calendars at all', () => {
     const cols = linkedVenueColumns(venue({ practitioners: [], bookings: [booking()] }), DATE);
     expect(cols).toHaveLength(1);
     expect(cols[0]).toMatchObject({
@@ -367,7 +367,7 @@ describe('linkedVenueColumns', () => {
 });
 
 describe('linkedScheduleBlocksForColumn', () => {
-  it('gives a calendar its own blocks and the venue-level column the unassigned ones', () => {
+  it('gives a calendar its own blocks and the business-level column the unassigned ones', () => {
     const v = venue({
       practitioners: [practitioner({ id: 'p1', name: 'Jenny' })],
       scheduleBlocks: [
@@ -402,14 +402,21 @@ describe('linkedSharedCalendars / linkedWeekHeading', () => {
     ).toEqual(['Jenny', 'Idle']);
   });
 
-  it('heads a single shared calendar with its name, the venue under it', () => {
+  it('heads a single shared calendar with its name, the business under it', () => {
     expect(linkedWeekHeading(venue({ venueName: 'light2', practitioners: [jenny] }))).toEqual({
       title: 'Jenny',
       caption: 'light2',
     });
   });
 
-  it('keeps the venue name over several calendars, listing them, and alone over none', () => {
+  it('names Jenny once: a member told apart by its people reads by its business name under her (2026-11-22)', () => {
+    expect(linkedWeekHeading(venue({ venueName: 'Aura Hair Studio (Jenny)', practitioners: [jenny] }))).toEqual({
+      title: 'Jenny',
+      caption: 'Aura Hair Studio',
+    });
+  });
+
+  it('keeps the business name over several calendars, listing them, and alone over none', () => {
     expect(linkedWeekHeading(venue({ venueName: 'light2', practitioners: [jenny, sam] }))).toEqual({
       title: 'light2',
       caption: 'Jenny, Sam',
@@ -442,7 +449,7 @@ describe('linkedSwitcherEntries / linkedSwitcherEntryCount', () => {
     expect(entries.map((e) => linkedSwitcherEntryCount(e, DATE))).toEqual([2, 0]);
   });
 
-  it('carries the venue on a name shared with an own calendar or another partner', () => {
+  it('carries the business on a name shared with an own calendar or another partner', () => {
     const a = venue({ venueId: 'v1', venueName: 'light2', practitioners: [jenny] });
     const b = venue({
       venueId: 'v2',
@@ -456,7 +463,7 @@ describe('linkedSwitcherEntries / linkedSwitcherEntryCount', () => {
     ]);
   });
 
-  it('keeps one whole-venue chip for a partner that lists no calendars', () => {
+  it('keeps one whole-business chip for a partner that lists no calendars', () => {
     const v = venue({ venueName: 'light2', practitioners: [], bookings: [booking()] });
     const entries = linkedSwitcherEntries([v], []);
     expect(entries).toHaveLength(1);
@@ -488,14 +495,14 @@ describe('narrowLinkedVenueToCalendar', () => {
 describe('linkedDayHeading', () => {
   const light2 = venue({ venueName: 'light2' });
 
-  it("names the calendar, the venue under it, when the day has one calendar column", () => {
+  it("names the calendar, the business under it, when the day has one calendar column", () => {
     expect(linkedDayHeading(light2, [{ practitionerId: 'p1', name: 'Jenny' }])).toEqual({
       title: 'Jenny',
       caption: 'light2',
     });
   });
 
-  it('drops the venue caption when the calendar is named after the venue', () => {
+  it('drops the business caption when the calendar is named after the business', () => {
     const light3 = venue({ venueName: 'light 3' });
     expect(linkedDayHeading(light3, [{ practitionerId: 'p1', name: 'Light 3 ' }])).toEqual({
       title: 'Light 3 ',
@@ -507,7 +514,7 @@ describe('linkedDayHeading', () => {
     ).toEqual({ title: 'light 3' });
   });
 
-  it('names the venue over several columns, and over the venue-level column alone', () => {
+  it('names the business over several columns, and over the business-level column alone', () => {
     expect(
       linkedDayHeading(light2, [
         { practitionerId: 'p1', name: 'Jenny' },
@@ -577,7 +584,7 @@ describe('linkedColumnClosureInputs (web buildLinkedColumnScheduleClosureBlocks)
   });
   const column = (v: LinkedVenueCalendar) => linkedVenueColumns(v, DATE)[0]!;
 
-  it("resolves the partner's own venue hours and calendar bands when the feed carries them", () => {
+  it("resolves the partner's own business hours and calendar bands when the feed carries them", () => {
     const v = venue({ practitioners: [jenny], hours: hours as LinkedVenueCalendar['hours'] });
     const inputs = linkedColumnClosureInputs(v, column(v), DATE);
     expect(inputs.source).toBe('resolved');
@@ -610,7 +617,7 @@ describe('linkedColumnClosureInputs (web buildLinkedColumnScheduleClosureBlocks)
       keyPrefix: 'linked:v1:p1',
     });
     expect(bands.map((e) => [e.block.blockType, e.block.label])).toEqual([
-      ['linked_business_closed', 'Venue closed 18:00 to 19:00'],
+      ['linked_business_closed', 'Business closed 18:00 to 19:00'],
       ['linked_calendar_closed', 'Jenny unavailable 09:00 to 10:00'],
       ['linked_both_closed', 'Jenny closed 08:00 to 09:00'],
       ['linked_both_closed', 'Jenny closed 19:00 to 20:00'],
@@ -618,7 +625,7 @@ describe('linkedColumnClosureInputs (web buildLinkedColumnScheduleClosureBlocks)
     ]);
   });
 
-  it("follows a partner venue's closure for the day", () => {
+  it("follows a partner business's closure for the day", () => {
     const closedToday = {
       ...hours,
       venueWideBlocks: [{ id: 'c1', block_type: 'closed', date_start: DATE, date_end: DATE }],
@@ -643,7 +650,7 @@ describe('linkedColumnClosureInputs (web buildLinkedColumnScheduleClosureBlocks)
     }
   });
 
-  it('keeps the venue-level column, which names no calendar, on the template', () => {
+  it('keeps the business-level column, which names no calendar, on the template', () => {
     const v = venue({ practitioners: [jenny], hours: hours as LinkedVenueCalendar['hours'] });
     expect(
       linkedColumnClosureInputs(v, { practitionerId: null, openRanges: [], hasTemplate: true }, DATE).source,
@@ -653,7 +660,7 @@ describe('linkedColumnClosureInputs (web buildLinkedColumnScheduleClosureBlocks)
 
 describe('linked copy', () => {
   it('carries the web wording', () => {
-    expect(LINKED_MOVE_SAME_VENUE_ERROR).toBe('A booking can only be moved within the same venue.');
+    expect(LINKED_MOVE_SAME_VENUE_ERROR).toBe('A booking can only be moved within the same business.');
     expect(linkedCreateNotGrantedMessage('light2')).toBe(
       'light2 hasn’t granted permission to create bookings on this calendar.',
     );

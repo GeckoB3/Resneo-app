@@ -81,19 +81,19 @@ beforeEach(() => {
 });
 
 describe('JoinNextSteps', () => {
-  it('connects Stripe through the app, and turns the venue\'s forms on', async () => {
+  it('connects Stripe through the app, and turns the business\'s forms on', async () => {
     mockConnect.mockImplementation((_vars: unknown, options: { onSuccess: (res: { url: string }) => void }) =>
       options.onSuccess({ url: 'https://connect.stripe.com/setup/abc' }),
     );
     mockOpenStripe.mockResolvedValue('returned');
     mockFlags.mockImplementation((_patch: unknown, options: { onSuccess: () => void }) => options.onSuccess());
     await render(<JoinNextSteps preview={needsBoth} draft={draftFor()} />);
-    expect(screen.getByText('Before guests can book every service with you')).toBeTruthy();
+    expect(screen.getByText('Before clients can book every service with you')).toBeTruthy();
     expect(
-      screen.getByText('2 services on the page take a deposit or payment online. Connect Stripe so guests can book them with you.'),
+      screen.getByText('2 services on the page take a deposit or payment online. Connect Stripe so clients can book them with you.'),
     ).toBeTruthy();
     expect(
-      screen.getByText('1 service on the page asks for a form, and your forms are off. Turn them on so guests can book it with you.'),
+      screen.getByText('1 service on the page asks for a form, and your forms are off. Turn them on so clients can book it with you.'),
     ).toBeTruthy();
 
     await act(async () => {
@@ -123,9 +123,9 @@ describe('JoinNextSteps', () => {
     ).toBeTruthy();
   });
 
-  it('leaves forms out when the venue ticked to turn them on as it joined, and shows nothing when nothing is in the way', async () => {
+  it('leaves forms out when the business ticked to turn them on as it joined, and shows nothing when nothing is in the way', async () => {
     await render(<JoinNextSteps preview={{ ...needsBoth, warnings: { ...needsBoth.warnings, no_stripe_paid_services: 0 } }} draft={draftFor(true)} />);
-    expect(screen.queryByText('Before guests can book every service with you')).toBeNull();
+    expect(screen.queryByText('Before clients can book every service with you')).toBeNull();
   });
 });
 
@@ -148,7 +148,7 @@ describe('JoinCollectiveSheet after joining', () => {
       fireEvent.press(screen.getByRole('button', { name: 'Next' }));
     });
     await act(async () => {
-      fireEvent.press(screen.getByText(/^I understand that guests who visit Light 3/));
+      fireEvent.press(screen.getByText(/^I understand that clients who visit Light 3/));
     });
     await act(async () => {
       fireEvent.press(screen.getByRole('button', { name: 'Join Northside' }));
@@ -226,7 +226,7 @@ describe('ReviewLinkRequestSheet, accepted and joined', () => {
       fireEvent.press(screen.getByRole('button', { name: 'Accept and join Northside' }));
     });
     expect(screen.getByText('You are linked with Bright Cuts and part of Northside')).toBeTruthy();
-    expect(screen.getByText('Before guests can book every service with you')).toBeTruthy();
+    expect(screen.getByText('Before clients can book every service with you')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Connect Stripe' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Turn on' })).toBeTruthy();
   });

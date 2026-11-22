@@ -380,14 +380,14 @@ function OwnerAlertCard({
 }) {
   const trimmedVenueEmail = venueEmail?.trim() || '';
   const helper = trimmedVenueEmail
-    ? `Leave blank to use your venue email (${trimmedVenueEmail}).`
-    : 'No venue email is set in Profile. Enter an address here to receive alerts.';
+    ? `Leave blank to use your business email (${trimmedVenueEmail}).`
+    : 'No business email is set in Profile. Enter an address here to receive alerts.';
 
   return (
     <Card>
       <Text variant="label">Business notifications</Text>
       <Text variant="caption" tone="muted" style={styles.sectionSub}>
-        Alerts sent to you and your team rather than to guests.
+        Alerts sent to you and your team rather than to clients.
       </Text>
 
       <View style={styles.staffSection}>

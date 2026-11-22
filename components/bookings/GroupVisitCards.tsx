@@ -68,7 +68,7 @@ export function GroupVisitCards({
             <View key={row.id} style={styles.rowMain}>
               <View style={styles.rowText}>
                 <Text variant="bodySmall" numberOfLines={1}>
-                  {row.person_label?.trim() || row.guest_name || 'Guest'}
+                  {row.person_label?.trim() || row.guest_name || 'Client'}
                 </Text>
                 <Text variant="caption" tone="muted" numberOfLines={1}>
                   {offeringLine(row)}

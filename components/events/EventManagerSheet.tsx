@@ -146,7 +146,7 @@ export function EventManagerSheet({ visible, onClose }: EventManagerSheetProps) 
       onSuccess: () => {
         hapticSuccess();
         setCancelTarget(null);
-        toast.success(`"${event.name}" cancelled. Guests will be notified.`);
+        toast.success(`"${event.name}" cancelled. Clients will be notified.`);
       },
       onError: (e) => {
         hapticWarning();
@@ -217,7 +217,7 @@ export function EventManagerSheet({ visible, onClose }: EventManagerSheetProps) 
               <Text variant="bodySmall" tone="secondary">
                 {linkedCalendarIds.length === 0
                   ? 'Your account is not linked to a calendar yet. Ask an admin to assign at least one calendar before you can create, edit, or delete events.'
-                  : 'You can create, edit, or delete events on the calendars assigned to you. Only admins can cancel an event with guest notifications.'}
+                  : 'You can create, edit, or delete events on the calendars assigned to you. Only admins can cancel an event with client notifications.'}
               </Text>
             ) : null}
             {canCreateEvents ? (
@@ -313,7 +313,7 @@ export function EventManagerSheet({ visible, onClose }: EventManagerSheetProps) 
                     ) : null}
                     {isAdmin ? (
                       <Button
-                        label="Cancel event & notify guests"
+                        label="Cancel event & notify clients"
                         variant="ghost"
                         size="sm"
                         onPress={() => setCancelTarget(event)}
@@ -363,7 +363,7 @@ export function EventManagerSheet({ visible, onClose }: EventManagerSheetProps) 
           <Text variant="subheading">Cancel event</Text>
           <Text variant="bodySmall" tone="secondary">
             Cancel &quot;{cancelTarget?.name}&quot;? All active bookings will be cancelled and
-            refunded per your policy, and guests will be notified. This cannot be undone.
+            refunded per your policy, and clients will be notified. This cannot be undone.
           </Text>
           <View style={styles.actionsRow}>
             <Button

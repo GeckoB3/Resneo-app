@@ -262,12 +262,12 @@ export function BookingNotesSection({
       ) : null}
 
       <InlineEditableNote
-        label={isTable ? 'Guest requests' : 'Booking notes'}
+        label={isTable ? 'Client requests' : 'Booking notes'}
         value={booking.special_requests}
         placeholder={
           isTable
             ? 'e.g. Accessibility, timing, or seating preferences'
-            : 'Notes, comments or requests the guest entered when booking'
+            : 'Notes, comments or requests the client entered when booking'
         }
         multiline
         disabled={bookingFieldsReadOnly}
@@ -277,7 +277,7 @@ export function BookingNotesSection({
       <InlineEditableNote
         label="Staff notes for this booking"
         value={booking.internal_notes}
-        placeholder="Internal notes (not visible to the guest)"
+        placeholder="Internal notes (not visible to the client)"
         multiline
         disabled={bookingFieldsReadOnly}
         onSave={saveBookingField('internal_notes')}

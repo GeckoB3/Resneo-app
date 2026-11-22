@@ -97,13 +97,13 @@ export const en = {
       dangerZone: 'Danger zone',
       title: 'Delete account',
       description:
-        'Permanently delete your ResNeo account. This ends your access and anonymises your personal data at venues per GDPR retention rules.',
+        'Permanently delete your ResNeo account. This ends your access and anonymises your personal data at businesses per GDPR retention rules.',
       cta: 'Delete account',
 
       // Type-to-confirm sheet.
       sheetTitle: 'Delete your account',
       sheetIntro:
-        'This requests a 30-day grace period, after which your account and personal data are permanently deleted and your linked guest records at venues are anonymised. This cannot be undone once the grace period ends.',
+        'This requests a 30-day grace period, after which your account and personal data are permanently deleted and your linked client records at businesses are anonymised. This cannot be undone once the grace period ends.',
       // `{phrase}` is interpolated with `confirmPhrase` so the matched text and the
       // on-screen instruction can never drift apart.
       confirmPhrase: 'DELETE MY ACCOUNT',

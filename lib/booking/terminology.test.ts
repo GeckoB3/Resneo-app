@@ -143,9 +143,9 @@ describe('mergeVenueTerminology', () => {
 });
 
 describe('partySizeLabel', () => {
-  it('uses "guest(s)" for appointments (non table reservation)', () => {
-    expect(partySizeLabel(1, { isAppointment: true })).toBe('1 guest');
-    expect(partySizeLabel(3, { isAppointment: true })).toBe('3 guests');
+  it('uses "person/people" for appointments (non table reservation), never "guest"', () => {
+    expect(partySizeLabel(1, { isAppointment: true })).toBe('1 person');
+    expect(partySizeLabel(3, { isAppointment: true })).toBe('3 people');
   });
 
   it('uses "cover(s)" for non-appointment (dining) bookings', () => {

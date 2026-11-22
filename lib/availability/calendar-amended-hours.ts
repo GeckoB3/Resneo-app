@@ -227,10 +227,10 @@ export function amendedHoursVenueNote(args: {
   }
   const parts: string[] = [];
   if (closedDates.length === 1) {
-    parts.push(`Your venue is closed on ${formatDayHeading(closedDates[0]!)}, so this calendar is not offered for booking that day.`);
+    parts.push(`Your business is closed on ${formatDayHeading(closedDates[0]!)}, so this calendar is not offered for booking that day.`);
   } else if (closedDates.length > 1) {
     parts.push(
-      `Your venue is closed on ${closedDates.length} of these dates (first ${formatDayHeading(closedDates[0]!)}), so this calendar is not offered for booking on them.`,
+      `Your business is closed on ${closedDates.length} of these dates (first ${formatDayHeading(closedDates[0]!)}), so this calendar is not offered for booking on them.`,
     );
   }
   if (outside) {

@@ -24,7 +24,7 @@ export function CombinedPageAboutSection({ collective }: { collective: Collectiv
   const contactLinks = useContactLinks();
   const router = useRouter();
   const host =
-    collective.members.find((m) => m.venueId === collective.hostVenueId)?.venueName ?? 'the host venue';
+    collective.members.find((m) => m.venueId === collective.hostVenueId)?.venueName ?? 'the host business';
   const contact = collective.hostContact ?? null;
   const website = contact?.websiteUrl ?? null;
   const websiteHref = website ? (/^https?:\/\//i.test(website) ? website : `https://${website}`) : null;
@@ -77,7 +77,7 @@ export function CombinedPageAboutSection({ collective }: { collective: Collectiv
           )}
         </View>
         <Text variant="bodySmall" tone="secondary">
-          {`${host} sets the phone, website and address under Settings, Venue profile, and the opening hours under Settings, Business hours. There is no separate copy for the combined page, so a change there shows on the page straight away.${collective.isHost ? '' : ` To change them, ask ${host}.`}`}
+          {`${host} sets the phone, website and address under Settings, Business profile, and the opening hours under Settings, Business hours. There is no separate copy for the combined page, so a change there shows on the page straight away.${collective.isHost ? '' : ` To change them, ask ${host}.`}`}
         </Text>
         {collective.isHost ? (
           <View style={styles.actions}>
@@ -103,11 +103,11 @@ export function CombinedPageAboutSection({ collective }: { collective: Collectiv
           The opening hours on the combined page are information for customers. They do not decide
           availability. Each linked account sets its own business hours, closures and calendar
           hours for its own people, and the combined page offers a time on a calendar only when
-          that calendar’s own account says it is free. So a calendar at another venue can be open
+          that calendar’s own account says it is free. So a calendar at another business can be open
           outside the hours shown here, or closed inside them.
         </Text>
         <Text variant="bodySmall" tone="secondary">
-          {`Keep your own venue’s hours right under Business hours, and each person’s hours under Availability, since those are what bookings into your calendars follow. If the venues keep different hours, the header cannot match every calendar: ${host}’s business hours are the ones to set to describe the group as a whole.`}
+          {`Keep your own business’s hours right under Business hours, and each person’s hours under Availability, since those are what bookings into your calendars follow. If the businesses keep different hours, the header cannot match every calendar: ${host}’s business hours are the ones to set to describe the group as a whole.`}
         </Text>
       </Card>
     </View>

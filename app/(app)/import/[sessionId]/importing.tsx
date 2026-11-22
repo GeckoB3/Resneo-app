@@ -244,7 +244,7 @@ function ImportingStep({ sessionId }: { sessionId: string }) {
             <View style={importStyles.stack}>
               <Text variant="subheading">This import has not started yet</Text>
               <Text variant="bodySmall" tone="secondary">
-                Nothing has been added to your venue. An import only starts when you press Review and approve on the
+                Nothing has been added to your business. An import only starts when you press Review and approve on the
                 Validate step, then Approve and start import.
               </Text>
               <Button label={back.label} onPress={() => router.replace(importStepRoute(sessionId, back.step))} />

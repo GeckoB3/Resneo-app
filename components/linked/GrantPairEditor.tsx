@@ -39,7 +39,7 @@ export function GrantPairEditor({
     <View style={styles.container}>
       <GrantEditor
         label={`What ${otherVenueName} can do with your data`}
-        hint="This is the access your venue grants."
+        hint="This is the access your business grants."
         revenueNote={`${otherVenueName} also sees your booking reports.`}
         value={mine}
         onChange={onChangeMine}
@@ -48,7 +48,7 @@ export function GrantPairEditor({
       />
       <GrantEditor
         label={`What you can do with ${otherVenueName}'s data`}
-        hint="This is the access you are asking the other venue to grant."
+        hint="This is the access you are asking the other business to grant."
         revenueNote={`You also see ${otherVenueName}'s booking reports.`}
         value={theirs}
         onChange={onChangeTheirs}

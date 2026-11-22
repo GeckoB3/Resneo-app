@@ -194,7 +194,7 @@ export function GuestEmailNotice({
         </Text>
         <View style={styles.promptButtons}>
           {onUseDifferent ? (
-            <Button label="Use a different email for guests" size="sm" onPress={onUseDifferent} />
+            <Button label="Use a different email for clients" size="sm" onPress={onUseDifferent} />
           ) : null}
           <Button label="Show it anyway" size="sm" variant="secondary" onPress={onAccept} />
           <Button label="Not now" size="sm" variant="ghost" onPress={onCancel} />
@@ -206,10 +206,10 @@ export function GuestEmailNotice({
   return (
     <View testID="guest-email-line" style={styles.summary}>
       <Text variant="caption" tone="secondary">
-        {`Guests see ${source.address ?? 'no email yet'}.${isLoginEmail(source.address, source.loginEmails) ? ' This is the address you sign in with.' : ''}`}
+        {`Clients see ${source.address ?? 'no email yet'}.${isLoginEmail(source.address, source.loginEmails) ? ' This is the address you sign in with.' : ''}`}
       </Text>
       {onUseDifferent ? (
-        <Button label="Use a different email for guests" size="sm" variant="ghost" onPress={onUseDifferent} />
+        <Button label="Use a different email for clients" size="sm" variant="ghost" onPress={onUseDifferent} />
       ) : null}
     </View>
   );
@@ -246,9 +246,9 @@ export function ContactDetailsSection({
         {description}
       </Text>
       <ContactDetailsSummary values={values} onEdit={onEdit} />
-      <Text variant="label">What guests see on this page</Text>
+      <Text variant="label">What clients see on this page</Text>
       <Text variant="caption" tone="muted">
-        Confirmations, emails and receipts still include your address, so guests know where to go.
+        Confirmations, emails and receipts still include your address, so clients know where to go.
       </Text>
       <ContactDisplayGrid value={display} onChange={gate.onChange} aboutTabOff={aboutTabOff} />
       <GuestEmailNotice

@@ -33,7 +33,7 @@ const home = (over: Partial<CustomerHome> = {}) =>
   }) as unknown as CustomerHome;
 
 describe('an account with history but nothing booked', () => {
-  it('names the venue and offers a way back', async () => {
+  it('names the business and offers a way back', async () => {
     const { getByText } = await render(<VenueHistorySection home={home()} />);
     expect(getByText('The Studio')).toBeTruthy();
     expect(getByText('Book again')).toBeTruthy();
@@ -90,9 +90,9 @@ describe('the money label, which must never say "spent"', () => {
 });
 
 describe('nothing is silently cut', () => {
-  it('says how many venues are not shown', async () => {
+  it('says how many businesses are not shown', async () => {
     const { getByText } = await render(<VenueHistorySection home={home({ venue_history_hidden: 2 } as never)} />);
-    expect(getByText(/2 more venues are not shown/i)).toBeTruthy();
+    expect(getByText(/2 more businesses are not shown/i)).toBeTruthy();
   });
 
   it('renders nothing at all for a genuinely new account', async () => {

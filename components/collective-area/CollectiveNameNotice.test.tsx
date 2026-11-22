@@ -85,7 +85,7 @@ describe('CollectiveNameNotice', () => {
     const { onOpenVenues } = await renderNotice({ isHost: true, myVenueId: 'aura' });
     expect(
       screen.getByText(
-        'More than one business in Holywood Collective is called "Aura Hair Studio". Give them names your staff will recognise, so nobody books the wrong one.',
+        'More than one business in Holywood Collective is called "Aura Hair Studio". Give them names clients and staff will recognise, so nobody books the wrong one.',
       ),
     ).toBeTruthy();
     fireEvent.press(screen.getByText('Name them'));

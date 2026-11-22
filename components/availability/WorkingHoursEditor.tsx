@@ -189,7 +189,7 @@ export function WorkingHoursEditor({
             ]}>
             <Text variant="caption" tone="secondary" style={styles.infoText}>
               These hours are when this calendar can take bookings, but a time is only bookable
-              where it also falls within your venue&apos;s business hours. To open bookings earlier
+              where it also falls within your business hours. To open bookings earlier
               or later, widen Settings → Business hours as well.
             </Text>
           </View>

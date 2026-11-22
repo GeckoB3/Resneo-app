@@ -91,8 +91,8 @@ export default function LinkedVenueDetailScreen() {
   if (!staffQuery.isLoading && !isAdmin) {
     return (
       <Screen>
-        <Stack.Screen options={{ title: 'Linked venue' }} />
-        <EmptyState title="Admins only" message="Linked venues are managed by venue admins." />
+        <Stack.Screen options={{ title: 'Linked business' }} />
+        <EmptyState title="Admins only" message="Linked businesses are managed by business admins." />
       </Screen>
     );
   }
@@ -100,7 +100,7 @@ export default function LinkedVenueDetailScreen() {
   if (query.isLoading || staffQuery.isLoading) {
     return (
       <Screen scroll>
-        <Stack.Screen options={{ title: 'Linked venue' }} />
+        <Stack.Screen options={{ title: 'Linked business' }} />
         <DetailSkeleton />
       </Screen>
     );
@@ -109,7 +109,7 @@ export default function LinkedVenueDetailScreen() {
   if (query.isError) {
     return (
       <Screen>
-        <Stack.Screen options={{ title: 'Linked venue' }} />
+        <Stack.Screen options={{ title: 'Linked business' }} />
         <ErrorState
           message={query.error instanceof ApiError ? query.error.message : 'Could not load this link.'}
           onRetry={() => void query.refetch()}
@@ -121,7 +121,7 @@ export default function LinkedVenueDetailScreen() {
   if (!link) {
     return (
       <Screen>
-        <Stack.Screen options={{ title: 'Linked venue' }} />
+        <Stack.Screen options={{ title: 'Linked business' }} />
         <ErrorState message="This link could not be found. It may have been removed." />
       </Screen>
     );
@@ -247,7 +247,7 @@ export default function LinkedVenueDetailScreen() {
 
   return (
     <Screen scroll padded>
-      <Stack.Screen options={{ title: 'Linked venue' }} />
+      <Stack.Screen options={{ title: 'Linked business' }} />
 
       <View style={styles.header}>
         <Text variant="title">{name}</Text>
@@ -422,7 +422,7 @@ export default function LinkedVenueDetailScreen() {
       <ReviewLinkRequestSheet
         link={reviewOpen ? link : null}
         visible={reviewOpen}
-        venueName={query.data?.venue.name ?? 'Your venue'}
+        venueName={query.data?.venue.name ?? 'Your business'}
         myCalendars={myCalendars}
         collective={query.data?.proposedCollectives?.[link.id] ?? null}
         onClose={() => setReviewOpen(false)}
@@ -438,7 +438,7 @@ export default function LinkedVenueDetailScreen() {
       <ConfirmSheet
         visible={unlinkOpen}
         title={`Unlink from ${name}?`}
-        message="Cross-venue access stops immediately for both venues. To link again later, send a new request from either venue."
+        message="Cross-business access stops immediately for both businesses. To link again later, send a new request from either business."
         confirmLabel="Unlink"
         cancelLabel="Cancel"
         destructive
@@ -500,7 +500,7 @@ export default function LinkedVenueDetailScreen() {
       <ConfirmSheet
         visible={declineChangeOpen}
         title={`Decline ${name}’s change?`}
-        message="The proposed permissions won’t be applied and your current access stays as it is. The other venue can propose a new change later."
+        message="The proposed permissions won’t be applied and your current access stays as it is. The other business can propose a new change later."
         confirmLabel="Decline change"
         cancelLabel="Keep reviewing"
         destructive
@@ -511,7 +511,7 @@ export default function LinkedVenueDetailScreen() {
 
       <Sheet visible={auditOpen} onClose={() => setAuditOpen(false)} fill maxHeight="92%">
         <View style={styles.auditHeader}>
-          <Text variant="subheading">Cross-venue audit log</Text>
+          <Text variant="subheading">Cross-business audit log</Text>
         </View>
         {auditOpen ? <LinkAuditView linkId={link.id} otherVenueName={name} /> : null}
       </Sheet>

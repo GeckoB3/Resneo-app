@@ -81,7 +81,7 @@ export function GuestMessageSheet({ target, onSend, sending = false, onClose }: 
         <View style={styles.body}>
           <View style={styles.headerBlock}>
             <Text variant="overline" tone="muted">
-              Message guest
+              Message client
             </Text>
             <Text variant="title">{target.guestName}</Text>
           </View>
@@ -97,7 +97,7 @@ export function GuestMessageSheet({ target, onSend, sending = false, onClose }: 
             label="Message"
             value={message}
             onChangeText={setMessage}
-            placeholder="Write a short message to the guest…"
+            placeholder="Write a short message to the client…"
             multiline
             numberOfLines={5}
             maxLength={2000}

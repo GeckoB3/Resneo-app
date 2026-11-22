@@ -193,7 +193,7 @@ export function BaselineMetricsCard({ metrics, snapshot }: BaselineMetricsCardPr
       ? 'No appointments reached Started or Completed in this period yet, so a no-show rate cannot be calculated.'
       : metrics.no_show.no_show_count === 0
         ? `No no-shows among ${metrics.no_show.eligible_count} appointment${metrics.no_show.eligible_count === 1 ? '' : 's'} that were due to take place (walk-ins are excluded).`
-        : `${metrics.no_show.no_show_count} guest${metrics.no_show.no_show_count === 1 ? '' : 's'} did not arrive out of ${metrics.no_show.eligible_count} appointments that were due to take place (walk-ins excluded).`;
+        : `${metrics.no_show.no_show_count} client${metrics.no_show.no_show_count === 1 ? '' : 's'} did not arrive out of ${metrics.no_show.eligible_count} appointments that were due to take place (walk-ins excluded).`;
 
   const modifications = metrics.reschedule.modifications_count;
   const guestMoves = metrics.reschedule.guest_self_reschedule_count;
@@ -208,12 +208,12 @@ export function BaselineMetricsCard({ metrics, snapshot }: BaselineMetricsCardPr
     modifications === 0
       ? 'No appointment date or time changes were recorded in this period.'
       : knownMoves === 0
-        ? `${modifications} time change${modifications === 1 ? '' : 's'} in this period; none were recorded as guest or staff (older system data).`
+        ? `${modifications} time change${modifications === 1 ? '' : 's'} in this period; none were recorded as client or staff (older system data).`
         : [
             `${modifications} time change${modifications === 1 ? '' : 's'} in this period.`,
-            `Among ${knownMoves} where we know who moved it: ${guestMoves} by the guest online, ${staffMoves} by your team.`,
+            `Among ${knownMoves} where we know who moved it: ${guestMoves} by the client online, ${staffMoves} by your team.`,
             otherMoves > 0
-              ? `${otherMoves} older change${otherMoves === 1 ? '' : 's'} not attributed to guest or staff.`
+              ? `${otherMoves} older change${otherMoves === 1 ? '' : 's'} not attributed to client or staff.`
               : null,
           ]
             .filter(Boolean)
@@ -226,8 +226,8 @@ export function BaselineMetricsCard({ metrics, snapshot }: BaselineMetricsCardPr
     modifications === 0
       ? 'No appointment moves to measure.'
       : metrics.reschedule.modification_notifications_count === 0
-        ? `None of the ${modifications} move${modifications === 1 ? '' : 's'} triggered an automatic email or text to the guest. Staff moves often send an update when configured in Settings.`
-        : `${metrics.reschedule.modification_notifications_count} of ${modifications} move${modifications === 1 ? '' : 's'} had an email or text sent to the guest (usually after your team changed the time).`;
+        ? `None of the ${modifications} move${modifications === 1 ? '' : 's'} triggered an automatic email or text to the client. Staff moves often send an update when configured in Settings.`
+        : `${metrics.reschedule.modification_notifications_count} of ${modifications} move${modifications === 1 ? '' : 's'} had an email or text sent to the client (usually after your team changed the time).`;
 
   const rebookValue =
     metrics.cancellation_rebook.cancellations_with_guest === 0
@@ -236,7 +236,7 @@ export function BaselineMetricsCard({ metrics, snapshot }: BaselineMetricsCardPr
 
   const rebookDetail =
     metrics.cancellation_rebook.cancellations_with_guest === 0
-      ? 'No cancelled appointments with a guest profile in this period.'
+      ? 'No cancelled appointments with a client profile in this period.'
       : metrics.cancellation_rebook.rebooked_within_7d === 0
         ? `None of ${metrics.cancellation_rebook.cancellations_with_guest} cancellation${metrics.cancellation_rebook.cancellations_with_guest === 1 ? '' : 's'} led to another appointment within 7 days.`
         : `${metrics.cancellation_rebook.rebooked_within_7d} of ${metrics.cancellation_rebook.cancellations_with_guest} cancellation${metrics.cancellation_rebook.cancellations_with_guest === 1 ? '' : 's'} were followed by a new appointment within 7 days.`;
@@ -248,8 +248,8 @@ export function BaselineMetricsCard({ metrics, snapshot }: BaselineMetricsCardPr
 
   const gapDetail =
     metrics.cancellation_rebook.rebooked_within_7d === 0
-      ? 'When a guest books again after cancelling, the typical wait will appear here.'
-      : `Median time from cancellation to the guest’s next appointment. Three quarters rebook within ${formatHours(metrics.cancellation_rebook.p75_rebook_gap_hours)}.`;
+      ? 'When a client books again after cancelling, the typical wait will appear here.'
+      : `Median time from cancellation to the client’s next appointment. Three quarters rebook within ${formatHours(metrics.cancellation_rebook.p75_rebook_gap_hours)}.`;
 
   const staffSamples = metrics.staff_time_to_book.sample_count;
   const staffValue =
@@ -262,7 +262,7 @@ export function BaselineMetricsCard({ metrics, snapshot }: BaselineMetricsCardPr
     staffSamples === 0
       ? 'Recorded when your team creates an appointment in the dashboard (from opening the form to saving). More samples appear as staff use that flow.'
       : returningCount > 0
-        ? `Median across ${staffSamples} staff-created appointment${staffSamples === 1 ? '' : 's'}. Returning guests: typical ${formatDurationFriendly(returningMedian)} (${returningCount} booking${returningCount === 1 ? '' : 's'}).`
+        ? `Median across ${staffSamples} staff-created appointment${staffSamples === 1 ? '' : 's'}. Returning clients: typical ${formatDurationFriendly(returningMedian)} (${returningCount} booking${returningCount === 1 ? '' : 's'}).`
         : `Median across ${staffSamples} appointment${staffSamples === 1 ? '' : 's'} created by staff in this period.`;
 
   return (
@@ -309,9 +309,9 @@ export function BaselineMetricsCard({ metrics, snapshot }: BaselineMetricsCardPr
 
         <MetricGroup
           heading="Reschedules"
-          intro="Appointments moved to another date or time. Percentages below use only moves where the system recorded guest vs staff (older moves may be listed separately).">
+          intro="Appointments moved to another date or time. Percentages below use only moves where the system recorded client vs staff (older moves may be listed separately).">
           <InsightMetricCard
-            title="Guest moved online (share of known moves)"
+            title="Client moved online (share of known moves)"
             value={selfServeValue}
             detail={selfServeDetail}
             tone="emerald"
@@ -324,7 +324,7 @@ export function BaselineMetricsCard({ metrics, snapshot }: BaselineMetricsCardPr
             )}
           />
           <InsightMetricCard
-            title="Guest notified after a move"
+            title="Client notified after a move"
             value={messagingValue}
             detail={messagingDetail}
             tone="brand"
@@ -340,7 +340,7 @@ export function BaselineMetricsCard({ metrics, snapshot }: BaselineMetricsCardPr
 
         <MetricGroup
           heading="After a cancellation"
-          intro="Cancelled appointments with a guest on file, whether the same guest booked again within seven days.">
+          intro="Cancelled appointments with a client on file, whether the same client booked again within seven days.">
           <InsightMetricCard
             title="Rebooked within 7 days"
             value={rebookValue}
@@ -390,7 +390,7 @@ export function BaselineMetricsCard({ metrics, snapshot }: BaselineMetricsCardPr
 
       <Text variant="caption" tone="muted" style={styles.footnote}>
         Figures follow the report dates at the top of this page. A saved reference snapshot (updated
-        weekly) lets you compare against an earlier period. Guest self-reschedule and deposit rules
+        weekly) lets you compare against an earlier period. Client self-reschedule and deposit rules
         in Settings can improve attendance and cut manual rescheduling.
       </Text>
     </Card>

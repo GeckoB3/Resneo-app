@@ -56,7 +56,7 @@ export function CoursesSection() {
         kind="course"
         products={forSale}
         venues={catalogVenues}
-        note="A course is paid for once and covers every session in it. Any refund for leaving early is worked out by the venue."
+        note="A course is paid for once and covers every session in it. Any refund for leaving early is worked out by the business."
       />
       </View>
     );
@@ -91,7 +91,7 @@ export function CoursesSection() {
         kind="course"
         products={forSale}
         venues={catalogVenues}
-        note="A course is paid for once and covers every session in it. Any refund for leaving early is worked out by the venue."
+        note="A course is paid for once and covers every session in it. Any refund for leaving early is worked out by the business."
       />
 
       <ConfirmSheet
@@ -112,7 +112,7 @@ export function CoursesSection() {
             { enrollmentId: target.id },
             {
               onSuccess: () => toast.success('You have left the course.'),
-              onError: () => toast.error('Could not leave. Please ring the venue.'),
+              onError: () => toast.error('Could not leave. Please ring the business.'),
             },
           );
         }}

@@ -35,7 +35,7 @@ const HEX_COLOUR_RE = /^#[0-9a-fA-F]{6}$/;
  * hold (spec 6.2) is a standard option; it is no longer gated by a venue flag.
  */
 const PAYMENT_OPTIONS: { value: ClassPaymentRequirement; label: string; hint: string }[] = [
-  { value: 'none', label: 'No online payment', hint: 'Pay at the venue or arrange separately' },
+  { value: 'none', label: 'No online payment', hint: 'Pay at the business or arrange separately' },
   { value: 'deposit', label: 'Custom deposit', hint: 'Fixed amount paid online when booking' },
   { value: 'full_payment', label: 'Pay in full online', hint: 'Full price taken at booking' },
   {
@@ -386,7 +386,7 @@ export function ClassTypeEditorSheet({
           </View>
 
           <View style={styles.switchRow}>
-            <Text variant="bodyMedium">Active (bookable by guests)</Text>
+            <Text variant="bodyMedium">Active (bookable by clients)</Text>
             <Switch value={isActive} onValueChange={setIsActive} />
           </View>
 
@@ -420,7 +420,7 @@ export function ClassTypeEditorSheet({
             <Text variant="bodySmall" tone={isAdmin ? 'secondary' : 'danger'}>
               {isAdmin
                 ? 'No calendar columns yet. Add one below to place this class on the calendar.'
-                : 'No calendar columns are available. A venue admin can add one.'}
+                : 'No calendar columns are available. A business admin can add one.'}
             </Text>
           ) : (
             <View style={styles.columnWrap}>
@@ -506,7 +506,7 @@ export function ClassTypeEditorSheet({
           ) : null}
           <Input
             label="Instructor label (optional)"
-            helper="Shown to guests instead of the calendar name."
+            helper="Shown to clients instead of the calendar name."
             value={instructorName}
             onChangeText={setInstructorName}
             maxLength={200}
@@ -603,7 +603,7 @@ export function ClassTypeEditorSheet({
           {paymentReq !== 'none' && !stripeConnected ? (
             <Text variant="caption" color={colors.warning}>
               Connect Stripe (Plan &amp; payments) to take online payments. Bookings will fall back
-              to pay-at-venue until then.
+              to paying at the business until then.
             </Text>
           ) : null}
 

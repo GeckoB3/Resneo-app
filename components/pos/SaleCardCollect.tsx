@@ -24,6 +24,7 @@ import { Text } from '@/components/ui/Text';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { newPaymentAttemptId } from '@/lib/payments/attempt-id';
 import { useBluetoothReader } from '@/lib/payments/bluetoothReader';
+import { isReaderUpdateInstalling, READER_BUSY_UPDATING_MESSAGE } from '@/lib/payments/reader-software-update';
 import { buildSupportsTapToPay } from '@/lib/payments/tap-to-pay-build-support';
 import { TAP_TO_PAY_ON_IPHONE, TAP_TO_PAY_SYMBOL, tapToPayButtonLabel } from '@/lib/payments/tap-to-pay-copy';
 import { getTerminalSdk } from '@/lib/payments/terminal-sdk';
@@ -282,6 +283,12 @@ export function CardCollectPanel({
     setJustTurnedOn(false);
     setShowEducation(false);
     try {
+      // The card reader is installing an optional update from Reader settings: say so rather than
+      // fail mid-sale, and keep Tap to Pay from taking the SDK away from the reader mid-install.
+      if (isReaderUpdateInstalling()) {
+        setMessage(READER_BUSY_UPDATING_MESSAGE);
+        return setStageBoth('idle');
+      }
       setStageBoth('preparing');
       if (chosen === 'tap_to_pay') {
         // Only an admin may accept Apple's terms (checklist 3.8); anyone else is told to ask one.

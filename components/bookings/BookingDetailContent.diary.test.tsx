@@ -207,7 +207,7 @@ describe('for a Hidden person', () => {
     ];
     await renderAs(HIDDEN_DIARIES, makeBooking({ calendar_id: 'cal_mine' }));
     await act(async () => {
-      fireEvent.press(screen.getByLabelText('Guest history'));
+      fireEvent.press(screen.getByLabelText('Client history'));
     });
     expect(screen.getByText('Colour')).toBeTruthy();
     expect(screen.getByText('2026-03-02 · With Marcus')).toBeTruthy();
@@ -232,7 +232,7 @@ describe('everything stays as before', () => {
     const row = screen.getByTestId('booking-quick-actions');
     expect(row.props.horizontal).toBeUndefined();
     expect(row.props.style).toMatchObject({ flexWrap: 'wrap' });
-    for (const label of ['Call', 'Email', 'Reschedule', 'Modify', 'Rebook', 'New for guest']) {
+    for (const label of ['Call', 'Email', 'Reschedule', 'Modify', 'Rebook', 'New for client']) {
       expect(screen.getByLabelText(label)).toBeTruthy();
     }
   });

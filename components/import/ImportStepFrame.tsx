@@ -45,7 +45,7 @@ export function ImportStepFrame({
         {header}
         <EmptyState
           title="Only an admin can import data"
-          message="Importing clients and bookings from another system is kept to admins, as it adds and changes records across your venue. Ask an admin to run it, or to make you one."
+          message="Importing clients and bookings from another system is kept to admins, as it adds and changes records across your business. Ask an admin to run it, or to make you one."
         />
       </Screen>
     );

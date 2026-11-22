@@ -7,8 +7,16 @@ import { Text } from '@/components/ui/Text';
 import { getStripePublishableKey } from '@/lib/env';
 import { useBluetoothReader } from '@/lib/payments/bluetoothReader';
 import { READER_STARTING_UP_MESSAGE } from '@/lib/payments/reader-connect-errors';
+import {
+  READER_UPDATE_BATTERY_MESSAGE,
+  READER_UPDATE_DONE_MESSAGE,
+  READER_UPDATE_INSTALLING_MESSAGE,
+  READER_UPDATE_OFFER_MESSAGE,
+  readerBatteryTooLowForUpdate,
+  shouldOfferReaderUpdate,
+} from '@/lib/payments/reader-software-update';
 import { isTerminalSdkAvailable } from '@/lib/payments/terminal-sdk';
-import { spacing } from '@/theme/index';
+import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
 /**
@@ -79,6 +87,13 @@ function ReaderSettingsBody({ onClose }: { onClose: () => void }) {
   const connecting = reader.status === 'connecting';
   const updating = reader.status === 'updating';
   const busy = scanning || connecting || updating || reader.retrying;
+  /** The optional update staff can install from here (READER-8). Never offered in a payment. */
+  const softwareUpdate = reader.softwareUpdate;
+  const installingOptional = reader.updateInstalling;
+  const offerUpdate = reader.connected != null && shouldOfferReaderUpdate(softwareUpdate);
+  const batteryTooLow = readerBatteryTooLowForUpdate(reader.batteryLevel);
+  const percent =
+    installingOptional && reader.updateProgress != null ? Math.round(reader.updateProgress * 100) : null;
 
   return (
     <View style={styles.body}>
@@ -108,7 +123,62 @@ function ReaderSettingsBody({ onClose }: { onClose: () => void }) {
         </View>
       ) : null}
 
-      {updating ? (
+      {installingOptional ? (
+        <View
+          style={styles.status}
+          testID="reader-update-installing"
+          accessibilityRole="progressbar"
+          accessibilityValue={percent != null ? { min: 0, max: 100, now: percent } : undefined}>
+          <Text variant="bodySmall" tone="muted">
+            {READER_UPDATE_INSTALLING_MESSAGE}
+            {percent != null ? ` ${percent}%` : ''}
+          </Text>
+          <View style={[styles.track, { backgroundColor: colors.border }]}>
+            <View
+              style={[styles.fill, { backgroundColor: colors.brand, width: `${percent ?? 0}%` }]}
+            />
+          </View>
+          <Button
+            label="Stop the update"
+            variant="ghost"
+            onPress={() => void reader.cancelUpdate()}
+            fullWidth
+          />
+        </View>
+      ) : reader.connected && softwareUpdate.phase === 'done' ? (
+        <Text variant="bodySmall" tone="success" testID="reader-update-done">
+          {READER_UPDATE_DONE_MESSAGE}
+        </Text>
+      ) : offerUpdate ? (
+        <View style={styles.status} testID="reader-update-offer">
+          {softwareUpdate.phase === 'failed' && softwareUpdate.failure ? (
+            <Text variant="bodySmall" tone="danger">
+              {softwareUpdate.failure}
+            </Text>
+          ) : (
+            <Text variant="bodySmall">{READER_UPDATE_OFFER_MESSAGE}</Text>
+          )}
+          {batteryTooLow && softwareUpdate.failure !== READER_UPDATE_BATTERY_MESSAGE ? (
+            <Text variant="bodySmall" color={colors.warning}>
+              {READER_UPDATE_BATTERY_MESSAGE}
+            </Text>
+          ) : null}
+          <Button
+            label={softwareUpdate.phase === 'failed' ? 'Try again' : 'Install update'}
+            disabled={busy || batteryTooLow}
+            onPress={() => void reader.installUpdate()}
+            fullWidth
+          />
+          <Button
+            label="Not now"
+            variant="ghost"
+            onPress={() => reader.dismissUpdate()}
+            fullWidth
+          />
+        </View>
+      ) : null}
+
+      {updating && !installingOptional ? (
         <Text variant="bodySmall" tone="muted">
           Updating your reader. Keep it nearby and switched on. This can take a few minutes.
           {reader.updateProgress != null
@@ -186,6 +256,15 @@ const styles = StyleSheet.create({
   },
   status: {
     gap: spacing.xs,
+  },
+  track: {
+    height: 6,
+    borderRadius: radius.pill,
+    overflow: 'hidden',
+  },
+  fill: {
+    height: 6,
+    borderRadius: radius.pill,
   },
   buttons: {
     gap: spacing.sm,

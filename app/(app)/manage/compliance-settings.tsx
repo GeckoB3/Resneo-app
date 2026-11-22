@@ -109,7 +109,7 @@ export default function ComplianceSettingsScreen() {
         {header}
         <EmptyState
           title="Admins only"
-          message="Only venue admins can change compliance settings."
+          message="Only business admins can change compliance settings."
         />
       </Screen>
     );
@@ -202,7 +202,7 @@ export default function ComplianceSettingsScreen() {
                   <View style={styles.switchText}>
                     <Text variant="bodyMedium">Enable compliance records</Text>
                     <Text variant="caption" tone="muted">
-                      Turns the compliance dashboard, forms and booking checks on for this venue.
+                      Turns the compliance dashboard, forms and booking checks on for this business.
                     </Text>
                   </View>
                   <Switch

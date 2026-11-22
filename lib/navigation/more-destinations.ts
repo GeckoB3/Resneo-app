@@ -84,7 +84,7 @@ export type Destination = {
 /** Groups rendered as inset lists, in order. (`workspace` → bento; `account` →
  *  hero.) Each is a short, single-purpose section so nothing is a catch-all. */
 export const LIST_GROUPS: { key: DestGroup; title: string }[] = [
-  { key: 'setup', title: 'Your venue' },
+  { key: 'setup', title: 'Your business' },
   { key: 'people', title: 'Team & clients' },
   { key: 'bookingTypes', title: 'Booking types' },
   // Checkout's set-up screens, all in the app (owner, 2026-10-09: full parity with the web; this
@@ -93,7 +93,7 @@ export const LIST_GROUPS: { key: DestGroup; title: string }[] = [
   // other venue's More tab is unchanged.
   { key: 'checkoutSetup', title: 'Checkout set-up' },
   { key: 'growth', title: 'Billing & growth' },
-  { key: 'network', title: 'Linked venues' },
+  { key: 'network', title: 'Linked businesses' },
   // Help and the app itself come last.
   { key: 'app', title: 'App & support' },
 ];
@@ -277,9 +277,9 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
   if (isAdmin) {
     // Appointments plans: "Payments at your venue" (the card switch, card reader, Tap to Pay and
     // the Checkout switch) is in Booking settings, as on the web, so the hint says so.
-    list.push({ id: 'booking-settings', label: 'Booking settings', hint: isAppointmentTier ? 'Booking types, guest accounts and payments' : 'Booking types & guest accounts', icon: { ios: 'slider.horizontal.3', android: 'tune', web: 'tune' }, tile: TILE.slate, group: 'setup', kind: 'route', target: '/manage/booking-settings', keywords: ['settings', 'guests', 'waitlist', 'deposits', ...(isAppointmentTier ? ['payments', 'in-person payments', 'card reader', 'Tap to Pay', 'Checkout'] : [])] });
+    list.push({ id: 'booking-settings', label: 'Booking settings', hint: isAppointmentTier ? 'Booking types, client accounts and payments' : 'Booking types & client accounts', icon: { ios: 'slider.horizontal.3', android: 'tune', web: 'tune' }, tile: TILE.slate, group: 'setup', kind: 'route', target: '/manage/booking-settings', keywords: ['settings', 'guests', 'waitlist', 'deposits', ...(isAppointmentTier ? ['payments', 'in-person payments', 'card reader', 'Tap to Pay', 'Checkout'] : [])] });
     list.push({ id: 'booking-page', label: 'Booking page', hint: 'Branding, colours, fonts & public tabs', icon: { ios: 'globe', android: 'public', web: 'public' }, tile: TILE.indigo, group: 'setup', kind: 'route', target: '/manage/booking-page', keywords: ['settings', 'branding', 'public', 'embed', 'widget'] });
-    list.push({ id: 'venue-profile', label: 'Venue profile', hint: 'Name, contact details & address', icon: { ios: 'building.2.fill', android: 'storefront', web: 'storefront' }, tile: TILE.teal, group: 'setup', kind: 'route', target: '/manage/venue-profile', keywords: ['settings', 'business', 'location'] });
+    list.push({ id: 'venue-profile', label: 'Business profile', hint: 'Name, contact details & address', icon: { ios: 'building.2.fill', android: 'storefront', web: 'storefront' }, tile: TILE.teal, group: 'setup', kind: 'route', target: '/manage/venue-profile', keywords: ['settings', 'business', 'location'] });
   }
   // Compliance — appointment tier + records flag, shown to staff AND admin (web parity).
   if (isAppointmentTier && complianceEnabled) {
@@ -321,16 +321,16 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
   // on the Calendar tab as their own columns, so there is no separate linked-calendar page (web
   // parity, 2026-09-19).
   if (isAdmin) {
-    list.push({ id: 'linked-venues', label: 'Linked venues', hint: 'Share calendars & cross-venue bookings', icon: { ios: 'link', android: 'link', web: 'link' }, tile: TILE.teal, group: 'network', kind: 'route', target: '/linked-venues', keywords: ['settings', 'linked accounts', 'partners'] });
+    list.push({ id: 'linked-venues', label: 'Linked businesses', hint: 'Share calendars & cross-business bookings', icon: { ios: 'link', android: 'link', web: 'link' }, tile: TILE.teal, group: 'network', kind: 'route', target: '/linked-venues', keywords: ['settings', 'linked accounts', 'partners'] });
     // One collective row once two venues are in (2026-10-28): Manage Collective, which also holds a
     // member's Leave; both side by side read as the same thing twice. Before that (a host waiting
     // for its first venue, with Continue setup to come), and outside a collective, Venue
     // collectives, where one is started or an invitation answered.
     if (ctx.collectiveArea) {
-      list.push({ id: 'collective-area', label: 'Manage Collective', hint: `Services, venues and history of ${ctx.collectiveArea.name}`, icon: { ios: 'square.grid.3x3.fill', android: 'grid_view', web: 'grid_view' }, tile: TILE.indigo, group: 'network', kind: 'route', target: '/collective-area', keywords: ['collective', 'shared services', 'combined', 'venue collectives', 'leave'] });
+      list.push({ id: 'collective-area', label: 'Manage Collective', hint: `Services, businesses and history of ${ctx.collectiveArea.name}`, icon: { ios: 'square.grid.3x3.fill', android: 'grid_view', web: 'grid_view' }, tile: TILE.indigo, group: 'network', kind: 'route', target: '/collective-area', keywords: ['collective', 'shared services', 'combined', 'business collectives', 'leave'] });
     }
     if (!ctx.collectiveArea?.joined) {
-      list.push({ id: 'collectives', label: 'Venue collectives', hint: 'A combined booking page across linked venues', icon: { ios: 'person.2.wave.2.fill', android: 'groups', web: 'groups' }, tile: TILE.sky, group: 'network', kind: 'route', target: '/collectives', keywords: ['combined', 'linked venues'] });
+      list.push({ id: 'collectives', label: 'Business collectives', hint: 'A combined booking page across linked businesses', icon: { ios: 'person.2.wave.2.fill', android: 'groups', web: 'groups' }, tile: TILE.sky, group: 'network', kind: 'route', target: '/collectives', keywords: ['combined', 'linked businesses'] });
     }
   }
 

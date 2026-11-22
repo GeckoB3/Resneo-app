@@ -210,9 +210,9 @@ function GuestDetail({
         ...(contactHidden ? {} : { email: email ?? undefined, phone: phone ?? undefined }),
       });
       setEditing(false);
-      toast.success('Guest profile updated.');
+      toast.success('Client profile updated.');
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to save guest.';
+      const msg = err instanceof Error ? err.message : 'Failed to save client.';
       toast.error(msg);
     }
   }
@@ -222,7 +222,7 @@ function GuestDetail({
     setEraseArmed(false);
     try {
       await eraseMutation.mutateAsync({ guestId });
-      toast.success('Guest data has been erased.');
+      toast.success('Client data has been erased.');
       onErased();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Erase failed.';
@@ -243,7 +243,7 @@ function GuestDetail({
 
   async function handleExportHistory() {
     if (history.length === 0) {
-      toast.info('No booking history for this guest.');
+      toast.info('No booking history for this client.');
       return;
     }
     // The web's columns, in its order, and its filename
@@ -281,7 +281,7 @@ function GuestDetail({
       <Text variant="caption" tone="muted" style={styles.detailError}>
         {detailQuery.error instanceof ApiError
           ? detailQuery.error.message
-          : 'Could not load guest details.'}
+          : 'Could not load client details.'}
       </Text>
     );
   }
@@ -639,7 +639,7 @@ export function ClientsTab({
           message={
             guestsQuery.error instanceof ApiError
               ? guestsQuery.error.message
-              : 'Could not load guests.'
+              : 'Could not load clients.'
           }
           onRetry={() => void guestsQuery.refetch()}
         />

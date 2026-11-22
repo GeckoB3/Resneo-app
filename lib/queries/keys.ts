@@ -86,6 +86,9 @@ export const queryKeys = {
       [...queryKeys.customer.all(), 'visitChangeOptions', bookingId, date, keyScope(accessToken)] as const,
     visitCancelPreview: (bookingId: string | null, accessToken?: string | null) =>
       [...queryKeys.customer.all(), 'visitCancelPreview', bookingId, keyScope(accessToken)] as const,
+    /** The group booking a person's row belongs to (`GET /api/v1/me/groups/[id]`, web PUBLIC-19). */
+    group: (bookingId: string | null, accessToken?: string | null) =>
+      [...queryKeys.customer.all(), 'group', bookingId, keyScope(accessToken)] as const,
     waitlist: (accessToken?: string | null) =>
       [...queryKeys.customer.all(), 'waitlist', keyScope(accessToken)] as const,
     payments: (bookingId: string | null, accessToken?: string | null) =>

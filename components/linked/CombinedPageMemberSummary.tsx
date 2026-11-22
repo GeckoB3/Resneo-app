@@ -112,7 +112,7 @@ export function CombinedPageMemberSummary({
 }) {
   const shared = isSharedServices(collective);
   const host =
-    collective.members.find((m) => m.venueId === collective.hostVenueId)?.venueName ?? 'The host venue';
+    collective.members.find((m) => m.venueId === collective.hostVenueId)?.venueName ?? 'The host business';
   const catalogueQuery = useCollectiveCatalogue(collective.id);
 
   // This venue's calendars on the page, each with the services it provides there.
@@ -196,10 +196,10 @@ export function CombinedPageMemberSummary({
         ) : (
           <>
             <Text variant="caption" tone="muted">
-              {`${host} chooses which calendars are offered. To stop taking part, leave the collective under Linked venues.`}
+              {`${host} chooses which calendars are offered. To stop taking part, leave the collective under Linked businesses.`}
             </Text>
             {onOpenLinkedVenues ? (
-              <Button label="Open Linked venues" size="sm" variant="ghost" onPress={onOpenLinkedVenues} />
+              <Button label="Open Linked businesses" size="sm" variant="ghost" onPress={onOpenLinkedVenues} />
             ) : null}
           </>
         )}

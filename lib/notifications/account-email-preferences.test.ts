@@ -116,7 +116,7 @@ describe('what the switches say', () => {
     expect([...ACCOUNT_EMAIL_KEYS]).toEqual(['operational_email', 'marketing_email']);
   });
 
-  it('does not let the ResNeo marketing row claim to govern venue offers', () => {
+  it('does not let the ResNeo marketing row claim to govern business offers', () => {
     /*
       The exact defect that got the previous section removed: a row labelled as
       though it stopped venue marketing, which is controlled per venue further
@@ -124,7 +124,7 @@ describe('what the switches say', () => {
     */
     const text = `${accountEmailLabel('marketing_email')} ${accountEmailDescription('marketing_email')}`;
     expect(text).toMatch(/ResNeo/);
-    expect(accountEmailDescription('marketing_email')).toMatch(/not offers from the venues/i);
+    expect(accountEmailDescription('marketing_email')).toMatch(/not offers from the businesses/i);
   });
 
   it('says security email is always sent, so the switch is not read as covering it', () => {
@@ -133,9 +133,9 @@ describe('what the switches say', () => {
     expect(accountEmailDescription('operational_email')).toMatch(/always sent/i);
   });
 
-  it('points at where booking messages and venue offers really come from', () => {
-    expect(BOOKING_EMAIL_NOTE).toMatch(/venue you booked with/i);
-    expect(BOOKING_EMAIL_NOTE).toMatch(/offers from venues/i);
+  it('points at where booking messages and business offers really come from', () => {
+    expect(BOOKING_EMAIL_NOTE).toMatch(/business you booked with/i);
+    expect(BOOKING_EMAIL_NOTE).toMatch(/offers from businesses/i);
   });
 
   it('uses no em-dashes', () => {

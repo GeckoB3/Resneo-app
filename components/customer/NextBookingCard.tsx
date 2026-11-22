@@ -7,6 +7,7 @@ import { servicesCountLabel } from '@/lib/booking/customer-visit-list';
 import { formatDayHeading } from '@/lib/dates/venue-dates';
 import { venueNameFor, type CustomerHome } from '@/lib/queries/useCustomerHome';
 import { spacing } from '@/theme/index';
+import { personAtBusiness } from '@/lib/venue/member-label';
 
 type Props = { home: CustomerHome };
 
@@ -30,7 +31,7 @@ export function NextBookingCard({ home }: Props) {
       <Card>
         <Text variant="subheading">Nothing booked</Text>
         <Text variant="bodySmall" tone="secondary" style={styles.gap}>
-          When you book with a venue that uses ResNeo, it will show up here.
+          When you book with a business that uses ResNeo, it will show up here.
         </Text>
       </Card>
     );
@@ -60,7 +61,7 @@ export function NextBookingCard({ home }: Props) {
         {visitServices > 1 ? ` · ${servicesCountLabel(visitServices)}` : ''}
       </Text>
       <Text variant="bodySmall" tone="secondary">
-        {practitioner && visitServices <= 1 ? `${practitioner} at ${venue}` : venue}
+        {practitioner && visitServices <= 1 ? personAtBusiness(practitioner, venue) : venue}
       </Text>
 
       {formsLine(home) ? (
@@ -76,7 +77,7 @@ export function NextBookingCard({ home }: Props) {
 function formsLine(home: CustomerHome): string | null {
   if (!home.next_booking_forms_checked) {
     // Never silently reassuring. Saying nothing here would read as "all clear".
-    return 'We could not check whether this booking needs a form. Please check with the venue.';
+    return 'We could not check whether this booking needs a form. Please check with the business.';
   }
   const count = home.next_booking_form_links.length;
   if (count === 1) {

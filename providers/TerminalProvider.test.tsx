@@ -145,6 +145,25 @@ describe('enabled venue', () => {
     // Token minting is lazy: the provider only supplies the callback.
     expect(mockFetchConnectionToken).not.toHaveBeenCalled();
   });
+
+  /**
+   * READER-8: the optional reader update's events must land whichever sheets are open (an install
+   * keeps running after Reader settings closes), so the provider listens for them itself.
+   */
+  it('always listens for the reader update events', async () => {
+    const { readerUpdateSdkCallbacks } = require('@/lib/payments/reader-software-update');
+    const seen: unknown[] = [];
+    mockSdk = { ...makeSdk(), useStripeTerminal: (props?: unknown) => {
+      if (props) seen.push(props);
+      return {};
+    } };
+    await render(
+      <TerminalProvider>
+        <Text>child</Text>
+      </TerminalProvider>,
+    );
+    expect(seen).toContain(readerUpdateSdkCallbacks);
+  });
 });
 
 describe('switching site (web roles plan §6.2c)', () => {

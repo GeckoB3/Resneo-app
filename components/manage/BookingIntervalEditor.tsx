@@ -345,7 +345,7 @@ function FixedTimesSection({
           <Text variant="caption" color={colors.warning}>
             {describeBookingStartTimes([tooClose.earlier])} and{' '}
             {describeBookingStartTimes([tooClose.later])} are closer together than this service takes
-            ({spanMinutes} minutes), so guests will usually only be offered one of them.
+            ({spanMinutes} minutes), so clients will usually only be offered one of them.
           </Text>
         ) : null}
       </View>

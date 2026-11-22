@@ -135,16 +135,16 @@ beforeEach(() => {
   };
 });
 
-describe("Every venue's services", () => {
-  it('lists every venue with how much of it is on the page, and every service with its state', async () => {
+describe("Every business's services", () => {
+  it('lists every business with how much of it is on the page, and every service with its state', async () => {
     await renderPanel();
     expect(
       await screen.findByText(
-        "Every service each venue has. Tick the ones you want on the Northside page. A venue's service goes on as it is and keeps the calendars that offer it. Nobody is asked.",
+        "Every service each business has. Tick the ones you want on the Northside page. A business's service goes on as it is and keeps the calendars that offer it. Nobody is asked.",
       ),
     ).toBeTruthy();
     expect(mockCalls[0]?.path).toBe('/api/venue/collectives/col-1/venue-services');
-    expect(screen.getByText('All venues')).toBeTruthy();
+    expect(screen.getByText('All businesses')).toBeTruthy();
     expect(screen.getByText('Northside Studio (you)')).toBeTruthy();
     expect(screen.getByText('1 of 1 on the page')).toBeTruthy();
     expect(screen.getByText('1 of 3 on the page')).toBeTruthy();
@@ -156,14 +156,14 @@ describe("Every venue's services", () => {
     expect(screen.getAllByText('Suggested')).toHaveLength(1);
   });
 
-  it('opens on the venue and filter a bell names', async () => {
+  it('opens on the business and filter a bell names', async () => {
     await renderPanel({ initialVenueId: 'v-zen', initialFilter: 'suggested' });
     expect(await screen.findByLabelText('Brows')).toBeTruthy();
     expect(screen.queryByLabelText('Gents cut')).toBeNull();
     expect(screen.queryByLabelText('Balayage')).toBeNull();
   });
 
-  it('falls back to every venue when the venue named is not in the collective', async () => {
+  it('falls back to every business when the business named is not in the collective', async () => {
     await renderPanel({ initialVenueId: 'v-gone' });
     expect(await screen.findByLabelText('Brows')).toBeTruthy();
     expect(screen.getAllByLabelText('Balayage')).toHaveLength(2);
@@ -209,7 +209,7 @@ describe("Every venue's services", () => {
     expect(screen.getByText('Put 2 services on the Northside page?')).toBeTruthy();
     expect(
       screen.getByText(
-        "These have the same name as one of your services, so they join it and guests see one: Balayage (Zen Studio). They follow your service's price and times from then on, and yours goes on the page if it is not there yet.",
+        "These have the same name as one of your services, so they join it and clients see one: Balayage (Zen Studio). They follow your service's price and times from then on, and yours goes on the page if it is not there yet.",
       ),
     ).toBeTruthy();
     await tick('Add them as separate services instead');
@@ -236,7 +236,7 @@ describe("Every venue's services", () => {
   });
 
   // CQ-04 (regression): the web's "These did not change:" with a row naming the venue and the reason.
-  it('names a service that did not change, with its venue and why, and keeps it ticked', async () => {
+  it('names a service that did not change, with its business and why, and keeps it ticked', async () => {
     mockHandler = (call) => {
       if (call.method === 'GET') return { role: 'host', collective_name: 'Northside', host_venue_id: 'v-host', venues: structuredClone(mockVenues) };
       const body = call.body as { items: { venue_id: string; service_id: string }[] };
@@ -371,7 +371,7 @@ describe("Every venue's services", () => {
       throw new ApiError('Request failed (404)', 404);
     };
     await renderPanel();
-    expect(screen.queryByText('All venues')).toBeNull();
+    expect(screen.queryByText('All businesses')).toBeNull();
     expect(screen.queryByText('Something went wrong')).toBeNull();
   });
 });

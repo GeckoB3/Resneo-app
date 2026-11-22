@@ -48,7 +48,7 @@ export const MESSAGE_DEFS: MessageDef[] = [
   {
     key: 'confirm_or_cancel_prompt',
     label: 'Confirm or cancel prompt',
-    description: 'Ask the guest to confirm or cancel before the visit',
+    description: 'Ask the client to confirm or cancel before the visit',
     allowedChannels: ['email', 'sms'],
     timing: { field: 'hoursBefore', label: 'before the visit', default: 24 },
     defaultEnabled: true,
@@ -204,7 +204,7 @@ export const MESSAGE_DEFS: MessageDef[] = [
   {
     key: 'custom_message',
     label: 'Custom message',
-    description: 'Staff-composed message sent directly to the guest',
+    description: 'Staff-composed message sent directly to the client',
     allowedChannels: ['email', 'sms'],
     defaultEnabled: true,
     defaultChannels: ['email', 'sms'],

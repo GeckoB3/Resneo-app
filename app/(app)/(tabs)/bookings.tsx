@@ -102,6 +102,7 @@ import { useStaffCollective } from '@/lib/queries/useStaffCollective';
 import { collectiveBookingParams, collectiveBookingTargetFor } from '@/lib/linked/collective-booking-target';
 import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
 import type { LinkedBooking, LinkedVenueCalendar } from '@/types/linked-venues';
+import { showsLinkedPill } from '@/lib/venue/member-label';
 
 type Scope = 'day' | 'week' | 'month' | 'custom';
 
@@ -226,7 +227,7 @@ export function venueSelectionLabel(
   if (linkedVenues.length === 0) return null;
   if (sel.own && linkedVenues.every((v) => sel.linked.has(v.venueId))) return null;
   const names = [
-    ...(sel.own ? ['My venue'] : []),
+    ...(sel.own ? ['My business'] : []),
     ...linkedVenues.filter((v) => sel.linked.has(v.venueId)).map((v) => v.venueName),
   ];
   if (names.length === 0) return null;
@@ -391,14 +392,14 @@ function BulkMessageSheet({
     if (failed > 0) {
       toast.error(`${total - failed} sent, ${failed} failed.`);
     } else {
-      toast.success(`Message sent to ${total} guest${total === 1 ? '' : 's'}.`);
+      toast.success(`Message sent to ${total} client${total === 1 ? '' : 's'}.`);
     }
     onClose();
   }
 
   return (
     <Sheet visible={bookings.length > 0} onClose={onClose}>
-      <Text variant="subheading">Message {bookings.length} guest{bookings.length === 1 ? '' : 's'}</Text>
+      <Text variant="subheading">Message {bookings.length} client{bookings.length === 1 ? '' : 's'}</Text>
 
       <View style={styles.channelRow}>
         {(['email', 'sms', 'both'] as const).map((ch) => (
@@ -1324,7 +1325,7 @@ export default function BookingsScreen() {
             ) : null}
             {guestFilter !== null ? (
               <Chip
-                label={guestFilterName ?? 'Guest'}
+                label={guestFilterName ?? 'Client'}
                 selected
                 onPress={() => setGuestFilter(null)}
                 onRemove={() => setGuestFilter(null)}
@@ -1545,6 +1546,7 @@ export default function BookingsScreen() {
         visible={linkedSheet !== null}
         venue={linkedSheet?.venue ?? null}
         booking={linkedSheet?.booking ?? null}
+        inCollective={Boolean(linkedSheet) && !showsLinkedPill(linkedSheet?.venue.venueId, staffCollective?.member_venue_ids)}
         onClose={() => setLinkedSheet(null)}
         onSaved={() => void linkedQuery.refetch()}
       />

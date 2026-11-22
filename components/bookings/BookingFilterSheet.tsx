@@ -192,7 +192,7 @@ export function BookingFilterSheet({
         {linkedVenues.length > 0 ? (
           <Section title="Calendars">
             <Chip label="All" selected={allVenuesSelected} onPress={onSelectAllVenues} />
-            <Chip label="My venue" selected={venueOwnSelected} onPress={onToggleOwnVenue} />
+            <Chip label="My business" selected={venueOwnSelected} onPress={onToggleOwnVenue} />
             {linkedVenues.map((v) => (
               <Chip
                 key={v.venueId}

@@ -178,10 +178,10 @@ describe('Sales with a calendar chosen', () => {
     );
   });
 
-  it('says the stock card is the whole venue', async () => {
+  it('says the stock card is the whole business', async () => {
     await render(withCalendar(<SalesSection canExport today="2026-10-09" />));
     expect(screen.getByText('Stock value, slow sellers and sell-through')).toBeTruthy();
-    expect(screen.getAllByText('These figures are for the whole venue.')).toHaveLength(1);
+    expect(screen.getAllByText('These figures are for the whole business.')).toHaveLength(1);
   });
 
   it('says nothing about calendars with all calendars chosen', async () => {
@@ -189,7 +189,7 @@ describe('Sales with a calendar chosen', () => {
     await render(withCalendar(<SalesSection canExport today="2026-10-09" />, null));
     expect(mockSalesArgs[0]).toEqual([{ kind: 'preset', preset: 'this-week' }, 'day', { calendarId: null, reportsVisible: true }]);
     expect(screen.queryByText(/^Showing/)).toBeNull();
-    expect(screen.queryByText('These figures are for the whole venue.')).toBeNull();
+    expect(screen.queryByText('These figures are for the whole business.')).toBeNull();
   });
 });
 

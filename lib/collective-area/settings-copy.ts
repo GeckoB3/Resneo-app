@@ -61,7 +61,7 @@ export const COLLECTIVE_RULE_ROWS = [
   { key: 'require_account_login', title: 'Require sign-in to book' },
   { key: 'any_available_practitioner', title: 'Any available practitioner' },
   { key: 'staff_first_booking_flow', title: 'Staff-first booking' },
-  { key: 'guest_self_reschedule', title: 'Guest self-reschedule' },
+  { key: 'guest_self_reschedule', title: 'Client self-reschedule' },
   { key: 'waitlist_v2', title: 'Appointment waitlist' },
 ] as const;
 

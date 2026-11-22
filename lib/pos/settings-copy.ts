@@ -201,7 +201,7 @@ export const SETTINGS_COPY = {
   'set.ptypes.ref': 'Ask for a reference',
   'set.ptypes.active': 'Show at the till',
   'set.ptypes.add': 'Add a payment type',
-  'set.ptypes.suggest': 'Most venues start with these:',
+  'set.ptypes.suggest': 'Most businesses start with these:',
   'set.ptypes.rename': 'Rename',
   'set.ptypes.rename.title': 'Rename payment type',
   'set.ptypes.remove': 'Remove',
@@ -250,7 +250,7 @@ export const SETTINGS_COPY = {
   'set.caps.upTo': '{label} (up to {percent}%)',
 
   'set.tills.title': 'Tills',
-  'set.tills.help': 'A till is a place you take money, usually with a cash drawer. Most venues need one.',
+  'set.tills.help': 'A till is a place you take money, usually with a cash drawer. Most businesses need one.',
   'set.tills.drawer': 'Has a cash drawer',
   'set.tills.active': 'In use',
   'set.tills.notInUse': 'Not in use',

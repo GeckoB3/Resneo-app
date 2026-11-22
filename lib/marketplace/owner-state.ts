@@ -86,7 +86,7 @@ export function marketplaceCollectiveLine(collective: MarketplaceOwnerState['col
   if (!collective) return null;
   return collective.is_host
     ? `Your appointments are listed through ${collective.public_name}, which uses your photos, About text and categories.`
-    : `Your appointments are listed through ${collective.public_name}. Its listing is managed by the host venue.`;
+    : `Your appointments are listed through ${collective.public_name}. Its listing is managed by the host business.`;
 }
 
 /** The reasons to list: only while listed and not showing, and never the "switched off" one. */

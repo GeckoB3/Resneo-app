@@ -126,7 +126,7 @@ export function RestaurantWalkInForm({ onSuccess }: RestaurantWalkInFormProps) {
 
       <Card style={styles.card}>
         <Text variant="label">
-          Guest (optional)
+          Client (optional)
         </Text>
         <Input
           autoCapitalize="words"

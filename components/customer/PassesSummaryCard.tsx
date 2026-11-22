@@ -23,7 +23,7 @@ export function PassesSummaryCard({ home }: Props) {
     const venues = home.credits.venue_count;
     lines.push(
       venues > 1
-        ? `${n} class credits across ${venues} venues`
+        ? `${n} class credits across ${venues} businesses`
         : `${n} class ${n === 1 ? 'credit' : 'credits'}`,
     );
   }

@@ -196,7 +196,7 @@ export default function BookingPageScreen() {
       ? collectiveSettingsCopy.ownHandedOver(ownPageParams)
       : ownPage?.status === 'partial' && ownPage.still_shows
         ? collectiveSettingsCopy.ownPartial({ ...ownPageParams, list: ownPage.still_shows })
-        : `These settings shape your own booking page at /book/${venue?.slug ?? ''}, which guests can still open.`
+        : `These settings shape your own booking page at /book/${venue?.slug ?? ''}, which clients can still open.`
     : null;
   const [scope, setScope] = useState<BookingPageScope>('combined');
 
@@ -207,7 +207,7 @@ export default function BookingPageScreen() {
 
   const logoUrl = venue?.logo_url ?? null;
   const coverUrl = venue?.cover_photo_url ?? null;
-  const venueName = venue?.name ?? 'Your venue';
+  const venueName = venue?.name ?? 'Your business';
 
   // Config form state.
   const [primary, setPrimary] = useState('');
@@ -553,7 +553,7 @@ export default function BookingPageScreen() {
         <Stack.Screen options={{ headerShown: true, title: 'Booking page' }} />
         <EmptyState
           title="Admins only"
-          message="Only venue admins can edit the public booking page."
+          message="Only business admins can edit the public booking page."
         />
         {/* The marketplace card is read only for staff, as on the web. */}
         <MarketplaceSection isAdmin={false} />
@@ -695,12 +695,12 @@ export default function BookingPageScreen() {
           accessibilityRole="button"
           hitSlop={8}
           onPress={() => router.push('/manage/venue-profile' as Href)}>
-          <Text variant="caption" color={colors.brand}>Edit full venue profile →</Text>
+          <Text variant="caption" color={colors.brand}>Edit full business profile →</Text>
         </Pressable>
       </Card>
 
       <ContactDetailsSection
-        description="Your name, address, phone, email and website. Venue profile edits the same details, and your emails and receipts use them too."
+        description="Your name, address, phone, email and website. Business profile edits the same details, and your emails and receipts use them too."
         values={{
           name: venue?.name ?? null,
           address: venue?.address ?? null,
@@ -712,7 +712,7 @@ export default function BookingPageScreen() {
         display={contactDisplay}
         onDisplayChange={setContactDisplay}
         aboutTabOff={!showAbout}
-        emailNote="Email is off until you switch it on. Guests who reply to your emails reach the address they see here."
+        emailNote="Email is off until you switch it on. Clients who reply to your emails reach the address they see here."
         guestEmail={{ address: venuePublicEmail(venue), loginEmails: venue?.login_emails ?? [] }}
       />
 

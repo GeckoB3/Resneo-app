@@ -129,17 +129,17 @@ export function VenuePicker({
           onPress={onBack}
         />
         <Text variant="subheading" style={styles.flex1}>
-          Find a venue
+          Find a business
         </Text>
       </View>
       <Text variant="bodySmall" tone="secondary">
-        Search by name, or paste the venue&apos;s booking-page address.
+        Search by name, or paste the business&apos;s booking-page address.
       </Text>
 
       <SearchBar
         value={input}
         onChangeText={setInput}
-        placeholder="Venue name or booking-page address"
+        placeholder="Business name or booking-page address"
         autoCapitalize="none"
         autoCorrect={false}
       />
@@ -163,7 +163,7 @@ export function VenuePicker({
           </View>
         ) : search.isError ? (
           <Text variant="caption" tone="danger">
-            {search.error instanceof ApiError ? search.error.message : 'Could not search venues.'}
+            {search.error instanceof ApiError ? search.error.message : 'Could not search businesses.'}
           </Text>
         ) : null}
 

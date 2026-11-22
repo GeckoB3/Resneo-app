@@ -79,7 +79,7 @@ describe('marketplace status', () => {
       'Your appointments are listed through Glow, which uses your photos, About text and categories.',
     );
     expect(marketplaceCollectiveLine({ public_name: 'Glow', public_path: '/book/glow', is_host: false })).toBe(
-      'Your appointments are listed through Glow. Its listing is managed by the host venue.',
+      'Your appointments are listed through Glow. Its listing is managed by the host business.',
     );
   });
 

@@ -204,6 +204,7 @@ import type {
   ServiceLocationType,
   ServicePaymentRequirement,
 } from '@/types/services-manage';
+import { personAtBusiness } from '@/lib/venue/member-label';
 
 type EditTarget = {
   id: string;
@@ -229,7 +230,7 @@ const COLOUR_OPTIONS = [
  * hold (spec 6.2) is a standard option; it is no longer gated by a venue flag.
  */
 const PAYMENT_OPTIONS: { value: ServicePaymentRequirement; label: string; hint: string }[] = [
-  { value: 'none', label: 'No online payment', hint: 'Pay at the venue or arrange separately' },
+  { value: 'none', label: 'No online payment', hint: 'Pay at the business or arrange separately' },
   { value: 'deposit', label: 'Custom deposit', hint: 'Fixed amount paid online when booking' },
   { value: 'full_payment', label: 'Pay in full online', hint: 'Full price taken at booking' },
   {
@@ -241,7 +242,7 @@ const PAYMENT_OPTIONS: { value: ServicePaymentRequirement; label: string; hint: 
 
 /** Short label for a service's delivery location (collapsed-section summary). */
 const LOCATION_TYPE_LABELS: Record<ServiceLocationType, string> = {
-  business_venue: 'At your venue',
+  business_venue: 'At your business',
   client_address: "At the client's address",
   online: 'Online',
 };
@@ -1383,7 +1384,7 @@ export default function ServicesScreen() {
   );
   const collectiveMemberNames = useMemo(() => collectiveMemberVenues.map((v) => v.venue_name), [collectiveMemberVenues]);
   /** The other venues in a sentence; a server that lists no calendars still reads. */
-  const memberVenueWords = formatVenueList(collectiveMemberNames) || 'the other venues';
+  const memberVenueWords = formatVenueList(collectiveMemberNames) || 'the other businesses';
   /** The open service, when saving it reaches every venue (CQ-13). */
   const editingPageMaster = !!editTarget && editingService?.collective?.role === 'master';
   /** A host admin adding a service: the tick is offered, and it decides the rest (CQ-05). */
@@ -1885,7 +1886,7 @@ export default function ServicesScreen() {
                 calendar.assigned
                   .filter((assigned) => assigned.item_id === editingCollectiveBlock.item_id)
                   .map((assigned) => {
-                    names.set(calendar.id, `${calendar.name} at ${group.venue_name}`);
+                    names.set(calendar.id, personAtBusiness(calendar.name, group.venue_name));
                     return { calendar_id: calendar.id, ...assigned.values };
                   }),
               ),
@@ -2068,13 +2069,13 @@ export default function ServicesScreen() {
           toast.success(
             pageCollective
               ? areaCopy('svc.deactivate.done', { service: shared.name })
-              : `"${shared.name}" is now hidden from guests. Bookings already made are not changed.`,
+              : `"${shared.name}" is now hidden from clients. Bookings already made are not changed.`,
           );
         } else if (!wasActive && isActive) {
           toast.success(
             pageCollective
               ? areaCopy('svc.activate.done', { service: shared.name, collective: pageCollective.collective_name })
-              : `"${shared.name}" is visible to guests again.`,
+              : `"${shared.name}" is visible to clients again.`,
           );
         }
       } else {
@@ -3397,7 +3398,7 @@ export default function ServicesScreen() {
                   defaultExpanded={variantDrafts.length > 0}>
                   <View style={styles.sectionStack}>
                     <Text variant="caption" tone="muted">
-                      Add options when guests must pick a version first (e.g. 30 vs 60 minutes). Each
+                      Add options when clients must pick a version first (e.g. 30 vs 60 minutes). Each
                       has its own duration, price and deposit. Leave empty for one fixed offering.
                     </Text>
                     <VariantsEditor
@@ -3564,13 +3565,13 @@ export default function ServicesScreen() {
               <View style={[styles.stripeWarning, { backgroundColor: colors.warningSurface }]}>
                 <Text variant="caption" color={colors.warning}>
                   Stripe is not connected. Connect your Stripe account in More, then Plan &amp; payments,
-                  before guests can pay online.
+                  before clients can pay online.
                 </Text>
               </View>
             ) : null}
 
             {/* Guest booking rules — collapsed; touched rarely after first setup. */}
-            <CollapsibleCard title="Guest booking rules" summary={bookingRulesSummary}>
+            <CollapsibleCard title="Client booking rules" summary={bookingRulesSummary}>
               <View style={styles.sectionStack}>
                 <View style={styles.moneyRow}>
                   <View style={styles.moneyField}>
@@ -3969,7 +3970,7 @@ export default function ServicesScreen() {
               </>
             ) : (
               <Text variant="caption" tone="muted">
-                Location, processing-time blocks, and custom availability are managed by venue
+                Location, processing-time blocks, and custom availability are managed by business
                 admins on the web dashboard.
               </Text>
             )}
@@ -4049,7 +4050,7 @@ export default function ServicesScreen() {
             <Text variant="subheading">Delete service</Text>
             <Text variant="bodySmall" tone="secondary">
               {deleteTakesOffPage(deleteTarget) && deleteTarget?.collective
-                ? `"${deleteTarget.name}" comes off the ${deleteTarget.collective.collective_name} page first: at the other venues it becomes a retired service and their calendars stop offering it. Bookings already made are not changed. It is then deleted here. This cannot be undone. If it has upcoming bookings it will not be deleted, and it stays on the page.`
+                ? `"${deleteTarget.name}" comes off the ${deleteTarget.collective.collective_name} page first: at the other businesses it becomes a retired service and their calendars stop offering it. Bookings already made are not changed. It is then deleted here. This cannot be undone. If it has upcoming bookings it will not be deleted, and it stays on the page.`
                 : `Delete "${deleteTarget?.name}"? This cannot be undone. The service will not be deleted if upcoming bookings exist.`}
             </Text>
             <View style={styles.actions}>

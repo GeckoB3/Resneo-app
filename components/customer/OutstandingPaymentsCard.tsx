@@ -43,7 +43,7 @@ export function OutstandingPaymentsCard({ home }: Props) {
         </View>
       ))}
       <Text variant="bodySmall" tone="secondary" style={styles.note}>
-        You can settle this with the venue when you arrive.
+        You can settle this with the business when you arrive.
       </Text>
     </Card>
   );

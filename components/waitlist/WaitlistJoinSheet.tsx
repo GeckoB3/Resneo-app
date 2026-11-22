@@ -203,7 +203,7 @@ export function WaitlistJoinSheet({
         <View style={styles.body}>
           <Text variant="subheading">Added to waitlist</Text>
           <Text variant="bodySmall" tone="muted">
-            The guest will be offered a slot if one opens up.
+            The client will be offered a slot if one opens up.
           </Text>
           <Button label="Done" fullWidth onPress={handleClose} />
         </View>
@@ -231,7 +231,7 @@ export function WaitlistJoinSheet({
               </Text>
             ) : services.length === 0 ? (
               <Text variant="caption" tone="muted">
-                No bookable services found for this venue.
+                No bookable services found for this business.
               </Text>
             ) : (
               <View style={styles.optionList}>

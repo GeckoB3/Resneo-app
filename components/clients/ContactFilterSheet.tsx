@@ -72,7 +72,7 @@ const IDENTITY_OPTIONS = [
   {
     value: 'anonymous',
     label: 'Anonymous only',
-    hint: 'Guests without saved contact details (useful for reviewing anonymous visits).',
+    hint: 'Clients without saved contact details (useful for reviewing anonymous visits).',
   },
 ] as const;
 
@@ -93,7 +93,7 @@ const MARKETING_OPTIONS = [
   {
     value: 'subscribed',
     label: 'Subscribed',
-    hint: 'Happy to hear from you by email or SMS where the venue allows it.',
+    hint: 'Happy to hear from you by email or SMS where the business allows it.',
   },
   {
     value: 'not_subscribed',

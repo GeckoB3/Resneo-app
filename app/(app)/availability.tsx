@@ -892,9 +892,9 @@ export default function AvailabilityScreen() {
           <Text variant="label">How calendar hours and business hours work together</Text>
           <Text variant="caption" tone="secondary" style={styles.infoText}>
             The hours you set below are when this calendar can take bookings, but a time is only
-            bookable where it also falls inside your venue&apos;s business hours. If you set
+            bookable where it also falls inside your business hours. If you set
             calendar hours wider than your business hours, the extra time outside them won&apos;t
-            be bookable, and days your venue is closed stay closed here too.
+            be bookable, and days your business is closed stay closed here too.
           </Text>
           <Pressable
             accessibilityRole="link"
@@ -1187,7 +1187,7 @@ export default function AvailabilityScreen() {
         <>
           {!isAdmin ? (
             <Text variant="caption" tone="secondary" style={styles.intro}>
-              Browse any team member for reference; only your calendar can be changed here. Venue
+              Browse any team member for reference; only your calendar can be changed here. Business
               admins can adjust everyone.
             </Text>
           ) : null}

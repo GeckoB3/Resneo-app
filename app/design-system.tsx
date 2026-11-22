@@ -127,7 +127,7 @@ function DesignSystemGallery() {
       {/* ---- Inputs ---- */}
       <Section title="Inputs">
         <Input
-          label="Guest name"
+          label="Client name"
           placeholder="e.g. Jordan Smith"
           value={text}
           onChangeText={setText}

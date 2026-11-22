@@ -64,7 +64,7 @@ describe('DeleteVenueSheet — request form (type-to-confirm)', () => {
   it('keeps the schedule button disabled until the typed name matches', async () => {
     await render(<DeleteVenueSheet visible venueName="Glow Bar" onClose={jest.fn()} />);
 
-    const scheduleBtn = screen.getByText('Schedule venue deletion');
+    const scheduleBtn = screen.getByText('Schedule business deletion');
 
     // Disabled before typing.
     await press(() => scheduleBtn);
@@ -86,14 +86,14 @@ describe('DeleteVenueSheet — request form (type-to-confirm)', () => {
     await act(async () => {
       fireEvent.changeText(field, '  glow bar  ');
     });
-    await press(() => screen.getByText('Schedule venue deletion'));
+    await press(() => screen.getByText('Schedule business deletion'));
 
     expect(mockRequestMutateAsync).toHaveBeenCalledTimes(1);
     // The trimmed confirmation is sent (server re-validates exact match).
     expect(mockRequestMutateAsync).toHaveBeenCalledWith('glow bar');
   });
 
-  it('uses the venue name from the server status payload over the prop', async () => {
+  it('uses the business name from the server status payload over the prop', async () => {
     mockStatusData = { venue_name: 'Server Name', deletion_scheduled_at: null };
     await render(<DeleteVenueSheet visible venueName="Stale Prop" onClose={jest.fn()} />);
 
@@ -101,7 +101,7 @@ describe('DeleteVenueSheet — request form (type-to-confirm)', () => {
     await act(async () => {
       fireEvent.changeText(field, 'Server Name');
     });
-    await press(() => screen.getByText('Schedule venue deletion'));
+    await press(() => screen.getByText('Schedule business deletion'));
     expect(mockRequestMutateAsync).toHaveBeenCalledWith('Server Name');
   });
 });
@@ -113,7 +113,7 @@ describe('DeleteVenueSheet — scheduled state (cancel path)', () => {
 
     expect(screen.getByText('Deletion scheduled')).toBeTruthy();
     // The request form is not shown in the scheduled state.
-    expect(screen.queryByText('Schedule venue deletion')).toBeNull();
+    expect(screen.queryByText('Schedule business deletion')).toBeNull();
 
     await press(() => screen.getByText('Cancel scheduled deletion'));
     expect(mockCancelMutateAsync).toHaveBeenCalledTimes(1);
@@ -126,7 +126,7 @@ describe('DeleteVenueSheet — loading', () => {
     mockStatusState = { isSuccess: false, isError: false };
     await render(<DeleteVenueSheet visible venueName="Glow Bar" onClose={jest.fn()} />);
     expect(screen.getByText('Loading…')).toBeTruthy();
-    expect(screen.queryByText('Schedule venue deletion')).toBeNull();
+    expect(screen.queryByText('Schedule business deletion')).toBeNull();
   });
 });
 
@@ -136,9 +136,9 @@ describe('DeleteVenueSheet — an admin without "Billing, payouts and admins" (r
   it('says who can, and offers no form', async () => {
     await render(<DeleteVenueSheet visible venueName="Glow Bar" canAct={false} onClose={jest.fn()} />);
     expect(screen.getByText(note)).toBeTruthy();
-    expect(screen.getByText('No deletion is scheduled for this venue.')).toBeTruthy();
+    expect(screen.getByText('No deletion is scheduled for this business.')).toBeTruthy();
     expect(screen.queryByPlaceholderText('Glow Bar')).toBeNull();
-    expect(screen.queryByText('Schedule venue deletion')).toBeNull();
+    expect(screen.queryByText('Schedule business deletion')).toBeNull();
   });
 
   it('shows a scheduled closure, without the cancel button', async () => {

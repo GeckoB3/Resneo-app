@@ -154,7 +154,7 @@ export default function OrdersScreen() {
     return (
       <Screen>
         {header}
-        <EmptyState title={t('till.off.title')} message={t('till.off.body', { venue: 'your venue' })} />
+        <EmptyState title={t('till.off.title')} message={t('till.off.body', { venue: 'your business' })} />
       </Screen>
     );
   }
@@ -170,7 +170,7 @@ export default function OrdersScreen() {
     return (
       <Screen>
         {header}
-        <EmptyState title={t('ord.denied.title')} message={t('ord.denied.body', { venue: boot.data?.venue?.name ?? 'your venue' })} />
+        <EmptyState title={t('ord.denied.title')} message={t('ord.denied.body', { venue: boot.data?.venue?.name ?? 'your business' })} />
       </Screen>
     );
   }

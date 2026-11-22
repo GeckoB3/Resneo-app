@@ -75,7 +75,13 @@ export function LinkedVenueCalendarGrid({
   embedded,
   compact,
   visitPositions,
+  inCollective = false,
 }: {
+  /**
+   * The partner is a member of our collective (2026-11-22): named like any member, without the
+   * old linked-accounts "Linked" pill. A plain account link keeps it.
+   */
+  inCollective?: boolean;
   venue: LinkedVenueCalendar;
   /** The day being shown ("YYYY-MM-DD") — drives the working-hours window. */
   date: string;
@@ -268,7 +274,7 @@ export function LinkedVenueCalendarGrid({
             </Text>
           ) : null}
         </View>
-        <Badge label="Linked" tone="warning" />
+        {inCollective ? null : <Badge label="Linked" tone="warning" />}
         {pill ? (
           <View style={styles.lockPill}>
             {timeOnly || venue.action === 'none' ? (
@@ -292,7 +298,7 @@ export function LinkedVenueCalendarGrid({
         <Text variant="caption" tone="muted" style={styles.empty}>
           {timeOnly
             ? 'No busy time blocks for this day.'
-            : 'This venue has no bookings for this day.'}
+            : 'This business has no bookings for this day.'}
         </Text>
       ) : (
         <View style={embedded ? undefined : styles.gridWrap}>

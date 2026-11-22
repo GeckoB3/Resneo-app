@@ -8,17 +8,17 @@
  */
 export const CLIENT_SHARING_COPY = {
   // The one reassurance (P4), said once per screen that changes lists.
-  'cs.safe': 'Nothing is deleted. Every venue keeps its own record of each client.',
+  'cs.safe': 'Nothing is deleted. Every business keeps its own record of each client.',
   'cs.whatShared':
     'Shared: contact details, marketing choices, tags, alerts and notes. Never shared: treatment records, forms, documents, payments or loyalty.',
 
   // Creating a collective (§1A.2 step 1).
   'cs.create.label': 'Share client lists',
-  'cs.create.help': 'Your venues see one client list. Nothing is deleted.',
+  'cs.create.help': 'Your businesses see one client list. Nothing is deleted.',
 
   // Joining (§1A.2 step 2).
   'cs.join.title': 'Share client lists?',
-  'cs.join.body1': 'Clients of the venues here would be one list for you too.',
+  'cs.join.body1': 'Clients of the businesses here would be one list for you too.',
   'cs.join.body2':
     'Your clients are shared with them, and theirs with you: contact details, tags and alerts. It keeps itself up to date.',
   'cs.join.share': 'Share now',
@@ -30,35 +30,35 @@ export const CLIENT_SHARING_COPY = {
   // The Clients tab on Manage Collective (§1A.2 step 3).
   'cs.tab.label': 'Clients',
   'cs.tab.switch': 'Share clients with this collective',
-  'cs.tab.switchHelp': 'Your venues see one client list. Nothing is deleted.',
+  'cs.tab.switchHelp': 'Your businesses see one client list. Nothing is deleted.',
   'cs.tab.sharingWith': 'Sharing with',
   'cs.tab.changeWho': 'Change who you share with',
-  'cs.tab.changeWhoHelp': 'Untick a venue to stop sharing with it. You both keep every client you already have.',
+  'cs.tab.changeWhoHelp': 'Untick a business to stop sharing with it. You both keep every client you already have.',
   'cs.tab.askFirst': 'Ask me before clients are matched',
   'cs.tab.askFirstHelp':
     'Off: clear matches (the same email, client account, or name and phone) are linked for you, and others wait in Clients to check. On: every match waits for you there.',
-  'cs.tab.counts': '{here} clients here, {fromOthers} from the other venues, {inBoth} in both.',
+  'cs.tab.counts': '{here} clients here, {fromOthers} from the other businesses, {inBoth} in both.',
   'cs.tab.upToDate': 'Up to date.',
   'cs.tab.arriving': '{count} changes still arriving.',
   'cs.tab.progress': 'Bringing your lists together, about {minutes} minutes.',
   'cs.tab.progressSoon': 'Bringing your lists together, almost done.',
   'cs.tab.progressLabel': 'Bringing lists together: {done} of {total}',
   'cs.tab.offer': 'Offer shared client lists',
-  'cs.tab.offerHelp': 'Each venue decides for itself. Nobody shares until they say yes.',
+  'cs.tab.offerHelp': 'Each business decides for itself. Nobody shares until they say yes.',
   'cs.tab.askEveryone': 'Ask everyone to share',
-  'cs.tab.asked': 'We asked {count} venues. Each one says yes for itself.',
-  'cs.tab.askedOne': 'We asked 1 venue. It says yes for itself.',
+  'cs.tab.asked': 'We asked {count} businesses. Each one says yes for itself.',
+  'cs.tab.askedOne': 'We asked 1 business. It says yes for itself.',
   'cs.tab.notOffered': 'Your collective does not share client lists yet. Your host can offer it here.',
-  'cs.tab.notOfferedHost': 'Switch on Offer shared client lists, and each venue can choose to share one client list.',
+  'cs.tab.notOfferedHost': 'Switch on Offer shared client lists, and each business can choose to share one client list.',
   'cs.tab.youAreOff': 'You are not sharing your clients. Switch on to see one client list.',
   'cs.tab.bringTogether': 'Bring together',
   'cs.tab.help': 'How shared clients work',
   'cs.tab.offerOff.title': 'Stop shared client lists for everyone?',
-  'cs.tab.offerOff.body': 'Every venue stops sharing. Each venue keeps every client it has today.',
+  'cs.tab.offerOff.body': 'Every business stops sharing. Each business keeps every client it has today.',
   'cs.tab.offerOff.confirm': 'Stop for everyone',
   'cs.tab.hostHeading': 'Host',
-  'cs.tab.askConfirm.title': 'Ask every venue to share clients?',
-  'cs.tab.askConfirm.body': 'Each venue that has not answered gets a notice. Nobody shares until they say yes.',
+  'cs.tab.askConfirm.title': 'Ask every business to share clients?',
+  'cs.tab.askConfirm.body': 'Each business that has not answered gets a notice. Nobody shares until they say yes.',
   'cs.tab.askConfirm.confirm': 'Ask them',
   'cs.state.sharing': 'Sharing',
   'cs.state.waiting': 'Waiting for {venue} to say yes',
@@ -80,7 +80,7 @@ export const CLIENT_SHARING_COPY = {
   'cs.start.toCheckOne': '1 needs a quick check first.',
   'cs.start.confirm': 'Bring together',
   'cs.start.cancel': 'Cancel',
-  'cs.start.nobody': 'Nobody else is sharing yet. Your clients are shared as soon as another venue says yes.',
+  'cs.start.nobody': 'Nobody else is sharing yet. Your clients are shared as soon as another business says yes.',
   'cs.start.counting': 'Counting your clients',
   'cs.progress.done': 'Done. Your list now has {count} clients.',
 
@@ -111,7 +111,7 @@ export const CLIENT_SHARING_COPY = {
   'cs.contact.alertFrom': 'Added at {venue}',
   'cs.contact.different': 'Unlink',
   'cs.contact.differentHelp':
-    'Unlinks this client from the record at {venues}. Each venue keeps its own record. Nothing is deleted.',
+    'Unlinks this client from the record at {venues}. Each business keeps its own record. Nothing is deleted.',
   'cs.contact.separated': 'Unlinked. Nothing was deleted.',
 
   // Clients to check (§1A.2 step 6).
@@ -128,7 +128,7 @@ export const CLIENT_SHARING_COPY = {
   'cs.check.same': 'Link records',
   'cs.check.different': 'Keep separate',
   'cs.check.linkHelp':
-    'Each venue keeps its own record. Linking only keeps contact details and marketing choices in step.',
+    'Each business keeps its own record. Linking only keeps contact details and marketing choices in step.',
   'cs.check.linkTo': 'Link to this one',
   'cs.check.neither': 'Neither, keep separate',
   'cs.check.keepAll': 'Keep all separate ({count})',
@@ -140,7 +140,7 @@ export const CLIENT_SHARING_COPY = {
   'cs.check.keepAll.partial': 'Kept {count} separate. {left} more are left: press again for the rest.',
   'cs.check.skip': 'Not sure, skip',
   'cs.check.twoHere': '{name} at {venue} matches two of your records. Which one is them?',
-  'cs.check.mergeFirst': 'These two are one person at your venue: merge them',
+  'cs.check.mergeFirst': 'These two are one person at your business: merge them',
   'cs.check.change': '{venue} changed {name}’s {field} to {value}. Yours is {current}.',
   'cs.check.useNew': 'Use new',
   'cs.check.keepMine': 'Keep mine',
@@ -149,7 +149,7 @@ export const CLIENT_SHARING_COPY = {
   'cs.check.joinAll': 'Link all likely matches ({count})',
   'cs.check.joinAll.title': 'Link {count} likely matches?',
   'cs.check.joinAll.body':
-    'Each venue keeps its own record. Linking only keeps contact details and marketing choices in step. You can undo this for 24 hours.',
+    'Each business keeps its own record. Linking only keeps contact details and marketing choices in step. You can undo this for 24 hours.',
   'cs.check.joinAll.confirm': 'Link them',
   'cs.check.joinAll.done': 'Linked {count} matches.',
   'cs.check.joinAll.partial':
@@ -168,7 +168,7 @@ export const CLIENT_SHARING_COPY = {
   'cs.check.decided': 'Someone at your collective already answered this one.',
   'cs.check.adminOnly': 'Only owners and admins can check shared clients.',
   'cs.check.back': 'Back to your clients',
-  'cs.check.paused': 'Sharing with this venue is paused, so this one can wait. It comes back when sharing starts again.',
+  'cs.check.paused': 'Sharing with this business is paused, so this one can wait. It comes back when sharing starts again.',
 
   // Leaving, removing, ending, stopping (§1A.2 step 7).
   'cs.leave.paragraph':
@@ -176,10 +176,10 @@ export const CLIENT_SHARING_COPY = {
   'cs.leave.othersKeep': '{venues} keep the clients you shared.',
   'cs.leave.othersKeepOne': '{venue} keeps the clients you shared.',
   'cs.leave.remove': '{venue} keeps every client it holds today, and so do you. Sharing between you stops.',
-  'cs.leave.end': 'Every venue keeps every client it holds today. Sharing stops.',
+  'cs.leave.end': 'Every business keeps every client it holds today. Sharing stops.',
   'cs.stop.title': 'Stop sharing clients?',
   'cs.stop.body':
-    'You will keep all {count} shared clients, with their details and marketing choices exactly as they are today. The other venues keep the clients you shared. From now on, changes stop travelling between you.',
+    'You will keep all {count} shared clients, with their details and marketing choices exactly as they are today. The other businesses keep the clients you shared. From now on, changes stop travelling between you.',
   'cs.stop.confirm': 'Stop sharing',
   'cs.stop.excludeTitle': 'Stop sharing with {venue}?',
   'cs.stop.excludeBody':
@@ -196,7 +196,7 @@ export const CLIENT_SHARING_COPY = {
     '{name} asked {venue} to erase their details. Your own record is unchanged. If they asked you too, erase it from their client screen.',
   'cs.notice.asked.title': '{venue} asked your collective to share clients',
   'cs.notice.asked.body':
-    'One client list for every venue, kept up to date for you. Nothing is deleted. Open Manage Collective, then Clients, to answer.',
+    'One client list for every business, kept up to date for you. Nothing is deleted. Open Manage Collective, then Clients, to answer.',
   'cs.notice.joined.title': '{venue} joined and now shares clients with you',
   'cs.notice.joined.body':
     'Their clients are arriving in your list. To change who you share with, open Manage Collective, then Clients.',

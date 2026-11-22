@@ -14,7 +14,7 @@ import { closureBandLook } from '@/components/calendar/closure-band';
 describe('calendar colour key', () => {
   it('lists the web entries in the web order', () => {
     expect(CALENDAR_KEY_ENTRIES.map((e) => e.label)).toEqual([
-      'Venue closed',
+      'Business closed',
       'Calendar unavailable',
       'Closed, Unavailable or On leave',
       'Calendar closed',
@@ -36,7 +36,7 @@ describe('calendar colour key', () => {
       CALENDAR_KEY_ENTRIES.map((e) => [e.label, calendarKeySwatch(e, false).accent]),
     );
     expect(accents).toEqual({
-      'Venue closed': '#E11D48',
+      'Business closed': '#E11D48',
       'Calendar unavailable': '#0284C7',
       'Closed, Unavailable or On leave': '#7C3AED',
       'Calendar closed': '#94A3B8',
@@ -44,11 +44,11 @@ describe('calendar colour key', () => {
     });
   });
 
-  it("draws a linked venue's resolved closures with their own-column entry's swatch", () => {
+  it("draws a linked business's resolved closures with their own-column entry's swatch", () => {
     const entry = (label: string) => CALENDAR_KEY_ENTRIES.find((e) => e.label === label)!;
     for (const isDark of [false, true]) {
       expect(closureBandLook('linked_business_closed', isDark)).toEqual(
-        calendarKeySwatch(entry('Venue closed'), isDark),
+        calendarKeySwatch(entry('Business closed'), isDark),
       );
       expect(closureBandLook('linked_calendar_closed', isDark)).toEqual(
         calendarKeySwatch(entry('Calendar unavailable'), isDark),
@@ -62,10 +62,10 @@ describe('calendar colour key', () => {
     }
   });
 
-  it("keeps an older feed's linked_venue_closed slate, and no longer singles linked venues out", () => {
+  it("keeps an older feed's linked_venue_closed slate, and no longer singles linked businesses out", () => {
     const slate = CALENDAR_KEY_ENTRIES.find((e) => e.label === 'Calendar closed')!;
     expect(closureBandLook('linked_venue_closed')).toEqual(calendarKeySwatch(slate, false));
-    expect(slate.meaning).not.toMatch(/linked venue/i);
+    expect(slate.meaning).not.toMatch(/linked business/i);
     expect(CALENDAR_KEY_DESCRIPTION).toMatch(/same colours as your own/);
   });
 

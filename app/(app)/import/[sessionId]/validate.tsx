@@ -505,8 +505,8 @@ function ValidateStep({ sessionId }: { sessionId: string }) {
       ) : null}
 
       {!busy && defaultsBlocking ? (
-        <ImportBanner tone="danger" title="Your venue is not ready for a booking import yet">
-          {'Resolve the "Venue setup needed" issue above (set up the venue, then check again) before you start the import.'}
+        <ImportBanner tone="danger" title="Your business is not ready for a booking import yet">
+          {'Resolve the "Business setup needed" issue above (set up the business, then check again) before you start the import.'}
         </ImportBanner>
       ) : null}
 
@@ -564,7 +564,7 @@ function ValidateStep({ sessionId }: { sessionId: string }) {
         <View style={styles.sheetHeader}>
           <Text variant="heading">Review and approve</Text>
           <Text variant="bodySmall" tone="muted">
-            This is the last step before anything is added to your venue.
+            This is the last step before anything is added to your business.
           </Text>
         </View>
         <ScrollView style={styles.sheetScroll} contentContainerStyle={styles.sheetBody}>
@@ -593,7 +593,7 @@ function ValidateStep({ sessionId }: { sessionId: string }) {
             <Text variant="bodySmall">{`• ${staffSkipped} staff ${plural(staffSkipped, 'file', 'files')} used for matching only (not imported as bookings).`}</Text>
           ) : null}
           <Text variant="caption" tone="secondary">
-            {`This creates real ${clientPluralLower} and bookings in your venue. You can undo the whole import for 24 hours afterwards.`}
+            {`This creates real ${clientPluralLower} and bookings in your business. You can undo the whole import for 24 hours afterwards.`}
           </Text>
           {approveError ? <ImportBanner tone="danger">{approveError}</ImportBanner> : null}
         </ScrollView>

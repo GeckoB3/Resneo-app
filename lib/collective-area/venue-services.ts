@@ -262,7 +262,7 @@ export function curateOutcome(
   nameOf: (result: CurateResult) => string,
   collective: string,
   /** The venue each service belongs to, for its row. */
-  venueOf: (result: CurateResult) => string = () => 'a venue',
+  venueOf: (result: CurateResult) => string = () => 'a business',
 ): { tone: 'ok' | 'error'; text: string; rows: string[]; failedKeys: string[] } {
   const failed = results.filter((r) => !r.ok);
   if (failed.length > 0) {

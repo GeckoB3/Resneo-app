@@ -15,7 +15,7 @@ import {
 const VENUE_NINE_TO_FIVE = { '1': { periods: [{ open: '09:00', close: '17:00' }] } };
 
 describe('weeklyCalendarHoursOutsideVenue', () => {
-  it('names the weekday a calendar runs past the venue', () => {
+  it('names the weekday a calendar runs past the business', () => {
     const out = weeklyCalendarHoursOutsideVenue(
       { '1': [{ start: '08:00', end: '20:00' }] },
       VENUE_NINE_TO_FIVE,
@@ -31,18 +31,18 @@ describe('weeklyCalendarHoursOutsideVenue', () => {
     ).toHaveLength(1);
   });
 
-  it('says nothing when the calendar fits, or the venue has no hours at all', () => {
+  it('says nothing when the calendar fits, or the business has no hours at all', () => {
     const fits = { '1': [{ start: '10:00', end: '16:00' }] };
     expect(weeklyCalendarHoursOutsideVenue(fits, VENUE_NINE_TO_FIVE)).toEqual([]);
     expect(weeklyCalendarHoursOutsideVenue({ '1': [{ start: '00:00', end: '23:59' }] }, null)).toEqual([]);
   });
 
-  it('flags a weekday the venue is closed', () => {
+  it('flags a weekday the business is closed', () => {
     const out = weeklyCalendarHoursOutsideVenue(
       { '0': [{ start: '10:00', end: '14:00' }] },
       { '0': { closed: true } },
     );
-    expect(out[0]).toMatchObject({ dayName: 'Sunday', venueHours: 'Venue closed' });
+    expect(out[0]).toMatchObject({ dayName: 'Sunday', venueHours: 'Business closed' });
   });
 });
 
@@ -83,7 +83,7 @@ describe('datedCalendarHoursOutsideVenue', () => {
   // 2026-08-24 is a Monday.
   const roster = [{ id: 'a', name: 'Hannah', working_hours: { '1': [{ start: '09:00', end: '17:00' }] } }];
 
-  it('flags a calendar still working on a day the venue closed', () => {
+  it('flags a calendar still working on a day the business closed', () => {
     const out = datedCalendarHoursOutsideVenue(
       roster,
       VENUE_NINE_TO_FIVE,
@@ -95,7 +95,7 @@ describe('datedCalendarHoursOutsideVenue', () => {
       { calendarName: 'Hannah', date: '2026-08-24', calendarHours: '09:00 to 17:00', venueHours: 'closed' },
     ]);
     expect(describeDatedMismatch(out)).toContain('Hannah is still scheduled to work outside these hours');
-    expect(describeDatedMismatch(out)).toContain('the venue is closed on Mon 24 Aug');
+    expect(describeDatedMismatch(out)).toContain('the business is closed on Mon 24 Aug');
   });
 
   it('flags a calendar running past amended hours, and nothing when it fits', () => {
@@ -115,7 +115,7 @@ describe('datedCalendarHoursOutsideVenue', () => {
     expect(datedCalendarHoursOutsideVenue(roster, VENUE_NINE_TO_FIVE, wide, '2026-08-24', '2026-08-24')).toEqual([]);
   });
 
-  it('is silent when the venue has no hours (no constraint)', () => {
+  it('is silent when the business has no hours (no constraint)', () => {
     expect(datedCalendarHoursOutsideVenue(roster, null, [], '2026-08-24', '2026-08-24')).toEqual([]);
   });
 });

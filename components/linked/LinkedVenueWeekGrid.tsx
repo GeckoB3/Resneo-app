@@ -55,7 +55,13 @@ export function LinkedVenueWeekGrid({
   refreshing,
   onRefresh,
   visitPositions,
+  inCollective = false,
 }: {
+  /**
+   * The partner is a member of our collective (2026-11-22): named like any member, without the
+   * old linked-accounts "Linked" pill. A plain account link keeps it.
+   */
+  inCollective?: boolean;
   venue: LinkedVenueCalendar;
   /** The seven dates to render (Monday→Sunday), each "YYYY-MM-DD". */
   weekDays: string[];
@@ -180,7 +186,7 @@ export function LinkedVenueWeekGrid({
             </Text>
           ) : null}
         </View>
-        <Badge label="Linked" tone="warning" />
+        {inCollective ? null : <Badge label="Linked" tone="warning" />}
         {pill ? (
           <View style={styles.lockPill}>
             {timeOnly || venue.action === 'none' ? (

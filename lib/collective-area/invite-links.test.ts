@@ -40,7 +40,7 @@ describe('the invite checklist', () => {
     expect(inviteLinkWords(need({ state: 'full' }), 'Light 3')).toBe('Linked.');
     expect(inviteLinkWords(need({ state: 'not_full' }), 'Light 3')).toBe(
       // The app's name for Linked Accounts (CQ-10.11, app-place-names.ts).
-      'Your link with Light 3 gives less than full access both ways. Change it in Linked venues, or they cannot join.',
+      'Your link with Light 3 gives less than full access both ways. Change it in Linked businesses, or they cannot join.',
     );
   });
 
@@ -55,7 +55,7 @@ describe('the invite checklist', () => {
     );
   });
 
-  it('cannot be sent to a venue already in or invited, or one that cannot join', () => {
+  it('cannot be sent to a business already in or invited, or one that cannot join', () => {
     expect(inviteBlocked(check([]))).toBe(false);
     expect(inviteBlocked(check([], { already: 'invited' }))).toBe(true);
     expect(inviteBlocked(check([], { standing: { standing: 'blocked', reason: 'Uses EUR, not GBP', detail: null } }))).toBe(true);
@@ -65,13 +65,13 @@ describe('the invite checklist', () => {
   it('says one acceptance links and joins, once it is sent', () => {
     const zen = need({ venue_id: 'v-zen', venue_name: 'Zen Studio', is_host: false });
     expect(inviteSentMessage(check([need({}), zen]))).toBe(
-      'Invitation sent to Light 3. When they accept it, they are linked with every venue here and join, in one step.',
+      'Invitation sent to Light 3. When they accept it, they are linked with every business here and join, in one step.',
     );
   });
 });
 
-describe('an invited venue on the Venues tab', () => {
-  it('names only the venues whose link has less than full access, "you" for the host', () => {
+describe('an invited business on the Businesses tab', () => {
+  it('names only the businesses whose link has less than full access, "you" for the host', () => {
     const links = [
       need({ state: 'not_full' }),
       need({ venue_id: 'v-zen', venue_name: 'Zen Studio', is_host: false, state: 'not_full' }),
@@ -82,7 +82,7 @@ describe('an invited venue on the Venues tab', () => {
     );
   });
 
-  it('waits on the venue itself when every other link is made as it joins', () => {
+  it('waits on the business itself when every other link is made as it joins', () => {
     const links = [
       need({ state: 'none' }),
       need({ venue_id: 'v-zen', is_host: false, state: 'my_request' }),
@@ -92,7 +92,7 @@ describe('an invited venue on the Venues tab', () => {
   });
 });
 
-describe('Venues joining', () => {
+describe('Businesses joining', () => {
   const todo = (state: InviteeLinkTodo['state']): InviteeLinkTodo => ({
     collective_id: 'col-1',
     collective_name: 'Northside',

@@ -77,7 +77,7 @@ export async function ensureTerminalLocationId(args: {
   if (cachedId) return cachedId;
   const res = await fetchConnectionToken(args);
   if (!res?.location_id) {
-    throw new Error('This venue is not set up for in-person payments yet.');
+    throw new Error('This business is not set up for in-person payments yet.');
   }
   return res.location_id;
 }

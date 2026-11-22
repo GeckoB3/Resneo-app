@@ -98,6 +98,12 @@ export interface CustomerBookingDetail {
    * link to it still opens the visit. Absent on older servers.
    */
   in_visit?: boolean;
+  /**
+   * One person's appointment of a group booking (several people booked together, web PUBLIC-19).
+   * The screen then loads the group (`GET /api/v1/me/groups/[id]`) and shows every person, each
+   * with their own cancel and change. Present (true) only then; absent on older servers.
+   */
+  in_group?: boolean;
   /** No-show protection; null when the booking has none. Absent on older servers. */
   card_hold?: CustomerBookingCardHold | null;
   /** The manage page link; null for a signed-in read (the v1 route leaves it out). */

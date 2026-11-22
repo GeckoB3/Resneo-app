@@ -17,6 +17,7 @@ import {
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { ServiceCollectiveBlock } from '@/types/services-manage';
+import { personAtBusiness } from '@/lib/venue/member-label';
 
 /**
  * Which calendars offer a page service, at every venue in the collective (web
@@ -180,7 +181,7 @@ export function CollectiveCalendarsSection({
                   <Switch
                     value={state.checked}
                     disabled={disabled}
-                    accessibilityLabel={`${calendar.name} at ${group.venue_name}`}
+                    accessibilityLabel={personAtBusiness(calendar.name, group.venue_name)}
                     onValueChange={(next) => onChange(toggleCollectiveCalendar(value, ref, savedOn, next))}
                     trackColor={{ true: colors.brand, false: colors.border }}
                     thumbColor={colors.surfaceRaised}
@@ -288,7 +289,7 @@ function NewServiceCalendars({
                 <Switch
                   value={isTicked(ref)}
                   disabled={disabled}
-                  accessibilityLabel={`${calendar.name} at ${group.venue_name}`}
+                  accessibilityLabel={personAtBusiness(calendar.name, group.venue_name)}
                   onValueChange={(next) => setOne(ref, next)}
                   trackColor={{ true: colors.brand, false: colors.border }}
                   thumbColor={colors.surfaceRaised}

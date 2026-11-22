@@ -152,9 +152,9 @@ export function formatBookingTimelineEvent(event: BookingTimelineEventRow): {
 
     case 'booking_status_changed': {
       const confirmedBy = payload?.confirmed_by;
-      if (confirmedBy === 'guest') return { title: 'Confirmed by guest' };
+      if (confirmedBy === 'guest') return { title: 'Confirmed by client' };
       if (confirmedBy === 'staff') return { title: 'Confirmed by staff' };
-      if (confirmedBy === 'both') return { title: 'Confirmed by guest and staff' };
+      if (confirmedBy === 'both') return { title: 'Confirmed by client and staff' };
       const oldStatus = typeof payload?.old_status === 'string' ? payload.old_status : null;
       const newStatus = typeof payload?.new_status === 'string' ? payload.new_status : null;
       if (newStatus && newStatus !== 'Confirmed') {
@@ -170,7 +170,7 @@ export function formatBookingTimelineEvent(event: BookingTimelineEventRow): {
     case 'booking_modified': {
       const actor =
         payload?.modification_actor === 'guest'
-          ? 'Guest'
+          ? 'Client'
           : payload?.modification_actor === 'staff'
             ? 'Staff'
             : 'User';

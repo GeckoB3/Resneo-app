@@ -99,7 +99,7 @@ export function RemoveFromCollectivePanel({
                   onRemoved();
                 },
                 onError: (err) =>
-                  setError(err instanceof ApiError ? err.message : 'Could not remove the venue. Please try again.'),
+                  setError(err instanceof ApiError ? err.message : 'Could not remove the business. Please try again.'),
               },
             );
           }}
@@ -190,7 +190,7 @@ export function LinkBreakSheet({
           </Text>
           <Text variant="bodySmall" tone="secondary">
             {mode === 'unlink'
-              ? 'Cross-venue access stops immediately for both venues. To link again later, send a new request from either venue.'
+              ? 'Cross-business access stops immediately for both businesses. To link again later, send a new request from either business.'
               : 'The permissions they proposed apply as soon as you accept.'}
           </Text>
           <CollectiveBreakWarning

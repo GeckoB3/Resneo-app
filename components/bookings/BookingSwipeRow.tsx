@@ -148,7 +148,7 @@ function BookingSwipeRowBase({
         <ConfirmSheet
           visible
           title="Mark as no-show?"
-          message={`${booking.guest_name?.trim() || 'This guest'} did not arrive for this booking.`}
+          message={`${booking.guest_name?.trim() || 'This client'} did not arrive for this booking.`}
           confirmLabel="Mark no-show"
           onConfirm={() => {
             setConfirmingNoShow(false);

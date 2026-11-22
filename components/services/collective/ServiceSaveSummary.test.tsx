@@ -74,7 +74,7 @@ describe('ServiceSaveSummary', () => {
     expect(mockCalls).toEqual([
       { path: '/api/venue/collectives/col-1/undo', method: 'POST', body: { audit_event_id: 'audit-1' } },
     ]);
-    expect(screen.getByText("We put Balayage's settings back at every venue.")).toBeTruthy();
+    expect(screen.getByText("We put Balayage's settings back at every business.")).toBeTruthy();
     expect(screen.queryByRole('button', { name: /^Put it back/ })).toBeNull();
   });
 
@@ -95,7 +95,7 @@ describe('ServiceSaveSummary', () => {
     ]);
     expect(
       screen.getByText(
-        "We put Balayage's settings back at every venue. These could not be put back, so set them again with Edit values: Mo at Light 3 (price).",
+        "We put Balayage's settings back at every business. These could not be put back, so set them again with Edit values: Mo at Light 3 (price).",
       ),
     ).toBeTruthy();
   });

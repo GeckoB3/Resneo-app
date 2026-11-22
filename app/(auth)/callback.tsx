@@ -15,7 +15,7 @@ const ERROR_COPY: Record<AuthErrorReason, { title: string; message: string }> = 
   otp_expired: {
     title: 'Link expired',
     message:
-      'This sign-in link was already used or has expired. Request a new link or code from the sign-in screen. If this was a staff invitation, ask your venue admin to send it again.',
+      'This sign-in link was already used or has expired. Request a new link or code from the sign-in screen. If this was a staff invitation, ask your business admin to send it again.',
   },
   exchange_failed: {
     title: 'Sign-in failed',

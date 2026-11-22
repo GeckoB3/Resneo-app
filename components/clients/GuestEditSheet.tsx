@@ -252,7 +252,7 @@ export function GuestEditSheet({ target, onClose }: GuestEditSheetProps) {
       {target ? (
         <View style={styles.body}>
           <Text variant="overline" tone="muted">
-            Edit guest
+            Edit client
           </Text>
 
           <ScrollView

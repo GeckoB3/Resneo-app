@@ -85,7 +85,7 @@ function statusStripColor(
 function entryGuestName(entry: WaitlistEntry): string {
   if (entry.guest_name?.trim()) return entry.guest_name;
   const parts = [entry.guest_first_name, entry.guest_last_name].filter(Boolean);
-  return parts.length ? parts.join(' ') : 'Guest';
+  return parts.length ? parts.join(' ') : 'Client';
 }
 
 function whenLabel(entry: WaitlistEntry): string {
@@ -99,7 +99,7 @@ function detailLabel(entry: WaitlistEntry): string | null {
   if (entry.service_name) {
     return [entry.service_name, entry.practitioner_name].filter(Boolean).join(' · ');
   }
-  if (entry.party_size) return `${entry.party_size} ${entry.party_size === 1 ? 'guest' : 'guests'}`;
+  if (entry.party_size) return `${entry.party_size} ${entry.party_size === 1 ? 'person' : 'people'}`;
   return null;
 }
 
@@ -503,9 +503,9 @@ export default function WaitlistScreen() {
           } else if (status === 'offered') {
             // The offer stands even when the message did not go (web parity).
             if (data.notify_failed) {
-              toast.error('Spot offered, but we could not send email or SMS to the guest. Contact them directly.');
+              toast.error('Spot offered, but we could not send email or SMS to the client. Contact them directly.');
             } else {
-              toast.success('Spot offered to the guest.');
+              toast.success('Spot offered to the client.');
             }
           } else {
             toast.success('Booking confirmed.');
@@ -545,7 +545,7 @@ export default function WaitlistScreen() {
       {
         onSuccess: () => {
           endPending(`alert-${alertId}`);
-          toast.success(action === 'offer' ? 'Slot offered to matching guests.' : 'Alert dismissed.');
+          toast.success(action === 'offer' ? 'Slot offered to matching clients.' : 'Alert dismissed.');
         },
         onError: (error) => {
           endPending(`alert-${alertId}`);
@@ -616,7 +616,7 @@ export default function WaitlistScreen() {
                 ) : null}
                 <Text variant="caption" tone="muted">
                   {alert.matching_waitlist_count}{' '}
-                  {alert.matching_waitlist_count === 1 ? 'guest' : 'guests'} waiting
+                  {alert.matching_waitlist_count === 1 ? 'client' : 'clients'} waiting
                 </Text>
                 <View style={styles.actions}>
                   {alertPending ? (
@@ -684,7 +684,7 @@ export default function WaitlistScreen() {
                 <IconButton
                   icon={{ ios: 'plus', android: 'add', web: 'add' }}
                   onPress={() => setAddOpen(true)}
-                  accessibilityLabel="Add guest to waitlist"
+                  accessibilityLabel="Add client to waitlist"
                   size={36}
                   iconSize={20}
                 />
@@ -733,7 +733,7 @@ export default function WaitlistScreen() {
                 title={filter === 'active' ? 'No active entries' : 'No waitlist entries'}
                 message={
                   filter === 'active'
-                    ? 'When guests join the waitlist, they will appear here. Switch to "All" to see history.'
+                    ? 'When clients join the waitlist, they will appear here. Switch to "All" to see history.'
                     : 'There is nothing in the waitlist history yet.'
                 }
               />

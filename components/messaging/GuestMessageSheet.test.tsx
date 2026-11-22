@@ -41,7 +41,7 @@ const EMAIL_ONLY = { id: 'g1', guestName: 'Ada Lovelace', email: 'ada@example.co
 
 async function compose(onSend: jest.Mock) {
   await render(<GuestMessageSheet target={EMAIL_ONLY} onSend={onSend} onClose={jest.fn()} />);
-  await changeText(screen.getByPlaceholderText('Write a short message to the guest…'), 'Running late?');
+  await changeText(screen.getByPlaceholderText('Write a short message to the client…'), 'Running late?');
   await press(() => screen.getByText('Send'));
 }
 
@@ -84,11 +84,11 @@ describe('GuestMessageSheet — web channel parity', () => {
   });
 
   it('flags a partial send that still went out', async () => {
-    const onSend = jest.fn(() => Promise.resolve({ errors: ['SMS: Guest has no phone on file'] }));
+    const onSend = jest.fn(() => Promise.resolve({ errors: ['SMS: Client has no phone on file'] }));
     await compose(onSend);
 
     expect(mockToast.info).toHaveBeenCalledWith(
-      'Message sent, with warnings: SMS: Guest has no phone on file',
+      'Message sent, with warnings: SMS: Client has no phone on file',
     );
   });
 });

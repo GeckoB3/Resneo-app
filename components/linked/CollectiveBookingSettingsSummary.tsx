@@ -14,7 +14,7 @@ import type { CollectiveView } from '@/types/collectives';
  */
 export function CollectiveBookingSettingsSummary({ collective }: { collective: CollectiveView }) {
   const host =
-    collective.members.find((m) => m.venueId === collective.hostVenueId)?.venueName ?? 'the host venue';
+    collective.members.find((m) => m.venueId === collective.hostVenueId)?.venueName ?? 'the host business';
   // Older servers send only the two flow flags; the others then read as unknown and are left out.
   const s = collective.bookingSettings;
   const onOff = (on: boolean | undefined) => (on ? 'on' : 'off');
@@ -23,14 +23,14 @@ export function CollectiveBookingSettingsSummary({ collective }: { collective: C
       <Text variant="label">{`Booking settings for ${collective.name}`}</Text>
       <Text variant="caption" tone="muted">
         {collective.isHost
-          ? `These apply to the ${collective.name} page and to online bookings at every venue in it. Change them in Settings, Booking settings.`
-          : `These apply to the ${collective.name} page and to online bookings at every venue in it, yours included. ${host} sets them.`}
+          ? `These apply to the ${collective.name} page and to online bookings at every business in it. Change them in Settings, Booking settings.`
+          : `These apply to the ${collective.name} page and to online bookings at every business in it, yours included. ${host} sets them.`}
       </Text>
       {s ? (
         <>
-          <Text variant="bodySmall" tone="secondary">{`Guests sign in to book: ${onOff(s.requireAccountLogin)}`}</Text>
+          <Text variant="bodySmall" tone="secondary">{`Clients sign in to book: ${onOff(s.requireAccountLogin)}`}</Text>
           <Text variant="bodySmall" tone="secondary">
-            {`Guests change their own appointments online: ${onOff(s.guestSelfReschedule)}`}
+            {`Clients change their own appointments online: ${onOff(s.guestSelfReschedule)}`}
           </Text>
           <Text variant="bodySmall" tone="secondary">{`Appointment waitlist: ${onOff(s.waitlist)}`}</Text>
         </>
@@ -39,10 +39,10 @@ export function CollectiveBookingSettingsSummary({ collective }: { collective: C
         {`“Any available”: ${onOff(s?.anyAvailablePractitioner ?? collective.hostAnyAvailablePractitioner)}`}
       </Text>
       <Text variant="bodySmall" tone="secondary">
-        {`Guests choose the person first: ${onOff(s?.staffFirstBookingFlow ?? collective.hostStaffFirstBookingFlow)}`}
+        {`Clients choose the person first: ${onOff(s?.staffFirstBookingFlow ?? collective.hostStaffFirstBookingFlow)}`}
       </Text>
       <Text variant="caption" tone="muted">
-        {`From ${host}’s own settings: the address, phone and website in the header and the currency and wording (Settings, Profile), and the opening hours shown to guests (Settings, Business hours).`}
+        {`From ${host}’s own settings: the address, phone and website in the header and the currency and wording (Settings, Profile), and the opening hours shown to clients (Settings, Business hours).`}
       </Text>
       <Text variant="caption" tone="muted">
         {hostSettingsNote(collective, host)}

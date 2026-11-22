@@ -128,7 +128,7 @@ export default function SaleScreen() {
     return (
       <Screen>
         {header(t('till.title'))}
-        <EmptyState title={t('till.off.title')} message={t('till.off.body', { venue: 'your venue' })} />
+        <EmptyState title={t('till.off.title')} message={t('till.off.body', { venue: 'your business' })} />
       </Screen>
     );
   }
@@ -197,7 +197,7 @@ export default function SaleScreen() {
       onRefresh={() => void saleQ.refetch()}
       myCalendarIds={me.data?.staff?.linked_calendar_ids ?? []}
       header={header(t('sale.title', { saleNo: saleQ.data.number_label }))}
-      historyVenue={history ? venue?.name?.trim() || 'your venue' : null}
+      historyVenue={history ? venue?.name?.trim() || 'your business' : null}
     />
   );
 }

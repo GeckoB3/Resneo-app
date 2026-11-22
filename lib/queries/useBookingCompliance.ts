@@ -49,7 +49,7 @@ export type LinkedBookingComplianceResult =
   | { kind: 'note'; text: string };
 
 const LINKED_NOT_ENABLED_NOTE =
-  'That venue does not use compliance records, so there is nothing to show here.';
+  'That business does not use compliance records, so there is nothing to show here.';
 
 /**
  * The compliance state of a LINKED venue's booking, read through the link (web

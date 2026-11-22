@@ -43,6 +43,7 @@ import {
 } from '@/lib/collective-area/model';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
+import { personAtBusiness } from '@/lib/venue/member-label';
 
 export function BulkCalendarsSheet({ grid }: { grid: ServicesGridState }) {
   const { colors } = useTheme();
@@ -267,7 +268,7 @@ export function BulkCalendarsSheet({ grid }: { grid: ServicesGridState }) {
                           key={calendar.id}
                           state={state}
                           name={calendar.name}
-                          accessibilityLabel={`${calendar.name} at ${group.venue_name}`}
+                          accessibilityLabel={personAtBusiness(calendar.name, group.venue_name)}
                           disabled={grid.saving}
                           // A dash becomes a tick: "some" turns into "all" first, as select-all does.
                           onPress={() => set(group, [calendar.id], state !== 'on')}

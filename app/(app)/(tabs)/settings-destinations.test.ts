@@ -51,7 +51,7 @@ describe('buildDestinations — model-link gating (web parity)', () => {
     expect(list).toContain('model-resource_booking');
   });
 
-  it('hides model rows for models the venue has NOT enabled', () => {
+  it('hides model rows for models the business has NOT enabled', () => {
     const list = ids(
       ctx({ isAdmin: true, enabledModels: new Set<BookingModel>(['class_session']) }),
     );
@@ -60,7 +60,7 @@ describe('buildDestinations — model-link gating (web parity)', () => {
     expect(list).not.toContain('model-resource_booking');
   });
 
-  it('keeps the web-only Tables row a link-out (no appRoute) for table venues', () => {
+  it('keeps the web-only Tables row a link-out (no appRoute) for table businesses', () => {
     const dests = buildDestinations(
       ctx({ isAdmin: false, enabledModels: new Set<BookingModel>(['table_reservation']) }),
     );
@@ -143,14 +143,14 @@ describe('buildDestinations — Waitlist & Calendar-availability eligibility', (
     expect(ids(ctx({ waitlistEnabled: true }))).toContain('waitlist');
   });
 
-  it('shows Waitlist for table-reservation venues regardless of the flag', () => {
+  it('shows Waitlist for table-reservation businesses regardless of the flag', () => {
     const list = ids(
       ctx({ waitlistEnabled: false, enabledModels: new Set<BookingModel>(['table_reservation']) }),
     );
     expect(list).toContain('waitlist');
   });
 
-  it('hides Waitlist for an appointment venue with the feature off', () => {
+  it('hides Waitlist for an appointment business with the feature off', () => {
     const list = ids(
       ctx({
         waitlistEnabled: false,
@@ -161,14 +161,14 @@ describe('buildDestinations — Waitlist & Calendar-availability eligibility', (
     expect(list).not.toContain('waitlist');
   });
 
-  it('shows Calendar availability for a scheduling-experience venue', () => {
+  it('shows Calendar availability for a scheduling-experience business', () => {
     expect(ids(ctx({ pricingTier: 'appointments' }))).toContain('availability');
     expect(
       ids(ctx({ pricingTier: null, enabledModels: new Set<BookingModel>(['class_session']) })),
     ).toContain('availability');
   });
 
-  it('hides Calendar availability for a table-only restaurant venue', () => {
+  it('hides Calendar availability for a table-only restaurant business', () => {
     const list = ids(
       ctx({ pricingTier: 'restaurant', enabledModels: new Set<BookingModel>(['table_reservation']) }),
     );
@@ -242,7 +242,7 @@ describe('buildDestinations — the Collective area (web parity, 2026-09-17)', (
     );
     expect(dest).toMatchObject({
       label: 'Manage Collective',
-      hint: 'Services, venues and history of Plus 1 Staging',
+      hint: 'Services, businesses and history of Plus 1 Staging',
       target: '/collective-area',
       group: 'network',
     });
@@ -253,7 +253,7 @@ describe('buildDestinations — the Collective area (web parity, 2026-09-17)', (
     expect(ids(ctx({ isAdmin: false, collectiveArea: { name: 'Plus 1 Staging' } }))).not.toContain('collective-area');
   });
 
-  it('shows one collective row once two venues are in: Manage Collective, not Venue collectives too (2026-10-28)', () => {
+  it('shows one collective row once two businesses are in: Manage Collective, not Business collectives too (2026-10-28)', () => {
     const live = ids(ctx({ isAdmin: true, collectiveArea: { name: 'Plus 1 Staging', joined: true } }));
     expect(live).toContain('collective-area');
     expect(live).not.toContain('collectives');
@@ -279,7 +279,7 @@ describe('buildDestinations — Checkout (POS app step 1, plan §4.22)', () => {
     }
   });
 
-  it('shows the Checkout tile in the workspace to everyone at a POS venue', () => {
+  it('shows the Checkout tile in the workspace to everyone at a POS business', () => {
     for (const isAdmin of [true, false]) {
       const tile = buildDestinations(ctx({ isAdmin, posEnabled: true })).find((d) => d.id === 'checkout');
       expect(tile).toMatchObject({ group: 'workspace', featured: true, kind: 'route', target: '/checkout' });
@@ -313,7 +313,7 @@ describe('buildDestinations — Checkout (POS app step 1, plan §4.22)', () => {
     expect(ids(ctx({ isAdmin: false, posEnabled: true, vouchersEnabled: true }))).not.toContain('voucher-settings');
   });
 
-  it('shows Products and stock to everyone at a POS venue (app step 4, UX spec §13.6)', () => {
+  it('shows Products and stock to everyone at a POS business (app step 4, UX spec §13.6)', () => {
     for (const isAdmin of [true, false]) {
       const tile = buildDestinations(ctx({ isAdmin, posEnabled: true })).find((d) => d.id === 'stock');
       expect(tile).toMatchObject({ group: 'workspace', kind: 'route', target: '/stock', label: 'Products and stock' });
@@ -395,7 +395,7 @@ describe('buildDestinations — Commission splits (2026-10-14)', () => {
 });
 
 describe('buildDestinations — switching Checkout on (POS Part 5, C1)', () => {
-  it('gives an admin of an offered venue the Checkout tile, opening the landing, with no "New"', () => {
+  it('gives an admin of an offered business the Checkout tile, opening the landing, with no "New"', () => {
     const tile = buildDestinations(ctx({ isAdmin: true, posEnabled: false, posOfferState: 'available' })).find((d) => d.id === 'checkout');
     expect(tile).toMatchObject({ group: 'workspace', featured: true, kind: 'route', target: '/checkout', label: 'Checkout' });
     expect(tile?.hint).toBe('Take payments on your phone and at your desk');

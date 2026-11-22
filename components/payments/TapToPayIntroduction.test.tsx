@@ -122,7 +122,7 @@ describe('TapToPayIntroduction', () => {
     mockCtx.isAdmin = false;
     await mount();
 
-    expect(screen.getByText(/Ask an admin at your venue to turn it on/)).toBeTruthy();
+    expect(screen.getByText(/Ask an admin at your business to turn it on/)).toBeTruthy();
     expect(screen.queryByText('Set up Tap to Pay on iPhone')).toBeNull();
 
     await press('Got it');

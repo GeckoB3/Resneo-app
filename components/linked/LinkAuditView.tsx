@@ -223,7 +223,7 @@ export function LinkAuditView({
   const header = (
     <View style={styles.header}>
       <Text variant="bodySmall" tone="secondary">
-        {`Every cross-venue action on the link with ${otherVenueName}. Visible to both venues and retained after the link ends.`}
+        {`Every cross-business action on the link with ${otherVenueName}. Visible to both businesses and retained after the link ends.`}
       </Text>
 
       <SectionHeader title="Action" />

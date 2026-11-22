@@ -51,7 +51,7 @@ export function membershipStateLine(membership: Membership): string {
   if (membership.status === 'past_due') {
     // Named plainly, because the venue may suspend it and the customer can fix
     // it only if they know.
-    return 'A payment did not go through. Please check with the venue.';
+    return 'A payment did not go through. Please check with the business.';
   }
 
   if (membership.status === 'trialing') {
@@ -85,7 +85,7 @@ export function membershipCancelConsequence(membership: Membership): string {
  * a wrong number about money is worse than no number.
  */
 export function courseCancelConsequence(): string {
-  return 'Your place on the remaining sessions is given up. Any refund due is worked out by the venue from the sessions still to come, and it may depend on how much notice you have given.';
+  return 'Your place on the remaining sessions is given up. Any refund due is worked out by the business from the sessions still to come, and it may depend on how much notice you have given.';
 }
 
 /** Day names, indexed as the timetable stores them. */

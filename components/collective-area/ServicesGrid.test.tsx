@@ -48,7 +48,7 @@ const block = (role: 'master' | 'parked', itemId: string | null) => ({
   role,
   collective_id: 'col-1',
   collective_name: 'Northside',
-  host_venue_name: 'Host Venue',
+  host_venue_name: 'Host Business',
   item_id: itemId,
   locked_fields: [],
   delegated_fields: [],
@@ -66,7 +66,7 @@ const startServices = (): AreaService[] => [
 const startGroups = (): CollectiveCalendarGroup[] => [
   {
     venue_id: 'v-host',
-    venue_name: 'Host Venue',
+    venue_name: 'Host Business',
     is_host: true,
     sync,
     calendars: [
@@ -138,7 +138,7 @@ beforeEach(() => {
 describe('the bulk lane (CQ-03)', () => {
   // Regression: a venue picked on its own meant every service shown, so Take off the page was
   // offered and emptied the page at every venue.
-  it('offers Choose calendars and no page buttons for a venue picked on its own', async () => {
+  it('offers Choose calendars and no page buttons for a business picked on its own', async () => {
     await renderGrid();
     await press(screen.getByRole('button', { name: 'Select' }));
     await press(screen.getByRole('button', { name: 'Zen Studio' }));
@@ -149,7 +149,7 @@ describe('the bulk lane (CQ-03)', () => {
     expect(screen.queryByRole('button', { name: 'Put on the page' })).toBeNull();
     // Ticking a service brings back only what would change it.
     await press(screen.getByLabelText('Balayage'));
-    expect(screen.getByText('1 service at 1 venue selected')).toBeTruthy();
+    expect(screen.getByText('1 service at 1 business selected')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Take off the page' })).toBeTruthy();
   });
 
@@ -165,7 +165,7 @@ describe('the bulk lane (CQ-03)', () => {
     expect(screen.getByText('Take Balayage off the page?')).toBeTruthy();
     expect(
       screen.getByText(
-        'Take off the page: Balayage. Guests will no longer be able to book it at any venue. Bookings already made are not changed.',
+        'Take off the page: Balayage. Clients will no longer be able to book it at any business. Bookings already made are not changed.',
       ),
     ).toBeTruthy();
     await press(screen.getByRole('button', { name: 'Take it off the page' }));
@@ -223,11 +223,11 @@ describe("a service's sheet", () => {
     await renderGrid();
     await press(screen.getByLabelText('Balayage'));
     await act(async () => {
-      fireEvent(screen.getByLabelText('Ada at Host Venue'), 'valueChange', false);
+      fireEvent(screen.getByLabelText('Ada at Host Business'), 'valueChange', false);
     });
     await press(screen.getByRole('button', { name: 'Save' }));
     expect(screen.getByText('Ada has upcoming bookings for Balayage')).toBeTruthy();
-    expect(screen.getByText(/^Ada at Host Venue, Balayage: Tue 3 Nov/)).toBeTruthy();
+    expect(screen.getByText(/^Ada at Host Business, Balayage: Tue 3 Nov/)).toBeTruthy();
     expect(screen.queryByText(/did not go through/)).toBeNull();
     await press(screen.getByRole('button', { name: 'Take it off and keep these bookings' }));
     expect(bulkCalls()).toHaveLength(2);
@@ -248,14 +248,14 @@ describe("a service's sheet", () => {
     await renderGrid();
     await press(screen.getByLabelText('Balayage'));
     await act(async () => {
-      fireEvent(screen.getByLabelText('Ada at Host Venue'), 'valueChange', false);
+      fireEvent(screen.getByLabelText('Ada at Host Business'), 'valueChange', false);
     });
     await press(screen.getByRole('button', { name: 'Save' }));
     // An older server sends no dates: the step still names the calendar and service.
-    expect(screen.getByText('Balayage, Ada at Host Venue')).toBeTruthy();
+    expect(screen.getByText('Balayage, Ada at Host Business')).toBeTruthy();
     await press(screen.getByRole('button', { name: 'Keep offering it' }));
     expect(bulkCalls()).toHaveLength(1);
-    expect(screen.getByLabelText('Ada at Host Venue').props.value).toBe(true);
+    expect(screen.getByLabelText('Ada at Host Business').props.value).toBe(true);
     expect(screen.queryByText('Not saved yet: will stop offering')).toBeNull();
   });
 
@@ -285,7 +285,7 @@ describe("a service's sheet", () => {
     expect(screen.getByText('Add Parked cut to the Northside page?')).toBeTruthy();
     expect(
       screen.getByText(
-        'Parked cut is set up at Zen Studio with your settings, and you control it for every venue. Next, choose which of their calendars offer it.',
+        'Parked cut is set up at Zen Studio with your settings, and you control it for every business. Next, choose which of their calendars offer it.',
       ),
     ).toBeTruthy();
     expect(mockCalls).toHaveLength(0);
@@ -306,7 +306,7 @@ describe("a service's sheet", () => {
     await press(screen.getByLabelText('Balayage'));
     await press(screen.getByRole('button', { name: 'Take off the page' }));
     expect(screen.getByText('Take Balayage off the Northside page?')).toBeTruthy();
-    expect(screen.getByText(/^Guests will no longer see Balayage on the Northside page\. At Zen Studio it becomes a retired service/)).toBeTruthy();
+    expect(screen.getByText(/^Clients will no longer see Balayage on the Northside page\. At Zen Studio it becomes a retired service/)).toBeTruthy();
     await press(screen.getByRole('button', { name: 'Go back' }));
     expect(mockCalls).toHaveLength(0);
     await press(screen.getByRole('button', { name: 'Take off the page' }));
@@ -336,7 +336,7 @@ describe('Undo (CQ-11)', () => {
     await renderGrid();
     await press(screen.getByLabelText('Balayage'));
     await act(async () => {
-      fireEvent(screen.getByLabelText('Ada at Host Venue'), 'valueChange', false);
+      fireEvent(screen.getByLabelText('Ada at Host Business'), 'valueChange', false);
     });
     await press(screen.getByRole('button', { name: 'Save' }));
     expect(bulkCalls()[0]?.body).toEqual({ ops: [{ op: 'unassign', service_id: 's1', venue_id: 'v-host', calendar_id: 'c1' }] });
@@ -355,7 +355,7 @@ describe('Undo (CQ-11)', () => {
       await renderGrid();
       await press(screen.getByLabelText('Balayage'));
       await act(async () => {
-        fireEvent(screen.getByLabelText('Ben at Host Venue'), 'valueChange', true);
+        fireEvent(screen.getByLabelText('Ben at Host Business'), 'valueChange', true);
       });
       await press(screen.getByRole('button', { name: 'Save' }));
       expect(screen.getByRole('button', { name: 'Undo (60s)' })).toBeTruthy();
@@ -373,13 +373,13 @@ describe('Undo (CQ-11)', () => {
   });
 });
 
-describe('What needs you opens a venue (CQ-10.7)', () => {
-  it("opens Choose calendars for that venue's calendars and the services on the page, and lets the venue go after", async () => {
+describe('What needs you opens a business (CQ-10.7)', () => {
+  it("opens Choose calendars for that business's calendars and the services on the page, and lets the business go after", async () => {
     await renderGrid();
     await press(screen.getByRole('button', { name: 'Focus Zen Studio' }));
     expect(screen.getByText('For Balayage.')).toBeTruthy();
     expect(screen.getByLabelText('Cy at Zen Studio')).toBeTruthy();
-    expect(screen.queryByLabelText('Ada at Host Venue')).toBeNull();
+    expect(screen.queryByLabelText('Ada at Host Business')).toBeNull();
     expect(screen.queryByText(/of the services you picked are not on the page/)).toBeNull();
     expect(screen.queryByRole('button', { name: 'Take off the page' })).toBeNull();
     await press(screen.getByRole('button', { name: 'Cancel' }));

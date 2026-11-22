@@ -411,7 +411,7 @@ describe('Reports overview by booking type', () => {
 });
 
 describe('Reports overview team + cancellation cards', () => {
-  it('keeps the team card for an appointment venue with an empty range', async () => {
+  it('keeps the team card for an appointment business with an empty range', async () => {
     await render(<ReportsScreen />);
     expect(screen.getByText('Team, services & channels')).toBeTruthy();
     expect(screen.getByText(/No appointment data in this range yet\./)).toBeTruthy();
@@ -461,14 +461,14 @@ describe('Reports overview per-model sections', () => {
     expect(screen.getByText('Studio A')).toBeTruthy();
   });
 
-  it('leaves them out when the payload has none, and hides tables for an appointment venue', async () => {
+  it('leaves them out when the payload has none, and hides tables for an appointment business', async () => {
     await render(<ReportsScreen />);
     expect(screen.queryByText('Event ticket sales by tier')).toBeNull();
     expect(screen.queryByText('Resource utilisation')).toBeNull();
     expect(screen.queryByText('Table utilisation')).toBeNull();
   });
 
-  it('shows table utilisation for a table venue with table management on', async () => {
+  it('shows table utilisation for a table business with table management on', async () => {
     mockVenue.pricingTier = null;
     mockVenue.bookingModel = 'table_reservation';
     mockVenue.terminology = { client: 'Guest', booking: 'Reservation', staff: 'Staff' };
@@ -530,7 +530,7 @@ describe('Reports tabs for Checkout (POS app step 1)', () => {
     expect(order).toEqual(['Overview', 'New bookings', 'Revenue', 'Team', 'Commission splits', 'Clients']);
   });
 
-  it('keeps it too when the venue has the tabs but this login may not read them', async () => {
+  it('keeps it too when the business has the tabs but this login may not read them', async () => {
     mockPosAccess = { visible: true, can_view: false };
     await render(<ReportsScreen />);
     expect(screen.queryByText('Takings')).toBeNull();
@@ -641,7 +641,7 @@ describe('Reports for a team member (web StaffPosReportsPanel)', () => {
   it('keeps Reports admin only where there is no POS', async () => {
     mockRole = 'staff';
     await render(<ReportsScreen />);
-    expect(screen.getByText('Reports are only available to venue admins.')).toBeTruthy();
+    expect(screen.getByText('Reports are only available to business admins.')).toBeTruthy();
   });
 });
 
@@ -683,7 +683,7 @@ describe('Reports SMS usage card (web SmsUsageBanner)', () => {
 // Checkout off with past sales (web `pos-access/route.ts`: visible = POS on OR a completed sale):
 // the tabs follow the server's answer, not the switch, so the venue keeps its history.
 describe('Reports with Checkout off but a sales history', () => {
-  it('shows Takings and Sales when the server says the venue has them', async () => {
+  it('shows Takings and Sales when the server says the business has them', async () => {
     mockPosOn = false;
     mockPosAccess = { visible: true, can_view: true, can_export: true };
     await render(<ReportsScreen />);
@@ -771,7 +771,7 @@ async function chooseCalendar(label: string) {
 }
 
 describe('Reports calendar filter', () => {
-  it('shows no picker until the venue has two calendars', async () => {
+  it('shows no picker until the business has two calendars', async () => {
     mockCalendars = [HANNAH];
     await render(<ReportsScreen />);
     expect(screen.queryByHintText('Opens the choices of what to show')).toBeNull();
@@ -806,15 +806,15 @@ describe('Reports calendar filter', () => {
     expect(screen.getByText('Showing Hannah only.')).toBeTruthy();
   });
 
-  it('says the figures are the whole venue when the answer carries no calendar', async () => {
+  it('says the figures are the whole business when the answer carries no calendar', async () => {
     mockCalendars = [HANNAH, JENNY];
     await render(<ReportsScreen />);
     // Nothing is said while all calendars are chosen.
-    expect(screen.queryByText('These figures are for the whole venue.')).toBeNull();
+    expect(screen.queryByText('These figures are for the whole business.')).toBeNull();
     await chooseCalendar('Jenny');
     expect(lastOverviewCalendar()).toBe('cal-jenny');
     expect(screen.queryByText(/^Showing .+ only\./)).toBeNull();
-    expect(screen.getByText('These figures are for the whole venue.')).toBeTruthy();
+    expect(screen.getByText('These figures are for the whole business.')).toBeTruthy();
   });
 
   it('keeps the calendar while moving between tabs, and hands it to each section', async () => {
@@ -876,7 +876,7 @@ describe('Reports calendar filter', () => {
     ).toBeTruthy();
   });
 
-  it('greys the picker out on Takings and Vouchers, which are always the whole venue, and keeps the choice', async () => {
+  it('greys the picker out on Takings and Vouchers, which are always the whole business, and keeps the choice', async () => {
     mockCalendars = [HANNAH, JENNY];
     mockPosAccess = { visible: true, can_view: true, can_export: true };
     mockVouchersFlag = true;
@@ -983,7 +983,7 @@ const HEADLINE = {
 };
 
 describe('Reports Showing picker and comparison (release 1)', () => {
-  it('offers your venue, each business and everyone together, and asks the Overview for the choice', async () => {
+  it('offers your business, each business and everyone together, and asks the Overview for the choice', async () => {
     mockCalendars = [HANNAH];
     mockBusinesses = [LIGHT3];
     await render(<ReportsScreen />);
@@ -1133,7 +1133,7 @@ describe('Reports Showing picker and comparison (release 1)', () => {
       },
     });
     await render(<ReportsScreen />);
-    expect(mockBarCharts.some((data) => data.map((d) => d.label).join('|') === 'Online|By your team|By a linked venue')).toBe(true);
+    expect(mockBarCharts.some((data) => data.map((d) => d.label).join('|') === 'Online|By your team|By a linked business')).toBe(true);
     expect(
       screen.getByText(
         'Visits in this date range that were not cancelled, by service and by how the client booked. A visit with several services counts once for each service in it.',

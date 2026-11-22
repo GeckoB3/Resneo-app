@@ -503,7 +503,7 @@ export function TeamLeaveCalendar({
         style={styles.webNote}
         hitSlop={4}>
         <Text variant="caption" tone="muted">
-          Whole-venue closures and amended opening hours for every booking type are in{' '}
+          Whole-business closures and amended opening hours for every booking type are in{' '}
           <Text variant="caption" color={colors.brand}>
             Settings → Business hours
           </Text>

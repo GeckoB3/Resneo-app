@@ -22,7 +22,7 @@ describe('crossVenueMoveCopy (web #190)', () => {
       targetVenueName: 'Bay Salon',
     });
     expect(copy.title).toBe("Ada Lovelace's booking can't move to Jenny's calendar");
-    expect(copy.message).toContain('Jenny (Bay Salon) and Kate (your venue) are on different ResNeo accounts');
+    expect(copy.message).toContain('Jenny (Bay Salon) and Kate (your business) are on different ResNeo accounts');
     expect(copy.message).toContain("make a new booking on Jenny's calendar and cancel this one");
     expect(copy.confirmLabel).toBe("Book on Jenny's calendar");
   });

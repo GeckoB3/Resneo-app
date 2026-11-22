@@ -52,7 +52,7 @@ const block = (overrides: Partial<ServiceCollectiveBlock> = {}): ServiceCollecti
   role: 'master',
   collective_id: 'col-1',
   collective_name: 'Northside',
-  host_venue_name: 'Host Venue',
+  host_venue_name: 'Host Business',
   item_id: 'item-1',
   locked_fields: [],
   delegated_fields: [],
@@ -74,7 +74,7 @@ const sync = { venues: 1, applied: 1, pending: [], failed: [] };
 const groups: CollectiveCalendarGroup[] = [
   {
     venue_id: 'v-host',
-    venue_name: 'Host Venue',
+    venue_name: 'Host Business',
     is_host: true,
     sync,
     calendars: [
@@ -97,12 +97,12 @@ const services: AreaService[] = [
 ];
 
 describe('the area', () => {
-  it('knows the collective and that this venue hosts it', () => {
-    expect(areaCollective(services)).toEqual({ id: 'col-1', name: 'Northside', hostVenueName: 'Host Venue', isHost: true });
+  it('knows the collective and that this business hosts it', () => {
+    expect(areaCollective(services)).toEqual({ id: 'col-1', name: 'Northside', hostVenueName: 'Host Business', isHost: true });
     expect(areaCollective([])).toBeNull();
   });
 
-  it("takes the venue's side from venue_role, so a host with nothing on the page yet is still the host", () => {
+  it("takes the business's side from venue_role, so a host with nothing on the page yet is still the host", () => {
     // Every service parked: no master to guess from (web 2026-10-27).
     const parkedOnly: AreaService[] = [{ id: 's9', name: 'Trim', collective: block({ role: 'parked', item_id: null, venue_role: 'host' }) }];
     expect(areaCollective(parkedOnly)?.isHost).toBe(true);
@@ -150,18 +150,18 @@ describe('the area', () => {
   it('says what a save changes, and what is selected', () => {
     const staged = toggleCalendar([], 's1', 'v-zen', groups[1]!.calendars[0]!, 'item-1', true);
     expect(describeStaged(staged, services, groups).lines).toEqual(['Balayage: Cy at Zen Studio starts offering it.']);
-    expect(selectionSummary(2, 1)).toBe('2 services at 1 venue selected');
+    expect(selectionSummary(2, 1)).toBe('2 services at 1 business selected');
   });
 
-  it('labels what is picked by kind, never claiming venues nobody picked (CQ-03)', () => {
+  it('labels what is picked by kind, never claiming businesses nobody picked (CQ-03)', () => {
     expect(selectionLabel(2, [], groups)).toBe('2 services picked');
     expect(selectionLabel(1, [], groups)).toBe('1 service picked');
     // The host's own venue reads "(you)" (CQ-07).
-    expect(selectionLabel(0, ['v-zen', 'v-host'], groups)).toBe('Host Venue (you) and Zen Studio picked');
-    expect(selectionLabel(2, ['v-zen'], groups)).toBe('2 services at 1 venue selected');
+    expect(selectionLabel(0, ['v-zen', 'v-host'], groups)).toBe('Host Business (you) and Zen Studio picked');
+    expect(selectionLabel(2, ['v-zen'], groups)).toBe('2 services at 1 business selected');
   });
 
-  it('tells the host about a venue that offers nothing yet', () => {
+  it('tells the host about a business that offers nothing yet', () => {
     const todos = buildCollectiveTodos({ isHost: true, services, calendarGroups: groups });
     expect(todos.map((t) => t.text)).toEqual(['Zen Studio has joined. Choose their calendars on 1 service.']);
   });
@@ -178,7 +178,7 @@ describe('the area', () => {
       },
     ];
     const [todo] = buildCollectiveTodos({ isHost: false, services: member, calendarGroups: [] });
-    expect(todo?.text).toBe('You cannot take card payments yet, so 1 paid service is hidden from your guests.');
+    expect(todo?.text).toBe('You cannot take card payments yet, so 1 paid service is hidden from your clients.');
     expect(todo?.action).toEqual({ kind: 'payments', label: 'Connect Stripe' });
   });
 
@@ -226,7 +226,7 @@ describe('the area', () => {
     });
     expect(todos.map((t) => t.id)).toEqual(['no-calendars-s9', 'forms-v-zen']);
     expect(todos[0]?.action).toEqual({ kind: 'service', serviceId: 's9', label: 'Choose calendars' });
-    expect(todos[1]?.text).toBe('Your forms are switched off, so 1 service that needs a form is hidden from your guests.');
+    expect(todos[1]?.text).toBe('Your forms are switched off, so 1 service that needs a form is hidden from your clients.');
   });
 });
 
@@ -246,7 +246,7 @@ describe('the bulk lane (web 2026-10-28)', () => {
 
   // Regression (CQ-03): a venue picked on its own used to mean every service shown, so Take off
   // the page emptied the page for every venue.
-  it('never puts on or takes off the page from a venue picked on its own', () => {
+  it('never puts on or takes off the page from a business picked on its own', () => {
     const crossing = gridCrossing({ selectedServices: [], selectedVenues: ['v-zen'], rows: services, groups });
     expect(bulkOps('withdraw', crossing, services)).toEqual([]);
     expect(bulkOps('offer', crossing, services)).toEqual([]);
@@ -260,7 +260,7 @@ describe('the bulk lane (web 2026-10-28)', () => {
     });
   });
 
-  it('counts only calendar changes in a venue line, and says when a row is going on or off', () => {
+  it('counts only calendar changes in a business line, and says when a row is going on or off', () => {
     const staged = stageOps(toggleCalendar([], 's1', 'v-zen', groups[1]!.calendars[0]!, 'item-1', true), [
       { op: 'withdraw', service_id: 's1' },
     ]);
@@ -402,7 +402,7 @@ describe('choosing calendars for the services picked (web CollectiveBulkCalendar
       'Nobody at Zen in Holywood will offer 5 of these services: Cut, Tint, Perm and 2 more.',
     ]);
     expect(removalWarnings([...off('v-a', 'c-a'), ...off('v-b', 'c-b')], list, everywhere)).toEqual([
-      'Nobody will be able to book 5 of these services at any venue: Cut, Tint, Perm and 2 more.',
+      'Nobody will be able to book 5 of these services at any business: Cut, Tint, Perm and 2 more.',
     ]);
     // A member sees only its own venue, so it is never told nobody anywhere can book them.
     expect(removalWarnings(off('v-a', 'c-a'), list, [everywhere[0]!], true)).toEqual([
@@ -410,7 +410,7 @@ describe('choosing calendars for the services picked (web CollectiveBulkCalendar
     ]);
   });
 
-  it('asks before taking calendars off, naming a venue left with nobody and a service nobody offers (CQ-11)', () => {
+  it('asks before taking calendars off, naming a business left with nobody and a service nobody offers (CQ-11)', () => {
     // Clearing Ada and Ben leaves Cut offered nowhere; Balayage is still offered nowhere else either.
     const ops: BulkOp[] = [
       { op: 'unassign', service_id: 's1', venue_id: 'v-host', calendar_id: 'c1' },
@@ -418,17 +418,17 @@ describe('choosing calendars for the services picked (web CollectiveBulkCalendar
       { op: 'unassign', service_id: 's3', venue_id: 'v-host', calendar_id: 'c1' },
     ];
     expect(removalWarnings(ops, pickerList, twoGroups)).toEqual([
-      'Nobody will be able to book Balayage at any venue.',
-      'Nobody will be able to book Cut at any venue.',
+      'Nobody will be able to book Balayage at any business.',
+      'Nobody will be able to book Cut at any business.',
     ]);
     // With Cy still offering Balayage, only the host is left with nobody.
     const zenOffers: CollectiveCalendarGroup[] = [
       host,
       { ...zen, calendars: [{ ...zen.calendars[0]!, assigned: [{ item_id: 'item-1', service_id: 'r1', values, last_changed: null }] }] },
     ];
-    expect(removalWarnings(ops.slice(0, 2), pickerList, zenOffers)).toEqual(['Nobody at Host Venue will offer Balayage.']);
+    expect(removalWarnings(ops.slice(0, 2), pickerList, zenOffers)).toEqual(['Nobody at Host Business will offer Balayage.']);
     expect(describeStaged(ops.slice(0, 2), picked, twoGroups).lines).toEqual([
-      'Balayage: Ada and Ben at Host Venue stop offering it.',
+      'Balayage: Ada and Ben at Host Business stop offering it.',
     ]);
   });
 });
@@ -439,7 +439,7 @@ describe('what a save does, in words (web bulk-describe.ts; CQ-03, CQ-04, CQ-11)
     expect(one).toEqual({
       title: 'Take Balayage off the page?',
       lines: [
-        'Take off the page: Balayage. Guests will no longer be able to book it at any venue. Bookings already made are not changed.',
+        'Take off the page: Balayage. Clients will no longer be able to book it at any business. Bookings already made are not changed.',
       ],
       destructive: true,
       confirmLabel: 'Take it off the page',
@@ -511,14 +511,14 @@ describe('what a save does, in words (web bulk-describe.ts; CQ-03, CQ-04, CQ-11)
     expect(isAffectedRefusal(result)).toBe(true);
     expect(isAffectedRefusal({ ok: false, code: 'COLLECTIVE_NOT_ON_PAGE' })).toBe(false);
     const items = groupAffected([affectedRefusal(op, result)], services, groups);
-    expect(items[0]).toMatchObject({ serviceName: 'Balayage', calendarName: 'Ada', venueName: 'Host Venue', count: 8 });
+    expect(items[0]).toMatchObject({ serviceName: 'Balayage', calendarName: 'Ada', venueName: 'Host Business', count: 8 });
     expect(affectedBookingsTitle(items)).toBe('Ada has upcoming bookings for Balayage');
     expect(affectedBookingsRow(items[0]!, 2026)).toBe(
-      'Ada at Host Venue, Balayage: Mon 2 Nov, 10:30; Tue 3 Nov, 10:30; Wed 4 Nov, 10:30; Thu 5 Nov, 10:30; Fri 6 Nov, 10:30 and 3 more',
+      'Ada at Host Business, Balayage: Mon 2 Nov, 10:30; Tue 3 Nov, 10:30; Wed 4 Nov, 10:30; Thu 5 Nov, 10:30; Fri 6 Nov, 10:30 and 3 more',
     );
     // An older server sends no dates: the row still names the calendar and service.
     const bare = groupAffected([affectedRefusal(op, { index: 0, ok: false, code: 'COLLECTIVE_AFFECTED_BOOKINGS' })], services, groups);
-    expect(affectedBookingsRow(bare[0]!)).toBe('Balayage, Ada at Host Venue');
+    expect(affectedBookingsRow(bare[0]!)).toBe('Balayage, Ada at Host Business');
     expect(affectedBookingsTitle([...items, ...bare])).toBe('Some calendars have upcoming bookings');
   });
 
@@ -564,7 +564,7 @@ describe('what a save does, in words (web bulk-describe.ts; CQ-03, CQ-04, CQ-11)
         services,
         groups,
       ),
-    ).toBe('Ada at Host Venue offers it again, but its own price and buffer could not be put back. Set it again with Edit values.');
+    ).toBe('Ada at Host Business offers it again, but its own price and buffer could not be put back. Set it again with Edit values.');
   });
 
   it('says what Update now did (CQ-11)', () => {
@@ -614,7 +614,7 @@ describe('What needs you from the server (CQ-05, CQ-13)', () => {
     collective: block({ item_id: item, offered_at: offeredAt }),
   });
 
-  it('names a venue that offers a new page service on no calendar, for two weeks', () => {
+  it('names a business that offers a new page service on no calendar, for two weeks', () => {
     const list = [services[1]!, fresh('s6', 'Gloss', 'item-6', '2026-10-28T09:00:00Z')];
     const todos = buildCollectiveTodos({ isHost: true, services: list, calendarGroups: [hostOffersAll, zenOffers], now });
     expect(todos).toEqual([
@@ -631,7 +631,7 @@ describe('What needs you from the server (CQ-05, CQ-13)', () => {
     expect(buildCollectiveTodos({ isHost: true, services: old, calendarGroups: [hostOffersAll, zenOffers], now })).toEqual([]);
   });
 
-  it('makes several new services at one venue one row, opening that venue', () => {
+  it('makes several new services at one business one row, opening that business', () => {
     const list = [
       services[1]!,
       fresh('s6', 'Gloss', 'item-6', '2026-10-28T09:00:00Z'),
@@ -648,7 +648,7 @@ describe('What needs you from the server (CQ-05, CQ-13)', () => {
     expect(todos).toEqual([
       {
         id: 'switched-off-s1',
-        text: 'Balayage is switched off on your Services page, so nobody can book it at any venue.',
+        text: 'Balayage is switched off on your Services page, so nobody can book it at any business.',
         action: { kind: 'switch_on', serviceId: 's1', label: 'Switch it on' },
       },
     ]);

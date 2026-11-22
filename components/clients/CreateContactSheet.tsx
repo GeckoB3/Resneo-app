@@ -186,7 +186,7 @@ export function CreateContactForm({
 
       {hasIdentity && !hasReachableDetail ? (
         <Text variant="caption" tone="muted">
-          Without an email or phone this {clientNoun} is listed under &ldquo;All identified guests&rdquo;
+          Without an email or phone this {clientNoun} is listed under &ldquo;All identified clients&rdquo;
           rather than the default &ldquo;Saved contact details&rdquo; view.
         </Text>
       ) : null}

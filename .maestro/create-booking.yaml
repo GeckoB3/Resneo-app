@@ -5,12 +5,12 @@
 # wizard in app/(app)/booking/new.tsx step by step.
 #
 # Wizard steps (WizardStepIndicator labels): Service → [Practitioner] → [Option]
-# → [Add-ons] → Date → Time → Guest → Confirm. Practitioner/Option/Add-ons steps
+# → [Add-ons] → Date → Time → Client → Confirm. Practitioner/Option/Add-ons steps
 # are conditional, so this flow only asserts the always-present steps and taps
 # the first available choice on each.
 appId: com.resneo.app
 env:
-  # A guest name to enter on the Guest step (first/last). Override per run if you
+  # A client name to enter on the Client step (first/last). Override per run if you
   # want a recognisable test record.
   GUEST_FIRST: ${GUEST_FIRST}
   GUEST_LAST: ${GUEST_LAST}
@@ -75,7 +75,7 @@ env:
     optional: true
 - runFlow:
     when:
-      notVisible: "Guest details"
+      notVisible: "Client details"
     commands:
       - tapOn:
           point: "50%,35%" # first slot chip as a fallback
@@ -83,8 +83,8 @@ env:
     text: "Continue"
     optional: true
 
-# ---- Guest step ----
-- assertVisible: "Guest details"
+# ---- Client step ----
+- assertVisible: "Client details"
 # Fields are labelled "First name", "Surname", "Phone" (GuestDetailsStep).
 # TODO: add testID="guest-first-name" / "guest-surname" / "guest-phone".
 - tapOn:

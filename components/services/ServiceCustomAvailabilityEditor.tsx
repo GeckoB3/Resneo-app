@@ -213,7 +213,7 @@ export function ServiceCustomAvailabilityEditor({
           </Text>
           <Text variant="caption" tone="muted">
             Only turn on if this service should be bookable for less time than its calendars are open
-            (e.g. evening-only). Final availability is the overlap of venue hours, each calendar, and
+            (e.g. evening-only). Final availability is the overlap of business hours, each calendar, and
             this schedule.
           </Text>
         </View>

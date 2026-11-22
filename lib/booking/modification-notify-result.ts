@@ -24,7 +24,7 @@ export function bookingModificationNotifyOutcome(result: BookingModificationNoti
   if (result.skipped) {
     return {
       sent: false,
-      message: result.skippedReason ?? 'Guest was not notified (reschedule notifications are off).',
+      message: result.skippedReason ?? 'Client was not notified (reschedule notifications are off).',
     };
   }
   if (result.emailSent && result.smsSent) {
@@ -32,5 +32,5 @@ export function bookingModificationNotifyOutcome(result: BookingModificationNoti
   }
   if (result.emailSent) return { sent: true, message: 'Update sent by email.' };
   if (result.smsSent) return { sent: true, message: 'Update sent by SMS.' };
-  return { sent: false, message: 'Guest has no email or phone on file, so the update was not sent.' };
+  return { sent: false, message: 'Client has no email or phone on file, so the update was not sent.' };
 }

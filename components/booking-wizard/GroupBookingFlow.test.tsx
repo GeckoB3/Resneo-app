@@ -83,6 +83,9 @@ describe('GroupBookingFlow', () => {
     await press(() => screen.getByText('+ Add the first person'));
     // Label step.
     expect(screen.getByText('Who is this for?')).toBeTruthy();
+    // People are "Person 1", "Person 2" until named, never "Guest" (rename, 22 Nov 2026).
+    expect(screen.getByDisplayValue('Person 1')).toBeTruthy();
+    expect(screen.getByPlaceholderText('e.g. Jordan, or Person 2')).toBeTruthy();
     await press(() => screen.getByText('Choose a service'));
     // Service step renders the catalog service.
     expect(screen.getByText('Massage')).toBeTruthy();

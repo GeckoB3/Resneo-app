@@ -33,7 +33,7 @@ export function LinkedNotificationPrefsCard() {
       </Text>
       <Card>
         <Text variant="caption" tone="muted" style={styles.intro}>
-          Email this venue when a linked venue acts on one of your bookings. You’ll always see
+          Email this business when a linked business acts on one of your bookings. You’ll always see
           these in the app.
         </Text>
         {query.isError ? (

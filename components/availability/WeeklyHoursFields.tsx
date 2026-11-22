@@ -216,7 +216,7 @@ export function WeeklyHoursFields({ value, onChange, venueOpeningHours, disabled
                 tone="muted"
                 color={outsideVenue ? colors.warning : undefined}
                 style={styles.venueContext}>
-                Venue: {describeVenueDay(venueDay)}
+                Business: {describeVenueDay(venueDay)}
                 {outsideVenue ? ' (hours outside this are not bookable)' : ''}
               </Text>
             ) : null}

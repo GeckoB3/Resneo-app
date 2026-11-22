@@ -15,6 +15,7 @@
  * and the one-shot record that carries "which booking to offer to cancel"
  * across the wizard (a route) and back to the calendar tab.
  */
+import { personAtBusiness } from '@/lib/venue/member-label';
 
 export interface CrossVenueMoveWords {
   guestName: string;
@@ -32,8 +33,8 @@ export function crossVenueMoveCopy(w: CrossVenueMoveWords): {
   message: string;
   confirmLabel: string;
 } {
-  const target = `${w.targetCalendarName}${w.targetVenueName ? ` (${w.targetVenueName})` : ' (your venue)'}`;
-  const source = `${w.sourceCalendarName}${w.sourceVenueName ? ` (${w.sourceVenueName})` : ' (your venue)'}`;
+  const target = `${w.targetCalendarName}${w.targetVenueName ? ` (${w.targetVenueName})` : ' (your business)'}`;
+  const source = `${w.sourceCalendarName}${w.sourceVenueName ? ` (${w.sourceVenueName})` : ' (your business)'}`;
   return {
     title: `${w.guestName}'s booking can't move to ${w.targetCalendarName}'s calendar`,
     message:
@@ -86,11 +87,11 @@ export function collectiveMoveDoneMessage(r: {
 }): string {
   if (r.visitServiceName !== undefined && r.visitServiceName !== null) {
     const service = r.visitServiceName.trim() || 'this service';
-    return `Moved ${service} to ${r.targetCalendarName} at ${r.venueName}. It is still part of the visit.`;
+    return `Moved ${service} to ${personAtBusiness(r.targetCalendarName, r.venueName)}. It is still part of the visit.`;
   }
   return r.guestNotified
-    ? `Moved to ${r.targetCalendarName} at ${r.venueName}.`
-    : `Moved to ${r.targetCalendarName} at ${r.venueName}. The client was not sent a message, because ${r.venueName} has booking change messages turned off.`;
+    ? `Moved to ${personAtBusiness(r.targetCalendarName, r.venueName)}.`
+    : `Moved to ${personAtBusiness(r.targetCalendarName, r.venueName)}. The client was not sent a message, because ${r.venueName} has booking change messages turned off.`;
 }
 
 /** The booking form offers whole slots, so a dropped minute rounds to five. */
@@ -131,7 +132,7 @@ export function cancelOriginalCopy(rec: { guestName: string; originalLabel: stri
     message:
       `The new booking is on ${rec.targetLabel}. ${rec.guestName} still has the original at ` +
       `${rec.originalLabel}.\n\nThis cancels it the usual way, so the client is told and any deposit ` +
-      `follows the venue's cancellation rules.`,
+      `follows the business's cancellation rules.`,
   };
 }
 

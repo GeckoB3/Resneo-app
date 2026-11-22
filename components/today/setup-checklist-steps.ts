@@ -92,7 +92,7 @@ export const POST_ONBOARDING_SETUP_STEPS: SetupStep[] = [
     key: 'review_comms',
     label: 'Review communications settings',
     description:
-      'Check the emails and texts guests receive when they book, and tailor the wording to your business.',
+      'Check the emails and texts clients receive when they book, and tailor the wording to your business.',
     route: '/manage/communications',
     completeOnClick: true,
   },
@@ -127,7 +127,7 @@ function getAvailabilityStep(model: string | undefined, onboardingDone: boolean)
         label: onboardingDone ? 'Services & calendars' : 'Team & services',
         description: onboardingDone
           ? 'Adjust which services are offered on each calendar, or add more services.'
-          : 'Add team calendars, link services, and set when guests can book.',
+          : 'Add team calendars, link services, and set when clients can book.',
         route: '/manage/services',
       };
     case 'event_ticket':
@@ -155,7 +155,7 @@ function getAvailabilityStep(model: string | undefined, onboardingDone: boolean)
       return {
         key: 'availability_set',
         label: 'Services & availability',
-        description: 'Add staff calendars and set when guests can book.',
+        description: 'Add staff calendars and set when clients can book.',
         route: '/manage/hours',
       };
   }
@@ -168,7 +168,7 @@ function getGuestBookingStep(model: string | undefined, onboardingDone: boolean)
       label: 'Public booking page',
       description: onboardingDone
         ? 'Your booking page needs at least one active service linked to a calendar.'
-        : 'Guests need at least one calendar with an active service linked before they can book online.',
+        : 'Clients need at least one calendar with an active service linked before they can book online.',
       route: '/manage/booking-page',
     };
   }
@@ -176,7 +176,7 @@ function getGuestBookingStep(model: string | undefined, onboardingDone: boolean)
     key: 'guest_booking_ready',
     label: 'Public booking page',
     description:
-      'Add at least one active service and complete availability so online guests can see times and book.',
+      'Add at least one active service and complete availability so online clients can see times and book.',
     route: '/manage/booking-page',
   };
 }
@@ -189,7 +189,7 @@ function getSecondaryCatalogSteps(enabledModels: string[], onboardingDone: boole
       label: 'Events',
       description: onboardingDone
         ? 'Optional: add another ticketed event or edit existing ones.'
-        : 'Add a ticketed event so guests can book from your Events tab.',
+        : 'Add a ticketed event so clients can book from your Events tab.',
       route: '/events',
     });
   }
@@ -199,7 +199,7 @@ function getSecondaryCatalogSteps(enabledModels: string[], onboardingDone: boole
       label: 'Classes',
       description: onboardingDone
         ? 'Optional: add a timetable rule or more class types.'
-        : 'Add a class type and schedule so guests can book classes.',
+        : 'Add a class type and schedule so clients can book classes.',
       route: '/classes',
     });
   }
@@ -209,7 +209,7 @@ function getSecondaryCatalogSteps(enabledModels: string[], onboardingDone: boole
       label: 'Resources',
       description: onboardingDone
         ? 'Optional: add another bookable resource or edit slots.'
-        : 'Add a bookable resource so guests can book it from the Resources tab.',
+        : 'Add a bookable resource so clients can book it from the Resources tab.',
       route: '/resources',
     });
   }
@@ -231,7 +231,7 @@ export function getSetupSteps(status: SetupStatus): SetupStep[] {
       key: 'profile_complete',
       label: 'Business profile',
       description: onboardingDone
-        ? 'Review logo, contact details, and venue settings.'
+        ? 'Review logo, contact details, and business settings.'
         : 'Add your business name, address, phone number, and cover photo.',
       route: '/manage/venue-profile',
     },
@@ -255,7 +255,7 @@ export function getSetupSteps(status: SetupStatus): SetupStep[] {
     {
       key: 'first_booking_made',
       label: 'First test booking',
-      description: 'Try the guest flow once to confirm booking and emails look right.',
+      description: 'Try the client flow once to confirm booking and emails look right.',
       route: '/booking/new',
       optional: true,
     },

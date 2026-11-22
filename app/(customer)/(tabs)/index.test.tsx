@@ -65,7 +65,7 @@ const HOME: CustomerHome = {
   memberships: { active_count: 0, cancelling_count: 0 },
 };
 
-const SECTION_HEADINGS = /^(YOUR PASSES|Loyalty card|VENUES YOU HAVE BOOKED WITH)$/;
+const SECTION_HEADINGS = /^(YOUR PASSES|Loyalty card|BUSINESSES YOU HAVE BOOKED WITH)$/;
 
 async function renderHome() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
@@ -82,14 +82,14 @@ beforeEach(() => {
 });
 
 describe('the loyalty card on the hub', () => {
-  it('sits after the passes and before venue history', async () => {
+  it('sits after the passes and before business history', async () => {
     mockApiFetch.mockResolvedValue({
       venues: [{ venue_id: 'v-1', venue_name: 'Studio', stamps: 4, needed: 6, rewards: [] }],
     });
     await renderHome();
     await screen.findByLabelText('4 of 6 visits at Studio');
     const order = screen.getAllByText(SECTION_HEADINGS).map((heading) => heading.props.children);
-    expect(order).toEqual(['YOUR PASSES', 'Loyalty card', 'VENUES YOU HAVE BOOKED WITH']);
+    expect(order).toEqual(['YOUR PASSES', 'Loyalty card', 'BUSINESSES YOU HAVE BOOKED WITH']);
   });
 
   it('leaves the rest of the hub as it was when the loyalty read fails', async () => {
@@ -100,7 +100,7 @@ describe('the loyalty card on the hub', () => {
       await new Promise((r) => setTimeout(r, 0));
     });
     const order = screen.getAllByText(SECTION_HEADINGS).map((heading) => heading.props.children);
-    expect(order).toEqual(['YOUR PASSES', 'VENUES YOU HAVE BOOKED WITH']);
+    expect(order).toEqual(['YOUR PASSES', 'BUSINESSES YOU HAVE BOOKED WITH']);
     expect(screen.queryByText('Could not load your account')).toBeNull();
   });
 });

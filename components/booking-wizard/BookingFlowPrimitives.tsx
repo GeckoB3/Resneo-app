@@ -344,7 +344,7 @@ export function BookingFlowConfirm({
         // helper's contract for the online context.
         if (apiError?.status === 409 && body?.error === 'COMPLIANCE_REQUIREMENT_UNMET') {
           hapticWarning();
-          setComplianceError(body?.message ?? 'A compliance requirement is unmet for this guest.');
+          setComplianceError(body?.message ?? 'A compliance requirement is unmet for this client.');
           return;
         }
         hapticWarning();
@@ -479,7 +479,7 @@ export function BookingFlowConfirm({
         {rows.map((row) => (
           <SummaryRow key={row.label} label={row.label} value={row.value} />
         ))}
-        <SummaryRow label="Guest" value={guestName || 'Not given'} />
+        <SummaryRow label="Client" value={guestName || 'Not given'} />
         {totalPence != null && totalPence > 0 ? (
           <View style={[styles.totalRow, { borderTopColor: colors.border }]}>
             <Text variant="label">Total</Text>

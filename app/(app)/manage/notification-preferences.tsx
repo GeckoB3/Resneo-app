@@ -41,7 +41,7 @@ type ToggleRowConfig = { key: BooleanNotificationKey; label: string; description
 
 const BOOKING_ROWS: ToggleRowConfig[] = [
   { key: 'new_booking', label: 'New bookings', description: 'When a booking is made online or by your team' },
-  { key: 'cancellation', label: 'Cancellations', description: 'When a guest or staff member cancels' },
+  { key: 'cancellation', label: 'Cancellations', description: 'When a client or staff member cancels' },
   { key: 'reschedule', label: 'Reschedules & changes', description: 'When a booking moves or is edited' },
   {
     key: 'payment',
@@ -57,7 +57,7 @@ const BOOKING_ROWS: ToggleRowConfig[] = [
  * owner's decision of 8 November 2026.
  */
 const OPS_ROWS: ToggleRowConfig[] = [
-  { key: 'no_show', label: 'No-show prompts', description: 'When a guest is overdue to arrive' },
+  { key: 'no_show', label: 'No-show prompts', description: 'When a client is overdue to arrive' },
   {
     key: 'daily_summary',
     label: 'Daily summary',
@@ -388,7 +388,7 @@ export default function NotificationPreferencesScreen() {
             <Text variant="caption" tone="muted" style={styles.scopeHint}>
               {prefs.booking_scope === 'mine'
                 ? 'Only alert me about bookings assigned to me.'
-                : 'Alert me about every booking at this venue.'}
+                : 'Alert me about every booking at this business.'}
             </Text>
           </View>
 
@@ -412,7 +412,7 @@ export default function NotificationPreferencesScreen() {
       )}
 
       <Text variant="caption" tone="muted" style={styles.footnote}>
-        These preferences apply to this account on every device you sign in to. Guest reminders and
+        These preferences apply to this account on every device you sign in to. Client reminders and
         confirmations are sent separately by email and SMS.
       </Text>
     </Screen>

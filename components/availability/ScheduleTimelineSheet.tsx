@@ -394,10 +394,10 @@ export function ScheduleTimelineSheet({
                       {selectedSummary.reason === 'day-off' ? ' This is a day off.' : ''}
                       {selectedSummary.reason === 'leave' ? ' This calendar is on leave.' : ''}
                       {selectedSummary.reason === 'venue-closed'
-                        ? ' Your venue is closed on this weekday.'
+                        ? ' Your business is closed on this weekday.'
                         : ''}
                       {selectedSummary.reason === 'venue-closure'
-                        ? ' Your venue has a closure on this date.'
+                        ? ' Your business has a closure on this date.'
                         : ''}
                     </Text>
                     {!readOnly ? (

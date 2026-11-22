@@ -65,9 +65,9 @@ export function InviteLinkSheet({ visible, onClose }: { visible: boolean; onClos
     <Sheet visible={visible} onClose={onClose} maxHeight="85%">
       <View style={styles.container}>
         <View>
-          <Text variant="subheading">Invite a venue to link</Text>
+          <Text variant="subheading">Invite a business to link</Text>
           <Text variant="bodySmall" tone="secondary">
-            Share this link with a venue you know. When an admin there opens it, it pre-fills a
+            Share this link with a business you know. When an admin there opens it, it pre-fills a
             request back to you. It grants nothing until you both confirm, and expires in 30 days.
           </Text>
         </View>
@@ -96,7 +96,7 @@ export function InviteLinkSheet({ visible, onClose }: { visible: boolean; onClos
                   source={{ uri: data.qrDataUrl }}
                   style={[styles.qr, { borderColor: colors.border, backgroundColor: '#FFFFFF' }]}
                   contentFit="contain"
-                  accessibilityLabel="QR code for your venue's invite link"
+                  accessibilityLabel="QR code for your business's invite link"
                 />
               </View>
             ) : null}
@@ -118,7 +118,7 @@ export function InviteLinkSheet({ visible, onClose }: { visible: boolean; onClos
             </View>
 
             <Text variant="caption" tone="muted">
-              {`Expires ${formatExpiry(data.expiresAt)}. Anyone with this link who signs in as a venue admin can start a request back to you, and you still approve every link.`}
+              {`Expires ${formatExpiry(data.expiresAt)}. Anyone with this link who signs in as a business admin can start a request back to you, and you still approve every link.`}
             </Text>
 
             <Button label="Done" variant="ghost" onPress={onClose} />

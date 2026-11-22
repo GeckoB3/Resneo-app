@@ -111,7 +111,7 @@ export function AmendHoursSheet({ target, isAdmin, onClose }: Props) {
           ]}>
           <Text variant="label">Amend business hours</Text>
           <Text variant="caption" tone="muted">
-            Weekly opening hours, and closures or amended hours for the whole venue.
+            Weekly opening hours, and closures or amended hours for the whole business.
           </Text>
         </Pressable>
       </View>

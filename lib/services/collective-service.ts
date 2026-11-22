@@ -108,7 +108,7 @@ export function collectiveServiceLines(
   const lines: string[] = [];
   switch (block.role) {
     case 'master':
-      lines.push(`This service is on the ${collective} page. Saving it updates it at every venue.`);
+      lines.push(`This service is on the ${collective} page. Saving it updates it at every business.`);
       break;
     case 'replica':
       lines.push(
@@ -126,7 +126,7 @@ export function collectiveServiceLines(
       lines.push(
         block.venue_role === 'host'
           ? `Parked while ${collective} is live. Put it on the page to take bookings for it.`
-          : `Parked while your venue is part of ${collective}: nobody can book it, your team included. Bookings already made are not changed. It is bookable again if you leave.`,
+          : `Parked while your business is part of ${collective}: nobody can book it, your team included. Bookings already made are not changed. It is bookable again if you leave.`,
       );
       break;
   }
@@ -136,7 +136,7 @@ export function collectiveServiceLines(
       block.role === 'master'
         ? areaCopy('svc.card.inactiveOffered', {
             collective,
-            venueList: formatVenueList([...(opts.memberVenueNames ?? [])]) || 'the other venues',
+            venueList: formatVenueList([...(opts.memberVenueNames ?? [])]) || 'the other businesses',
           })
         : areaCopy('svc.member.switchedOff', { host }),
     );

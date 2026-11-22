@@ -161,7 +161,7 @@ function PaySheetBody({
   const amountProblem = checkPaymentAmount({ amountPence: amount, balancePence: balance, maxPaymentPence: max });
   const amountOk = amountProblem === null && amount != null;
   const remaining = amount != null ? Math.max(0, balance - amount) : balance;
-  const venueName = bootstrap.venue?.name ?? 'This venue';
+  const venueName = bootstrap.venue?.name ?? 'This business';
   const methods = cardMethodsOffered(bootstrap, sale);
   // Cards on file on and a client on the sale: the client may save their card on this phone.
   const consentClientName =

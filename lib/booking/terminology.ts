@@ -81,7 +81,8 @@ export function partySizeLabel(
 ): string {
   const n = partySize;
   if (options.isAppointment && !options.isTableReservation) {
-    return `${n} guest${n !== 1 ? 's' : ''}`;
+    // "1 person", as the web's booking detail says "2 people" (client rename, 2026-11-22).
+    return `${n} ${n === 1 ? 'person' : 'people'}`;
   }
   if (!options.isAppointment) {
     return `${n} cover${n !== 1 ? 's' : ''}`;

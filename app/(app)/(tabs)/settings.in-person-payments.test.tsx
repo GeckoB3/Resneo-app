@@ -79,7 +79,7 @@ jest.mock('@/providers/VenueProvider', () => ({
       in_person_payments_enabled: mockEnabled,
       stripe_connected_account_id: 'acct_123',
     },
-    name: 'Test Venue',
+    name: 'Test Business',
     isLoading: false,
   }),
 }));
@@ -126,10 +126,10 @@ describe('More tab: in-person payments', () => {
     expect(screen.queryByText(READER)).toBeNull();
     expect(screen.queryByText('Tap to Pay settings')).toBeNull();
     expect(screen.queryByText(GROUP)).toBeNull();
-    expect(screen.getByText('Booking types, guest accounts and payments')).toBeTruthy();
+    expect(screen.getByText('Booking types, client accounts and payments')).toBeTruthy();
   });
 
-  it('keeps the card reader and Tap to Pay for a team member once the venue has it on', async () => {
+  it('keeps the card reader and Tap to Pay for a team member once the business has it on', async () => {
     mockRole = 'staff';
     mockEnabled = true;
     mockTapToPayApplies = true;
@@ -141,7 +141,7 @@ describe('More tab: in-person payments', () => {
     expect(screen.getByText('Tap to Pay settings')).toBeTruthy();
   });
 
-  it('shows a team member nothing while the venue has it off', async () => {
+  it('shows a team member nothing while the business has it off', async () => {
     mockRole = 'staff';
     mockEnabled = false;
     await render(<MoreScreen />);

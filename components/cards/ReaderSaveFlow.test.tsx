@@ -191,3 +191,27 @@ describe('ReaderSaveFlow', () => {
     expect(screen.getByTestId('reader-save-outcome').props.children).toBe('Ask an admin to turn on Tap to Pay on iPhone.');
   });
 });
+
+/** READER-8: an optional reader update started in Reader settings is never interrupted from here. */
+describe('ReaderSaveFlow while the card reader installs an update', () => {
+  const updates = require('@/lib/payments/reader-software-update') as typeof import('@/lib/payments/reader-software-update');
+
+  beforeEach(async () => {
+    updates.__resetReaderSoftwareUpdateForTests();
+    updates.noteAvailableUpdate({ deviceSoftwareVersion: '2.1.0', estimatedUpdateTime: 'estimate1To2Minutes' });
+    await updates.installReaderUpdate({ installAvailableUpdate: async () => ({}) }, 0.9);
+  });
+  afterEach(() => {
+    updates.__resetReaderSoftwareUpdateForTests();
+  });
+
+  it.each(['bluetooth_reader', 'tap_to_pay'] as const)('says the reader is updating (%s) and starts nothing', async (device) => {
+    mockBluetoothConnected = { serialNumber: 'WP-1' };
+    await render(<ReaderSaveFlow device={device} guestId="g-1" clientFirstName="Amy" onDone={jest.fn()} />);
+    await flush();
+    expect(screen.getByTestId('reader-save-outcome').props.children).toBe(updates.READER_BUSY_UPDATING_MESSAGE);
+    expect(mockRun).not.toHaveBeenCalled();
+    expect(mockTapConnect).not.toHaveBeenCalled();
+    expect(mockReconnect).not.toHaveBeenCalled();
+  });
+});

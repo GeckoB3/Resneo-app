@@ -45,24 +45,24 @@ export function isSharedServices(collective: { serviceModel?: string | null }): 
  */
 export function hostSettingsNote(collective: { serviceModel?: string | null }, hostName: string): string {
   return isSharedServices(collective)
-    ? `The services on the page, with their prices, lengths, deposits, options, add-ons and forms, are ${hostName}'s, and apply at every venue. Each booking, its payment, its messages and the client record belong to the venue the guest books with.`
-    : 'Prices, durations, deposits and cancellation notice come from each member venue\u2019s own service, because every booking is made with that venue.';
+    ? `The services on the page, with their prices, lengths, deposits, options, add-ons and forms, are ${hostName}'s, and apply at every business. Each booking, its payment, its messages and the client record belong to the business the client books with.`
+    : 'Prices, durations, deposits and cancellation notice come from each member business\u2019s own service, because every booking is made with that business.';
 }
 
 /** What a member reads at the top of its combined-page summary. */
 export function memberSummaryIntro(collective: { name: string; serviceModel?: string | null }, hostName: string): string {
   return isSharedServices(collective)
-    ? `${hostName} hosts ${collective.name} and manages its booking page and the services on it, with their prices, lengths, deposits, options and forms, for every venue. You and ${hostName} can each choose which of your calendars offer each one, in Manage Collective, and your own hours and closures decide when they are free.`
+    ? `${hostName} hosts ${collective.name} and manages its booking page and the services on it, with their prices, lengths, deposits, options and forms, for every business. You and ${hostName} can each choose which of your calendars offer each one, in Manage Collective, and your own hours and closures decide when they are free.`
     : `${hostName} hosts ${collective.name} and manages its combined booking page: the services on it, which calendars are offered, its headings, photos and branding. Your services appear there with the price, length and availability set under your own Services settings.`;
 }
 
 export function leaveCollectiveMessage(collective: { name: string; serviceModel?: string | null }): string {
   if (collective.serviceModel === 'replicas') {
     return (
-      `Your venue will be removed from "${collective.name}". You keep every service, calendar and booking, ` +
-      `and the services from the host become yours to edit. Guests who visit your own booking page will ` +
+      `Your business will be removed from "${collective.name}". You keep every service, calendar and booking, ` +
+      `and the services from the host become yours to edit. Clients who visit your own booking page will ` +
       `book your own services there again.`
     );
   }
-  return `Your venue will be removed from "${collective.name}". Your own booking page is unaffected.`;
+  return `Your business will be removed from "${collective.name}". Your own booking page is unaffected.`;
 }

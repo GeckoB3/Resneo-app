@@ -10,16 +10,16 @@ describe('staff bookings only', () => {
     expect(STAFF_ONLY_LABEL).toBe('Staff bookings only');
   });
 
-  it('explains it for a venue on its own', () => {
+  it('explains it for a business on its own', () => {
     expect(staffOnlyHelp(null)).toBe(
-      'Your team can book this from the diary. Guests do not see it on your booking page.',
+      'Your team can book this from the diary. Clients do not see it on your booking page.',
     );
     expect(staffOnlyHelp('  ')).toBe(staffOnlyHelp(null));
   });
 
-  it('names the combined page for a venue in a collective', () => {
+  it('names the combined page for a business in a collective', () => {
     expect(staffOnlyHelp('Northside')).toBe(
-      'Teams at every venue in Northside can book this from the diary. Guests do not see it on the Northside page.',
+      'Teams at every business in Northside can book this from the diary. Clients do not see it on the Northside page.',
     );
   });
 

@@ -111,7 +111,7 @@ describe('GuestEditSheet', () => {
   it('pads itself horizontally, since a fill Sheet supplies none', async () => {
     await render(<GuestEditSheet target={TARGET} onClose={jest.fn()} />);
 
-    let node = screen.getByText('Edit guest') as unknown as TreeNode | null;
+    let node = screen.getByText('Edit client') as unknown as TreeNode | null;
     let inset: unknown;
     for (let i = 0; node && i < 6; i += 1) {
       const pad = flatten(node.props?.style).paddingHorizontal;
@@ -126,7 +126,7 @@ describe('GuestEditSheet', () => {
 
   it('renders nothing without a target', async () => {
     await render(<GuestEditSheet target={null} onClose={jest.fn()} />);
-    expect(screen.queryByText('Edit guest')).toBeNull();
+    expect(screen.queryByText('Edit client')).toBeNull();
   });
 });
 
@@ -200,14 +200,14 @@ describe('GuestEditSheet: field errors from the server', () => {
 
   it('keeps a form-level message for an error with no field', async () => {
     mockMutateAsync.mockRejectedValueOnce(
-      new ApiError('Failed to update guest', 500, { error: 'Failed to update guest' }),
+      new ApiError('Failed to update client', 500, { error: 'Failed to update client' }),
     );
     await render(<GuestEditSheet target={TARGET} onClose={jest.fn()} />);
 
     await changeText('Ada', 'Augusta');
     await save();
 
-    expect(screen.getByText('Failed to update guest')).toBeTruthy();
+    expect(screen.getByText('Failed to update client')).toBeTruthy();
   });
 
   it('caps the contact fields at the API lengths', async () => {

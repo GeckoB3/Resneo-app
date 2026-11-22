@@ -71,7 +71,7 @@ function payload(over: { isHost?: boolean; canEdit?: boolean } = {}): Collective
     page: {
       name: 'The Beauty Parlour',
       public_name: 'The Beauty Parlour',
-      public_name_line: 'Guests see it as The Beauty Parlour.',
+      public_name_line: 'Clients see it as The Beauty Parlour.',
       path: '/c/beauty-parlour',
       slug: 'beauty-parlour',
       look: { brand_colour: '#003B6F', logo_url: null, cover_photo_url: null, lines: ['Brand colour #003B6F', 'Logo added'] },
@@ -123,7 +123,7 @@ describe('SettingsPanel for the host', () => {
     await render(<SettingsPanel collectiveId="col-1" onOpenClients={onOpenClients} />);
     expect(screen.getByText('These settings apply to every business in The Beauty Parlour.')).toBeTruthy();
     expect(screen.getByText('Booking rules')).toBeTruthy();
-    expect(screen.getByText('Guests see it as The Beauty Parlour.')).toBeTruthy();
+    expect(screen.getByText('Clients see it as The Beauty Parlour.')).toBeTruthy();
     expect(screen.getByTestId('collective-settings-address').props.children).toBe(
       'https://app.resneo.test/c/beauty-parlour',
     );
@@ -171,7 +171,7 @@ describe('SettingsPanel for the host', () => {
     });
     mockSave.mockImplementation((_input, opts) => opts.onError(stale));
     await render(<SettingsPanel collectiveId="col-1" onOpenClients={onOpenClients} />);
-    await fireEvent(screen.getByLabelText('Guest self-reschedule'), 'valueChange', false);
+    await fireEvent(screen.getByLabelText('Client self-reschedule'), 'valueChange', false);
     expect(screen.getByTestId('collective-settings-message').props.children).toBe(
       'Sage Studio changed this a moment ago. Here is the current setting.',
     );
@@ -225,9 +225,9 @@ describe('SettingsPanel states', () => {
 
   it('shows a refusal and tries again', async () => {
     const refetch = jest.fn();
-    mockQuery = { isError: true, error: new ApiError('Only venue admins can manage linked accounts.', 403, {}), refetch };
+    mockQuery = { isError: true, error: new ApiError('Only business admins can manage linked accounts.', 403, {}), refetch };
     await render(<SettingsPanel collectiveId="col-1" onOpenClients={onOpenClients} />);
-    expect(screen.getByText('Only venue admins can manage linked accounts.')).toBeTruthy();
+    expect(screen.getByText('Only business admins can manage linked accounts.')).toBeTruthy();
     await fireEvent.press(screen.getByText('Try again'));
     expect(refetch).toHaveBeenCalled();
   });

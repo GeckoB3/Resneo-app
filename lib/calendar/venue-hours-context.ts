@@ -73,7 +73,7 @@ export function describeVenueDay(context: VenueDayContext): string {
     case 'unset':
       return 'No business hours set';
     case 'closed':
-      return 'Venue closed';
+      return 'Business closed';
     case 'open':
       return context.periods.map((p) => `${p.open} to ${p.close}`).join(', ');
   }

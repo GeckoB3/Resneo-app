@@ -50,7 +50,7 @@ export function CustomerHomeHeader({ home }: Props) {
           place they cannot enter is worse than offering nothing.
         */
         <Button
-          label="Switch to venue app"
+          label="Switch to business app"
           variant="secondary"
           onPress={() => choose('staff')}
         />

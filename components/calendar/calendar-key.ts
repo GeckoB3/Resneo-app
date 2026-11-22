@@ -25,14 +25,14 @@ export interface CalendarKeyEntry {
 export const CALENDAR_KEY_TITLE = 'What the colours mean';
 
 export const CALENDAR_KEY_DESCRIPTION =
-  "Linked venues' calendars use the same colours as your own, drawn from their own hours and closures.";
+  "Linked businesses' calendars use the same colours as your own, drawn from their own hours and closures.";
 
 export const CALENDAR_KEY_FOOTNOTE =
-  "Staff can move a booking onto a closed stripe on your own calendars, with a note, but never into a linked venue's closed hours. To book someone new there, tick Override availability.";
+  "Staff can move a booking onto a closed stripe on your own calendars, with a note, but never into a linked business's closed hours. To book someone new there, tick Override availability.";
 
 export const CALENDAR_KEY_ENTRIES: readonly CalendarKeyEntry[] = [
   {
-    label: 'Venue closed',
+    label: 'Business closed',
     meaning:
       'The business is shut, from its opening hours, a closure or amended hours. The calendar would otherwise be working.',
     blockType: 'venue_closed',

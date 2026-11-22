@@ -5,10 +5,10 @@ describe('bannerItemsFromFeed (web plan §4)', () => {
     const items = bannerItemsFromFeed({
       incomingRequests: [
         { id: 'l1', otherVenueName: 'Sept 22 Hair', createdAt: '2026-09-19T10:00:00Z', collective: { id: 'c1', name: 'Sept Collective' } },
-        { id: 'l2', otherVenueName: 'Plain Venue', createdAt: '2026-09-19T10:00:00Z', collective: null },
+        { id: 'l2', otherVenueName: 'Plain Business', createdAt: '2026-09-19T10:00:00Z', collective: null },
       ],
-      outgoingRequests: [{ id: 'l3', otherVenueName: 'Waiting Venue', createdAt: '2026-09-19T10:00:00Z', collective: null }],
-      pendingChanges: [{ id: 'l4', otherVenueName: 'Change Venue' }],
+      outgoingRequests: [{ id: 'l3', otherVenueName: 'Waiting Business', createdAt: '2026-09-19T10:00:00Z', collective: null }],
+      pendingChanges: [{ id: 'l4', otherVenueName: 'Change Business' }],
       collectiveSetup: [{ collectiveId: 'c2', name: 'Two Salons', slug: 'two-salons', memberNames: ['A', 'B'], reason: 'no_services' }],
       memberWaiting: [{ collectiveId: 'c3', name: 'Host Collective', hostName: 'The Host' }],
     });
@@ -20,8 +20,8 @@ describe('bannerItemsFromFeed (web plan §4)', () => {
       ['setup:c2', '/collectives?setup=c2'],
       ['member-waiting:c3', '/collectives'],
     ]);
-    expect(items[0]!.text).toBe('Sept 22 Hair wants to link with your venue and start Sept Collective, a shared booking page.');
-    expect(items[1]!.text).toBe('Plain Venue wants to link with your venue.');
+    expect(items[0]!.text).toBe('Sept 22 Hair wants to link with your business and start Sept Collective, a shared booking page.');
+    expect(items[1]!.text).toBe('Plain Business wants to link with your business.');
     expect(items[4]!.text).toBe('A and B joined Two Salons. Two short steps make your shared booking page live.');
     expect(items[4]!.cta).toBe('Continue setup');
     expect(items[5]!.text).toContain('The Host is setting up the services');
@@ -39,7 +39,7 @@ describe('bannerItemsFromFeed (web plan §4)', () => {
       pendingChanges: [],
     });
     expect(items.map((i) => i.text)).toEqual([
-      'Bright Cuts invited you to join Northside. Accepting links you with every venue in it and joins, in one step.',
+      'Bright Cuts invited you to join Northside. Accepting links you with every business in it and joins, in one step.',
       'Waiting for Zen Studio to review your link request and join Northside.',
       'Waiting for New Salon to review your link request and join Two Salons. Once they accept, Continue setup appears here.',
     ]);
@@ -55,7 +55,7 @@ describe('bannerItemsFromFeed (web plan §4)', () => {
       {
         id: 'invitation:c 1',
         kind: 'invitation',
-        text: 'Bright Cuts invited you to join Northside. Accepting links you with every venue in it at full access, and joins, in one step.',
+        text: 'Bright Cuts invited you to join Northside. Accepting links you with every business in it at full access, and joins, in one step.',
         cta: 'Review invitation',
         href: '/collectives?join=c%201',
       },

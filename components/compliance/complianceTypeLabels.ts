@@ -63,7 +63,7 @@ export const RESULT_TYPE_DESCRIPTIONS: Record<string, string> = {
 };
 
 export const CAPTURE_METHOD_LABELS: Record<string, string> = {
-  staff_in_venue: 'Staff in venue',
+  staff_in_venue: 'Staff in person',
   client_online: 'Client online',
 };
 
