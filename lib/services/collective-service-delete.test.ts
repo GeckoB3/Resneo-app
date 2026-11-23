@@ -72,6 +72,16 @@ describe('deleteServiceOnCollectivePage', () => {
     expect(calls).toEqual(['check', 'takeOff']);
   });
 
+  it('claims nothing when taking it off the page runs out of time (review 22 Nov 2026, APP-1)', async () => {
+    const { steps, calls } = stepsWith({
+      takeOff: () => Promise.reject(new ApiError('Request timed out. Check your connection and try again.', 408)),
+    });
+    const outcome = await deleteServiceOnCollectivePage(steps);
+    expect(outcome.status).toBe('unknown');
+    expect((outcome as { message: string }).message).toMatch(/taking longer than usual/);
+    expect(calls).toEqual(['check', 'takeOff']);
+  });
+
   it('says so when the delete fails after the service came off the page', async () => {
     const { steps, calls } = stepsWith({
       remove: () => Promise.reject(new ApiError('Failed to delete service', 500)),

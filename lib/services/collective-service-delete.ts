@@ -34,6 +34,10 @@ import { ApiError, apiErrorCode } from '@/lib/api/client';
 const OFFERED_SERVICE_CODE = 'COLLECTIVE_OFFERED_SERVICE';
 
 /** The three requests, in the order they are made. Each rejects with an `ApiError` on refusal. */
+
+/** A change still running on the server when the phone stopped waiting (APP-1). */
+export const TAKING_LONGER = 'This is taking longer than usual. The list has been refreshed: check it before trying again.';
+
 export interface CollectiveServiceDeleteSteps {
   /** `DELETE /api/venue/appointment-services?dry_run=true` */
   checkDelete: () => Promise<unknown>;
@@ -52,6 +56,11 @@ export type CollectiveServiceDeleteOutcome =
    * own wording.
    */
   | { status: 'refused'; message: string; error: unknown }
+  /**
+   * Taking it off the page ran out of time (APP-1). The server may still be finishing it, so
+   * nothing is claimed either way: the list is read again before anything is said.
+   */
+  | { status: 'unknown'; message: string; error: unknown }
   /** Off the page, and the delete then failed: `reason` is why, as a sentence. */
   | { status: 'parked_not_deleted'; reason: string; error: unknown };
 
@@ -86,6 +95,9 @@ export async function deleteServiceOnCollectivePage(
   try {
     await steps.takeOffPage();
   } catch (error) {
+    if (error instanceof ApiError && error.status === 408) {
+      return { status: 'unknown', message: TAKING_LONGER, error };
+    }
     return { status: 'refused', message: messageOf(error, OFF_PAGE_FAILED), error };
   }
 

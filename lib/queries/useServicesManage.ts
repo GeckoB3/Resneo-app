@@ -91,6 +91,13 @@ export type UpdateServiceWithAck = UpdateServiceBody & { acknowledge?: boolean }
  * PATCH /api/venue/appointment-services — partial field update.
  * Never sends `variants`/`addon_group_links` (replace semantics on the API).
  */
+/**
+ * A change the collective engine carries to every business (a page service's save, delete, going on
+ * or off the page) can take longer than the usual 15 seconds; the server finishes it either way. So
+ * these wait as long as a booking create does (review 22 Nov 2026, APP-1).
+ */
+export const COLLECTIVE_WRITE_TIMEOUT_MS = 45_000;
+
 export function useUpdateService() {
   const accessToken = useAccessToken();
   const queryClient = useQueryClient();
@@ -107,6 +114,7 @@ export function useUpdateService() {
         accessToken,
         method: 'PATCH',
         body: JSON.stringify(input),
+        timeoutMs: COLLECTIVE_WRITE_TIMEOUT_MS,
       });
     },
     onSuccess: () => invalidateServices(queryClient),
@@ -173,6 +181,7 @@ export function useDeleteService() {
         accessToken,
         method: 'DELETE',
         body: JSON.stringify({ id }),
+        timeoutMs: COLLECTIVE_WRITE_TIMEOUT_MS,
       });
     },
     onSuccess: () => invalidateServices(queryClient),
@@ -235,7 +244,7 @@ export function useTakeServiceOffPage(options: { waitForServices?: boolean } = {
       }
       return apiFetch<unknown>(
         `/api/venue/collectives/${input.collectiveId}/offerings/${input.itemId}`,
-        { accessToken, method: 'DELETE' },
+        { accessToken, method: 'DELETE', timeoutMs: COLLECTIVE_WRITE_TIMEOUT_MS },
       );
     },
     onSuccess: () => (options.waitForServices ? refreshAfterPageChange(queryClient) : invalidateServices(queryClient)),
@@ -288,6 +297,7 @@ export function useOfferServiceOnPage() {
           service_id: input.serviceId,
           ...(input.calendars && input.calendars.length > 0 ? { calendars: input.calendars } : {}),
         }),
+        timeoutMs: COLLECTIVE_WRITE_TIMEOUT_MS,
       });
     },
     onSuccess: () => refreshAfterPageChange(queryClient),

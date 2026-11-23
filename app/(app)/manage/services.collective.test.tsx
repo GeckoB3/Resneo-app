@@ -108,6 +108,7 @@ function servicesResponse() {
       {
         id: 's1',
         name: 'Balayage',
+        updated_at: '2026-11-20T10:00:00.000Z',
         duration_minutes: 120,
         buffer_minutes: 0,
         price_pence: 9500,
@@ -217,6 +218,16 @@ describe("the host's form for a page service", () => {
     });
     // The venue's own list is untouched, so it is not sent.
     expect(body).not.toHaveProperty('practitioner_ids');
+  });
+
+  it('sends the service as the form read it, so a change made elsewhere is not undone (review 22 Nov 2026, APP-4)', async () => {
+    await openTheForm();
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: 'Save changes' }));
+    });
+    const body = patches()[0]?.body as Record<string, unknown>;
+    expect(body.expected_updated_at).toBe('2026-11-20T10:00:00.000Z');
+    expect(body.expected_calendar_ids).toEqual(['cal-a']);
   });
 
   it("edits a member calendar's values as a step, and keeps the setting it turned on", async () => {

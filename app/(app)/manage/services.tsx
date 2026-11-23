@@ -165,6 +165,7 @@ import {
 import {
   deletedHalfwayMessage,
   deleteServiceOnCollectivePage,
+  TAKING_LONGER,
 } from '@/lib/services/collective-service-delete';
 import {
   anyCalendarValueFlag,
@@ -209,6 +210,8 @@ import { personAtBusiness } from '@/lib/venue/member-label';
 type EditTarget = {
   id: string;
   practitionerIds: string[];
+  /** The row's `updated_at` when the form opened, for the stale check (APP-4). */
+  updatedAt: string | null;
 };
 
 type ActiveTab = 'services' | 'categories' | 'addons' | 'follow-ons';
@@ -1565,7 +1568,7 @@ export default function ServicesScreen() {
     setCollectiveCalendarsDiff(EMPTY_CALENDARS_DIFF);
     setValuesStep(null);
     setError(null);
-    setEditTarget({ id: service.id, practitionerIds: linked });
+    setEditTarget({ id: service.id, practitionerIds: linked, updatedAt: service.updated_at ?? null });
   }, [linkedCalendarIds]);
 
   const openCreate = () => {
@@ -2041,6 +2044,9 @@ export default function ServicesScreen() {
           update
             .mutateAsync({
               id: editTarget.id,
+              // As the web does: a service changed since the form opened is refused, not overwritten.
+              ...(editTarget.updatedAt ? { expected_updated_at: editTarget.updatedAt } : {}),
+              expected_calendar_ids: editTarget.practitionerIds,
               ...shared,
               ...adminExtras,
               ...(linksChanged ? { practitioner_ids: practitionerIds } : {}),
@@ -2126,6 +2132,21 @@ export default function ServicesScreen() {
       closeSheet();
     } catch (e) {
       hapticWarning();
+      // Changed somewhere else since the form opened (APP-4): the form is filled again from the
+      // fresh service, and nothing was saved.
+      if (isStaleResource(e) && editTarget) {
+        const fresh = await query.refetch();
+        const svc = fresh.data?.services?.find((s) => s.id === editTarget.id);
+        if (svc) openEdit(svc);
+        setError('This service was changed somewhere else. It has been refreshed, so check it and save again.');
+        return;
+      }
+      // Ran out of time while the server may still be saving it (APP-1): read the list again.
+      if (e instanceof ApiError && e.status === 408) {
+        await query.refetch();
+        setError(TAKING_LONGER);
+        return;
+      }
       setError(e instanceof ApiError ? e.message : 'Could not save the service.');
     }
   }
@@ -2299,6 +2320,13 @@ export default function ServicesScreen() {
         return;
       }
       hapticWarning();
+      if (outcome.status === 'unknown') {
+        // The server may still be finishing it: the list says where it stands (APP-1).
+        setDeleteTarget(null);
+        await query.refetch();
+        toast.error(outcome.message);
+        return;
+      }
       if (outcome.status === 'refused') {
         // Nothing changed: the service is still on the page and still bookable.
         setDeleteTarget(null);

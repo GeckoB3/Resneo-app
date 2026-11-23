@@ -58,6 +58,8 @@ export type ServiceCustomRule =
  */
 export interface ManagedService {
   id: string;
+  /** When the row was last saved: sent back as `expected_updated_at` so a stale form is refused. */
+  updated_at?: string | null;
   /**
    * Staff member who created the service. Non-admin staff may edit/delete ONLY
    * services they created (web parity — the API enforces the same rule and the
@@ -211,6 +213,12 @@ export type ServicePaymentRequirement = 'none' | 'deposit' | 'full_payment' | 'c
  */
 export interface UpdateServiceInput {
   id: string;
+  /**
+   * The service as the form read it (review 22 Nov 2026, APP-4): the server refuses the save (412
+   * STALE_RESOURCE) when it changed since, as it does for the web, instead of undoing that change.
+   */
+  expected_updated_at?: string;
+  expected_calendar_ids?: string[];
   name?: string;
   description?: string | null;
   duration_minutes?: number;
