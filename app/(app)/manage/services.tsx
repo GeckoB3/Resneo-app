@@ -2183,6 +2183,8 @@ export default function ServicesScreen() {
             toggleCalendarService.mutateAsync({
               practitioner_id: calendarId,
               service_ids: next,
+              // The set the switches were drawn from: a stale copy is refused, never saved over (APP-5).
+              expected_service_ids: current,
               acknowledge,
             }),
           );

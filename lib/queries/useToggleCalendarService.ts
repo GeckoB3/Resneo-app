@@ -24,6 +24,11 @@ export interface ToggleCalendarServiceInput {
   practitioner_id: string;
   /** The complete next set of service ids offered on that calendar. */
   service_ids: string[];
+  /**
+   * The calendar's set as this screen loaded it, as the web sends (review 22 Nov 2026, APP-5): the
+   * server answers 412 instead of removing a service someone else added since the list loaded.
+   */
+  expected_service_ids?: string[];
   /** Threads `?acknowledge_affected_bookings=true`: save despite the bookings left behind. */
   acknowledge?: boolean;
 }

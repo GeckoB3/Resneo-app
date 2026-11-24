@@ -66,6 +66,24 @@ describe('useToggleCalendarService', () => {
     expect((opts as { accessToken: string }).accessToken).toBe(mockToken);
   });
 
+  it('sends the set the switches were drawn from, so a stale copy is refused (APP-5)', async () => {
+    mockApiFetch.mockResolvedValueOnce({ success: true });
+    const { result } = await renderHook(() => useToggleCalendarService(), {
+      wrapper: makeWrapper(),
+    });
+    await result.current.mutateAsync({
+      practitioner_id: 'cal-1',
+      service_ids: ['svc-1', 'svc-2'],
+      expected_service_ids: ['svc-1'],
+    });
+    const [, opts] = mockApiFetch.mock.calls[0]!;
+    expect(JSON.parse((opts as { body: string }).body)).toEqual({
+      practitioner_id: 'cal-1',
+      service_ids: ['svc-1', 'svc-2'],
+      expected_service_ids: ['svc-1'],
+    });
+  });
+
   it('refetches the services when the set changed underneath the write (412 STALE_RESOURCE)', async () => {
     const { ApiError } = jest.requireActual<typeof import('@/lib/api/client')>('@/lib/api/client');
     mockApiFetch.mockRejectedValueOnce(

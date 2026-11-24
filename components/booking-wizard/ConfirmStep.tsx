@@ -842,7 +842,13 @@ export function ConfirmStep({
             setConfirmation({
               booking_id: primary,
               linked_payment_url: linkedUrl,
-              linked_link_sent: Boolean(guest.email.trim() || guest.phone.trim() || guest.guest_id),
+              // The server says whether the link went out (review 22 Nov 2026, APP-8). A server that
+              // does not say yet: sent only when the form shows an email or mobile, never just
+              // because a client was picked (a record with neither gets nothing).
+              linked_link_sent:
+                typeof res.payment_link_sent === 'boolean'
+                  ? res.payment_link_sent
+                  : Boolean(guest.email.trim() || guest.phone.trim()),
               cancellation_notice_hours: res.cancellation_notice_hours,
               compliance_warnings: res.compliance_warnings,
               availability_override_warnings: res.availability_override_warnings,
