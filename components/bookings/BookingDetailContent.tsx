@@ -1905,7 +1905,7 @@ export function BookingDetailContent({
           partyLabel,
           cardHoldState
             ? cardHoldState.pill?.label ?? 'Card'
-            : shownDepositStatus ?? (depositLabel ? 'Deposit' : null),
+            : shownDepositStatus ?? (depositLabel ? (paidInFull ? 'Payment' : 'Deposit') : null),
         ]
           .filter(Boolean)
           .join(' · ')}>
@@ -1928,7 +1928,7 @@ export function BookingDetailContent({
             />
           ) : depositLabel || shownDepositStatus ? (
             <DetailRow
-              label="Deposit"
+              label={paidInFull ? 'Payment' : 'Deposit'}
               value={
                 depositLabel
                   ? `${depositLabel}${shownDepositStatus ? ` · ${shownDepositStatus}` : ''}`
@@ -2115,7 +2115,7 @@ export function BookingDetailContent({
             ) : hasDeposit ? (
               <View style={styles.detailRow}>
                 <Text variant="bodySmall" tone="muted">
-                  Deposit
+                  {paidInFull ? 'Payment' : 'Deposit'}
                 </Text>
                 <Text variant="bodyMedium" style={styles.detailValue}>
                   {depositLabel
@@ -2166,7 +2166,7 @@ export function BookingDetailContent({
               // the no-deposit label could never be reached. Taking money on a
               // booking that never owed a deposit is the in-person payment button.
               <Button
-                label={cardHoldState ? 'Card actions' : 'Deposit actions'}
+                label={cardHoldState ? 'Card actions' : paidInFull ? 'Payment actions' : 'Deposit actions'}
                 variant="secondary"
                 fullWidth
                 onPress={() =>
