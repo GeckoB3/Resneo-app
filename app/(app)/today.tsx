@@ -13,6 +13,7 @@ import { ForecastChart } from '@/components/today/ForecastChart';
 import { GreetingHeader } from '@/components/today/GreetingHeader';
 import { HeatmapWeek } from '@/components/today/HeatmapWeek';
 import { KpiGrid } from '@/components/today/KpiGrid';
+import { FeesToChargeHomeCard } from '@/components/today/FeesToChargeHomeCard';
 import { LowStockHomeCard } from '@/components/today/LowStockHomeCard';
 import { WaitingForCardHomeCard } from '@/components/today/WaitingForCardHomeCard';
 import { TillHomeCard } from '@/components/today/TillHomeCard';
@@ -420,6 +421,8 @@ export default function TodayScreen() {
                 queryKey: queryKeys.pos.all(),
                 predicate: (q) => q.queryKey[2] === 'till-sessions' || q.queryKey[2] === 'low-stock',
               });
+              // Fees to charge reads its own route too.
+              void queryClient.invalidateQueries({ queryKey: queryKeys.feesToCharge.all() });
             }}
           />
         }>
@@ -432,6 +435,10 @@ export default function TodayScreen() {
         {/* "Waiting for you": sales the web till sent to this phone (POS app step 2). Hidden when
             none wait, and at venues without POS. */}
         <CollectRequestsCard />
+
+        {/* Fees to charge (web Docs/fees-to-charge-plan.md §2.3): no-show and late-cancellation fees
+            still to charge, first since each has a deadline. Admins only; hidden when none. */}
+        <FeesToChargeHomeCard />
 
         {/* Card on file (plan §6.5): upcoming bookings waiting for a card. Hidden when none. */}
         <WaitingForCardHomeCard />

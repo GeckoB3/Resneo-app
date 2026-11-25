@@ -49,6 +49,9 @@ export function invalidateBookingCaches(
   // The bell's Bookings tab lists cancellations and moves: one made from a row's booking shows
   // there on the way back.
   void queryClient.invalidateQueries({ queryKey: queryKeys.bookingActivity.all() });
+  // Today's "Fees to charge" card: a charge, a waive or a status change can add a fee to it or
+  // take one off.
+  void queryClient.invalidateQueries({ queryKey: queryKeys.feesToCharge.all() });
   // A moved/resized/cancelled booking changes which slots are free.
   invalidateAppointmentAvailability(queryClient);
 }

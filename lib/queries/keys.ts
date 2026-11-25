@@ -139,6 +139,13 @@ export const queryKeys = {
       [...queryKeys.notifications.all(), keyScope(accessToken)] as const,
   },
 
+  /** The Today screen's "Fees to charge" card (web Docs/fees-to-charge-plan.md). */
+  feesToCharge: {
+    all: () => [...queryKeys.all, 'fees-to-charge'] as const,
+    list: (accessToken?: string | null) =>
+      [...queryKeys.feesToCharge.all(), keyScope(accessToken)] as const,
+  },
+
   /** The bell's Bookings tab (web booking-activity plan, BA2). */
   bookingActivity: {
     all: () => [...queryKeys.all, 'booking-activity'] as const,
