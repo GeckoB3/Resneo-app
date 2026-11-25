@@ -139,6 +139,13 @@ export const queryKeys = {
       [...queryKeys.notifications.all(), keyScope(accessToken)] as const,
   },
 
+  /** The bell's Bookings tab (web booking-activity plan, BA2). */
+  bookingActivity: {
+    all: () => [...queryKeys.all, 'booking-activity'] as const,
+    list: (accessToken: string | null | undefined, kind: string, mine: boolean) =>
+      [...queryKeys.bookingActivity.all(), keyScope(accessToken), kind, mine] as const,
+  },
+
   services: {
     all: () => [...queryKeys.all, 'services'] as const,
     list: (accessToken?: string | null) =>

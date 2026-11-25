@@ -1,17 +1,28 @@
 import { Stack, useRouter, type Href } from 'expo-router';
+import { useState } from 'react';
 import { Pressable, RefreshControl, SectionList, StyleSheet, Switch, View } from 'react-native';
 
+import { BookingActivityList } from '@/components/notifications/BookingActivityList';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Screen } from '@/components/ui/Screen';
+import { Segmented } from '@/components/ui/Segmented';
 import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { hapticSuccess, hapticTap } from '@/lib/haptics';
 import { groupByDay } from '@/lib/notifications/groupByDay';
+import {
+  hasLinkedBusinessActivity,
+  NOTIFICATION_TAB_LABELS,
+  visibleNotificationTabs,
+  type NotificationTab,
+} from '@/lib/notifications/notification-tabs';
 import { parseNotificationRoute } from '@/lib/notifications/parseNotificationRoute';
 import { relativeTime } from '@/lib/notifications/relativeTime';
+import { useBookingActivity } from '@/lib/queries/useBookingActivity';
+import { useLinkedVenues } from '@/lib/queries/useLinkedVenues';
 import {
   useLinkedNotificationPrefs,
   useMarkNotificationsRead,
@@ -22,6 +33,7 @@ import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
+import type { BookingActivityFilter } from '@/types/booking-activity';
 import {
   LINKED_NOTIFICATION_CATEGORIES,
   LINKED_NOTIFICATION_LABELS,
@@ -204,17 +216,25 @@ function EmailPrefsSection() {
 }
 
 // ---------------------------------------------------------------------------
-// Main screen
+// Linked businesses tab
 // ---------------------------------------------------------------------------
 
-export default function NotificationsScreen() {
+/**
+ * The "Linked businesses" tab: activity from linked businesses and collectives
+ * (`account_link_notifications`), with the admin's email settings for it. This was the whole
+ * bell screen before the Bookings tab (web booking-activity plan, BA2) and is unchanged.
+ */
+function LinkedBusinessesList({
+  query,
+  isAdmin,
+}: {
+  query: ReturnType<typeof useNotifications>;
+  isAdmin: boolean;
+}) {
   const router = useRouter();
   const { colors } = useTheme();
   const toast = useToast();
-  const query = useNotifications();
   const markRead = useMarkNotificationsRead();
-  const staffQuery = useStaffMe();
-  const isAdmin = staffQuery.data?.staff?.role === 'admin';
 
   const notifications = query.data?.notifications ?? [];
   const unreadCount = query.data?.unreadCount ?? 0;
@@ -341,9 +361,7 @@ export default function NotificationsScreen() {
   );
 
   return (
-    <Screen scroll={false} padded={false}>
-      <Stack.Screen options={{ headerShown: true, title: 'Notifications' }} />
-
+    <View style={styles.fill}>
       {query.isLoading ? (
         <ListSkeleton />
       ) : query.isError ? (
@@ -385,6 +403,76 @@ export default function NotificationsScreen() {
           }
         />
       )}
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main screen
+// ---------------------------------------------------------------------------
+
+/**
+ * The bell (web booking-activity plan, BA2). Two tabs:
+ * - "Bookings", the default: new bookings, cancellations and moves at this venue. Hidden when the
+ *   server has no such route yet (an older web deploy answers 404).
+ * - "Linked businesses": activity from linked businesses, shown only where the venue has some
+ *   (`hasLinkedBusinessActivity`), and always when Bookings is hidden.
+ * One tab means no tab bar. The More tab's unread badge still counts linked-business notices only:
+ * the Bookings list has no read or unread state (BA4).
+ */
+export default function NotificationsScreen() {
+  const router = useRouter();
+  const query = useNotifications();
+  const staffQuery = useStaffMe();
+  const isAdmin = staffQuery.data?.staff?.role === 'admin';
+  const linksQuery = useLinkedVenues({ enabled: isAdmin });
+
+  const [kind, setKind] = useState<BookingActivityFilter>('all');
+  const [mine, setMine] = useState(false);
+  const activity = useBookingActivity({ kind, mine });
+
+  const hasLinked = hasLinkedBusinessActivity({
+    notificationCount: query.data?.notifications?.length ?? 0,
+    unreadCount: query.data?.unreadCount ?? 0,
+    hasLinks: query.data?.hasLinks,
+    links: isAdmin ? linksQuery.data?.links : null,
+  });
+  const tabs = visibleNotificationTabs({ bookingsAvailable: !activity.unavailable, hasLinked });
+  const [selectedTab, setSelectedTab] = useState<NotificationTab>('bookings');
+  const tab: NotificationTab = tabs.includes(selectedTab) ? selectedTab : tabs[0];
+
+  const openBooking = (bookingId: string) => {
+    hapticTap();
+    // The same screen a booking push opens (PendingPushRouteHandler).
+    router.push(`/booking/${bookingId}` as Href);
+  };
+
+  return (
+    <Screen scroll={false} padded={false}>
+      <Stack.Screen options={{ headerShown: true, title: 'Notifications' }} />
+
+      {tabs.length > 1 ? (
+        <View style={styles.tabBar}>
+          <Segmented
+            options={tabs.map((value) => ({ value, label: NOTIFICATION_TAB_LABELS[value] }))}
+            value={tab}
+            onChange={setSelectedTab}
+          />
+        </View>
+      ) : null}
+
+      {tab === 'bookings' ? (
+        <BookingActivityList
+          activity={activity}
+          kind={kind}
+          onKindChange={setKind}
+          mine={mine}
+          onMineChange={setMine}
+          onOpenBooking={openBooking}
+        />
+      ) : (
+        <LinkedBusinessesList query={query} isAdmin={isAdmin} />
+      )}
     </Screen>
   );
 }
@@ -394,6 +482,13 @@ export default function NotificationsScreen() {
 // ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
+  fill: {
+    flex: 1,
+  },
+  tabBar: {
+    paddingHorizontal: spacing.base,
+    paddingTop: spacing.sm,
+  },
   content: {
     paddingHorizontal: spacing.base,
     paddingTop: spacing.sm,

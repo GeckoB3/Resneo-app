@@ -46,6 +46,9 @@ export function invalidateBookingCaches(
   // 2026-11-04 on the phone: after "Move every business's services together" the card kept the
   // partner's old time.
   void queryClient.invalidateQueries({ queryKey: ['visit-partner-lines'] });
+  // The bell's Bookings tab lists cancellations and moves: one made from a row's booking shows
+  // there on the way back.
+  void queryClient.invalidateQueries({ queryKey: queryKeys.bookingActivity.all() });
   // A moved/resized/cancelled booking changes which slots are free.
   invalidateAppointmentAvailability(queryClient);
 }

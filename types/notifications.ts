@@ -19,6 +19,8 @@ export interface NotificationsResponse {
   notifications: VenueNotification[];
   unreadCount: number;
   venueId: string;
+  /** The venue has an accepted link or collective (web 2026-11-25; absent on older servers). */
+  hasLinks?: boolean;
 }
 
 // ---------------------------------------------------------------------------

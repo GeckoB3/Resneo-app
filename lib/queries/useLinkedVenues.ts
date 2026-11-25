@@ -27,10 +27,13 @@ import type {
 } from '@/types/linked-venues';
 import { resolveLinkedNotificationPrefs } from '@/types/linked-venues';
 
-/** GET /api/venue/account-links — all links + eligibility for the current venue (admin, Bearer). */
-export function useLinkedVenues() {
+/**
+ * GET /api/venue/account-links — all links + eligibility for the current venue (admin, Bearer).
+ * `enabled: false` skips the read, e.g. for a login that is not an admin (the route answers 403).
+ */
+export function useLinkedVenues(options?: { enabled?: boolean }) {
   const accessToken = useAccessToken();
-  const enabled = isBackendConfigured() && accessToken !== null;
+  const enabled = isBackendConfigured() && accessToken !== null && (options?.enabled ?? true);
 
   return useQuery({
     queryKey: queryKeys.linkedVenues.list(accessToken),
