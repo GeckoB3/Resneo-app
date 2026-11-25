@@ -347,6 +347,12 @@ function GiftVouchersForm({
               {fieldError('online_sale_enabled')}
             </Text>
           ) : null}
+          <SwitchRow
+            label="Clients can use vouchers when booking online"
+            help="When a booking takes a deposit or payment online, the client can enter a voucher code to pay all or part of it. A card is still needed for a no-show fee."
+            value={value.online_booking_enabled !== false}
+            onChange={(x) => set('online_booking_enabled', x)}
+          />
           {source.online_sale_enabled && slug ? (
             <LinkShareCard
               title={vchT('set.vch.link')}

@@ -15,6 +15,7 @@ const source = {
   expiry_months: 12,
   terms: null,
   online_sale_enabled: false,
+  online_booking_enabled: true,
   accent_colour: null,
   version: 2,
   set_up: true,
@@ -60,7 +61,7 @@ describe('voucherSettingsPatch', () => {
   });
 
   it('sends every field before set-up', () => {
-    expect(Object.keys(voucherSettingsPatch({ ...source, set_up: false }, {}))).toHaveLength(8);
+    expect(Object.keys(voucherSettingsPatch({ ...source, set_up: false }, {}))).toHaveLength(9);
   });
 
   it('counts an emptied months field as a change', () => {

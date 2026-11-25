@@ -83,6 +83,8 @@ export interface VoucherSettings {
   expiry_months: number | null;
   terms: string | null;
   online_sale_enabled: boolean;
+  /** Clients can use vouchers when booking online (web Docs/online-voucher-redemption-plan.md VO2). */
+  online_booking_enabled: boolean;
   accent_colour: string | null;
   version: number;
   set_up: boolean;

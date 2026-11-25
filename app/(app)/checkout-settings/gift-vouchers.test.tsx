@@ -119,6 +119,7 @@ function vouchers(over: Record<string, unknown> = {}, venue: Record<string, unkn
       expiry_months: 12,
       terms: null,
       online_sale_enabled: false,
+      online_booking_enabled: true,
       accent_colour: null,
       version: 3,
       set_up: true,
@@ -216,6 +217,7 @@ describe('saving', () => {
       expiry_months: 12,
       terms: null,
       online_sale_enabled: false,
+      online_booking_enabled: true,
       accent_colour: null,
       version: 0,
     });

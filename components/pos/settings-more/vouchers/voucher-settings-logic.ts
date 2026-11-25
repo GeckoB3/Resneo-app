@@ -17,7 +17,15 @@ export const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 
 export type VoucherEditable = Pick<
   VoucherSettings,
-  'preset_pence' | 'custom_allowed' | 'min_pence' | 'max_pence' | 'expiry_months' | 'terms' | 'online_sale_enabled' | 'accent_colour'
+  | 'preset_pence'
+  | 'custom_allowed'
+  | 'min_pence'
+  | 'max_pence'
+  | 'expiry_months'
+  | 'terms'
+  | 'online_sale_enabled'
+  | 'online_booking_enabled'
+  | 'accent_colour'
 >;
 
 /** A draft's values: an emptied money field is null, an emptied months field is NaN (as the web). */
@@ -34,6 +42,7 @@ export const VOUCHER_KEYS: (keyof VoucherDraft)[] = [
   'expiry_months',
   'terms',
   'online_sale_enabled',
+  'online_booking_enabled',
   'accent_colour',
 ];
 
@@ -67,6 +76,8 @@ export function pickDraft(source: VoucherSettings): VoucherDraft {
     expiry_months: source.expiry_months,
     terms: source.terms,
     online_sale_enabled: source.online_sale_enabled,
+    // An older server leaves it out: on, as the server's default (online voucher plan VO2).
+    online_booking_enabled: source.online_booking_enabled !== false,
     accent_colour: source.accent_colour,
   };
 }
