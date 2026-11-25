@@ -1129,6 +1129,7 @@ export function ConfirmStep({
                     onChange={(next) => setDepositByVenue((prev) => ({ ...prev, [p.venueId]: next }))}
                     chargeLabel={p.chargeLabel}
                     amountPence={p.depositPence}
+                    hasContact={Boolean(guest.email.trim() || guest.phone.trim()) || pickedContactHidden}
                   />
                 ) : null}
               </View>
@@ -1158,6 +1159,7 @@ export function ConfirmStep({
           onChange={onChangeRequireDeposit}
           chargeLabel={visitCharge.chargeLabel}
           amountPence={visitCharge.amountPence}
+          hasContact={Boolean(guest.email.trim() || guest.phone.trim()) || pickedContactHidden}
         />
       ) : null}
 

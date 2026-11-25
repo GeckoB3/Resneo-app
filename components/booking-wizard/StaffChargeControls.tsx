@@ -101,11 +101,17 @@ export function StaffRequireChargeCheckbox({
   onChange,
   chargeLabel,
   amountPence,
+  hasContact = true,
 }: {
   checked: boolean;
   onChange: (next: boolean) => void;
   chargeLabel: 'deposit' | 'full_payment';
   amountPence: number;
+  /**
+   * The client has an email or mobile the link can go to. Without one nothing is sent, so the line
+   * says to share the link instead of promising to send it (QA round 25 Nov 2026).
+   */
+  hasContact?: boolean;
 }) {
   const noun = chargeLabel === 'full_payment' ? 'payment' : 'deposit';
   const amount = amountPence > 0 ? formatMoney(amountPence) : null;
@@ -117,7 +123,9 @@ export function StaffRequireChargeCheckbox({
       title={`Require ${noun}${amount ? ` (${amount})` : ''}`}>
       <Text variant="caption" tone="muted">
         {checked
-          ? `We will send a payment link and hold the booking until the ${noun} is paid.`
+          ? hasContact
+            ? `We will send a payment link and hold the booking until the ${noun} is paid.`
+            : `This client has no email or mobile, so share the payment link yourself once it is booked. The booking is held until the ${noun} is paid.`
           : `Leave unchecked to confirm now and take the ${noun} in person.`}
       </Text>
     </CheckRow>
