@@ -11,6 +11,7 @@ import {
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
+import { CARD_HOLD_FEE_NOT_USED } from '@/lib/booking/card-hold-fee';
 import { currencySymbol, parsePoundsToPence, penceToPoundsInput } from '@/lib/format';
 import { hapticSelect } from '@/lib/haptics';
 import type { VariantWriteInput } from '@/lib/queries/useServicesManage';
@@ -92,10 +93,15 @@ export type BuildVariantsResult =
  * `appointment-service-form-to-payload.ts`: every option needs a name + valid
  * 5–480 duration; under full online payment every ACTIVE option needs a price > 0;
  * and at least one option must be active.
+ *
+ * With a card hold set as a percentage (`holdFeeIsPercent`) an option's own fee is not used, so it
+ * is not checked; whatever it holds is sent as it is, and comes back into use if the service
+ * switches back to a fixed fee.
  */
 export function buildVariantsPayload(
   drafts: DraftVariant[],
   paymentRequirement: ServicePaymentRequirement,
+  opts: { holdFeeIsPercent?: boolean } = {},
 ): BuildVariantsResult {
   const result: VariantWriteInput[] = [];
   let anyActive = false;
@@ -127,7 +133,12 @@ export function buildVariantsPayload(
     }
     // Card hold (spec 6.2): a per-option fee override, when set, must be at
     // least £1 (blank falls back to the service default fee).
-    if (paymentRequirement === 'card_hold' && draft.deposit.trim() && !(deposit != null && deposit >= 100)) {
+    if (
+      paymentRequirement === 'card_hold' &&
+      !opts.holdFeeIsPercent &&
+      draft.deposit.trim() &&
+      !(deposit != null && deposit >= 100)
+    ) {
       return {
         ok: false,
         error: `Option "${name}": set a no-show fee of at least ${currencySymbol()}1, or leave it blank to use the service fee.`,
@@ -166,6 +177,8 @@ type VariantsEditorProps = {
   onChange: (drafts: DraftVariant[]) => void;
   /** Parent service's online-payment mode (drives the per-option price hint). */
   paymentRequirement: ServicePaymentRequirement;
+  /** A card hold whose fee is a percentage of the price: an option's own fee is not used. */
+  holdFeeIsPercent?: boolean;
   /** Seed used for the FIRST option (web parity — carries the base duration/price). */
   firstOptionSeed?: { duration?: string; buffer?: string; price?: string; deposit?: string };
   /** Controlled expand state so the parent can reveal the option that failed validation. */
@@ -183,6 +196,7 @@ export function VariantsEditor({
   drafts,
   onChange,
   paymentRequirement,
+  holdFeeIsPercent = false,
   firstOptionSeed,
   expandedKey,
   onExpandedKeyChange,
@@ -353,17 +367,29 @@ export function VariantsEditor({
                     />
                   </View>
                   <View style={styles.moneyField}>
-                    <Input
-                      label={paymentRequirement === 'card_hold' ? `No-show fee (${currencySymbol()})` : `Deposit (${currencySymbol()})`}
-                      helper={
-                        paymentRequirement === 'deposit' || paymentRequirement === 'card_hold'
-                          ? 'Blank = service default'
-                          : undefined
-                      }
-                      value={draft.deposit}
-                      onChangeText={(deposit) => patchDraft(draft.key, { deposit })}
-                      keyboardType="decimal-pad"
-                    />
+                    {paymentRequirement === 'card_hold' && holdFeeIsPercent ? (
+                      // The service's percentage applies to this option's price (web plan PF5).
+                      <View style={styles.feeNotUsed} testID={`variant-fee-not-used-${draft.key}`}>
+                        <Text variant="label" tone="muted">
+                          No-show fee
+                        </Text>
+                        <Text variant="caption" tone="muted">
+                          {CARD_HOLD_FEE_NOT_USED}
+                        </Text>
+                      </View>
+                    ) : (
+                      <Input
+                        label={paymentRequirement === 'card_hold' ? `No-show fee (${currencySymbol()})` : `Deposit (${currencySymbol()})`}
+                        helper={
+                          paymentRequirement === 'deposit' || paymentRequirement === 'card_hold'
+                            ? 'Blank = service default'
+                            : undefined
+                        }
+                        value={draft.deposit}
+                        onChangeText={(deposit) => patchDraft(draft.key, { deposit })}
+                        keyboardType="decimal-pad"
+                      />
+                    )}
                   </View>
                 </View>
                 <View style={styles.switchRow}>
@@ -448,6 +474,10 @@ const styles = StyleSheet.create({
   },
   moneyField: {
     flex: 1,
+  },
+  feeNotUsed: {
+    gap: 2,
+    paddingTop: spacing.xs,
   },
   switchRow: {
     flexDirection: 'row',

@@ -14,6 +14,8 @@
  * than treating every non-null result as a charge.
  */
 
+import { cardHoldFeeFor } from '@/lib/booking/card-hold-fee';
+
 export type AppointmentPaymentRequirement = 'none' | 'deposit' | 'full_payment' | 'card_hold';
 
 export type AppointmentOnlineCharge =
@@ -23,9 +25,14 @@ export type AppointmentOnlineCharge =
 /** Fields sufficient to resolve the charge (a catalog service, option row, or variant merge). */
 export interface AppointmentChargeFields {
   price_pence?: number | null;
-  /** The deposit, or the no-show fee when the requirement is 'card_hold'. */
+  /** The deposit, or the fixed no-show fee when the requirement is 'card_hold'. */
   deposit_pence?: number | null;
   payment_requirement?: string | null;
+  /**
+   * A card hold's fee as a whole percent (1 to 100) of the price plus add-ons, in place of the
+   * fixed fee (web card hold percentage plan, 2026-11-25). Null or absent: the fixed fee.
+   */
+  card_hold_fee_percent?: number | null;
 }
 
 /** One segment's resolved charge, as stamped on a `MultiServiceSegment`. */
@@ -52,9 +59,15 @@ export function resolveAppointmentPaymentRequirement(
   return 'none';
 }
 
-/** Amount to collect online at booking for this service. */
+/**
+ * Amount to collect online at booking for this service. `addonsTotalPence` counts only towards a
+ * card hold set as a percentage (of the price plus add-ons); a deposit and a fixed fee leave
+ * add-ons out, and this function never adds them to a full payment (see
+ * {@link multiServiceSegmentCharge}).
+ */
 export function resolveAppointmentServiceOnlineCharge(
   svc: AppointmentChargeFields,
+  addonsTotalPence = 0,
 ): AppointmentOnlineCharge {
   const req = resolveAppointmentPaymentRequirement(svc);
   if (req === 'none') return null;
@@ -64,12 +77,15 @@ export function resolveAppointmentServiceOnlineCharge(
     return price > 0 ? { amountPence: price, chargeLabel: 'full_payment' } : null;
   }
 
-  const fee = svc.deposit_pence ?? 0;
   if (req === 'card_hold') {
     // Zero-fee safety (6.3): a hold with fee 0 would violate the hold table's
-    // CHECK at booking time, so it degrades to no charge at all.
-    return fee > 0 ? { amountPence: fee, chargeLabel: 'card_hold' } : null;
+    // CHECK at booking time, so it degrades to no charge at all. A percentage
+    // under 50p is 0 too (PF4).
+    const holdFee = cardHoldFeeFor(svc, addonsTotalPence);
+    return holdFee > 0 ? { amountPence: holdFee, chargeLabel: 'card_hold' } : null;
   }
+
+  const fee = svc.deposit_pence ?? 0;
 
   return fee > 0 ? { amountPence: fee, chargeLabel: 'deposit' } : null;
 }
@@ -80,14 +96,15 @@ export function resolveAppointmentServiceOnlineCharge(
  * Add-on policy, matching the server's
  * `resolveAppointmentServiceOnlineChargeWithAddons`: add-on price rolls into a
  * `full_payment` charge, but a deposit stays at the service+variant amount
- * (add-ons are paid at the venue). Card-hold fees never include add-ons either.
+ * (add-ons are paid at the venue). A fixed card-hold fee leaves add-ons out too;
+ * a card hold set as a percentage is of the price plus add-ons (web plan PF2).
  * Pass the base+variant service, and the add-on total separately.
  */
 export function multiServiceSegmentCharge(
   svc: AppointmentChargeFields,
   addonsTotalPricePence: number,
 ): { chargePence: number | null; chargeLabel: 'deposit' | 'full_payment' | 'card_hold' | null } {
-  const charge = resolveAppointmentServiceOnlineCharge(svc);
+  const charge = resolveAppointmentServiceOnlineCharge(svc, addonsTotalPricePence);
   if (!charge) return { chargePence: null, chargeLabel: null };
   if (charge.chargeLabel === 'full_payment') {
     return {

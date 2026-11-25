@@ -352,6 +352,7 @@ export function GroupBookingFlow({
           price_pence: basePrice,
           deposit_pence: draftVariant?.deposit_pence ?? draftService.depositPence,
           payment_requirement: draftService.paymentRequirement,
+          card_hold_fee_percent: draftService.cardHoldFeePercent,
         },
         addonTotalPence,
       ),

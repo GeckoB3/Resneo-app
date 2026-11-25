@@ -32,6 +32,7 @@ import {
   resolveVisitCardHoldTotal,
   resolveVisitChargeTotal,
 } from '@/lib/booking/appointment-online-charge';
+import { cardHoldFeeFor } from '@/lib/booking/card-hold-fee';
 import {
   buildMultiServicePayload,
   chainTotalMinutes,
@@ -506,11 +507,14 @@ export function ConfirmStep({
    * Card-hold fees stay out of this total. No money is due at booking for them
    * and they have their own toggle.
    */
-  const singleCharge = resolveAppointmentServiceOnlineCharge({
+  const singleChargeFields = {
     price_pence: basePrice,
     deposit_pence: baseDeposit,
     payment_requirement: service.paymentRequirement,
-  });
+    // A card hold set as a percentage is of the price plus the add-ons chosen (web plan PF2).
+    card_hold_fee_percent: service.cardHoldFeePercent,
+  };
+  const singleCharge = resolveAppointmentServiceOnlineCharge(singleChargeFields, addonsPrice);
   const visitCharge = isMultiService
     ? resolveVisitChargeTotal(multiServiceSegments!)
     : {
@@ -529,8 +533,9 @@ export function ConfirmStep({
 
   // Card hold (spec §7.6/D6): default on, walk-ins included. On a single
   // booking the fee is the (variant-adjusted) deposit_pence column, add-ons
-  // excluded, and it REPLACES "Require deposit" — a single service resolves to
-  // one charge or the other, never both.
+  // excluded, or a percentage of the price plus add-ons when the service sets
+  // one; it REPLACES "Require deposit": a single service resolves to one charge
+  // or the other, never both.
   //
   // A chain can carry both at once, so it totals its hold segments and shows
   // both controls. Sending nothing here used to leave the route's default (on)
@@ -545,7 +550,7 @@ export function ConfirmStep({
       : null
     : resolveStaffEntityCardHold({
         paymentRequirement: service.paymentRequirement,
-        feePerUnitPence: baseDeposit,
+        feePerUnitPence: cardHoldFeeFor(singleChargeFields, addonsPrice),
       });
   /**
    * The card line (web card-on-file-plan §6.2): a card on file found for a picked client protects

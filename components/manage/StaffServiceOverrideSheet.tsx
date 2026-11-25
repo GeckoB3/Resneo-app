@@ -6,12 +6,14 @@ import { Input } from '@/components/ui/Input';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { CARD_HOLD_FEE_NOT_USED, cardHoldFeePercentOf, cardHoldPercentLabel } from '@/lib/booking/card-hold-fee';
 import { currencySymbol, penceToPoundsInput } from '@/lib/format';
 import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useUpdateServiceOverride } from '@/lib/queries/useUpdateServiceOverride';
 import {
   buildServiceOverridePatch,
   mergeServiceWithOverride,
+  ownFeeNotUsed,
   staffMayCustomizeFlags,
   type ServiceOverrideDraft,
 } from '@/lib/services/service-override';
@@ -270,7 +272,14 @@ export function StaffServiceOverrideSheet({
             />
           ) : null}
 
-          {flags.deposit ? (
+          {flags.deposit && ownFeeNotUsed(service) ? (
+            <View style={[styles.depositBox, { borderColor: colors.border }]} testID="override-fee-not-used">
+              <Text variant="bodyMedium">No-show fee</Text>
+              <Text variant="caption" tone="muted">
+                {`${CARD_HOLD_FEE_NOT_USED}: this service's fee is ${cardHoldPercentLabel(cardHoldFeePercentOf(service) ?? 0)}.`}
+              </Text>
+            </View>
+          ) : flags.deposit ? (
             <View style={[styles.depositBox, { borderColor: colors.border }]}>
               <View style={styles.switchRow}>
                 <Text variant="bodyMedium">Require deposit</Text>

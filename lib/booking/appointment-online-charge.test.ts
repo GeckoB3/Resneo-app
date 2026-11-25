@@ -93,6 +93,24 @@ describe('resolveAppointmentServiceOnlineCharge', () => {
       resolveAppointmentServiceOnlineCharge({ price_pence: 3000, payment_requirement: 'none' }),
     ).toBeNull();
   });
+
+  it('works out a card hold set as a percentage from the price and add-ons', () => {
+    expect(
+      resolveAppointmentServiceOnlineCharge(
+        { price_pence: 6000, deposit_pence: null, payment_requirement: 'card_hold', card_hold_fee_percent: 50 },
+        3000,
+      ),
+    ).toEqual({ amountPence: 4500, chargeLabel: 'card_hold' });
+  });
+
+  it('leaves add-ons out of a deposit even when passed', () => {
+    expect(
+      resolveAppointmentServiceOnlineCharge(
+        { price_pence: 4000, deposit_pence: 1000, payment_requirement: 'deposit', card_hold_fee_percent: 50 },
+        3000,
+      ),
+    ).toEqual({ amountPence: 1000, chargeLabel: 'deposit' });
+  });
 });
 
 describe('multiServiceSegmentCharge', () => {
@@ -118,6 +136,24 @@ describe('multiServiceSegmentCharge', () => {
         500,
       ),
     ).toEqual({ chargePence: 2000, chargeLabel: 'card_hold' });
+  });
+
+  it('includes add-ons in a card-hold fee set as a percentage', () => {
+    expect(
+      multiServiceSegmentCharge(
+        { price_pence: 6000, deposit_pence: null, payment_requirement: 'card_hold', card_hold_fee_percent: 50 },
+        3000,
+      ),
+    ).toEqual({ chargePence: 4500, chargeLabel: 'card_hold' });
+  });
+
+  it('takes no hold when a percentage works out under 50p', () => {
+    expect(
+      multiServiceSegmentCharge(
+        { price_pence: 500, payment_requirement: 'card_hold', card_hold_fee_percent: 5 },
+        200,
+      ),
+    ).toEqual({ chargePence: null, chargeLabel: null });
   });
 
   it('reports nothing for a free service', () => {

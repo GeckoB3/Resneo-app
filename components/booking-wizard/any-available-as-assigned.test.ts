@@ -70,3 +70,15 @@ describe('anyAvailableAsAssigned', () => {
     expect(anyAvailableAsAssigned(anyOption, null, null, people).service).toBe(anyOption);
   });
 });
+
+describe('a card hold set as a percentage', () => {
+  it("carries the percentage with the person's own price", () => {
+    const holdPerson = (id: string, name: string, price: number) => {
+      const p = person(id, name, price, null);
+      Object.assign(p.services[0]!, { payment_requirement: 'card_hold', card_hold_fee_percent: 50 });
+      return p;
+    };
+    const { service } = anyAvailableAsAssigned(anyOption, null, 'jenny', [holdPerson('aisha', 'Aisha', 3000), holdPerson('jenny', 'Jenny', 3500)]);
+    expect(service).toMatchObject({ pricePence: 3500, paymentRequirement: 'card_hold', cardHoldFeePercent: 50 });
+  });
+});

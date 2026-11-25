@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
 import { ApiError, isApiErrorBody, isRequiresConfirmationBody } from '@/lib/api/client';
+import { cardHoldFeePercentOf, cardHoldPercentLabel } from '@/lib/booking/card-hold-fee';
 import { areaCopy } from '@/lib/collective-area/copy';
 import { isVenueWideRequirement, useComplianceRequirements } from '@/lib/queries/useComplianceRequirements';
 import { useSaveMemberServiceSettings, type MemberServiceSettingsBody } from '@/lib/queries/useCollectiveServiceTools';
@@ -258,7 +259,19 @@ export function MemberServiceSheet({
         <View style={styles.facts}>
           <Fact label="Price" value={money(service.price_pence, currencySymbol)} />
           <Fact label="Length" value={minutes(service.duration_minutes)} />
-          <Fact label="Deposit" value={money(service.deposit_pence, currencySymbol, 'No deposit')} />
+          {service.payment_requirement === 'card_hold' ? (
+            <Fact
+              label="No-show fee"
+              value={(() => {
+                const percent = cardHoldFeePercentOf(service);
+                return percent != null
+                  ? cardHoldPercentLabel(percent)
+                  : money(service.deposit_pence, currencySymbol, 'No fee');
+              })()}
+            />
+          ) : (
+            <Fact label="Deposit" value={money(service.deposit_pence, currencySymbol, 'No deposit')} />
+          )}
           <Fact label="Forms" value={formNames.length > 0 ? formNames.join(', ') : 'No forms'} />
         </View>
       </View>

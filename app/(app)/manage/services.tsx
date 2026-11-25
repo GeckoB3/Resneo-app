@@ -94,6 +94,7 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { Input } from '@/components/ui/Input';
 import { Screen } from '@/components/ui/Screen';
 import { SearchBar } from '@/components/ui/SearchBar';
+import { Segmented } from '@/components/ui/Segmented';
 import { Sheet } from '@/components/ui/Sheet';
 import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
@@ -125,6 +126,14 @@ import {
   serviceMatchesSearch,
   UNCATEGORISED_GROUP_LABEL,
 } from '@/lib/booking/service-categories';
+import {
+  CARD_HOLD_FEE_NOT_USED,
+  CARD_HOLD_PERCENT_HELPER,
+  cardHoldFeePercentOf,
+  cardHoldPercentExampleLine,
+  cardHoldPercentLabel,
+  parseCardHoldPercentInput,
+} from '@/lib/booking/card-hold-fee';
 import {
   DEFAULT_BOOKING_INTERVAL_MINUTES,
   bookingStartFingerprint,
@@ -250,6 +259,13 @@ const LOCATION_TYPE_LABELS: Record<ServiceLocationType, string> = {
   online: 'Online',
 };
 
+/** A card hold's no-show fee: a fixed amount, or a percentage of the price (web 2026-11-25). */
+type CardHoldFeeMode = 'fixed' | 'percent';
+const CARD_HOLD_FEE_MODE_OPTIONS: { value: CardHoldFeeMode; label: string }[] = [
+  { value: 'fixed', label: 'Fixed amount' },
+  { value: 'percent', label: 'Percentage of the price' },
+];
+
 /** The seven staff_may_customize_* flags shown in admin-only form section. */
 const STAFF_MAY_FIELDS: { key: keyof StaffMayState; label: string }[] = [
   { key: 'name', label: 'Display name' },
@@ -370,8 +386,11 @@ function ServiceRowBase({
   const deposit = formatPositivePence(service.deposit_pence);
   const variants = service.variants ?? [];
   const addonGroups = service.addon_groups ?? [];
-  // D5: for card-hold services the deposit column holds the no-show fee.
+  // D5: for card-hold services the deposit column holds the no-show fee, unless the fee is a
+  // percentage of the price (web 2026-11-25), which reads "50% of the price".
   const isCardHold = service.payment_requirement === 'card_hold';
+  const holdPercent = isCardHold ? cardHoldFeePercentOf(service) : null;
+  const holdFee = holdPercent != null ? cardHoldPercentLabel(holdPercent) : deposit;
   const roleBadge = collectiveBadge(service);
   const statusBadge = collectiveStatusBadge(service);
   const collectiveLines = collectiveServiceLines(service, { memberVenueNames });
@@ -459,7 +478,11 @@ function ServiceRowBase({
           <View style={styles.metaGrid}>
             {isCardHold ? (
               <Text variant="caption" tone="muted">
-                {deposit ? `Card hold: ${deposit} no-show fee` : 'Card hold'}
+                {holdPercent != null
+                  ? `Card hold: no-show fee ${cardHoldPercentLabel(holdPercent)}`
+                  : holdFee
+                    ? `Card hold: ${holdFee} no-show fee`
+                    : 'Card hold'}
               </Text>
             ) : deposit ? (
               <Text variant="caption" tone="muted">Deposit {deposit}</Text>
@@ -1004,6 +1027,9 @@ export default function ServicesScreen() {
   const [price, setPrice] = useState('');
   const [deposit, setDeposit] = useState('');
   const [paymentReq, setPaymentReq] = useState<ServicePaymentRequirement>('none');
+  // A card hold's fee: a fixed amount (the deposit box) or a whole percent of the price plus add-ons.
+  const [holdFeeMode, setHoldFeeMode] = useState<CardHoldFeeMode>('fixed');
+  const [holdFeePercent, setHoldFeePercent] = useState('');
   const [colour, setColour] = useState(COLOUR_OPTIONS[0]!);
   // Category heading on the booking pages (admin-only; null = none).
   const [categoryId, setCategoryId] = useState<string | null>(null);
@@ -1072,6 +1098,8 @@ export default function ServicesScreen() {
   const stripeConnected = setupStatus.data?.stripe_connected ?? true;
 
   const isCardHoldSelected = paymentReq === 'card_hold';
+  /** Card hold with its fee as a percentage: no fixed fee is used, the service's, an option's or a person's. */
+  const holdFeeIsPercent = isCardHoldSelected && holdFeeMode === 'percent';
 
   const practitionersQuery = usePractitioners();
   const practitioners = (practitionersQuery.data?.practitioners ?? [])
@@ -1509,6 +1537,9 @@ export default function ServicesScreen() {
     setPrice(penceToPoundsInput(service.price_pence));
     setDeposit(penceToPoundsInput(service.deposit_pence));
     setPaymentReq(service.payment_requirement ?? 'none');
+    const seededPercent = cardHoldFeePercentOf(service);
+    setHoldFeeMode(seededPercent != null ? 'percent' : 'fixed');
+    setHoldFeePercent(seededPercent != null ? String(seededPercent) : '');
     setColour(service.colour ?? COLOUR_OPTIONS[0]!);
     setCategoryId(service.category_id ?? null);
     setAdvanceDays(String(service.max_advance_booking_days ?? 90));
@@ -1582,6 +1613,8 @@ export default function ServicesScreen() {
     setPrice('');
     setDeposit('');
     setPaymentReq('none');
+    setHoldFeeMode('fixed');
+    setHoldFeePercent('');
     setColour(COLOUR_OPTIONS[0]!);
     setAdvanceDays('90');
     setNoticeHours('1');
@@ -1741,7 +1774,7 @@ export default function ServicesScreen() {
     // "every active option needs a price > 0" rule with a named inline error.
     let builtVariants: VariantWriteInput[] = [];
     if (isAdmin) {
-      const vr = buildVariantsPayload(variantDrafts, paymentReq);
+      const vr = buildVariantsPayload(variantDrafts, paymentReq, { holdFeeIsPercent });
       if (!vr.ok) {
         if (vr.key) setExpandedVariantKey(vr.key);
         setError(vr.error);
@@ -1793,8 +1826,13 @@ export default function ServicesScreen() {
       setError('Enter a deposit amount greater than zero for the deposit option.'); return;
     }
     // Card hold (spec 6.2): every editor requires the fee to be at least £1 —
-    // a zero-fee card hold must be impossible to configure.
-    if (paymentReq === 'card_hold' && !(depositPence != null && depositPence >= 100)) {
+    // a zero-fee card hold must be impossible to configure. A percentage instead
+    // is a whole number from 1 to 100; the server checks the service has a price.
+    const holdPercent = holdFeeIsPercent ? parseCardHoldPercentInput(holdFeePercent) : null;
+    if (holdFeeIsPercent && holdPercent == null) {
+      setError('Enter a no-show fee percentage from 1 to 100.'); return;
+    }
+    if (paymentReq === 'card_hold' && !holdFeeIsPercent && !(depositPence != null && depositPence >= 100)) {
       setError(`Enter a no-show fee of at least ${currencySymbol()}1`); return;
     }
     // Full online payment: a single offering needs a base price > 0; with options,
@@ -1926,8 +1964,12 @@ export default function ServicesScreen() {
     // zeroes it so a value typed earlier can't linger on the service after
     // switching mode (which would otherwise show a phantom deposit and confuse
     // refund logic).
-    const depositToSend =
-      paymentReq === 'deposit' || paymentReq === 'card_hold' ? (depositPence ?? 0) : 0;
+    // A card hold set as a percentage stores no fixed fee (web contract: deposit_pence null).
+    const depositToSend = holdFeeIsPercent
+      ? null
+      : paymentReq === 'deposit' || paymentReq === 'card_hold'
+        ? (depositPence ?? 0)
+        : 0;
 
     const shared = {
       name: name.trim(),
@@ -1947,6 +1989,9 @@ export default function ServicesScreen() {
           ? null
           : undefined),
       deposit_pence: depositToSend,
+      // A whole percent with a card hold set as a percentage, else null: switching back to a
+      // fixed fee, or away from a card hold, clears it.
+      card_hold_fee_percent: holdPercent,
       payment_requirement: paymentReq,
       colour,
       is_active: isActive,
@@ -2492,6 +2537,21 @@ export default function ServicesScreen() {
   // Admin "multiple options" mode — hides the base duration/price fields and the
   // parent processing-time editor, which the options below supersede (web parity).
   const usesVariants = isAdmin && variantDrafts.length > 0;
+  /**
+   * The percentage fee's live example, "On a £90.00 booking: £45.00": the service's price, or with
+   * options the first offered option that has one (the price the parent takes on save).
+   */
+  const holdPercentExample = holdFeeIsPercent
+    ? cardHoldPercentExampleLine(
+        parseCardHoldPercentInput(holdFeePercent),
+        usesVariants
+          ? (variantDrafts
+              .filter((d) => d.isActive)
+              .map((d) => parsePoundsToPence(d.price))
+              .find((p): p is number => p != null && p > 0) ?? null)
+          : (parsePoundsToPence(price) ?? null),
+      )
+    : null;
 
   // Admin display order (web 2026-07): move a service one place and persist the
   // FULL id order via PUT /reorder (`sort_order = index`); the saved order also
@@ -3435,11 +3495,13 @@ export default function ServicesScreen() {
                       drafts={variantDrafts}
                       onChange={setVariantDrafts}
                       paymentRequirement={paymentReq}
+                      holdFeeIsPercent={holdFeeIsPercent}
                       firstOptionSeed={{
                         duration,
                         buffer,
                         price,
-                        deposit: paymentReq === 'deposit' || paymentReq === 'card_hold' ? deposit : '',
+                        deposit:
+                          paymentReq === 'deposit' || (paymentReq === 'card_hold' && !holdFeeIsPercent) ? deposit : '',
                       }}
                       expandedKey={expandedVariantKey}
                       onExpandedKeyChange={setExpandedVariantKey}
@@ -3548,14 +3610,25 @@ export default function ServicesScreen() {
                 </Pressable>
               );
             })}
-            {!usesVariants || paymentReq === 'deposit' || isCardHoldSelected ? (
+            {isCardHoldSelected ? (
+              <View style={styles.sectionStack} testID="services-hold-fee-mode">
+                <Text variant="label">No-show fee</Text>
+                <Segmented
+                  options={CARD_HOLD_FEE_MODE_OPTIONS}
+                  value={holdFeeMode}
+                  onChange={setHoldFeeMode}
+                  wrapLabels
+                />
+              </View>
+            ) : null}
+            {!usesVariants || paymentReq === 'deposit' || (isCardHoldSelected && !holdFeeIsPercent) ? (
               <View style={styles.moneyRow}>
                 {!usesVariants ? (
                   <View style={styles.moneyField}>
                     <Input label={`Price (${currencySymbol()})`} value={price} onChangeText={setPrice} keyboardType="decimal-pad" />
                   </View>
                 ) : null}
-                {paymentReq === 'deposit' || isCardHoldSelected ? (
+                {paymentReq === 'deposit' || (isCardHoldSelected && !holdFeeIsPercent) ? (
                   <View style={styles.moneyField}>
                     <Input
                       label={
@@ -3581,6 +3654,24 @@ export default function ServicesScreen() {
                       keyboardType="decimal-pad"
                     />
                   </View>
+                ) : null}
+              </View>
+            ) : null}
+            {holdFeeIsPercent ? (
+              <View style={styles.sectionStack}>
+                <Input
+                  label="No-show fee (%)"
+                  helper={CARD_HOLD_PERCENT_HELPER}
+                  value={holdFeePercent}
+                  onChangeText={setHoldFeePercent}
+                  keyboardType="number-pad"
+                  maxLength={3}
+                  testID="services-hold-fee-percent"
+                />
+                {holdPercentExample ? (
+                  <Text variant="caption" tone="secondary" testID="services-hold-fee-example">
+                    {holdPercentExample}
+                  </Text>
                 ) : null}
               </View>
             ) : null}
@@ -3889,9 +3980,21 @@ export default function ServicesScreen() {
                     </Text>
                     {STAFF_MAY_FIELDS.map(({ key, label }) => (
                       <View key={key} style={styles.switchRow}>
-                        <Text variant="bodyMedium" tone={staffMayLocked(key) ? 'muted' : undefined}>
-                          {label}
-                        </Text>
+                        {key === 'deposit' && holdFeeIsPercent ? (
+                          // A person's own fixed fee is not used with a percentage fee (web plan PF5).
+                          <View style={styles.staffMayLabel}>
+                            <Text variant="bodyMedium" tone={staffMayLocked(key) ? 'muted' : undefined}>
+                              {label}
+                            </Text>
+                            <Text variant="caption" tone="muted">
+                              {CARD_HOLD_FEE_NOT_USED}
+                            </Text>
+                          </View>
+                        ) : (
+                          <Text variant="bodyMedium" tone={staffMayLocked(key) ? 'muted' : undefined}>
+                            {label}
+                          </Text>
+                        )}
                         <Switch
                           // A locked box shows off, as the server stores it, and the save sends it off.
                           value={staffMaySends(key)}
@@ -4394,6 +4497,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: spacing.xs,
+  },
+  staffMayLabel: {
+    flex: 1,
+    gap: 2,
+    paddingRight: spacing.sm,
   },
   // The other venues' part of the overrides on a page service (web 2026-11-05).
   memberValuesPart: {

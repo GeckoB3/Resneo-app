@@ -194,6 +194,7 @@ export function dedupeCatalogServices(
             pricePence: service.price_pence,
             depositPence: service.deposit_pence ?? null,
             paymentRequirement: service.payment_requirement ?? null,
+            cardHoldFeePercent: service.card_hold_fee_percent ?? null,
             // The chosen practitioner is decided on the practitioner step; this
             // row only identifies the service. Seed with the first offering so
             // a single-practitioner flow can book without a separate step.

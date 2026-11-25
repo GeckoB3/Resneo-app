@@ -225,3 +225,29 @@ it("reads the route's flags_turned_on back as the form's settings", () => {
   ]);
   expect(flagsTurnedOn(undefined)).toEqual([]);
 });
+
+describe('a card hold whose fee is a percentage of the price', () => {
+  const percentService = {
+    duration_minutes: 30,
+    buffer_minutes: 0,
+    price_pence: 2500,
+    deposit_pence: null,
+    payment_requirement: 'card_hold',
+    card_hold_fee_percent: 50,
+  };
+
+  it("leaves out a calendar's own fee, which is not used", () => {
+    const defaults = calendarValueDefaults(percentService);
+    expect(defaults.ownFeeNotUsed).toBe(true);
+    const every = { price: true, duration: true, buffer: true, deposit: true };
+    expect(keys(shownCalendarValueFields('own', every, defaults))).not.toContain('custom_deposit_pence');
+    expect(keys(shownCalendarValueFields('own', every, defaults))).toContain('custom_price_pence');
+  });
+
+  it('keeps the field for a fixed fee', () => {
+    const defaults = calendarValueDefaults({ ...percentService, card_hold_fee_percent: null, deposit_pence: 1000 });
+    expect(defaults.ownFeeNotUsed).toBeUndefined();
+    const every = { price: true, duration: true, buffer: true, deposit: true };
+    expect(keys(shownCalendarValueFields('own', every, defaults))).toContain('custom_deposit_pence');
+  });
+});

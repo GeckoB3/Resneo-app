@@ -63,6 +63,13 @@ export interface AppointmentCatalogService {
    */
   payment_requirement?: string | null;
   /**
+   * A card hold's no-show fee as a whole percent (1 to 100) of the price booked plus the add-ons
+   * chosen, in place of the fixed `deposit_pence` (web card hold percentage plan, 2026-11-25).
+   * Null or absent: the fixed fee. An option's own fee is not used with a percentage.
+   * @see lib/booking/card-hold-fee.ts
+   */
+  card_hold_fee_percent?: number | null;
+  /**
    * Override catalogue only (`?override=1`, web #187): false when this person is
    * not assigned the service. The override books it anyway, at the base price.
    */
@@ -179,6 +186,8 @@ export interface AppointmentServiceOption {
   depositPence: number | null;
   /** Resolved payment requirement of the service; 'card_hold' switches the staff toggle. */
   paymentRequirement?: string | null;
+  /** The catalogue's `card_hold_fee_percent`: a card hold's fee as a percent of price plus add-ons. */
+  cardHoldFeePercent?: number | null;
   /** A real practitioner id, or ANY_AVAILABLE_PRACTITIONER_ID for pooled rows. */
   practitionerId: string;
   practitionerName: string;

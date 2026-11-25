@@ -169,3 +169,35 @@ describe('StaffServiceOverrideSheet field gating', () => {
     });
   });
 });
+
+describe('a card hold whose fee is a percentage of the price', () => {
+  it("says a person's own fee is not used, and does not send one", async () => {
+    const service: ManagedService = {
+      ...BASE,
+      payment_requirement: 'card_hold',
+      deposit_pence: null,
+      card_hold_fee_percent: 50,
+      staff_may_customize_price: true,
+      staff_may_customize_deposit: true,
+    };
+    await render(
+      <StaffServiceOverrideSheet
+        visible
+        onClose={jest.fn()}
+        service={service}
+        calendarChoices={[{ id: 'cal-1', name: 'Main' }]}
+        selectedCalendarId="cal-1"
+        onSelectCalendar={jest.fn()}
+        link={null}
+      />,
+    );
+    expect(screen.queryByText('Require deposit')).toBeNull();
+    expect(
+      screen.getByText("Not used with a percentage fee: this service's fee is 50% of the price."),
+    ).toBeTruthy();
+    await press(() => screen.getByText('Save changes'));
+    const body = (mockUpdateMutateAsync.mock.calls[0] as unknown[] | undefined)?.[0] as Record<string, unknown>;
+    expect(body).not.toHaveProperty('custom_deposit_pence');
+    expect(body).toHaveProperty('custom_price_pence');
+  });
+});

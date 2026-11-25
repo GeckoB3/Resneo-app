@@ -76,7 +76,14 @@ export interface ManagedService {
   duration_minutes: number;
   buffer_minutes?: number | null;
   price_pence?: number | null;
+  /** The deposit, or a card hold's fixed no-show fee (null when the fee is a percentage). */
   deposit_pence?: number | null;
+  /**
+   * A card hold's no-show fee as a whole percent (1 to 100) of the price booked plus add-ons, in
+   * place of the fixed fee (web 2026-11-25). Null: a fixed fee. Absent on older servers.
+   * @see lib/booking/card-hold-fee.ts
+   */
+  card_hold_fee_percent?: number | null;
   /** False for a service staff book but guests cannot (web `is_bookable_online`). Absent on older servers. */
   is_bookable_online?: boolean | null;
   payment_requirement?: ServicePaymentRequirement | null;
@@ -225,6 +232,11 @@ export interface UpdateServiceInput {
   buffer_minutes?: number;
   price_pence?: number | null;
   deposit_pence?: number | null;
+  /**
+   * A card hold's fee as a whole percent, 1 to 100 (send `deposit_pence: null` with it), or null
+   * for a fixed fee. The server refuses a percentage on a service with no price.
+   */
+  card_hold_fee_percent?: number | null;
   payment_requirement?: ServicePaymentRequirement;
   colour?: string;
   is_active?: boolean;
@@ -276,7 +288,10 @@ export interface CreateServiceInput {
   description?: string;
   buffer_minutes?: number;
   price_pence?: number;
-  deposit_pence?: number;
+  /** Null with a card hold set as a percentage. */
+  deposit_pence?: number | null;
+  /** A card hold's fee as a whole percent, 1 to 100, or null for a fixed fee. */
+  card_hold_fee_percent?: number | null;
   payment_requirement?: ServicePaymentRequirement;
   colour?: string;
   is_active?: boolean;

@@ -12,7 +12,16 @@
  * @see C:\Resneo\src\app\dashboard\appointment-services\StaffServiceOverrideModal.tsx
  * @see C:\Resneo\src\lib\appointments\merge-service-with-overrides.ts
  */
+import { cardHoldFeePercentOf } from '@/lib/booking/card-hold-fee';
 import type { ManagedService, PractitionerServiceLink } from '@/types/services-manage';
+
+/**
+ * A card hold whose fee is a percentage of the price (web 2026-11-25): a person's own fixed fee is
+ * not used, so the sheet does not offer it and the save leaves it alone.
+ */
+export function ownFeeNotUsed(service: Pick<ManagedService, 'payment_requirement' | 'card_hold_fee_percent'>): boolean {
+  return service.payment_requirement === 'card_hold' && cardHoldFeePercentOf(service) != null;
+}
 
 /** Which fields a non-admin may override, derived from the service's flags. */
 export interface StaffMayCustomize {
@@ -158,7 +167,7 @@ export function buildServiceOverridePatch(args: {
     const base = service.price_pence ?? null;
     patch.custom_price_pence = next === base ? null : next;
   }
-  if (flags.deposit) {
+  if (flags.deposit && !ownFeeNotUsed(service)) {
     const base = service.deposit_pence ?? 0;
     if (!draft.requireDeposit) {
       // Clearing a deposit: 0 when the base had one (so it's overridden off),

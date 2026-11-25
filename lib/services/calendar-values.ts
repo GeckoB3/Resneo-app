@@ -14,6 +14,7 @@
  *
  * A blank field is the service's standard value (null). Only the fields that changed are sent.
  */
+import { cardHoldFeePercentOf } from '@/lib/booking/card-hold-fee';
 import { areaCopy } from '@/lib/collective-area/copy';
 import type { CollectiveCalendarGroup } from '@/lib/collective-area/model';
 import type { PractitionerServiceLink } from '@/types/services-manage';
@@ -59,6 +60,11 @@ export interface CalendarValueDefaults {
   bufferMinutes: number | null;
   pricePence: number | null;
   depositPence: number | null;
+  /**
+   * A card hold whose fee is a percentage of the price (web 2026-11-25): a calendar's own fixed fee
+   * is not used, so the field is not shown. Set only when true.
+   */
+  ownFeeNotUsed?: true;
 }
 
 export interface CalendarValueField {
@@ -129,6 +135,7 @@ export function calendarValueDefaults(
         price_pence?: number | null;
         deposit_pence?: number | null;
         payment_requirement?: string | null;
+        card_hold_fee_percent?: number | null;
       }
     | null
     | undefined,
@@ -138,6 +145,9 @@ export function calendarValueDefaults(
     bufferMinutes: service?.buffer_minutes ?? null,
     pricePence: service?.price_pence ?? null,
     depositPence: service?.payment_requirement === 'deposit' ? (service?.deposit_pence ?? null) : null,
+    ...(service?.payment_requirement === 'card_hold' && cardHoldFeePercentOf(service) != null
+      ? { ownFeeNotUsed: true as const }
+      : {}),
   };
 }
 
@@ -160,6 +170,8 @@ export function shownCalendarValueFields(
   return CALENDAR_VALUE_FIELDS.filter(
     (f) =>
       !(hasOptions && OPTION_SET_FLAGS.includes(f.flag)) &&
+      // A percentage no-show fee leaves no fixed fee for a calendar to set.
+      !(defaults?.ownFeeNotUsed && f.flag === 'deposit') &&
       // Through the collective any value may be set (on the host's own calendars a save turns its
       // setting on), and a deposit only where the service takes one (web 2026-11-05).
       (mode === 'own' ? flags[f.flag] : f.flag !== 'deposit' || takesDeposit),

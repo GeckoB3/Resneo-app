@@ -8,6 +8,7 @@
 import {
   buildServiceOverridePatch,
   mergeServiceWithOverride,
+  ownFeeNotUsed,
   poundsToPenceOrNull,
   staffMayCustomizeAny,
   staffMayCustomizeFlags,
@@ -199,5 +200,26 @@ describe('mergeServiceWithOverride', () => {
       price_pence: 2500,
       deposit_pence: 500,
     });
+  });
+});
+
+describe('a card hold whose fee is a percentage of the price', () => {
+  const percent: ManagedService = {
+    ...BASE,
+    payment_requirement: 'card_hold',
+    deposit_pence: null,
+    card_hold_fee_percent: 50,
+  };
+
+  it("does not use a person's own fee", () => {
+    expect(ownFeeNotUsed(percent)).toBe(true);
+    expect(ownFeeNotUsed({ ...percent, card_hold_fee_percent: null })).toBe(false);
+    expect(ownFeeNotUsed({ ...percent, payment_requirement: 'deposit' })).toBe(false);
+  });
+
+  it('leaves the own fee out of the save', () => {
+    const patch = buildServiceOverridePatch({ service: percent, draft: { ...baseDraft(), deposit: '9.00' } });
+    expect(patch).not.toHaveProperty('custom_deposit_pence');
+    expect(patch).toHaveProperty('custom_price_pence');
   });
 });

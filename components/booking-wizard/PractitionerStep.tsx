@@ -61,6 +61,8 @@ export function optionForPractitioner(
     pricePence: service.price_pence,
     depositPence: service.deposit_pence ?? null,
     paymentRequirement: service.payment_requirement ?? serviceOption.paymentRequirement ?? null,
+    cardHoldFeePercent:
+      service.card_hold_fee_percent !== undefined ? service.card_hold_fee_percent : serviceOption.cardHoldFeePercent,
     addonGroups: service.addon_groups ?? [],
     variants: service.variants ?? [],
     locationType: service.location_type ?? serviceOption.locationType,
@@ -99,6 +101,7 @@ export function anyAvailableAsAssigned<V extends { id: string; name?: string | n
       pricePence: own.pricePence,
       depositPence: own.depositPence,
       paymentRequirement: own.paymentRequirement,
+      cardHoldFeePercent: own.cardHoldFeePercent,
     },
     variant: ownVariant,
   };
