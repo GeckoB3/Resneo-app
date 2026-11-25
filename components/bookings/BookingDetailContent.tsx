@@ -47,6 +47,7 @@ import { ANALYTICS_EVENTS, track } from '@/lib/analytics';
 import { ApiError } from '@/lib/api/client';
 import { resolveCardHoldUiState, type CardHoldPillVariant } from '@/lib/booking/card-hold';
 import {
+  bookingPaidInFull,
   bookingPaymentStateLabel,
   buildPaymentHistory,
   buildPriceSummary,
@@ -739,6 +740,8 @@ export function BookingDetailContent({
   const isTable = isTableReservationBooking(booking);
 
   const depositLabel = formatDeposit(booking.deposit_amount_pence);
+  /** A full payment is never called a deposit (owner, 26 Nov 2026). */
+  const paidInFull = bookingPaidInFull(booking);
   /**
    * The deposit status as staff should read it. "Not Required" is the column's
    * value for a booking that never had a deposit, and printing it raw put
@@ -2172,6 +2175,7 @@ export function BookingDetailContent({
                     guestName,
                     amountPence: booking.deposit_amount_pence,
                     status: booking.deposit_status,
+                    paidInFull,
                     cardHold: cardHoldState,
                     visitId: booking.group_booking_id ?? booking.id,
                     canAddCard,
@@ -2226,7 +2230,7 @@ export function BookingDetailContent({
         <Card>
           <View style={styles.cardStack}>
             <Text variant="overline" tone="muted">
-              Deposit refund
+              {paidInFull ? 'Payment refund' : 'Deposit refund'}
             </Text>
             <Text variant="bodyMedium">
               {depositLabel ?? formatDeposit(booking.deposit_amount_pence)}
@@ -2240,7 +2244,7 @@ export function BookingDetailContent({
             ) : null}
             {booking.deposit_status === 'Paid' && canChange ? (
               <Button
-                label="Refund deposit"
+                label={paidInFull ? 'Refund payment' : 'Refund deposit'}
                 variant="danger"
                 fullWidth
                 onPress={() =>
@@ -2249,6 +2253,7 @@ export function BookingDetailContent({
                     guestName,
                     amountPence: booking.deposit_amount_pence,
                     status: booking.deposit_status,
+                    paidInFull,
                   })
                 }
               />

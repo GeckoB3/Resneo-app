@@ -46,6 +46,8 @@ export type DepositTarget = {
    * release) — the §9.1 hiding rule.
    */
   cardHold?: CardHoldUiState | null;
+  /** What was paid was the whole price: the sheet says "Payment", never "Deposit" (26 Nov 2026). */
+  paidInFull?: boolean;
   /** The visit the no-show charge covers: `group_booking_id`, or the booking's own id. */
   visitId?: string | null;
   /** "Add card now" can open the desk screen (the booking has a client record of ours). */
@@ -511,7 +513,7 @@ export function DepositSheet({ target, onClose, onAddCard }: DepositSheetProps) 
             <>
               <View style={styles.headerBlock}>
                 <Text variant="overline" tone="muted">
-                  Deposit
+                  {target.paidInFull ? 'Payment' : 'Deposit'}
                 </Text>
                 <Text variant="title">
                   {amount ?? 'No deposit set'}

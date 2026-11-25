@@ -1,4 +1,5 @@
 import {
+  bookingPaidInFull,
   buildMoneyAtAGlance,
   depositBadge,
   MAX_IN_PERSON_PENCE,
@@ -892,5 +893,37 @@ describe('depositBadge (web #190: only when money is owed, held or charged)', ()
     expect(depositBadge({ deposit_status: 'Card Held', status: 'Booked' })).toEqual({ label: 'Card held', tone: 'accent' });
     expect(depositBadge({ deposit_status: 'Paid', service_payment_requirement: 'full_payment', status: 'Booked' })).toEqual({ label: 'Paid in full', tone: 'success' });
     expect(depositBadge({ deposit_status: 'Refunded', status: 'Cancelled' })).toEqual({ label: 'Deposit refunded', tone: 'neutral' });
+  });
+});
+
+describe('a full payment is never called a deposit (owner, 26 Nov 2026)', () => {
+  const paid = (over: Partial<BookingDetail>): BookingDetail =>
+    ({
+      id: 'bk-fp',
+      status: 'Booked',
+      booking_date: '2026-12-10',
+      booking_time: '10:00',
+      party_size: 1,
+      guest_id: 'g-1',
+      deposit_status: 'Paid',
+      deposit_amount_pence: 6500,
+      booking_total_price_pence: 6500,
+      ...over,
+    }) as BookingDetail;
+  const depositRow = (b: BookingDetail) => buildPriceSummary(b).find((r) => r.key === 'deposit')?.label;
+
+  it('says "Paid in full" when what was paid covers the total, naming a gift voucher', () => {
+    expect(bookingPaidInFull(paid({}))).toBe(true);
+    expect(depositRow(paid({}))).toBe('Paid in full');
+    expect(depositRow(paid({ voucher_paid_pence: 6500 }))).toBe('Paid in full (gift voucher)');
+    expect(depositRow(paid({ voucher_paid_pence: 2000 }))).toBe('Paid in full (part gift voucher)');
+    expect(depositBadge(paid({ service_payment_requirement: null }))).toEqual({ label: 'Paid in full', tone: 'success' });
+  });
+
+  it('keeps the deposit words for a deposit', () => {
+    const deposit = paid({ deposit_amount_pence: 3000, booking_total_price_pence: 13000 });
+    expect(bookingPaidInFull(deposit)).toBe(false);
+    expect(depositRow(deposit)).toBe('Deposit paid');
+    expect(depositRow({ ...deposit, voucher_paid_pence: 1000 })).toBe('Deposit paid (part gift voucher)');
   });
 });

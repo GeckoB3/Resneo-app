@@ -138,10 +138,12 @@ export function cancelConsequence(booking: CustomerBookingDetail): string {
       ? new Date(booking.cancellation_deadline)
       : null;
     const past = deadline ? Date.now() > deadline.getTime() : false;
+    // A full payment is never called a deposit (owner, 26 Nov 2026).
+    const word = booking.paid_in_full ? 'payment' : 'deposit';
     parts.push(
       past
-        ? 'The free cancellation period has passed, so your deposit may not be refunded.'
-        : 'Your deposit should be refunded, because you are cancelling in time.',
+        ? `The free cancellation period has passed, so your ${word} may not be refunded.`
+        : `Your ${word} should be refunded, because you are cancelling in time.`,
     );
   }
 

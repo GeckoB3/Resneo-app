@@ -69,6 +69,18 @@ export function buildMoneyAtAGlance(booking: BookingDetail): MoneyAtAGlance | nu
   };
 }
 
+/**
+ * Whether what the client paid online was the booking's whole price, not a deposit (owner, 26 Nov
+ * 2026: a full payment is never called a deposit). The service says so, or the money does: what was
+ * paid covers the booking's total, the rule the web and the confirmation emails use.
+ */
+export function bookingPaidInFull(booking: BookingDetail): boolean {
+  if (booking.service_payment_requirement === 'full_payment') return true;
+  const paid = booking.deposit_amount_pence ?? 0;
+  const total = resolveBookingTotalPence(booking) ?? 0;
+  return paid > 0 && total > 0 && paid >= total;
+}
+
 /** The tones the deposit badge uses; the same names as `Badge`'s. */
 export type DepositBadgeTone = 'warning' | 'success' | 'neutral' | 'accent';
 
@@ -83,9 +95,10 @@ export function depositBadge(
   booking: Pick<
     BookingDetail,
     'deposit_status' | 'deposit_amount_pence' | 'service_payment_requirement' | 'status'
-  >,
+  > &
+    Partial<BookingDetail>,
 ): { label: string; tone: DepositBadgeTone } | null {
-  const isFull = booking.service_payment_requirement === 'full_payment';
+  const isFull = bookingPaidInFull(booking as BookingDetail);
   const ds = booking.deposit_status ?? null;
   const amount =
     (booking.deposit_amount_pence ?? 0) > 0 ? ` ${formatPence(booking.deposit_amount_pence as number)}` : '';
@@ -239,7 +252,11 @@ export function buildPriceSummary(booking: BookingDetail): PriceSummaryRow[] {
       ? (booking.deposit_amount_pence as number)
       : null;
   if (depositPaid != null) {
-    rows.push({ key: 'deposit', label: 'Deposit paid', pence: depositPaid });
+    // A full payment is never called a deposit; a gift voucher's part is named (26 Nov 2026).
+    const head = bookingPaidInFull(booking) ? 'Paid in full' : 'Deposit paid';
+    const voucher = Math.min(Math.max(0, booking.voucher_paid_pence ?? 0), depositPaid);
+    const label = voucher <= 0 ? head : voucher >= depositPaid ? `${head} (gift voucher)` : `${head} (part gift voucher)`;
+    rows.push({ key: 'deposit', label, pence: depositPaid });
   }
 
   const amountPaid = booking.amount_paid_pence ?? 0;

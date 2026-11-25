@@ -182,6 +182,8 @@ export interface BookingDetail extends ContactsHiddenFlag {
   occasion?: string | null;
   deposit_status?: string | null;
   deposit_amount_pence?: number | null;
+  /** What a gift voucher paid of the deposit or payment online (web online voucher plan). */
+  voucher_paid_pence?: number | null;
   area_name?: string | null;
   service_variant_name?: string | null;
   service_variant_price_pence?: number | null;

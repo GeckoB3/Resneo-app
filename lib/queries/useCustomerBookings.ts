@@ -77,6 +77,8 @@ export interface CustomerBookingDetail {
   resource_name: string | null;
   deposit_paid: boolean;
   deposit_amount_pence: number | null;
+  /** True when what was paid online was the whole price, not a deposit (web, 26 Nov 2026). */
+  paid_in_full?: boolean;
   /** Set only for a business that charges in euros; absent means pounds. */
   venue_currency?: 'EUR';
   cancellation_deadline: string | null;
