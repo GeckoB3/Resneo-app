@@ -1,3 +1,4 @@
+import { isAppUpdateRequired, showAppUpdateRequired } from '@/lib/app-update/update-required-alert';
 import { getApiUrl } from '@/lib/env';
 import { clientBuild } from '@/lib/pos/client-build';
 import {
@@ -488,6 +489,11 @@ export async function apiFetch<T>(
       const data = parseApiResponseBody(text, url);
 
       if (!response.ok) {
+        // A write from a build below the server's write minimum (web P4.9): say so, with the
+        // store link, then fail the request as any other refusal.
+        if (isAppUpdateRequired(response.status, data)) {
+          showAppUpdateRequired(isApiErrorBody(data) ? data.error : null);
+        }
         throw new ApiError(
           getApiErrorMessage(data, response.status),
           response.status,
