@@ -9,7 +9,7 @@
  * ring for the day being edited, and a legend. Capacity overrides aren't part of
  * the resource exceptions model, so only Closed / Amended hours are shown.
  *
- * @see _reference/Resneo/src/app/dashboard/resource-timeline/ResourceExceptionsCalendar.tsx
+ * @see (web repo) src/app/dashboard/resource-timeline/ResourceExceptionsCalendar.tsx
  */
 import { useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';

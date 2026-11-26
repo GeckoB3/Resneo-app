@@ -25,7 +25,7 @@ export interface NotificationsResponse {
 
 // ---------------------------------------------------------------------------
 // Linked Accounts email notification preferences (spec §17.4)
-// Mirrors _reference/Resneo/src/lib/linked-accounts/notification-prefs.ts
+// Mirrors (web repo) src/lib/linked-accounts/notification-prefs.ts
 // ---------------------------------------------------------------------------
 
 /** The cross-venue write categories a venue can be emailed about. */

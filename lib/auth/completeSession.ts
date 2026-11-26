@@ -8,7 +8,7 @@ import {
 
 /**
  * Discriminated failure reason for an auth-callback exchange, mirroring the web
- * `AuthErrorDetail` (`_reference/Resneo/src/lib/auth-link.ts`):
+ * `AuthErrorDetail` (`(web repo) src/lib/auth-link.ts`):
  *   - `otp_expired`   — the link was already used / has expired / is invalid.
  *   - `exchange_failed` — the PKCE code or OTP token could not be exchanged.
  *   - `generic`       — no usable code/token/session was present at all.

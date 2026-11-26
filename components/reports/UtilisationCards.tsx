@@ -3,7 +3,7 @@
  *
  * Both are a list of bars: how much of each table's or resource's open time was
  * booked in the range, with the same thresholds, captions and CSV exports as
- * the web (_reference/Resneo/src/app/dashboard/reports/ReportsView.tsx:1190-1329).
+ * the web ((web repo) src/app/dashboard/reports/ReportsView.tsx:1190-1329).
  * The venue only sees the one its booking types call for; the screen decides.
  */
 import { StyleSheet, View } from 'react-native';

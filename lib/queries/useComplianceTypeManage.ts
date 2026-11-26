@@ -38,7 +38,7 @@ import { useComplianceDashboard, useComplianceFormLinks } from '@/lib/queries/us
  */
 
 // ---------------------------------------------------------------------------
-// Constants (mirror _reference/Resneo/src/lib/compliance/constants.ts +
+// Constants (mirror (web repo) src/lib/compliance/constants.ts +
 // zod-schemas.ts — keep in sync with the web)
 // ---------------------------------------------------------------------------
 

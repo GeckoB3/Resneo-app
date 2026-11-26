@@ -182,7 +182,7 @@ const DAY_INTERVALS = [1, 2, 3, 4, 5, 6, 7, 10, 14];
  * existing one. Uses the app's native date/time pickers and the bulk endpoint
  * for the repeat modes.
  *
- * @see _reference/Resneo/src/app/dashboard/class-timetable/ClassScheduleModal.tsx
+ * @see (web repo) src/app/dashboard/class-timetable/ClassScheduleModal.tsx
  */
 export function ClassScheduleSheet({ target, onClose, onSaved }: ClassScheduleSheetProps) {
   const { colors } = useTheme();

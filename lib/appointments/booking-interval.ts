@@ -1,6 +1,6 @@
 /**
  * Per-service booking interval + per-hour start marks, or fixed times of day.
- * Mirrors `_reference/Resneo/src/lib/appointments/booking-interval.ts` so the app
+ * Mirrors `(web repo) src/lib/appointments/booking-interval.ts` so the app
  * agrees with the availability engine and the save API on what a service offers.
  *
  * A service picks one of two ways to offer candidate start times:

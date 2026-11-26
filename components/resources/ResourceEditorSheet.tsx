@@ -132,7 +132,7 @@ const CALENDAR_RESTRICTION_WARNING =
 
 /**
  * Per-field help copy ported verbatim from the web resource form
- * (`_reference/Resneo/src/lib/help/resource-booking-tooltips.ts`). Surfaced via a
+ * (`(web repo) src/lib/help/resource-booking-tooltips.ts`). Surfaced via a
  * tappable {@link HelpTooltip} next to the slot-interval + shortest-booking labels
  * so the longer explanation is available without crowding the inline helper text.
  */
@@ -180,8 +180,8 @@ type ResourceEditorSheetProps = {
  * conditional deposit + active), and Weekly hours. Client validation mirrors the
  * server `resourceSchema` so errors surface before the request.
  *
- * @see _reference/Resneo/src/app/dashboard/resource-timeline/ResourceTimelineView.tsx
- * @see _reference/Resneo/src/app/api/venue/resources/route.ts (resourceSchema)
+ * @see (web repo) src/app/dashboard/resource-timeline/ResourceTimelineView.tsx
+ * @see (web repo) src/app/api/venue/resources/route.ts (resourceSchema)
  */
 export function ResourceEditorSheet({
   target,

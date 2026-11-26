@@ -1,6 +1,6 @@
 /**
  * Subset of GET /api/venue/waitlist used by the mobile waitlist screen.
- * @see _reference/Resneo/src/app/api/venue/waitlist/route.ts
+ * @see (web repo) src/app/api/venue/waitlist/route.ts
  */
 import type { ContactsHiddenFlag } from '@/types/staff';
 

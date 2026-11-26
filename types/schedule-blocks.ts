@@ -7,8 +7,8 @@
  * draws the calendar's class/event capacity blocks from THIS feed), so the two
  * never double-render — the calendar consumes both.
  *
- * @see _reference/Resneo/src/types/schedule-blocks.ts
- * @see _reference/Resneo/src/app/api/venue/schedule/route.ts
+ * @see (web repo) src/types/schedule-blocks.ts
+ * @see (web repo) src/app/api/venue/schedule/route.ts
  */
 
 export type ScheduleBlockKind = 'event_ticket' | 'class_session' | 'resource_booking';

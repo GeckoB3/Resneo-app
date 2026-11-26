@@ -24,7 +24,7 @@ export const experienceEventKeys = {
  * Subset of a block from GET /api/venue/schedule (Bearer-capable).
  * The route emits one `kind: 'event_ticket'` block per active experience
  * event in range, with booking stats aggregated server-side.
- * @see _reference/Resneo/src/app/api/venue/schedule/route.ts
+ * @see (web repo) src/app/api/venue/schedule/route.ts
  */
 interface ScheduleBlock {
   id: string;
@@ -96,7 +96,7 @@ export interface EventAttendeeTicketLine {
  * (Bearer-capable). Richer than the bookings/list row: it carries per-ticket
  * lines and the deposit so the roster can show the same breakdown as the web
  * event-manager.
- * @see _reference/Resneo/src/app/api/venue/experience-events/[id]/attendees/route.ts
+ * @see (web repo) src/app/api/venue/experience-events/[id]/attendees/route.ts
  */
 export interface EventAttendee {
   booking_id: string;
@@ -210,7 +210,7 @@ export function useExperienceEvents(options: UseExperienceEventsOptions) {
  * GET /api/venue/experience-events/[id]/attendees (Bearer-capable). Returns the
  * rich per-attendee shape — per-ticket lines + deposit — that the web
  * event-manager renders, which bookings/list does not expose.
- * @see _reference/Resneo/src/app/api/venue/experience-events/[id]/attendees/route.ts
+ * @see (web repo) src/app/api/venue/experience-events/[id]/attendees/route.ts
  */
 export function useEventAttendees(eventId: string | null) {
   const accessToken = useAccessToken();

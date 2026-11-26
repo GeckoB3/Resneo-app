@@ -3,7 +3,7 @@
  *
  * Covers what the list asks the guests route for (identity scope, sort, tags)
  * and what a row shows, against the web's own list
- * (_reference/Resneo/src/app/dashboard/reports/ClientsSection.tsx).
+ * ((web repo) src/app/dashboard/reports/ClientsSection.tsx).
  *
  * jest hoists mock factories above imports, so every closed-over variable is
  * prefixed `mock*`. The query hooks are mocked so the render is deterministic

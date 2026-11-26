@@ -3,10 +3,10 @@
  *
  * Consolidated port of the web modules (kept in web order so parity diffs stay
  * mechanical):
- *  - _reference/Resneo/src/lib/booking/card-hold-terms.ts (fee formatting)
- *  - _reference/Resneo/src/components/booking/card-hold-copy.ts (staff strings)
- *  - _reference/Resneo/src/components/booking/card-hold-ui-state.ts (state machine)
- *  - _reference/Resneo/src/components/booking/staff-card-hold.ts (create-form toggle)
+ *  - (web repo) src/lib/booking/card-hold-terms.ts (fee formatting)
+ *  - (web repo) src/components/booking/card-hold-copy.ts (staff strings)
+ *  - (web repo) src/components/booking/card-hold-ui-state.ts (state machine)
+ *  - (web repo) src/components/booking/staff-card-hold.ts (create-form toggle)
  *
  * Docs: CARD_HOLD_DEPOSITS_DESIGN_AND_IMPLEMENTATION §9.1 state table, §9.2
  * charge gate, §7.6/D6 staff toggle. No em-dashes anywhere in this copy.

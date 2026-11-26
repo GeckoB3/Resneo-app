@@ -2,7 +2,7 @@
  * Collective client sharing: the shapes the server sends
  * (web Docs/collective-client-sharing-plan.md §1A.3 rule 1: the server decides, the screens draw).
  *
- * @see _reference/Resneo/src/lib/linked-accounts/client-sharing/types.ts (the web's copy). Fields are
+ * @see (web repo) src/lib/linked-accounts/client-sharing/types.ts (the web's copy). Fields are
  * only ever added there; an older server simply has no client-sharing routes.
  */
 

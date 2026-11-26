@@ -2,7 +2,7 @@
  * The web routes the AI services setup calls (web `ServicesSetupWizard.tsx`, which calls them
  * with `fetch` from the dashboard).
  *
- * @see _reference/Resneo/src/app/api/venue/services-setup/extract/route.ts
+ * @see (web repo) src/app/api/venue/services-setup/extract/route.ts
  *
  * Reading a source goes through its own `fetch` rather than `apiFetch`: a read can take a few
  * minutes (the route's `maxDuration` is 300 s), and a refusal from in front of the route (413 for

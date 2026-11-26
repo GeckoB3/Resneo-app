@@ -17,7 +17,7 @@
  * clients. Every route is gated by `requireClassCommercePlan`, so an off-plan or
  * flag-off venue gets a 403 (surfaced gracefully, never fatal).
  *
- * @see _reference/Resneo/src/app/dashboard/class-timetable/products/ClassCommerceProductsClient.tsx
+ * @see (web repo) src/app/dashboard/class-timetable/products/ClassCommerceProductsClient.tsx
  */
 
 // ---------------------------------------------------------------------------

@@ -120,4 +120,4 @@ in. Use a global account context provider.
 - Don't introduce new dependencies without explaining why in the chat first
 - Don't generate code that uses lib/supabase with the service role key — anon/publishable key only
 - Don't commit `.env.local` or paste secret keys into source files
-- Don't read or modify `_reference/reserve-ni` except when explicitly porting API patterns to the mobile app
+- The web app is its own repository (sibling checkout C:/Resneo); read it there when porting API patterns, never from a local copy

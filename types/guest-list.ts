@@ -2,7 +2,7 @@ import type { ContactsHiddenFlag } from '@/types/staff';
 
 /**
  * Guest directory row from GET /api/venue/guests.
- * @see _reference/Resneo/src/app/api/venue/guests/route.ts
+ * @see (web repo) src/app/api/venue/guests/route.ts
  */
 export interface GuestListItem {
   id: string;
@@ -55,7 +55,7 @@ export interface GuestListParams {
   /**
    * Multi-tag filter, sent comma-joined as `tags` — a contact must carry every
    * one of them. This is what the web's Reports → Clients list sends
-   * (`_reference/Resneo/src/app/dashboard/reports/ClientsSection.tsx:115`).
+   * (`(web repo) src/app/dashboard/reports/ClientsSection.tsx:115`).
    */
   tags?: string[];
   /** Segment filter: 'all' | 'new' | 'upcoming' | 'visit' | 'marketing' | 'last_staff' | 'last_service' | 'tag' */

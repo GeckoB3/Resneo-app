@@ -6,7 +6,7 @@ import type { BaselineMetricsSnapshot, VenueBaselineMetrics } from '@/types/repo
 /**
  * Report 8 — the copy is the web's, including the day a reference period was
  * saved and the full detail line under each figure
- * (`_reference/Resneo/src/app/dashboard/reports/BaselineMetricsSection.tsx`).
+ * (`(web repo) src/app/dashboard/reports/BaselineMetricsSection.tsx`).
  */
 
 function metrics(overrides: Partial<VenueBaselineMetrics> = {}): VenueBaselineMetrics {

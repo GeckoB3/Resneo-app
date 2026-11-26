@@ -1,0 +1,3207 @@
+{
+  "activeEnd": [
+    {
+      "name": "no blocks",
+      "blocks": [],
+      "duration": 60,
+      "expected": 60
+    },
+    {
+      "name": "middle gap",
+      "blocks": [
+        {
+          "start_minute": 20,
+          "duration_minutes": 15
+        }
+      ],
+      "duration": 60,
+      "expected": 60
+    },
+    {
+      "name": "gap to the end",
+      "blocks": [
+        {
+          "start_minute": 40,
+          "duration_minutes": 20
+        }
+      ],
+      "duration": 60,
+      "expected": 40
+    },
+    {
+      "name": "tail after the end",
+      "blocks": [
+        {
+          "start_minute": 60,
+          "duration_minutes": 30
+        }
+      ],
+      "duration": 60,
+      "expected": 60
+    },
+    {
+      "name": "gap running past the end",
+      "blocks": [
+        {
+          "start_minute": 45,
+          "duration_minutes": 30
+        }
+      ],
+      "duration": 60,
+      "expected": 45
+    },
+    {
+      "name": "touching chain to the end",
+      "blocks": [
+        {
+          "start_minute": 30,
+          "duration_minutes": 15
+        },
+        {
+          "start_minute": 45,
+          "duration_minutes": 15
+        }
+      ],
+      "duration": 60,
+      "expected": 30
+    },
+    {
+      "name": "middle gap and tail",
+      "blocks": [
+        {
+          "start_minute": 10,
+          "duration_minutes": 10
+        },
+        {
+          "start_minute": 60,
+          "duration_minutes": 25
+        }
+      ],
+      "duration": 60,
+      "expected": 60
+    },
+    {
+      "name": "two middle gaps",
+      "blocks": [
+        {
+          "start_minute": 5,
+          "duration_minutes": 10
+        },
+        {
+          "start_minute": 30,
+          "duration_minutes": 10
+        }
+      ],
+      "duration": 60,
+      "expected": 60
+    },
+    {
+      "name": "block too short",
+      "blocks": [
+        {
+          "start_minute": 20,
+          "duration_minutes": 3
+        }
+      ],
+      "duration": 60,
+      "expected": 60
+    },
+    {
+      "name": "gap from the start",
+      "blocks": [
+        {
+          "start_minute": 0,
+          "duration_minutes": 20
+        }
+      ],
+      "duration": 45,
+      "expected": 45
+    },
+    {
+      "name": "unsorted",
+      "blocks": [
+        {
+          "start_minute": 60,
+          "duration_minutes": 20
+        },
+        {
+          "start_minute": 10,
+          "duration_minutes": 10
+        }
+      ],
+      "duration": 60,
+      "expected": 60
+    }
+  ],
+  "tail": [
+    {
+      "name": "no blocks",
+      "blocks": [],
+      "duration": 60,
+      "expected": 0
+    },
+    {
+      "name": "middle gap",
+      "blocks": [
+        {
+          "start_minute": 20,
+          "duration_minutes": 15
+        }
+      ],
+      "duration": 60,
+      "expected": 0
+    },
+    {
+      "name": "gap to the end",
+      "blocks": [
+        {
+          "start_minute": 40,
+          "duration_minutes": 20
+        }
+      ],
+      "duration": 60,
+      "expected": 0
+    },
+    {
+      "name": "tail after the end",
+      "blocks": [
+        {
+          "start_minute": 60,
+          "duration_minutes": 30
+        }
+      ],
+      "duration": 60,
+      "expected": 30
+    },
+    {
+      "name": "gap running past the end",
+      "blocks": [
+        {
+          "start_minute": 45,
+          "duration_minutes": 30
+        }
+      ],
+      "duration": 60,
+      "expected": 15
+    },
+    {
+      "name": "touching chain to the end",
+      "blocks": [
+        {
+          "start_minute": 30,
+          "duration_minutes": 15
+        },
+        {
+          "start_minute": 45,
+          "duration_minutes": 15
+        }
+      ],
+      "duration": 60,
+      "expected": 0
+    },
+    {
+      "name": "middle gap and tail",
+      "blocks": [
+        {
+          "start_minute": 10,
+          "duration_minutes": 10
+        },
+        {
+          "start_minute": 60,
+          "duration_minutes": 25
+        }
+      ],
+      "duration": 60,
+      "expected": 25
+    },
+    {
+      "name": "two middle gaps",
+      "blocks": [
+        {
+          "start_minute": 5,
+          "duration_minutes": 10
+        },
+        {
+          "start_minute": 30,
+          "duration_minutes": 10
+        }
+      ],
+      "duration": 60,
+      "expected": 0
+    },
+    {
+      "name": "block too short",
+      "blocks": [
+        {
+          "start_minute": 20,
+          "duration_minutes": 3
+        }
+      ],
+      "duration": 60,
+      "expected": 0
+    },
+    {
+      "name": "gap from the start",
+      "blocks": [
+        {
+          "start_minute": 0,
+          "duration_minutes": 20
+        }
+      ],
+      "duration": 45,
+      "expected": 0
+    },
+    {
+      "name": "unsorted",
+      "blocks": [
+        {
+          "start_minute": 60,
+          "duration_minutes": 20
+        },
+        {
+          "start_minute": 10,
+          "duration_minutes": 10
+        }
+      ],
+      "duration": 60,
+      "expected": 20
+    }
+  ],
+  "span": [
+    {
+      "name": "no blocks",
+      "blocks": [],
+      "duration": 60,
+      "buffer": 0,
+      "expected": 60
+    },
+    {
+      "name": "no blocks",
+      "blocks": [],
+      "duration": 60,
+      "buffer": 10,
+      "expected": 70
+    },
+    {
+      "name": "middle gap",
+      "blocks": [
+        {
+          "start_minute": 20,
+          "duration_minutes": 15
+        }
+      ],
+      "duration": 60,
+      "buffer": 0,
+      "expected": 60
+    },
+    {
+      "name": "middle gap",
+      "blocks": [
+        {
+          "start_minute": 20,
+          "duration_minutes": 15
+        }
+      ],
+      "duration": 60,
+      "buffer": 10,
+      "expected": 70
+    },
+    {
+      "name": "gap to the end",
+      "blocks": [
+        {
+          "start_minute": 40,
+          "duration_minutes": 20
+        }
+      ],
+      "duration": 60,
+      "buffer": 0,
+      "expected": 60
+    },
+    {
+      "name": "gap to the end",
+      "blocks": [
+        {
+          "start_minute": 40,
+          "duration_minutes": 20
+        }
+      ],
+      "duration": 60,
+      "buffer": 10,
+      "expected": 70
+    },
+    {
+      "name": "tail after the end",
+      "blocks": [
+        {
+          "start_minute": 60,
+          "duration_minutes": 30
+        }
+      ],
+      "duration": 60,
+      "buffer": 0,
+      "expected": 90
+    },
+    {
+      "name": "tail after the end",
+      "blocks": [
+        {
+          "start_minute": 60,
+          "duration_minutes": 30
+        }
+      ],
+      "duration": 60,
+      "buffer": 10,
+      "expected": 100
+    },
+    {
+      "name": "gap running past the end",
+      "blocks": [
+        {
+          "start_minute": 45,
+          "duration_minutes": 30
+        }
+      ],
+      "duration": 60,
+      "buffer": 0,
+      "expected": 75
+    },
+    {
+      "name": "gap running past the end",
+      "blocks": [
+        {
+          "start_minute": 45,
+          "duration_minutes": 30
+        }
+      ],
+      "duration": 60,
+      "buffer": 10,
+      "expected": 85
+    },
+    {
+      "name": "touching chain to the end",
+      "blocks": [
+        {
+          "start_minute": 30,
+          "duration_minutes": 15
+        },
+        {
+          "start_minute": 45,
+          "duration_minutes": 15
+        }
+      ],
+      "duration": 60,
+      "buffer": 0,
+      "expected": 60
+    },
+    {
+      "name": "touching chain to the end",
+      "blocks": [
+        {
+          "start_minute": 30,
+          "duration_minutes": 15
+        },
+        {
+          "start_minute": 45,
+          "duration_minutes": 15
+        }
+      ],
+      "duration": 60,
+      "buffer": 10,
+      "expected": 70
+    },
+    {
+      "name": "middle gap and tail",
+      "blocks": [
+        {
+          "start_minute": 10,
+          "duration_minutes": 10
+        },
+        {
+          "start_minute": 60,
+          "duration_minutes": 25
+        }
+      ],
+      "duration": 60,
+      "buffer": 0,
+      "expected": 85
+    },
+    {
+      "name": "middle gap and tail",
+      "blocks": [
+        {
+          "start_minute": 10,
+          "duration_minutes": 10
+        },
+        {
+          "start_minute": 60,
+          "duration_minutes": 25
+        }
+      ],
+      "duration": 60,
+      "buffer": 10,
+      "expected": 95
+    },
+    {
+      "name": "two middle gaps",
+      "blocks": [
+        {
+          "start_minute": 5,
+          "duration_minutes": 10
+        },
+        {
+          "start_minute": 30,
+          "duration_minutes": 10
+        }
+      ],
+      "duration": 60,
+      "buffer": 0,
+      "expected": 60
+    },
+    {
+      "name": "two middle gaps",
+      "blocks": [
+        {
+          "start_minute": 5,
+          "duration_minutes": 10
+        },
+        {
+          "start_minute": 30,
+          "duration_minutes": 10
+        }
+      ],
+      "duration": 60,
+      "buffer": 10,
+      "expected": 70
+    },
+    {
+      "name": "block too short",
+      "blocks": [
+        {
+          "start_minute": 20,
+          "duration_minutes": 3
+        }
+      ],
+      "duration": 60,
+      "buffer": 0,
+      "expected": 60
+    },
+    {
+      "name": "block too short",
+      "blocks": [
+        {
+          "start_minute": 20,
+          "duration_minutes": 3
+        }
+      ],
+      "duration": 60,
+      "buffer": 10,
+      "expected": 70
+    },
+    {
+      "name": "gap from the start",
+      "blocks": [
+        {
+          "start_minute": 0,
+          "duration_minutes": 20
+        }
+      ],
+      "duration": 45,
+      "buffer": 0,
+      "expected": 45
+    },
+    {
+      "name": "gap from the start",
+      "blocks": [
+        {
+          "start_minute": 0,
+          "duration_minutes": 20
+        }
+      ],
+      "duration": 45,
+      "buffer": 10,
+      "expected": 55
+    },
+    {
+      "name": "unsorted",
+      "blocks": [
+        {
+          "start_minute": 60,
+          "duration_minutes": 20
+        },
+        {
+          "start_minute": 10,
+          "duration_minutes": 10
+        }
+      ],
+      "duration": 60,
+      "buffer": 0,
+      "expected": 80
+    },
+    {
+      "name": "unsorted",
+      "blocks": [
+        {
+          "start_minute": 60,
+          "duration_minutes": 20
+        },
+        {
+          "start_minute": 10,
+          "duration_minutes": 10
+        }
+      ],
+      "duration": 60,
+      "buffer": 10,
+      "expected": 90
+    }
+  ],
+  "fit": [
+    {
+      "name": "no blocks",
+      "blocks": [],
+      "duration": 60,
+      "to": 30,
+      "expected": {
+        "blocks": [],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [],
+        "changed": false
+      }
+    },
+    {
+      "name": "no blocks",
+      "blocks": [],
+      "duration": 60,
+      "to": 45,
+      "expected": {
+        "blocks": [],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [],
+        "changed": false
+      }
+    },
+    {
+      "name": "no blocks",
+      "blocks": [],
+      "duration": 60,
+      "to": 60,
+      "expected": {
+        "blocks": [],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [],
+        "changed": false
+      }
+    },
+    {
+      "name": "no blocks",
+      "blocks": [],
+      "duration": 60,
+      "to": 75,
+      "expected": {
+        "blocks": [],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [],
+        "changed": false
+      }
+    },
+    {
+      "name": "no blocks",
+      "blocks": [],
+      "duration": 60,
+      "to": 90,
+      "expected": {
+        "blocks": [],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [],
+        "changed": false
+      }
+    },
+    {
+      "name": "no blocks",
+      "blocks": [],
+      "duration": 60,
+      "to": 0,
+      "expected": {
+        "blocks": [],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [],
+        "changed": false
+      }
+    },
+    {
+      "name": "no blocks",
+      "blocks": [],
+      "duration": 60,
+      "to": 5,
+      "expected": {
+        "blocks": [],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [],
+        "changed": false
+      }
+    },
+    {
+      "name": "middle gap",
+      "blocks": [
+        {
+          "start_minute": 20,
+          "duration_minutes": 15
+        }
+      ],
+      "duration": 60,
+      "to": 30,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 20,
+            "duration_minutes": 10
+          }
+        ],
+        "removed": [],
+        "trimmed": [
+          {
+            "start_minute": 20,
+            "duration_minutes": 10
+          }
+        ],
+        "shifted": [],
+        "changed": true
+      }
+    },
+    {
+      "name": "middle gap",
+      "blocks": [
+        {
+          "start_minute": 20,
+          "duration_minutes": 15
+        }
+      ],
+      "duration": 60,
+      "to": 45,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 20,
+            "duration_minutes": 15
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [],
+        "changed": false
+      }
+    },
+    {
+      "name": "middle gap",
+      "blocks": [
+        {
+          "start_minute": 20,
+          "duration_minutes": 15
+        }
+      ],
+      "duration": 60,
+      "to": 60,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 20,
+            "duration_minutes": 15
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [],
+        "changed": false
+      }
+    },
+    {
+      "name": "middle gap",
+      "blocks": [
+        {
+          "start_minute": 20,
+          "duration_minutes": 15
+        }
+      ],
+      "duration": 60,
+      "to": 75,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 20,
+            "duration_minutes": 15
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [],
+        "changed": false
+      }
+    },
+    {
+      "name": "middle gap",
+      "blocks": [
+        {
+          "start_minute": 20,
+          "duration_minutes": 15
+        }
+      ],
+      "duration": 60,
+      "to": 90,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 20,
+            "duration_minutes": 15
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [],
+        "changed": false
+      }
+    },
+    {
+      "name": "middle gap",
+      "blocks": [
+        {
+          "start_minute": 20,
+          "duration_minutes": 15
+        }
+      ],
+      "duration": 60,
+      "to": 0,
+      "expected": {
+        "blocks": [],
+        "removed": [
+          {
+            "start_minute": 20,
+            "duration_minutes": 15
+          }
+        ],
+        "trimmed": [],
+        "shifted": [],
+        "changed": true
+      }
+    },
+    {
+      "name": "middle gap",
+      "blocks": [
+        {
+          "start_minute": 20,
+          "duration_minutes": 15
+        }
+      ],
+      "duration": 60,
+      "to": 5,
+      "expected": {
+        "blocks": [],
+        "removed": [
+          {
+            "start_minute": 20,
+            "duration_minutes": 15
+          }
+        ],
+        "trimmed": [],
+        "shifted": [],
+        "changed": true
+      }
+    },
+    {
+      "name": "gap to the end",
+      "blocks": [
+        {
+          "start_minute": 40,
+          "duration_minutes": 20
+        }
+      ],
+      "duration": 60,
+      "to": 30,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 10,
+            "duration_minutes": 20
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [
+          {
+            "start_minute": 10,
+            "duration_minutes": 20
+          }
+        ],
+        "changed": true
+      }
+    },
+    {
+      "name": "gap to the end",
+      "blocks": [
+        {
+          "start_minute": 40,
+          "duration_minutes": 20
+        }
+      ],
+      "duration": 60,
+      "to": 45,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 25,
+            "duration_minutes": 20
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [
+          {
+            "start_minute": 25,
+            "duration_minutes": 20
+          }
+        ],
+        "changed": true
+      }
+    },
+    {
+      "name": "gap to the end",
+      "blocks": [
+        {
+          "start_minute": 40,
+          "duration_minutes": 20
+        }
+      ],
+      "duration": 60,
+      "to": 60,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 40,
+            "duration_minutes": 20
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [],
+        "changed": false
+      }
+    },
+    {
+      "name": "gap to the end",
+      "blocks": [
+        {
+          "start_minute": 40,
+          "duration_minutes": 20
+        }
+      ],
+      "duration": 60,
+      "to": 75,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 55,
+            "duration_minutes": 20
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [
+          {
+            "start_minute": 55,
+            "duration_minutes": 20
+          }
+        ],
+        "changed": true
+      }
+    },
+    {
+      "name": "gap to the end",
+      "blocks": [
+        {
+          "start_minute": 40,
+          "duration_minutes": 20
+        }
+      ],
+      "duration": 60,
+      "to": 90,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 70,
+            "duration_minutes": 20
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [
+          {
+            "start_minute": 70,
+            "duration_minutes": 20
+          }
+        ],
+        "changed": true
+      }
+    },
+    {
+      "name": "gap to the end",
+      "blocks": [
+        {
+          "start_minute": 40,
+          "duration_minutes": 20
+        }
+      ],
+      "duration": 60,
+      "to": 0,
+      "expected": {
+        "blocks": [],
+        "removed": [
+          {
+            "start_minute": 40,
+            "duration_minutes": 20
+          }
+        ],
+        "trimmed": [],
+        "shifted": [],
+        "changed": true
+      }
+    },
+    {
+      "name": "gap to the end",
+      "blocks": [
+        {
+          "start_minute": 40,
+          "duration_minutes": 20
+        }
+      ],
+      "duration": 60,
+      "to": 5,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 0,
+            "duration_minutes": 5
+          }
+        ],
+        "removed": [],
+        "trimmed": [
+          {
+            "start_minute": 0,
+            "duration_minutes": 5
+          }
+        ],
+        "shifted": [],
+        "changed": true
+      }
+    },
+    {
+      "name": "tail after the end",
+      "blocks": [
+        {
+          "start_minute": 60,
+          "duration_minutes": 30
+        }
+      ],
+      "duration": 60,
+      "to": 30,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 30,
+            "duration_minutes": 30
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [
+          {
+            "start_minute": 30,
+            "duration_minutes": 30
+          }
+        ],
+        "changed": true
+      }
+    },
+    {
+      "name": "tail after the end",
+      "blocks": [
+        {
+          "start_minute": 60,
+          "duration_minutes": 30
+        }
+      ],
+      "duration": 60,
+      "to": 45,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 45,
+            "duration_minutes": 30
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [
+          {
+            "start_minute": 45,
+            "duration_minutes": 30
+          }
+        ],
+        "changed": true
+      }
+    },
+    {
+      "name": "tail after the end",
+      "blocks": [
+        {
+          "start_minute": 60,
+          "duration_minutes": 30
+        }
+      ],
+      "duration": 60,
+      "to": 60,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 60,
+            "duration_minutes": 30
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [],
+        "changed": false
+      }
+    },
+    {
+      "name": "tail after the end",
+      "blocks": [
+        {
+          "start_minute": 60,
+          "duration_minutes": 30
+        }
+      ],
+      "duration": 60,
+      "to": 75,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 75,
+            "duration_minutes": 30
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [
+          {
+            "start_minute": 75,
+            "duration_minutes": 30
+          }
+        ],
+        "changed": true
+      }
+    },
+    {
+      "name": "tail after the end",
+      "blocks": [
+        {
+          "start_minute": 60,
+          "duration_minutes": 30
+        }
+      ],
+      "duration": 60,
+      "to": 90,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 90,
+            "duration_minutes": 30
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [
+          {
+            "start_minute": 90,
+            "duration_minutes": 30
+          }
+        ],
+        "changed": true
+      }
+    },
+    {
+      "name": "tail after the end",
+      "blocks": [
+        {
+          "start_minute": 60,
+          "duration_minutes": 30
+        }
+      ],
+      "duration": 60,
+      "to": 0,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 0,
+            "duration_minutes": 30
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [
+          {
+            "start_minute": 0,
+            "duration_minutes": 30
+          }
+        ],
+        "changed": true
+      }
+    },
+    {
+      "name": "tail after the end",
+      "blocks": [
+        {
+          "start_minute": 60,
+          "duration_minutes": 30
+        }
+      ],
+      "duration": 60,
+      "to": 5,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 5,
+            "duration_minutes": 30
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [
+          {
+            "start_minute": 5,
+            "duration_minutes": 30
+          }
+        ],
+        "changed": true
+      }
+    },
+    {
+      "name": "gap running past the end",
+      "blocks": [
+        {
+          "start_minute": 45,
+          "duration_minutes": 30
+        }
+      ],
+      "duration": 60,
+      "to": 30,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 15,
+            "duration_minutes": 30
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [
+          {
+            "start_minute": 15,
+            "duration_minutes": 30
+          }
+        ],
+        "changed": true
+      }
+    },
+    {
+      "name": "gap running past the end",
+      "blocks": [
+        {
+          "start_minute": 45,
+          "duration_minutes": 30
+        }
+      ],
+      "duration": 60,
+      "to": 45,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 30,
+            "duration_minutes": 30
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [
+          {
+            "start_minute": 30,
+            "duration_minutes": 30
+          }
+        ],
+        "changed": true
+      }
+    },
+    {
+      "name": "gap running past the end",
+      "blocks": [
+        {
+          "start_minute": 45,
+          "duration_minutes": 30
+        }
+      ],
+      "duration": 60,
+      "to": 60,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 45,
+            "duration_minutes": 30
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [],
+        "changed": false
+      }
+    },
+    {
+      "name": "gap running past the end",
+      "blocks": [
+        {
+          "start_minute": 45,
+          "duration_minutes": 30
+        }
+      ],
+      "duration": 60,
+      "to": 75,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 60,
+            "duration_minutes": 30
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [
+          {
+            "start_minute": 60,
+            "duration_minutes": 30
+          }
+        ],
+        "changed": true
+      }
+    },
+    {
+      "name": "gap running past the end",
+      "blocks": [
+        {
+          "start_minute": 45,
+          "duration_minutes": 30
+        }
+      ],
+      "duration": 60,
+      "to": 90,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 75,
+            "duration_minutes": 30
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [
+          {
+            "start_minute": 75,
+            "duration_minutes": 30
+          }
+        ],
+        "changed": true
+      }
+    },
+    {
+      "name": "gap running past the end",
+      "blocks": [
+        {
+          "start_minute": 45,
+          "duration_minutes": 30
+        }
+      ],
+      "duration": 60,
+      "to": 0,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 0,
+            "duration_minutes": 15
+          }
+        ],
+        "removed": [],
+        "trimmed": [
+          {
+            "start_minute": 0,
+            "duration_minutes": 15
+          }
+        ],
+        "shifted": [],
+        "changed": true
+      }
+    },
+    {
+      "name": "gap running past the end",
+      "blocks": [
+        {
+          "start_minute": 45,
+          "duration_minutes": 30
+        }
+      ],
+      "duration": 60,
+      "to": 5,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 0,
+            "duration_minutes": 20
+          }
+        ],
+        "removed": [],
+        "trimmed": [
+          {
+            "start_minute": 0,
+            "duration_minutes": 20
+          }
+        ],
+        "shifted": [],
+        "changed": true
+      }
+    },
+    {
+      "name": "touching chain to the end",
+      "blocks": [
+        {
+          "start_minute": 30,
+          "duration_minutes": 15
+        },
+        {
+          "start_minute": 45,
+          "duration_minutes": 15
+        }
+      ],
+      "duration": 60,
+      "to": 30,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 0,
+            "duration_minutes": 15
+          },
+          {
+            "start_minute": 15,
+            "duration_minutes": 15
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [
+          {
+            "start_minute": 0,
+            "duration_minutes": 15
+          },
+          {
+            "start_minute": 15,
+            "duration_minutes": 15
+          }
+        ],
+        "changed": true
+      }
+    },
+    {
+      "name": "touching chain to the end",
+      "blocks": [
+        {
+          "start_minute": 30,
+          "duration_minutes": 15
+        },
+        {
+          "start_minute": 45,
+          "duration_minutes": 15
+        }
+      ],
+      "duration": 60,
+      "to": 45,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 15,
+            "duration_minutes": 15
+          },
+          {
+            "start_minute": 30,
+            "duration_minutes": 15
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [
+          {
+            "start_minute": 15,
+            "duration_minutes": 15
+          },
+          {
+            "start_minute": 30,
+            "duration_minutes": 15
+          }
+        ],
+        "changed": true
+      }
+    },
+    {
+      "name": "touching chain to the end",
+      "blocks": [
+        {
+          "start_minute": 30,
+          "duration_minutes": 15
+        },
+        {
+          "start_minute": 45,
+          "duration_minutes": 15
+        }
+      ],
+      "duration": 60,
+      "to": 60,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 30,
+            "duration_minutes": 15
+          },
+          {
+            "start_minute": 45,
+            "duration_minutes": 15
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [],
+        "changed": false
+      }
+    },
+    {
+      "name": "touching chain to the end",
+      "blocks": [
+        {
+          "start_minute": 30,
+          "duration_minutes": 15
+        },
+        {
+          "start_minute": 45,
+          "duration_minutes": 15
+        }
+      ],
+      "duration": 60,
+      "to": 75,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 45,
+            "duration_minutes": 15
+          },
+          {
+            "start_minute": 60,
+            "duration_minutes": 15
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [
+          {
+            "start_minute": 45,
+            "duration_minutes": 15
+          },
+          {
+            "start_minute": 60,
+            "duration_minutes": 15
+          }
+        ],
+        "changed": true
+      }
+    },
+    {
+      "name": "touching chain to the end",
+      "blocks": [
+        {
+          "start_minute": 30,
+          "duration_minutes": 15
+        },
+        {
+          "start_minute": 45,
+          "duration_minutes": 15
+        }
+      ],
+      "duration": 60,
+      "to": 90,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 60,
+            "duration_minutes": 15
+          },
+          {
+            "start_minute": 75,
+            "duration_minutes": 15
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [
+          {
+            "start_minute": 60,
+            "duration_minutes": 15
+          },
+          {
+            "start_minute": 75,
+            "duration_minutes": 15
+          }
+        ],
+        "changed": true
+      }
+    },
+    {
+      "name": "touching chain to the end",
+      "blocks": [
+        {
+          "start_minute": 30,
+          "duration_minutes": 15
+        },
+        {
+          "start_minute": 45,
+          "duration_minutes": 15
+        }
+      ],
+      "duration": 60,
+      "to": 0,
+      "expected": {
+        "blocks": [],
+        "removed": [
+          {
+            "start_minute": 30,
+            "duration_minutes": 15
+          },
+          {
+            "start_minute": 45,
+            "duration_minutes": 15
+          }
+        ],
+        "trimmed": [],
+        "shifted": [],
+        "changed": true
+      }
+    },
+    {
+      "name": "touching chain to the end",
+      "blocks": [
+        {
+          "start_minute": 30,
+          "duration_minutes": 15
+        },
+        {
+          "start_minute": 45,
+          "duration_minutes": 15
+        }
+      ],
+      "duration": 60,
+      "to": 5,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 0,
+            "duration_minutes": 5
+          }
+        ],
+        "removed": [
+          {
+            "start_minute": 30,
+            "duration_minutes": 15
+          }
+        ],
+        "trimmed": [
+          {
+            "start_minute": 0,
+            "duration_minutes": 5
+          }
+        ],
+        "shifted": [],
+        "changed": true
+      }
+    },
+    {
+      "name": "middle gap and tail",
+      "blocks": [
+        {
+          "start_minute": 10,
+          "duration_minutes": 10
+        },
+        {
+          "start_minute": 60,
+          "duration_minutes": 25
+        }
+      ],
+      "duration": 60,
+      "to": 30,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 10,
+            "duration_minutes": 10
+          },
+          {
+            "start_minute": 30,
+            "duration_minutes": 25
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [
+          {
+            "start_minute": 30,
+            "duration_minutes": 25
+          }
+        ],
+        "changed": true
+      }
+    },
+    {
+      "name": "middle gap and tail",
+      "blocks": [
+        {
+          "start_minute": 10,
+          "duration_minutes": 10
+        },
+        {
+          "start_minute": 60,
+          "duration_minutes": 25
+        }
+      ],
+      "duration": 60,
+      "to": 45,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 10,
+            "duration_minutes": 10
+          },
+          {
+            "start_minute": 45,
+            "duration_minutes": 25
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [
+          {
+            "start_minute": 45,
+            "duration_minutes": 25
+          }
+        ],
+        "changed": true
+      }
+    },
+    {
+      "name": "middle gap and tail",
+      "blocks": [
+        {
+          "start_minute": 10,
+          "duration_minutes": 10
+        },
+        {
+          "start_minute": 60,
+          "duration_minutes": 25
+        }
+      ],
+      "duration": 60,
+      "to": 60,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 10,
+            "duration_minutes": 10
+          },
+          {
+            "start_minute": 60,
+            "duration_minutes": 25
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [],
+        "changed": false
+      }
+    },
+    {
+      "name": "middle gap and tail",
+      "blocks": [
+        {
+          "start_minute": 10,
+          "duration_minutes": 10
+        },
+        {
+          "start_minute": 60,
+          "duration_minutes": 25
+        }
+      ],
+      "duration": 60,
+      "to": 75,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 10,
+            "duration_minutes": 10
+          },
+          {
+            "start_minute": 75,
+            "duration_minutes": 25
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [
+          {
+            "start_minute": 75,
+            "duration_minutes": 25
+          }
+        ],
+        "changed": true
+      }
+    },
+    {
+      "name": "middle gap and tail",
+      "blocks": [
+        {
+          "start_minute": 10,
+          "duration_minutes": 10
+        },
+        {
+          "start_minute": 60,
+          "duration_minutes": 25
+        }
+      ],
+      "duration": 60,
+      "to": 90,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 10,
+            "duration_minutes": 10
+          },
+          {
+            "start_minute": 90,
+            "duration_minutes": 25
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [
+          {
+            "start_minute": 90,
+            "duration_minutes": 25
+          }
+        ],
+        "changed": true
+      }
+    },
+    {
+      "name": "middle gap and tail",
+      "blocks": [
+        {
+          "start_minute": 10,
+          "duration_minutes": 10
+        },
+        {
+          "start_minute": 60,
+          "duration_minutes": 25
+        }
+      ],
+      "duration": 60,
+      "to": 0,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 0,
+            "duration_minutes": 25
+          }
+        ],
+        "removed": [
+          {
+            "start_minute": 10,
+            "duration_minutes": 10
+          }
+        ],
+        "trimmed": [],
+        "shifted": [
+          {
+            "start_minute": 0,
+            "duration_minutes": 25
+          }
+        ],
+        "changed": true
+      }
+    },
+    {
+      "name": "middle gap and tail",
+      "blocks": [
+        {
+          "start_minute": 10,
+          "duration_minutes": 10
+        },
+        {
+          "start_minute": 60,
+          "duration_minutes": 25
+        }
+      ],
+      "duration": 60,
+      "to": 5,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 5,
+            "duration_minutes": 25
+          }
+        ],
+        "removed": [
+          {
+            "start_minute": 10,
+            "duration_minutes": 10
+          }
+        ],
+        "trimmed": [],
+        "shifted": [
+          {
+            "start_minute": 5,
+            "duration_minutes": 25
+          }
+        ],
+        "changed": true
+      }
+    },
+    {
+      "name": "two middle gaps",
+      "blocks": [
+        {
+          "start_minute": 5,
+          "duration_minutes": 10
+        },
+        {
+          "start_minute": 30,
+          "duration_minutes": 10
+        }
+      ],
+      "duration": 60,
+      "to": 30,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 5,
+            "duration_minutes": 10
+          }
+        ],
+        "removed": [
+          {
+            "start_minute": 30,
+            "duration_minutes": 10
+          }
+        ],
+        "trimmed": [],
+        "shifted": [],
+        "changed": true
+      }
+    },
+    {
+      "name": "two middle gaps",
+      "blocks": [
+        {
+          "start_minute": 5,
+          "duration_minutes": 10
+        },
+        {
+          "start_minute": 30,
+          "duration_minutes": 10
+        }
+      ],
+      "duration": 60,
+      "to": 45,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 5,
+            "duration_minutes": 10
+          },
+          {
+            "start_minute": 30,
+            "duration_minutes": 10
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [],
+        "changed": false
+      }
+    },
+    {
+      "name": "two middle gaps",
+      "blocks": [
+        {
+          "start_minute": 5,
+          "duration_minutes": 10
+        },
+        {
+          "start_minute": 30,
+          "duration_minutes": 10
+        }
+      ],
+      "duration": 60,
+      "to": 60,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 5,
+            "duration_minutes": 10
+          },
+          {
+            "start_minute": 30,
+            "duration_minutes": 10
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [],
+        "changed": false
+      }
+    },
+    {
+      "name": "two middle gaps",
+      "blocks": [
+        {
+          "start_minute": 5,
+          "duration_minutes": 10
+        },
+        {
+          "start_minute": 30,
+          "duration_minutes": 10
+        }
+      ],
+      "duration": 60,
+      "to": 75,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 5,
+            "duration_minutes": 10
+          },
+          {
+            "start_minute": 30,
+            "duration_minutes": 10
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [],
+        "changed": false
+      }
+    },
+    {
+      "name": "two middle gaps",
+      "blocks": [
+        {
+          "start_minute": 5,
+          "duration_minutes": 10
+        },
+        {
+          "start_minute": 30,
+          "duration_minutes": 10
+        }
+      ],
+      "duration": 60,
+      "to": 90,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 5,
+            "duration_minutes": 10
+          },
+          {
+            "start_minute": 30,
+            "duration_minutes": 10
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [],
+        "changed": false
+      }
+    },
+    {
+      "name": "two middle gaps",
+      "blocks": [
+        {
+          "start_minute": 5,
+          "duration_minutes": 10
+        },
+        {
+          "start_minute": 30,
+          "duration_minutes": 10
+        }
+      ],
+      "duration": 60,
+      "to": 0,
+      "expected": {
+        "blocks": [],
+        "removed": [
+          {
+            "start_minute": 5,
+            "duration_minutes": 10
+          },
+          {
+            "start_minute": 30,
+            "duration_minutes": 10
+          }
+        ],
+        "trimmed": [],
+        "shifted": [],
+        "changed": true
+      }
+    },
+    {
+      "name": "two middle gaps",
+      "blocks": [
+        {
+          "start_minute": 5,
+          "duration_minutes": 10
+        },
+        {
+          "start_minute": 30,
+          "duration_minutes": 10
+        }
+      ],
+      "duration": 60,
+      "to": 5,
+      "expected": {
+        "blocks": [],
+        "removed": [
+          {
+            "start_minute": 5,
+            "duration_minutes": 10
+          },
+          {
+            "start_minute": 30,
+            "duration_minutes": 10
+          }
+        ],
+        "trimmed": [],
+        "shifted": [],
+        "changed": true
+      }
+    },
+    {
+      "name": "block too short",
+      "blocks": [
+        {
+          "start_minute": 20,
+          "duration_minutes": 3
+        }
+      ],
+      "duration": 60,
+      "to": 30,
+      "expected": {
+        "blocks": [],
+        "removed": [
+          {
+            "start_minute": 20,
+            "duration_minutes": 3
+          }
+        ],
+        "trimmed": [],
+        "shifted": [],
+        "changed": true
+      }
+    },
+    {
+      "name": "block too short",
+      "blocks": [
+        {
+          "start_minute": 20,
+          "duration_minutes": 3
+        }
+      ],
+      "duration": 60,
+      "to": 45,
+      "expected": {
+        "blocks": [],
+        "removed": [
+          {
+            "start_minute": 20,
+            "duration_minutes": 3
+          }
+        ],
+        "trimmed": [],
+        "shifted": [],
+        "changed": true
+      }
+    },
+    {
+      "name": "block too short",
+      "blocks": [
+        {
+          "start_minute": 20,
+          "duration_minutes": 3
+        }
+      ],
+      "duration": 60,
+      "to": 60,
+      "expected": {
+        "blocks": [],
+        "removed": [
+          {
+            "start_minute": 20,
+            "duration_minutes": 3
+          }
+        ],
+        "trimmed": [],
+        "shifted": [],
+        "changed": true
+      }
+    },
+    {
+      "name": "block too short",
+      "blocks": [
+        {
+          "start_minute": 20,
+          "duration_minutes": 3
+        }
+      ],
+      "duration": 60,
+      "to": 75,
+      "expected": {
+        "blocks": [],
+        "removed": [
+          {
+            "start_minute": 20,
+            "duration_minutes": 3
+          }
+        ],
+        "trimmed": [],
+        "shifted": [],
+        "changed": true
+      }
+    },
+    {
+      "name": "block too short",
+      "blocks": [
+        {
+          "start_minute": 20,
+          "duration_minutes": 3
+        }
+      ],
+      "duration": 60,
+      "to": 90,
+      "expected": {
+        "blocks": [],
+        "removed": [
+          {
+            "start_minute": 20,
+            "duration_minutes": 3
+          }
+        ],
+        "trimmed": [],
+        "shifted": [],
+        "changed": true
+      }
+    },
+    {
+      "name": "block too short",
+      "blocks": [
+        {
+          "start_minute": 20,
+          "duration_minutes": 3
+        }
+      ],
+      "duration": 60,
+      "to": 0,
+      "expected": {
+        "blocks": [],
+        "removed": [
+          {
+            "start_minute": 20,
+            "duration_minutes": 3
+          }
+        ],
+        "trimmed": [],
+        "shifted": [],
+        "changed": true
+      }
+    },
+    {
+      "name": "block too short",
+      "blocks": [
+        {
+          "start_minute": 20,
+          "duration_minutes": 3
+        }
+      ],
+      "duration": 60,
+      "to": 5,
+      "expected": {
+        "blocks": [],
+        "removed": [
+          {
+            "start_minute": 20,
+            "duration_minutes": 3
+          }
+        ],
+        "trimmed": [],
+        "shifted": [],
+        "changed": true
+      }
+    },
+    {
+      "name": "gap from the start",
+      "blocks": [
+        {
+          "start_minute": 0,
+          "duration_minutes": 20
+        }
+      ],
+      "duration": 45,
+      "to": 30,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 0,
+            "duration_minutes": 20
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [],
+        "changed": false
+      }
+    },
+    {
+      "name": "gap from the start",
+      "blocks": [
+        {
+          "start_minute": 0,
+          "duration_minutes": 20
+        }
+      ],
+      "duration": 45,
+      "to": 45,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 0,
+            "duration_minutes": 20
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [],
+        "changed": false
+      }
+    },
+    {
+      "name": "gap from the start",
+      "blocks": [
+        {
+          "start_minute": 0,
+          "duration_minutes": 20
+        }
+      ],
+      "duration": 45,
+      "to": 60,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 0,
+            "duration_minutes": 20
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [],
+        "changed": false
+      }
+    },
+    {
+      "name": "gap from the start",
+      "blocks": [
+        {
+          "start_minute": 0,
+          "duration_minutes": 20
+        }
+      ],
+      "duration": 45,
+      "to": 75,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 0,
+            "duration_minutes": 20
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [],
+        "changed": false
+      }
+    },
+    {
+      "name": "gap from the start",
+      "blocks": [
+        {
+          "start_minute": 0,
+          "duration_minutes": 20
+        }
+      ],
+      "duration": 45,
+      "to": 90,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 0,
+            "duration_minutes": 20
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [],
+        "changed": false
+      }
+    },
+    {
+      "name": "gap from the start",
+      "blocks": [
+        {
+          "start_minute": 0,
+          "duration_minutes": 20
+        }
+      ],
+      "duration": 45,
+      "to": 0,
+      "expected": {
+        "blocks": [],
+        "removed": [
+          {
+            "start_minute": 0,
+            "duration_minutes": 20
+          }
+        ],
+        "trimmed": [],
+        "shifted": [],
+        "changed": true
+      }
+    },
+    {
+      "name": "gap from the start",
+      "blocks": [
+        {
+          "start_minute": 0,
+          "duration_minutes": 20
+        }
+      ],
+      "duration": 45,
+      "to": 5,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 0,
+            "duration_minutes": 5
+          }
+        ],
+        "removed": [],
+        "trimmed": [
+          {
+            "start_minute": 0,
+            "duration_minutes": 5
+          }
+        ],
+        "shifted": [],
+        "changed": true
+      }
+    },
+    {
+      "name": "unsorted",
+      "blocks": [
+        {
+          "start_minute": 60,
+          "duration_minutes": 20
+        },
+        {
+          "start_minute": 10,
+          "duration_minutes": 10
+        }
+      ],
+      "duration": 60,
+      "to": 30,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 10,
+            "duration_minutes": 10
+          },
+          {
+            "start_minute": 30,
+            "duration_minutes": 20
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [
+          {
+            "start_minute": 30,
+            "duration_minutes": 20
+          }
+        ],
+        "changed": true
+      }
+    },
+    {
+      "name": "unsorted",
+      "blocks": [
+        {
+          "start_minute": 60,
+          "duration_minutes": 20
+        },
+        {
+          "start_minute": 10,
+          "duration_minutes": 10
+        }
+      ],
+      "duration": 60,
+      "to": 45,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 10,
+            "duration_minutes": 10
+          },
+          {
+            "start_minute": 45,
+            "duration_minutes": 20
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [
+          {
+            "start_minute": 45,
+            "duration_minutes": 20
+          }
+        ],
+        "changed": true
+      }
+    },
+    {
+      "name": "unsorted",
+      "blocks": [
+        {
+          "start_minute": 60,
+          "duration_minutes": 20
+        },
+        {
+          "start_minute": 10,
+          "duration_minutes": 10
+        }
+      ],
+      "duration": 60,
+      "to": 60,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 10,
+            "duration_minutes": 10
+          },
+          {
+            "start_minute": 60,
+            "duration_minutes": 20
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [],
+        "changed": false
+      }
+    },
+    {
+      "name": "unsorted",
+      "blocks": [
+        {
+          "start_minute": 60,
+          "duration_minutes": 20
+        },
+        {
+          "start_minute": 10,
+          "duration_minutes": 10
+        }
+      ],
+      "duration": 60,
+      "to": 75,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 10,
+            "duration_minutes": 10
+          },
+          {
+            "start_minute": 75,
+            "duration_minutes": 20
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [
+          {
+            "start_minute": 75,
+            "duration_minutes": 20
+          }
+        ],
+        "changed": true
+      }
+    },
+    {
+      "name": "unsorted",
+      "blocks": [
+        {
+          "start_minute": 60,
+          "duration_minutes": 20
+        },
+        {
+          "start_minute": 10,
+          "duration_minutes": 10
+        }
+      ],
+      "duration": 60,
+      "to": 90,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 10,
+            "duration_minutes": 10
+          },
+          {
+            "start_minute": 90,
+            "duration_minutes": 20
+          }
+        ],
+        "removed": [],
+        "trimmed": [],
+        "shifted": [
+          {
+            "start_minute": 90,
+            "duration_minutes": 20
+          }
+        ],
+        "changed": true
+      }
+    },
+    {
+      "name": "unsorted",
+      "blocks": [
+        {
+          "start_minute": 60,
+          "duration_minutes": 20
+        },
+        {
+          "start_minute": 10,
+          "duration_minutes": 10
+        }
+      ],
+      "duration": 60,
+      "to": 0,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 0,
+            "duration_minutes": 20
+          }
+        ],
+        "removed": [
+          {
+            "start_minute": 10,
+            "duration_minutes": 10
+          }
+        ],
+        "trimmed": [],
+        "shifted": [
+          {
+            "start_minute": 0,
+            "duration_minutes": 20
+          }
+        ],
+        "changed": true
+      }
+    },
+    {
+      "name": "unsorted",
+      "blocks": [
+        {
+          "start_minute": 60,
+          "duration_minutes": 20
+        },
+        {
+          "start_minute": 10,
+          "duration_minutes": 10
+        }
+      ],
+      "duration": 60,
+      "to": 5,
+      "expected": {
+        "blocks": [
+          {
+            "start_minute": 5,
+            "duration_minutes": 20
+          }
+        ],
+        "removed": [
+          {
+            "start_minute": 10,
+            "duration_minutes": 10
+          }
+        ],
+        "trimmed": [],
+        "shifted": [
+          {
+            "start_minute": 5,
+            "duration_minutes": 20
+          }
+        ],
+        "changed": true
+      }
+    }
+  ],
+  "place": [
+    {
+      "name": "no blocks",
+      "blocks": [],
+      "duration": 60,
+      "expected": {
+        "start_minute": 60,
+        "duration_minutes": 10
+      }
+    },
+    {
+      "name": "no blocks",
+      "blocks": [],
+      "duration": 4,
+      "expected": null
+    },
+    {
+      "name": "no blocks",
+      "blocks": [],
+      "duration": 10,
+      "expected": {
+        "start_minute": 10,
+        "duration_minutes": 10
+      }
+    },
+    {
+      "name": "middle gap",
+      "blocks": [
+        {
+          "start_minute": 20,
+          "duration_minutes": 15
+        }
+      ],
+      "duration": 60,
+      "expected": {
+        "start_minute": 60,
+        "duration_minutes": 10
+      }
+    },
+    {
+      "name": "middle gap",
+      "blocks": [
+        {
+          "start_minute": 20,
+          "duration_minutes": 15
+        }
+      ],
+      "duration": 4,
+      "expected": null
+    },
+    {
+      "name": "middle gap",
+      "blocks": [
+        {
+          "start_minute": 20,
+          "duration_minutes": 15
+        }
+      ],
+      "duration": 10,
+      "expected": {
+        "start_minute": 0,
+        "duration_minutes": 5
+      }
+    },
+    {
+      "name": "gap to the end",
+      "blocks": [
+        {
+          "start_minute": 40,
+          "duration_minutes": 20
+        }
+      ],
+      "duration": 60,
+      "expected": {
+        "start_minute": 60,
+        "duration_minutes": 10
+      }
+    },
+    {
+      "name": "gap to the end",
+      "blocks": [
+        {
+          "start_minute": 40,
+          "duration_minutes": 20
+        }
+      ],
+      "duration": 4,
+      "expected": null
+    },
+    {
+      "name": "gap to the end",
+      "blocks": [
+        {
+          "start_minute": 40,
+          "duration_minutes": 20
+        }
+      ],
+      "duration": 10,
+      "expected": {
+        "start_minute": 0,
+        "duration_minutes": 5
+      }
+    },
+    {
+      "name": "tail after the end",
+      "blocks": [
+        {
+          "start_minute": 60,
+          "duration_minutes": 30
+        }
+      ],
+      "duration": 60,
+      "expected": {
+        "start_minute": 45,
+        "duration_minutes": 10
+      }
+    },
+    {
+      "name": "tail after the end",
+      "blocks": [
+        {
+          "start_minute": 60,
+          "duration_minutes": 30
+        }
+      ],
+      "duration": 4,
+      "expected": null
+    },
+    {
+      "name": "tail after the end",
+      "blocks": [
+        {
+          "start_minute": 60,
+          "duration_minutes": 30
+        }
+      ],
+      "duration": 10,
+      "expected": {
+        "start_minute": 0,
+        "duration_minutes": 5
+      }
+    },
+    {
+      "name": "gap running past the end",
+      "blocks": [
+        {
+          "start_minute": 45,
+          "duration_minutes": 30
+        }
+      ],
+      "duration": 60,
+      "expected": {
+        "start_minute": 30,
+        "duration_minutes": 10
+      }
+    },
+    {
+      "name": "gap running past the end",
+      "blocks": [
+        {
+          "start_minute": 45,
+          "duration_minutes": 30
+        }
+      ],
+      "duration": 4,
+      "expected": null
+    },
+    {
+      "name": "gap running past the end",
+      "blocks": [
+        {
+          "start_minute": 45,
+          "duration_minutes": 30
+        }
+      ],
+      "duration": 10,
+      "expected": {
+        "start_minute": 0,
+        "duration_minutes": 5
+      }
+    },
+    {
+      "name": "touching chain to the end",
+      "blocks": [
+        {
+          "start_minute": 30,
+          "duration_minutes": 15
+        },
+        {
+          "start_minute": 45,
+          "duration_minutes": 15
+        }
+      ],
+      "duration": 60,
+      "expected": {
+        "start_minute": 60,
+        "duration_minutes": 10
+      }
+    },
+    {
+      "name": "touching chain to the end",
+      "blocks": [
+        {
+          "start_minute": 30,
+          "duration_minutes": 15
+        },
+        {
+          "start_minute": 45,
+          "duration_minutes": 15
+        }
+      ],
+      "duration": 4,
+      "expected": null
+    },
+    {
+      "name": "touching chain to the end",
+      "blocks": [
+        {
+          "start_minute": 30,
+          "duration_minutes": 15
+        },
+        {
+          "start_minute": 45,
+          "duration_minutes": 15
+        }
+      ],
+      "duration": 10,
+      "expected": {
+        "start_minute": 0,
+        "duration_minutes": 5
+      }
+    },
+    {
+      "name": "middle gap and tail",
+      "blocks": [
+        {
+          "start_minute": 10,
+          "duration_minutes": 10
+        },
+        {
+          "start_minute": 60,
+          "duration_minutes": 25
+        }
+      ],
+      "duration": 60,
+      "expected": {
+        "start_minute": 45,
+        "duration_minutes": 10
+      }
+    },
+    {
+      "name": "middle gap and tail",
+      "blocks": [
+        {
+          "start_minute": 10,
+          "duration_minutes": 10
+        },
+        {
+          "start_minute": 60,
+          "duration_minutes": 25
+        }
+      ],
+      "duration": 4,
+      "expected": null
+    },
+    {
+      "name": "middle gap and tail",
+      "blocks": [
+        {
+          "start_minute": 10,
+          "duration_minutes": 10
+        },
+        {
+          "start_minute": 60,
+          "duration_minutes": 25
+        }
+      ],
+      "duration": 10,
+      "expected": {
+        "start_minute": 0,
+        "duration_minutes": 5
+      }
+    },
+    {
+      "name": "two middle gaps",
+      "blocks": [
+        {
+          "start_minute": 5,
+          "duration_minutes": 10
+        },
+        {
+          "start_minute": 30,
+          "duration_minutes": 10
+        }
+      ],
+      "duration": 60,
+      "expected": {
+        "start_minute": 60,
+        "duration_minutes": 10
+      }
+    },
+    {
+      "name": "two middle gaps",
+      "blocks": [
+        {
+          "start_minute": 5,
+          "duration_minutes": 10
+        },
+        {
+          "start_minute": 30,
+          "duration_minutes": 10
+        }
+      ],
+      "duration": 4,
+      "expected": null
+    },
+    {
+      "name": "two middle gaps",
+      "blocks": [
+        {
+          "start_minute": 5,
+          "duration_minutes": 10
+        },
+        {
+          "start_minute": 30,
+          "duration_minutes": 10
+        }
+      ],
+      "duration": 10,
+      "expected": null
+    },
+    {
+      "name": "block too short",
+      "blocks": [
+        {
+          "start_minute": 20,
+          "duration_minutes": 3
+        }
+      ],
+      "duration": 60,
+      "expected": {
+        "start_minute": 60,
+        "duration_minutes": 10
+      }
+    },
+    {
+      "name": "block too short",
+      "blocks": [
+        {
+          "start_minute": 20,
+          "duration_minutes": 3
+        }
+      ],
+      "duration": 4,
+      "expected": null
+    },
+    {
+      "name": "block too short",
+      "blocks": [
+        {
+          "start_minute": 20,
+          "duration_minutes": 3
+        }
+      ],
+      "duration": 10,
+      "expected": {
+        "start_minute": 0,
+        "duration_minutes": 5
+      }
+    },
+    {
+      "name": "gap from the start",
+      "blocks": [
+        {
+          "start_minute": 0,
+          "duration_minutes": 20
+        }
+      ],
+      "duration": 45,
+      "expected": {
+        "start_minute": 45,
+        "duration_minutes": 10
+      }
+    },
+    {
+      "name": "gap from the start",
+      "blocks": [
+        {
+          "start_minute": 0,
+          "duration_minutes": 20
+        }
+      ],
+      "duration": 4,
+      "expected": null
+    },
+    {
+      "name": "gap from the start",
+      "blocks": [
+        {
+          "start_minute": 0,
+          "duration_minutes": 20
+        }
+      ],
+      "duration": 10,
+      "expected": null
+    },
+    {
+      "name": "unsorted",
+      "blocks": [
+        {
+          "start_minute": 60,
+          "duration_minutes": 20
+        },
+        {
+          "start_minute": 10,
+          "duration_minutes": 10
+        }
+      ],
+      "duration": 60,
+      "expected": {
+        "start_minute": 45,
+        "duration_minutes": 10
+      }
+    },
+    {
+      "name": "unsorted",
+      "blocks": [
+        {
+          "start_minute": 60,
+          "duration_minutes": 20
+        },
+        {
+          "start_minute": 10,
+          "duration_minutes": 10
+        }
+      ],
+      "duration": 4,
+      "expected": null
+    },
+    {
+      "name": "unsorted",
+      "blocks": [
+        {
+          "start_minute": 60,
+          "duration_minutes": 20
+        },
+        {
+          "start_minute": 10,
+          "duration_minutes": 10
+        }
+      ],
+      "duration": 10,
+      "expected": {
+        "start_minute": 0,
+        "duration_minutes": 5
+      }
+    }
+  ],
+  "resize": [
+    {
+      "block": {
+        "start_minute": 40,
+        "duration_minutes": 20
+      },
+      "next": 30,
+      "duration": 60,
+      "expected": {
+        "start_minute": 30,
+        "duration_minutes": 30
+      }
+    },
+    {
+      "block": {
+        "start_minute": 40,
+        "duration_minutes": 20
+      },
+      "next": 70,
+      "duration": 60,
+      "expected": {
+        "start_minute": 0,
+        "duration_minutes": 70
+      }
+    },
+    {
+      "block": {
+        "start_minute": 60,
+        "duration_minutes": 20
+      },
+      "next": 40,
+      "duration": 60,
+      "expected": {
+        "start_minute": 60,
+        "duration_minutes": 40
+      }
+    },
+    {
+      "block": {
+        "start_minute": 10,
+        "duration_minutes": 10
+      },
+      "next": 25,
+      "duration": 60,
+      "expected": {
+        "start_minute": 10,
+        "duration_minutes": 25
+      }
+    },
+    {
+      "block": {
+        "start_minute": 50,
+        "duration_minutes": 10
+      },
+      "next": 15,
+      "duration": 60,
+      "expected": {
+        "start_minute": 45,
+        "duration_minutes": 15
+      }
+    }
+  ]
+}

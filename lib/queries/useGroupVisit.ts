@@ -8,7 +8,7 @@ import { useAccessToken } from '@/lib/queries/useAccessToken';
 /**
  * Row returned by GET /api/venue/bookings/list?group_booking_id=… — the other
  * bookings sharing a visit (multi-service visit) or group (people visit).
- * @see _reference/Resneo/src/lib/booking/group-visit-bookings.ts
+ * @see (web repo) src/lib/booking/group-visit-bookings.ts
  */
 export interface GroupVisitBookingRow {
   id: string;

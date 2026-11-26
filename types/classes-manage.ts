@@ -3,8 +3,8 @@
  * /api/venue/classes (+ /api/venue/class-instances). Bearer-capable routes,
  * multiplexed by `entity_type` ('class_type' | 'instance').
  *
- * @see _reference/Resneo/src/app/api/venue/classes/route.ts (classTypeSchema)
- * @see _reference/Resneo/src/app/api/venue/class-instances/route.ts
+ * @see (web repo) src/app/api/venue/classes/route.ts (classTypeSchema)
+ * @see (web repo) src/app/api/venue/class-instances/route.ts
  */
 import type { ApiCardState } from '@/lib/booking/card-hold';
 import type { ContactsHiddenFlag } from '@/types/staff';

@@ -1,8 +1,8 @@
 /**
  * Shared shapes for the AI services setup ("Set up with AI").
  *
- * @see _reference/Resneo/src/lib/services-setup/types.ts
- * @see _reference/Resneo/Docs/ai-services-setup-plan.md
+ * @see (web repo) src/lib/services-setup/types.ts
+ * @see (web repo) Docs/ai-services-setup-plan.md
  *
  * The server reads what the owner gives it (a link, a photo, a document, a spreadsheet or
  * pasted text) and returns `ExtractedService` rows. Nothing is saved on the server: the

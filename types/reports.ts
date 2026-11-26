@@ -1,6 +1,6 @@
 /**
  * GET /api/venue/reports?from=&to= (admin only).
- * Shapes mirror _reference/Resneo/src/app/dashboard/reports/ReportsView.tsx.
+ * Shapes mirror (web repo) src/app/dashboard/reports/ReportsView.tsx.
  */
 import type { NewBookingChannel, NewBookingCounts } from '@/types/dashboard';
 
@@ -85,7 +85,7 @@ export interface ReportByModelRow {
 /**
  * Table utilisation (`report5_table_utilisation`), for table-management venues
  * that are not on the appointment data model.
- * @see _reference/Resneo/src/app/api/venue/reports/route.ts (`tableUtilisation`)
+ * @see (web repo) src/app/api/venue/reports/route.ts (`tableUtilisation`)
  */
 export interface ReportTableUtilisationRow {
   table_id: string;
@@ -98,7 +98,7 @@ export interface ReportTableUtilisationRow {
 /**
  * Tickets sold and revenue per event ticket tier (`report_event_ticket_tiers`),
  * from the immutable price snapshot on each ticket line. Events venues only.
- * @see _reference/Resneo/src/app/api/venue/reports/route.ts (`EventTicketTierRow`)
+ * @see (web repo) src/app/api/venue/reports/route.ts (`EventTicketTierRow`)
  */
 export interface ReportEventTicketTierRow {
   /** Ticket type id, or a synthetic `label:<name>` key when the line predates a tier. */
@@ -113,7 +113,7 @@ export interface ReportEventTicketTierRow {
 /**
  * Booked hours against each resource's open hours (`report_resource_utilisation`).
  * Resource venues only.
- * @see _reference/Resneo/src/app/api/venue/reports/route.ts (`ResourceUtilisationRow`)
+ * @see (web repo) src/app/api/venue/reports/route.ts (`ResourceUtilisationRow`)
  */
 export interface ReportResourceUtilisationRow {
   resource_id: string;

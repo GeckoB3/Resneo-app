@@ -1,6 +1,6 @@
 /**
  * The Reports overview, as the web builds it
- * (_reference/Resneo/src/app/dashboard/reports/ReportsView.tsx): which sections
+ * ((web repo) src/app/dashboard/reports/ReportsView.tsx): which sections
  * show, the figures the app derives itself, and every CSV export — filename,
  * header, row labels and order exactly as the web writes them, so a report
  * exported from the phone opens the same as one exported from the dashboard.

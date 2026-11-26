@@ -3,7 +3,7 @@
  * Docs/follow-on-services-plan.md 7.2). After a client picks one of a group's trigger services,
  * they are asked whether they would like one of its offered services, booked as its own service in
  * the visit.
- * @see _reference/Resneo/src/lib/follow-ons/group-input.ts
+ * @see (web repo) src/lib/follow-ons/group-input.ts
  */
 
 /** A group as GET /api/venue/follow-on-groups returns it. */

@@ -7,7 +7,7 @@
  * the phone and on the dashboard should not have to work out whether two
  * different sentences mean the same thing.
  *
- * @see _reference/Resneo/src/app/dashboard/reports/BaselineMetricsSection.tsx
+ * @see (web repo) src/app/dashboard/reports/BaselineMetricsSection.tsx
  */
 import { StyleSheet, View } from 'react-native';
 

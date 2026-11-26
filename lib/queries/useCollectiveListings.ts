@@ -11,9 +11,9 @@
  *   DELETE /api/venue/collectives/[id]/listings   { listing_id }
  *   GET    /api/venue/collective-listings          this venue's own listed items (for chips)
  *
- * @see _reference/Resneo/src/app/api/venue/collectives/[id]/listings/route.ts
- * @see _reference/Resneo/src/app/api/venue/collective-listings/route.ts
- * @see _reference/Resneo/src/lib/linked-accounts/collective-listings.ts
+ * @see (web repo) src/app/api/venue/collectives/[id]/listings/route.ts
+ * @see (web repo) src/app/api/venue/collective-listings/route.ts
+ * @see (web repo) src/lib/linked-accounts/collective-listings.ts
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 

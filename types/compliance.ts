@@ -1,6 +1,6 @@
 /**
  * Compliance surfaces for appointments venues (plan-gated server-side).
- * @see _reference/Resneo/src/lib/compliance/dashboard-service.ts
+ * @see (web repo) src/lib/compliance/dashboard-service.ts
  */
 export interface ComplianceExpiringRow {
   id: string;

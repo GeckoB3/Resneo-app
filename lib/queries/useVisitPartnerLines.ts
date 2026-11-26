@@ -10,7 +10,7 @@ import { useAccessToken } from '@/lib/queries/useAccessToken';
  * (web split-visit plan 7.2, 7.3; `GET /api/venue/visits/partner-lines`). Read-only: the service, the
  * person, the business and the status, never the client's contact details.
  *
- * @see _reference/Resneo/src/lib/booking/visit-partner-lines.ts
+ * @see (web repo) src/lib/booking/visit-partner-lines.ts
  */
 export interface VisitPartnerLine {
   booking_id: string;

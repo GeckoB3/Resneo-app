@@ -16,7 +16,7 @@ import type {
  * `booking_minute_marks`). Defined here rather than in `types/services-manage.ts`
  * so the write paths can carry the fields; the API accepts them on POST + PATCH
  * (`booking_interval_minutes` 1-60, `booking_minute_marks` ints 0-59 or null).
- * @see _reference/Resneo/src/lib/appointments/booking-interval.ts
+ * @see (web repo) src/lib/appointments/booking-interval.ts
  */
 export interface BookingStartFields {
   /** Spacing (minutes, 1-60) of bookable start times, anchored to the top of the hour. */

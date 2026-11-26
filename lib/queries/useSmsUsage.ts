@@ -8,7 +8,7 @@ import { useAccessToken } from '@/lib/queries/useAccessToken';
 /**
  * Live SMS usage for the current Stripe billing period — mirrors the web
  * `SmsUsageDisplay` payload from `/api/venue/sms-usage-display`.
- * @see _reference/Resneo/src/lib/billing/sms-usage-display.ts
+ * @see (web repo) src/lib/billing/sms-usage-display.ts
  */
 export interface SmsUsageDisplay {
   messages_sent: number;

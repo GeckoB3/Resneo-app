@@ -71,7 +71,7 @@ type ClassTypeEditorSheetProps = {
  * Client validation mirrors the server `classTypeSchema` so errors surface
  * before the request, matching how the services editor's `handleSave` validates.
  *
- * @see _reference/Resneo/src/app/api/venue/classes/route.ts (classTypeSchema)
+ * @see (web repo) src/app/api/venue/classes/route.ts (classTypeSchema)
  */
 export function ClassTypeEditorSheet({
   target,

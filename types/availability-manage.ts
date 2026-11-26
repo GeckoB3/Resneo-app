@@ -1,7 +1,7 @@
 /**
  * Practitioner time blocks + leave — staff availability management.
- * @see _reference/Resneo/src/app/api/venue/practitioner-calendar-blocks/route.ts
- * @see _reference/Resneo/src/app/api/venue/practitioner-leave/route.ts
+ * @see (web repo) src/app/api/venue/practitioner-calendar-blocks/route.ts
+ * @see (web repo) src/app/api/venue/practitioner-leave/route.ts
  */
 export interface PractitionerBlock {
   id: string;

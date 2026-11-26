@@ -1,6 +1,6 @@
 /**
  * Resolve whatever a venue pastes into a link that opens Google's "write a
- * review" dialog. Port of `_reference/Resneo/src/lib/reviews/google-review-link.ts`.
+ * review" dialog. Port of `(web repo) src/lib/reviews/google-review-link.ts`.
  *
  * Venues do not know what a Place ID is. They paste a Maps search result, a share
  * link, or the short link from their Business Profile, and a wrong link fails

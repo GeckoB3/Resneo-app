@@ -81,7 +81,7 @@ import { SourcePicker, type SetupSource } from './SourcePicker';
  * "Set up with AI" on the app's Services screen (web `ServicesSetupWizard.tsx`; plan
  * `Docs/ai-services-setup-plan.md` in the web repo).
  *
- * @see _reference/Resneo/src/components/dashboard/appointment-services/services-setup/ServicesSetupWizard.tsx
+ * @see (web repo) src/components/dashboard/appointment-services/services-setup/ServicesSetupWizard.tsx
  *
  * The owner shows us their services (a link, photos or screenshots, a document, a typed list);
  * each source is read by `POST /api/venue/services-setup/extract`, two at a time; the services

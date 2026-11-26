@@ -8,8 +8,8 @@
  * type, the curated font + palette presets, and the colour helpers (hex
  * normalisation + the low-contrast warning) it needs.
  *
- * @see _reference/Resneo/src/lib/booking/booking-page-theme.ts
- * @see _reference/Resneo/src/lib/booking/booking-page-font-presets.ts
+ * @see (web repo) src/lib/booking/booking-page-theme.ts
+ * @see (web repo) src/lib/booking/booking-page-font-presets.ts
  */
 
 import type { ContactDisplay, StoredContactDisplay } from '@/lib/booking/contactDisplay';

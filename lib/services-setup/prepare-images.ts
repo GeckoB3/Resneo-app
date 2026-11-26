@@ -2,7 +2,7 @@
  * Get a photo ready for the services setup reader (web `prepare-images.ts`, which does the same
  * in the browser with a canvas).
  *
- * @see _reference/Resneo/src/components/dashboard/appointment-services/services-setup/prepare-images.ts
+ * @see (web repo) src/components/dashboard/appointment-services/services-setup/prepare-images.ts
  *
  * - Phone photos can be over the 4 MB the upload route accepts, so they are redrawn as JPEG with
  *   the long edge at most 2,048 px (the size the model reads at).

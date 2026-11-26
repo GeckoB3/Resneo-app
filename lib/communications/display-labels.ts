@@ -2,7 +2,7 @@
  * Human-readable label for a `communication_logs.message_type` value.
  *
  * Ported verbatim from the web reference
- * (_reference/Resneo/src/lib/communications/display-labels.ts) so the booking
+ * ((web repo) src/lib/communications/display-labels.ts) so the booking
  * detail's "SMS / Email guest" log reads identically to the web dashboard.
  */
 export function formatCommunicationLogLabel(messageType: string): string {

@@ -9,7 +9,7 @@
  * row filtering and the CSV grid mapping. No React, no I/O.
  *
  * @see types/reports.ts (`ReportByModelRow`)
- * @see _reference/Resneo/src/app/api/venue/reports/route.ts (`report_by_booking_model`)
+ * @see (web repo) src/app/api/venue/reports/route.ts (`report_by_booking_model`)
  */
 import { currencySymbol, formatPence } from '@/lib/format';
 import { calendarFileTag } from '@/lib/reports/report-calendar';
@@ -54,7 +54,7 @@ export function modelDepositDisplay(row: ReportByModelRow): string {
  * The web's rule for the "By booking type" card: show it once more than one
  * booking type has activity in range, whatever the venue has enabled — a
  * single-row table only restates the headline summary
- * (_reference/Resneo/src/app/dashboard/reports/ReportsView.tsx:598).
+ * ((web repo) src/app/dashboard/reports/ReportsView.tsx:598).
  */
 export function showBookingTypeBreakdown(
   rows: ReportByModelRow[] | null | undefined,

@@ -127,7 +127,7 @@ type ResourceExceptionsEditorProps = {
  * Single-range-per-day for amended hours (mirroring the weekly-hours editor);
  * any extra split-shift ranges set on web are preserved untouched on save.
  *
- * @see _reference/Resneo/src/app/dashboard/resource-timeline/ResourceTimelineView.tsx
+ * @see (web repo) src/app/dashboard/resource-timeline/ResourceTimelineView.tsx
  */
 export function ResourceExceptionsEditor({ value, onChange }: ResourceExceptionsEditorProps) {
   const { colors } = useTheme();

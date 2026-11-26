@@ -5,8 +5,8 @@
  * The fields here mirror the GET/POST/PATCH /api/venue/resources zod schema and
  * the web dashboard's Resource Timeline form.
  *
- * @see _reference/Resneo/src/app/dashboard/resource-timeline/ResourceTimelineView.tsx
- * @see _reference/Resneo/src/lib/booking/resource-booking-defaults.ts
+ * @see (web repo) src/app/dashboard/resource-timeline/ResourceTimelineView.tsx
+ * @see (web repo) src/lib/booking/resource-booking-defaults.ts
  */
 
 /** `'card_hold'` (web 2026-07): flat no-show fee kept in `deposit_amount_pence` (spec D5). */

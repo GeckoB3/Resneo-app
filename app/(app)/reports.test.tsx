@@ -1,6 +1,6 @@
 /**
  * Reports screen — the Overview's gating, figures and exports, against the web
- * (_reference/Resneo/src/app/dashboard/reports/ReportsView.tsx).
+ * ((web repo) src/app/dashboard/reports/ReportsView.tsx).
  *
  * jest hoists mock factories above imports, so every closed-over variable is
  * prefixed `mock*`. Charts, the heavy child sections and the native date picker

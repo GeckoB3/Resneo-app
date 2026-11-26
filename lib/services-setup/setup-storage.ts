@@ -2,7 +2,7 @@
  * The AI services setup's review in progress, kept on this phone so closing the sheet or the
  * app loses nothing (web `setup-storage.ts`, which keeps it in the browser's localStorage).
  *
- * @see _reference/Resneo/src/components/dashboard/appointment-services/services-setup/setup-storage.ts
+ * @see (web repo) src/components/dashboard/appointment-services/services-setup/setup-storage.ts
  *
  * Services already added are in the database; this holds what is still being checked. One JSON
  * file per venue in the app's documents folder (SecureStore is for secrets and caps a value's

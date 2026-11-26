@@ -1,8 +1,8 @@
 /**
  * Treatment records (web `Docs/treatment-records-plan.md`, §7.2 and Appendix B): hand-written
  * subsets of what the routes answer, so an additive field on the web never breaks the app.
- * @see _reference/Resneo/src/app/api/venue/treatment-records/route.ts
- * @see _reference/Resneo/src/components/dashboard/treatment-records/api.ts
+ * @see (web repo) src/app/api/venue/treatment-records/route.ts
+ * @see (web repo) src/components/dashboard/treatment-records/api.ts
  */
 
 export type TreatmentPhotoLabel = 'before' | 'after' | 'chart' | 'other';

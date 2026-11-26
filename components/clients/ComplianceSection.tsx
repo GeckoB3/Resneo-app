@@ -32,7 +32,7 @@ type ComplianceSectionProps = {
 
 /**
  * Pill for a record's own status (current / expired / voided) — mirrors the web
- * `recordStatusPill` in `_reference/Resneo/.../compliance/shared.ts`. Expiry is
+ * `recordStatusPill` in `(web repo) .../compliance/shared.ts`. Expiry is
  * resolved at render time against the record's `expires_at`.
  */
 function recordPill(record: ComplianceRecordRow): { label: string; tone: BadgeTone } {

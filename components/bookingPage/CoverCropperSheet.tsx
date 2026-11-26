@@ -1,7 +1,7 @@
 /**
  * CoverCropperSheet — mobile-native free-form cover-photo cropper.
  *
- * Web parity: `_reference/Resneo/src/lib/booking/booking-page-cover.ts`. The
+ * Web parity: `(web repo) src/lib/booking/booking-page-cover.ts`. The
  * uploaded photo is never altered; we store the region the venue chose to show
  * as FRACTIONS of the natural image — `{ x, y }` top-left, `{ w, h }` size (all
  * 0–1) plus the source aspect ratio `ar` (natural width ÷ height). `null` ⇒ the

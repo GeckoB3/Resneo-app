@@ -3,7 +3,7 @@ import type { BookingModel } from '@/types/venue';
 
 /**
  * Full guest detail returned by GET /api/venue/guests/[guestId].
- * @see _reference/Resneo/src/app/api/venue/guests/[guestId]/route.ts
+ * @see (web repo) src/app/api/venue/guests/[guestId]/route.ts
  */
 export interface GuestDetailProfile {
   id: string;

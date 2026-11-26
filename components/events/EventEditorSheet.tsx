@@ -116,7 +116,7 @@ function firstZodDetail(details: unknown): string | null {
  * structured errors that the plain `ApiError.message` hides:
  *  - 403 plan-limit (`upgrade_required` with `current`/`limit`) → upgrade hint.
  *  - 400 with zod `details` → the first field message appended.
- * @see _reference/Resneo/.../EventManagerView.tsx handleSaveEvent
+ * @see (web repo) .../EventManagerView.tsx handleSaveEvent
  */
 function formatSaveError(error: unknown): string {
   if (!(error instanceof ApiError)) return 'Could not save the event.';
@@ -160,8 +160,8 @@ type EventEditorSheetProps = {
  * + Stripe warning). Ticket types are REPLACE-ALL on save. Client validation
  * mirrors the server `eventSchema`.
  *
- * @see _reference/Resneo/src/app/dashboard/event-manager/EventManagerView.tsx
- * @see _reference/Resneo/src/app/api/venue/experience-events/route.ts (eventSchema)
+ * @see (web repo) src/app/dashboard/event-manager/EventManagerView.tsx
+ * @see (web repo) src/app/api/venue/experience-events/route.ts (eventSchema)
  */
 export function EventEditorSheet({ target, onClose, onSaved }: EventEditorSheetProps) {
   const { colors } = useTheme();

@@ -5,8 +5,8 @@
  * dashboard's Event Manager form. Events are `experience_events` rows with their
  * ticket types in `event_ticket_types` (returned as the `ticket_types` relation).
  *
- * @see _reference/Resneo/src/app/api/venue/experience-events/route.ts (eventSchema)
- * @see _reference/Resneo/src/app/dashboard/event-manager/EventManagerView.tsx
+ * @see (web repo) src/app/api/venue/experience-events/route.ts (eventSchema)
+ * @see (web repo) src/app/dashboard/event-manager/EventManagerView.tsx
  */
 
 /** `'card_hold'` (web 2026-07): per-person no-show fee kept in `deposit_amount_pence` (spec D5). */

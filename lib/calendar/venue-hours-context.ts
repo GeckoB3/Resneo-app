@@ -10,7 +10,7 @@
  * decides what is bookable, and clamping the input here would silently discard
  * a setting a venue may want back the moment its opening hours widen again.
  *
- * Web parity: _reference/Resneo/src/lib/calendar/venue-hours-context.ts
+ * Web parity: (web repo) src/lib/calendar/venue-hours-context.ts
  * (decision (K) step 6). Web reads the venue's hours from a route it added for
  * this, `GET /api/venue/opening-hours`; the app needs no request — the same
  * `opening_hours` is already on the venue bootstrap `VenueProvider` holds.

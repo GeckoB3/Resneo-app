@@ -108,7 +108,7 @@ export interface VisitPaymentLine {
 
 /**
  * Sent email/SMS row merged from communication_logs + legacy communications.
- * @see _reference/Resneo/src/lib/booking/load-booking-detail-bundle.ts
+ * @see (web repo) src/lib/booking/load-booking-detail-bundle.ts
  */
 export interface BookingCommunicationRow {
   id: string;

@@ -1,8 +1,8 @@
 /**
  * GET /api/venue/bookings/[id]/compliance — resolved requirement state +
  * the guest's compliance records.
- * @see _reference/Resneo/src/app/api/venue/bookings/[id]/compliance/route.ts
- * @see _reference/Resneo/src/components/dashboard/compliance/shared.ts
+ * @see (web repo) src/app/api/venue/bookings/[id]/compliance/route.ts
+ * @see (web repo) src/components/dashboard/compliance/shared.ts
  */
 
 export type ComplianceRequirementState =

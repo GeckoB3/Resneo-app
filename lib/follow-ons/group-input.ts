@@ -2,7 +2,7 @@
  * The one check of a follow-on group's input, ported word for word from the web
  * (`src/lib/follow-ons/group-input.ts`), so the editor sheet refuses what the routes refuse, in the
  * same words, before it sends anything.
- * @see _reference/Resneo/src/lib/follow-ons/group-input.ts
+ * @see (web repo) src/lib/follow-ons/group-input.ts
  */
 
 import { DEFAULT_FOLLOW_ON_QUESTION } from './rules';

@@ -4,7 +4,7 @@
  * history CSV.
  *
  * The controls and the figures on each row follow the web's list
- * (_reference/Resneo/src/app/dashboard/reports/ClientsSection.tsx): the same
+ * ((web repo) src/app/dashboard/reports/ClientsSection.tsx): the same
  * identity scope (default "With contact"), the same six sorts, a tag filter you
  * can stack, and phone / visit count / no-show count on every row.
  */

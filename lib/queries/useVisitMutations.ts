@@ -15,7 +15,7 @@ import { useAccessToken } from '@/lib/queries/useAccessToken';
  * service, checks each against the availability engine, writes them, and puts
  * back the rows that already landed if one fails.
  *
- * @see _reference/Resneo/src/app/api/venue/visits/[groupBookingId]/schedule/route.ts
+ * @see (web repo) src/app/api/venue/visits/[groupBookingId]/schedule/route.ts
  * @see Docs/APP_GAP_REPORT_R15_WEB_DELTA.md (R15-2)
  */
 export interface VisitSchedulePatchInput {

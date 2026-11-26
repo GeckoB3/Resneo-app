@@ -1,7 +1,7 @@
 /**
  * Drafts for the AI services setup review (web parity, `src/lib/services-setup/drafts.ts`).
  *
- * @see _reference/Resneo/src/lib/services-setup/drafts.ts
+ * @see (web repo) src/lib/services-setup/drafts.ts
  *
  * Each service the AI found becomes a `ServiceDraft` the owner can edit, add or skip. Numbers
  * are kept as the strings the inputs hold, so a half-typed price is not lost. `draftIssues` says

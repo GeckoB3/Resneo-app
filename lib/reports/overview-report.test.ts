@@ -23,7 +23,7 @@ import type {
 /**
  * Reports overview. Every export here has to open the same as the web's, so
  * these pin the filenames, headers, row labels and order against
- * `_reference/Resneo/src/app/dashboard/reports/ReportsView.tsx`.
+ * `(web repo) src/app/dashboard/reports/ReportsView.tsx`.
  */
 
 const RANGE = { from: '2026-09-01', to: '2026-09-30' };

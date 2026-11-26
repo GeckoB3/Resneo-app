@@ -3,7 +3,7 @@
  *
  * Tickets sold and revenue per ticket type, from the price captured when each
  * ticket was booked. Same figures, copy and CSV as the web
- * (_reference/Resneo/src/app/dashboard/reports/ReportsView.tsx:1232-1287).
+ * ((web repo) src/app/dashboard/reports/ReportsView.tsx:1232-1287).
  */
 import { ScrollView, StyleSheet, View } from 'react-native';
 

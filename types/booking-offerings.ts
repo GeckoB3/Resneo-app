@@ -15,10 +15,10 @@
  * listed on the combined page, so this venue's own unlisted items have a `venue_id` and no
  * listing, and book as the venue's own (`staffCreateOwnerVenueId`).
  *
- * @see _reference/Resneo/src/lib/availability/class-session-engine.ts
- * @see _reference/Resneo/src/lib/availability/event-ticket-engine.ts
- * @see _reference/Resneo/src/lib/availability/resource-booking-engine.ts
- * @see _reference/Resneo/src/lib/linked-accounts/collective-listing-offerings.ts (collective tags)
+ * @see (web repo) src/lib/availability/class-session-engine.ts
+ * @see (web repo) src/lib/availability/event-ticket-engine.ts
+ * @see (web repo) src/lib/availability/resource-booking-engine.ts
+ * @see (web repo) src/lib/linked-accounts/collective-listing-offerings.ts (collective tags)
  */
 
 /**

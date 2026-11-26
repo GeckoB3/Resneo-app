@@ -9,7 +9,7 @@
  * to 21:00 with no room check at all.
  *
  * Web hit the same defect and fixed it once, in the shared editor these mirror:
- * `_reference/Resneo/src/components/scheduling/WeeklyHoursEditor.tsx`
+ * `(web repo) src/components/scheduling/WeeklyHoursEditor.tsx`
  * (`canAddPeriod` / `nextPeriodAfter`). This is that logic, in minutes-since-
  * midnight because both app editors already work in minutes at the point they
  * call it.

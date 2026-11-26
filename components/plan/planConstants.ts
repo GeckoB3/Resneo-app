@@ -1,10 +1,10 @@
 /**
  * Plan, pricing, and allowance constants mirrored from the web app.
  * Keep in sync with:
- * @see _reference/Resneo/src/lib/pricing-constants.ts
- * @see _reference/Resneo/src/lib/plan-limits.ts
- * @see _reference/Resneo/src/lib/billing/sms-allowance.ts
- * @see _reference/Resneo/src/lib/subscription-cancellation-copy.ts
+ * @see (web repo) src/lib/pricing-constants.ts
+ * @see (web repo) src/lib/plan-limits.ts
+ * @see (web repo) src/lib/billing/sms-allowance.ts
+ * @see (web repo) src/lib/subscription-cancellation-copy.ts
  */
 
 export type AppointmentsTier = 'light' | 'plus' | 'appointments';

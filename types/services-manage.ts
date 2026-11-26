@@ -12,7 +12,7 @@ export type ServiceLocationType = 'business_venue' | 'client_address' | 'online'
  * practitioner is free for another booking. Matches the web/API JSON shape
  * (`{ id, start_minute, duration_minutes }`) — there is no `kind`/`offset`
  * field server-side; the gap before/after blocks is the "client-facing" time.
- * @see _reference/Resneo/src/lib/appointments/processing-time.ts
+ * @see (web repo) src/lib/appointments/processing-time.ts
  */
 export interface ProcessingTimeBlock {
   /** UUID when persisted; optional for freshly-added rows (API back-fills one). */

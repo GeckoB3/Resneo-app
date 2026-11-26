@@ -1,6 +1,6 @@
 /**
  * BookableCalendarsManager — in-app "Calendars" admin surface (web parity with
- * `_reference/Resneo/src/app/dashboard/availability/BookableCalendarsPanel.tsx`).
+ * `(web repo) src/app/dashboard/availability/BookableCalendarsPanel.tsx`).
  *
  * Admins can:
  *  - see every bookable calendar column (from `usePractitioners`), in display order

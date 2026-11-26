@@ -1,7 +1,7 @@
 /**
  * Grouping for the bulk "Add selected" action in the combined-page manager.
  * Ported verbatim from the web
- * `_reference/Resneo/src/lib/linked-accounts/group-services-for-bulk-add.ts`.
+ * `(web repo) src/lib/linked-accounts/group-services-for-bulk-add.ts`.
  *
  * The host ticks any number of member services; each becomes an offering.
  * Services that share a name (trim + lowercase) across venues are merged into

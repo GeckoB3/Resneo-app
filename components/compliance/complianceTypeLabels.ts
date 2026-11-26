@@ -1,6 +1,6 @@
 /**
  * Human labels for the compliance-template domain. Port of the label maps in
- * _reference/Resneo/src/components/dashboard/compliance/shared.ts and
+ * (web repo) src/components/dashboard/compliance/shared.ts and
  * ComplianceFormBuilder.tsx — keep wording in sync with the web dashboard.
  */
 

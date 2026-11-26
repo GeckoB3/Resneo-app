@@ -3,7 +3,7 @@ import { buildGuestListPath } from '@/lib/queries/useGuests';
 /**
  * The guest directory query string. The Reports → Clients list sends the same
  * params the web's does, so both lists start from the same rows.
- * @see _reference/Resneo/src/app/dashboard/reports/ClientsSection.tsx
+ * @see (web repo) src/app/dashboard/reports/ClientsSection.tsx
  */
 describe('buildGuestListPath', () => {
   it('always carries page, limit and sort', () => {

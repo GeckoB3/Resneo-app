@@ -13,7 +13,7 @@
  * `workspace` — one `primary` hero tile plus the `featured` bento grid — and
  * everything else is grouped by how it's used (`LIST_GROUPS`), so the old
  * fourteen-row "Manage" dump becomes a set of short, scannable sections.
- * @see _reference/Resneo/src/app/dashboard/DashboardSidebar.tsx
+ * @see (web repo) src/app/dashboard/DashboardSidebar.tsx
  */
 import type { SymbolViewProps } from 'expo-symbols';
 
