@@ -1,6 +1,3 @@
-import { createHash } from 'crypto';
-import { readFileSync } from 'fs';
-import { join } from 'path';
 import {
   fitProcessingBlocksToDuration,
   placeNewProcessingBlock,
@@ -16,6 +13,16 @@ import {
  * `scripts/sync-processing-fixtures.mjs`, with its hash. Do not edit it by hand: a case that fails
  * here means this fit has drifted from the web's.
  */
+// The Node built-ins this test needs, with local shapes rather than widening every other file's
+// global types (as `lib/api/raw-fetch-guard.test.ts` does).
+declare const __dirname: string;
+declare function require(id: string): unknown;
+const { readFileSync } = require('fs') as { readFileSync: (file: string, encoding: string) => string };
+const { join } = require('path') as { join: (...parts: string[]) => string };
+const { createHash } = require('crypto') as {
+  createHash: (algorithm: string) => { update: (text: string, encoding: string) => { digest: (enc: string) => string } };
+};
+
 const text = readFileSync(join(__dirname, 'processing-time.fixtures.json'), 'utf8').replace(/\r\n/g, '\n');
 type Block = { start_minute: number; duration_minutes: number };
 type Pattern = { name: string; blocks: Block[]; duration: number };
