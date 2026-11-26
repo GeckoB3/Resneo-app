@@ -61,7 +61,8 @@ describe('useCreateMultiServiceBooking', () => {
     expect(path).toBe('/api/booking/create-multi-service');
     expect((opts as { method: string }).method).toBe('POST');
     expect((opts as { accessToken: string }).accessToken).toBe(mockToken);
-    expect(JSON.parse((opts as { body: string }).body)).toEqual(payload);
+    // One client_request_id per Book press (web P2.7).
+    expect(JSON.parse((opts as { body: string }).body)).toEqual({ ...payload, client_request_id: expect.stringMatching(/^[0-9a-f-]{36}$/) });
   });
 
   it('surfaces the Stripe extension fields when a deposit is owed', async () => {
@@ -117,6 +118,7 @@ describe('useCreateGroupBooking', () => {
     const [path, opts] = mockApiFetch.mock.calls[0]!;
     expect(path).toBe('/api/booking/create-group');
     expect((opts as { method: string }).method).toBe('POST');
-    expect(JSON.parse((opts as { body: string }).body)).toEqual(payload);
+    // One client_request_id per Book press (web P2.7).
+    expect(JSON.parse((opts as { body: string }).body)).toEqual({ ...payload, client_request_id: expect.stringMatching(/^[0-9a-f-]{36}$/) });
   });
 });

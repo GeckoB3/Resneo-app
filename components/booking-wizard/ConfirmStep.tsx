@@ -1,7 +1,8 @@
 import * as Clipboard from 'expo-clipboard';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { findJustCreatedBooking, timedOutCreateNotFoundMessage } from '@/lib/booking/find-just-created-booking';
+import { BOOK_ONCE_MAX_RESENDS, BOOK_ONCE_RESEND_DELAY_MS, isCreateInProgress, serverBooksOnceNow } from '@/lib/booking/book-once';
 import { formatPhoneForDisplay } from '@/lib/phone/e164';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { ScrollView, StyleSheet, View } from 'react-native';
@@ -492,6 +493,8 @@ export function ConfirmStep({
   const accessToken = useAccessToken();
   /** A create timed out and the app is checking whether it landed anyway. */
   const [checkingCreate, setCheckingCreate] = useState(false);
+  /** Resends of this Book press after a timeout; each press starts again at 0. */
+  const resendsRef = useRef(0);
 
   // For "Any available" rows the booking targets the slot's real practitioner.
   const practitionerId =
@@ -842,9 +845,28 @@ export function ConfirmStep({
     }
   };
 
+  /**
+   * A create that timed out (or is still being made): a server that books once replays the booking
+   * if it was made, so the same press is sent again with the same key, a few times. An older server
+   * would make it twice, so there, and once the resends run out, look for it as before.
+   */
+  const resendOrReconcile = (resend: () => void, reconcile: () => void) => {
+    if (serverBooksOnceNow() && resendsRef.current < BOOK_ONCE_MAX_RESENDS) {
+      resendsRef.current += 1;
+      setCheckingCreate(true);
+      setSubmitError('This is taking longer than usual. Checking whether the booking was made…');
+      setTimeout(() => {
+        setCheckingCreate(false);
+        resend();
+      }, BOOK_ONCE_RESEND_DELAY_MS);
+      return;
+    }
+    reconcile();
+  };
+
   const handleCreateError = (error: unknown, onTimeout?: () => void) => {
     const apiError = error instanceof ApiError ? error : null;
-    if (apiError?.status === 408 && onTimeout) {
+    if ((apiError?.status === 408 || isCreateInProgress(error)) && onTimeout) {
       onTimeout();
       return;
     }
@@ -873,6 +895,7 @@ export function ConfirmStep({
   const handleConfirm = () => {
     setComplianceError(null);
     setSubmitError(null);
+    resendsRef.current = 0;
 
     if (isMultiService) {
       // The create-multi-service route requires first + last name (unlike the
@@ -882,7 +905,8 @@ export function ConfirmStep({
         setSubmitError('Enter a first and last name for a multi-service visit.');
         return;
       }
-      createMultiService.mutate(buildMultiPayload(), {
+      const multiPayload = buildMultiPayload();
+      const sendMulti = (): void => createMultiService.mutate(multiPayload, {
         onSuccess: (res) => {
           hapticSuccess();
           // ── Stripe in-app capture extension point (DEFERRED) ───────────────
@@ -952,22 +976,26 @@ export function ConfirmStep({
         },
         onError: (error) =>
           handleCreateError(error, () =>
-            void reconcileTimedOutCreate(multiServiceSegments![0]!.startTime, (bookingId) =>
-              setConfirmation({
-                booking_id: bookingId,
-                service_name: `${multiServiceSegments!.length} services`,
-                guest_name: fullName,
-                date_label: formatSummaryDate(date),
-                time_label: formatSummaryTime(multiServiceSegments![0]!.startTime),
-                practitioner_name: multiServiceSegments![0]!.practitionerName ?? '',
-              }),
+            resendOrReconcile(sendMulti, () =>
+              void reconcileTimedOutCreate(multiServiceSegments![0]!.startTime, (bookingId) =>
+                setConfirmation({
+                  booking_id: bookingId,
+                  service_name: `${multiServiceSegments!.length} services`,
+                  guest_name: fullName,
+                  date_label: formatSummaryDate(date),
+                  time_label: formatSummaryTime(multiServiceSegments![0]!.startTime),
+                  practitioner_name: multiServiceSegments![0]!.practitionerName ?? '',
+                }),
+              ),
             ),
           ),
       });
+      sendMulti();
       return;
     }
 
-    createBooking.mutate(buildPayload(), {
+    const payload = buildPayload();
+    const send = (): void => createBooking.mutate(payload, {
       onSuccess: (response) => {
         hapticSuccess();
         // ── Stripe in-app capture extension point (DEFERRED) ─────────────────
@@ -1013,18 +1041,21 @@ export function ConfirmStep({
       },
       onError: (error) =>
         handleCreateError(error, () =>
-          void reconcileTimedOutCreate(slot.start_time.slice(0, 5), (bookingId) =>
-            setConfirmation({
-              booking_id: bookingId,
-              service_name: `${service.serviceName}${variant ? ` · ${variant.name}` : ''}`,
-              guest_name: fullName,
-              date_label: formatSummaryDate(date),
-              time_label: formatSummaryTime(slot.start_time),
-              practitioner_name: practitionerName ?? '',
-            }),
+          resendOrReconcile(send, () =>
+            void reconcileTimedOutCreate(slot.start_time.slice(0, 5), (bookingId) =>
+              setConfirmation({
+                booking_id: bookingId,
+                service_name: `${service.serviceName}${variant ? ` · ${variant.name}` : ''}`,
+                guest_name: fullName,
+                date_label: formatSummaryDate(date),
+                time_label: formatSummaryTime(slot.start_time),
+                practitioner_name: practitionerName ?? '',
+              }),
+            ),
           ),
         ),
     });
+    send();
   };
 
   // Show inline confirmation once booking is created.

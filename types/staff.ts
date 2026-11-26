@@ -62,6 +62,12 @@ export interface StaffMe extends RoleFields {
 
 export interface StaffMeResponse {
   staff: StaffMe;
+  /**
+   * What this server can do that an older one cannot (web codebase standards plan, section 3 rule 4).
+   * `book_once` (P2.7): a create sent again with the same `client_request_id` replays the booking
+   * rather than making a second one. Absent on an older server: fall back.
+   */
+  server_features?: { book_once?: boolean };
 }
 
 /**

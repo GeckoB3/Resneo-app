@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
+import { useBookPressKey } from '@/lib/booking/book-once';
 import { CREATE_BOOKING_TIMEOUT_MS } from '@/lib/booking/find-just-created-booking';
 import { invalidateAppointmentAvailability } from '@/lib/queries/invalidateAvailability';
 import { queryKeys } from '@/lib/queries/keys';
@@ -37,19 +38,23 @@ export interface CreateWalkInResponse {
 export function useCreateWalkIn() {
   const accessToken = useAccessToken();
   const queryClient = useQueryClient();
+  // One client_request_id per Book press, kept for a retry of that press (web P2.7).
+  const press = useBookPressKey();
 
   return useMutation({
     mutationFn: async (payload: CreateWalkInPayload): Promise<CreateWalkInResponse> => {
       if (!accessToken) {
         throw new Error('Missing access token');
       }
-      return apiFetch<CreateWalkInResponse>('/api/venue/bookings/walk-in', {
-        accessToken,
-        method: 'POST',
-        // Creates can take longer than the default 15 s; see CREATE_BOOKING_TIMEOUT_MS.
-        timeoutMs: CREATE_BOOKING_TIMEOUT_MS,
-        body: JSON.stringify(payload),
-      });
+      return press.send(payload, (body) =>
+        apiFetch<CreateWalkInResponse>('/api/venue/bookings/walk-in', {
+          accessToken,
+          method: 'POST',
+          // Creates can take longer than the default 15 s; see CREATE_BOOKING_TIMEOUT_MS.
+          timeoutMs: CREATE_BOOKING_TIMEOUT_MS,
+          body: JSON.stringify(body),
+        }),
+      );
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });

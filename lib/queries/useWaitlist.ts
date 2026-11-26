@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
+import { useBookPressKey } from '@/lib/booking/book-once';
 import { isBackendConfigured } from '@/lib/env';
 import {
   invalidateAppointmentAvailability,
@@ -40,6 +41,8 @@ export function useWaitlist(kind: WaitlistKind) {
 export function useUpdateWaitlistEntry() {
   const accessToken = useAccessToken();
   const queryClient = useQueryClient();
+  // Confirming an entry makes a booking: one client_request_id per press (web P2.7).
+  const press = useBookPressKey();
 
   return useMutation({
     mutationFn: async (input: {
@@ -50,11 +53,13 @@ export function useUpdateWaitlistEntry() {
       if (!accessToken) {
         throw new Error('Missing access token');
       }
-      return apiFetch<{ booking_id?: string; notify_failed?: boolean }>(`/api/venue/waitlist`, {
-        accessToken,
-        method: 'PATCH',
-        body: JSON.stringify(input),
-      });
+      const send = (body: object) =>
+        apiFetch<{ booking_id?: string; notify_failed?: boolean }>(`/api/venue/waitlist`, {
+          accessToken,
+          method: 'PATCH',
+          body: JSON.stringify(body),
+        });
+      return input.status === 'confirmed' ? press.send(input, send) : send(input);
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.waitlist.all() });

@@ -1,6 +1,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
+import { rememberServerFeatures } from '@/lib/booking/book-once';
 import { isBackendConfigured } from '@/lib/env';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
@@ -32,7 +33,10 @@ export function useStaffMe() {
       if (!accessToken) {
         throw new Error('Missing access token');
       }
-      return apiFetch<StaffMeResponse>('/api/venue/staff/me', { accessToken });
+      const me = await apiFetch<StaffMeResponse>('/api/venue/staff/me', { accessToken });
+      // Whether a timed-out create may be sent again with the same key (web P2.7).
+      rememberServerFeatures(me);
+      return me;
     },
   });
 }
