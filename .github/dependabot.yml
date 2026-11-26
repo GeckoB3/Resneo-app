@@ -1,0 +1,53 @@
+# Codebase standards plan P1.3: dependencies stay current.
+#
+# Version updates come once a month, grouped into one pull request, because
+# each one costs a CI run. Security updates are a repository setting
+# (Settings > Code security > Dependabot security updates); GitHub opens them
+# as soon as an advisory is published, grouped by the `security` group below.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    groups:
+      security:
+        applies-to: security-updates
+        patterns: ['*']
+      dependencies:
+        applies-to: version-updates
+        update-types: [minor, patch]
+    ignore:
+      # The Expo SDK fixes these versions together. Move them only with an SDK
+      # upgrade (`npx expo install --fix`), never one by one; a mismatch builds
+      # but crashes on the device. Patch updates still come through.
+      - dependency-name: expo
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: 'expo-*'
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: '@expo/*'
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: jest-expo
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: 'react-native*'
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: '@react-native/*'
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: '@stripe/stripe-*react-native'
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: react
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: react-dom
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      # Major versions are planned work, never a monthly batch.
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ['*']

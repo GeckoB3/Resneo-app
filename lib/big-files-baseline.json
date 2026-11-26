@@ -1,0 +1,14 @@
+{
+  "app/(app)/manage/services.tsx": 4577,
+  "app/(app)/(tabs)/index.tsx": 4270,
+  "components/bookings/ModifyBookingSheet.tsx": 2945,
+  "components/bookings/BookingDetailContent.tsx": 2593,
+  "components/booking-wizard/ServiceBookingFlow.tsx": 2472,
+  "components/services-setup/ServicesSetupSheet.tsx": 1851,
+  "app/(app)/(tabs)/bookings.tsx": 1827,
+  "lib/pos/copy.ts": 1766,
+  "app/(app)/availability.tsx": 1682,
+  "components/calendar/AllCalendarsDayGrid.tsx": 1679,
+  "app/(app)/reports.tsx": 1565,
+  "components/bookings/TakePaymentSheet.tsx": 1563
+}
