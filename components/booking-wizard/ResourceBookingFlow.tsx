@@ -444,6 +444,7 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
         {chrome}
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         <BookingFlowConfirm
+          timeZone={timeZone}
           source={source}
           onSourceChange={setSource}
           headerTitle={resource.venue_name ? `${resource.name} at ${resource.venue_name}` : resource.name}

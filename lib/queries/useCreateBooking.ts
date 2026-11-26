@@ -73,6 +73,14 @@ export interface CreateBookingPayload {
   /** "Cancel if no card is added within 24 hours" (§4.9): never for a walk-in. */
   cancel_if_no_card?: boolean;
   /**
+   * "Cancel if not paid by ..." under Require deposit (web deposit-handling plan DH1, 26 Nov 2026).
+   * Omitted means on (an older app's meaning): the booking waits as Pending until the earlier of 24
+   * hours or 2 hours before the start, and is cancelled if still unpaid. `false` books it now with
+   * the deposit still owed. Under 2 hours to go, or a client with no email or mobile, the server
+   * books it now whatever this says.
+   */
+  cancel_if_unpaid?: boolean;
+  /**
    * The client already existed before this booking (staff picked a known
    * contact, or rebooked one). The server uses it for metrics only (P0.6
    * returning-client time-to-book); it does NOT link the booking to anyone.
@@ -144,6 +152,9 @@ export interface CreateBookingResponse {
    * no email or phone, so the screen shows the link to open or copy. Absent from older servers.
    */
   payment_link_sent?: boolean;
+  /** A staff deposit kept Booked, and its cancel deadline when waiting (web deposit-handling plan DH1). */
+  deposit_kept?: boolean;
+  deposit_cancel_at?: string | null;
   /** Unmet non-blocking compliance requirements, surfaced on the confirmation. */
   compliance_warnings?: ComplianceBookingWarning[];
   /** With `override_availability`: the engine's reasons in plain words (web #187). */

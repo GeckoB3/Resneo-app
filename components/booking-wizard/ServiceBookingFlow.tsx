@@ -2409,6 +2409,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
         <ConfirmStep
           addons={selectedAddons}
           date={selectedDate}
+          timeZone={timeZone}
           durationOverride={durationOverride}
           guest={guest}
           onSuccess={handleBookingCreated}

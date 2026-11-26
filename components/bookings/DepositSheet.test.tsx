@@ -39,8 +39,10 @@ jest.mock('@/lib/haptics', () => ({
 }));
 
 const mockDeposit = jest.fn();
+const mockKeep = jest.fn();
 jest.mock('@/lib/queries/useBookingMutations', () => ({
   useBookingDeposit: () => ({ mutateAsync: mockDeposit, isPending: false }),
+  useKeepWithoutDeposit: () => ({ mutateAsync: mockKeep, isPending: false }),
 }));
 
 const mockSendRequests = jest.fn();
@@ -139,6 +141,56 @@ describe('DepositSheet — which actions are offered', () => {
   it('never fires a deposit action just by opening', async () => {
     await render(<DepositSheet target={target({ status: 'Not Required' })} onClose={onClose} />);
     expect(mockDeposit).not.toHaveBeenCalled();
+  });
+});
+
+/** "Keep without deposit" (web deposit-handling plan DH4), beside Send payment link, Record cash and Waive. */
+describe('DepositSheet: Keep without deposit', () => {
+  beforeEach(() => {
+    mockKeep.mockReset();
+    mockKeep.mockResolvedValue({});
+  });
+
+  it('is offered on a booking waiting for its deposit, asks first, then keeps it', async () => {
+    await render(
+      <DepositSheet
+        target={target({
+          bookingStatus: 'Pending',
+          owedLine: 'Deposit £25.00 owed. If it is not paid by tomorrow at 09:12, the booking is cancelled.',
+        })}
+        onClose={onClose}
+      />,
+    );
+    expect(
+      screen.getByText('Deposit £25.00 owed. If it is not paid by tomorrow at 09:12, the booking is cancelled.'),
+    ).toBeTruthy();
+    await fireEvent.press(screen.getByText('Keep without deposit'));
+    expect(mockKeep).not.toHaveBeenCalled();
+    expect(screen.getByText('Keep without the deposit?')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'The booking stays booked even if the deposit is not paid. Alex Rivera is sent a confirmation that says the £25.00 deposit is still due, with the payment link.',
+      ),
+    ).toBeTruthy();
+    await fireEvent.press(screen.getByText('Keep booking'));
+    expect(mockKeep).toHaveBeenCalledWith({ bookingId: 'bk-1' });
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('says payment for a full payment', async () => {
+    await render(<DepositSheet target={target({ bookingStatus: 'Pending', paidInFull: true })} onClose={onClose} />);
+    expect(screen.getByText('Keep without payment')).toBeTruthy();
+    expect(screen.getByText('Waive payment')).toBeTruthy();
+  });
+
+  it('is not offered once the booking is booked', async () => {
+    await render(<DepositSheet target={target({ bookingStatus: 'Booked' })} onClose={onClose} />);
+    expect(screen.queryByText('Keep without deposit')).toBeNull();
+  });
+
+  it('is not offered on a part of a visit across businesses', async () => {
+    await render(<DepositSheet target={target({ bookingStatus: 'Pending', linkedVisitId: 'v1' })} onClose={onClose} />);
+    expect(screen.queryByText('Keep without deposit')).toBeNull();
   });
 });
 

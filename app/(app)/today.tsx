@@ -16,6 +16,7 @@ import { KpiGrid } from '@/components/today/KpiGrid';
 import { FeesToChargeHomeCard } from '@/components/today/FeesToChargeHomeCard';
 import { LowStockHomeCard } from '@/components/today/LowStockHomeCard';
 import { WaitingForCardHomeCard } from '@/components/today/WaitingForCardHomeCard';
+import { DepositsWaitingHomeCard } from '@/components/today/DepositsWaitingHomeCard';
 import { TillHomeCard } from '@/components/today/TillHomeCard';
 import { NewBookingsCard } from '@/components/reports/NewBookingsCard';
 import { CollectRequestsCard } from '@/components/pos/CollectRequests';
@@ -423,6 +424,8 @@ export default function TodayScreen() {
               });
               // Fees to charge reads its own route too.
               void queryClient.invalidateQueries({ queryKey: queryKeys.feesToCharge.all() });
+              // So does the waiting-for-payment card.
+              void queryClient.invalidateQueries({ queryKey: queryKeys.depositsWaiting.all() });
             }}
           />
         }>
@@ -442,6 +445,10 @@ export default function TodayScreen() {
 
         {/* Card on file (plan §6.5): upcoming bookings waiting for a card. Hidden when none. */}
         <WaitingForCardHomeCard />
+
+        {/* Deposits (web deposit-handling plan DH3): upcoming bookings still owing their deposit,
+            each with its deadline, Send payment link and Keep without deposit. Hidden when none. */}
+        <DepositsWaitingHomeCard />
 
         {/* Setup checklist (admin-only; pinned pre-onboarding, dismissible after) */}
         <SetupChecklistCard />

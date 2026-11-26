@@ -357,6 +357,27 @@ describe('buildMultiServicePayload', () => {
       expect(payload.require_deposit).toBe(false);
     });
 
+    it('sends "Cancel if not paid" with a required deposit only (web deposit-handling plan DH1)', () => {
+      const off = buildMultiServicePayload({
+        ...base,
+        source: 'phone',
+        charges: { requireDeposit: true, cancelIfUnpaid: false },
+      });
+      expect(off).toMatchObject({ require_deposit: true, cancel_if_unpaid: false });
+      const on = buildMultiServicePayload({ ...base, source: 'phone', charges: { requireDeposit: true, cancelIfUnpaid: true } });
+      expect(on.cancel_if_unpaid).toBe(true);
+      // No deposit asked for, no choice made, or a walk-in: nothing is sent (the server's default stands).
+      expect(
+        buildMultiServicePayload({ ...base, source: 'phone', charges: { requireDeposit: false, cancelIfUnpaid: false } }),
+      ).not.toHaveProperty('cancel_if_unpaid');
+      expect(buildMultiServicePayload({ ...base, source: 'phone', charges: { requireDeposit: true } })).not.toHaveProperty(
+        'cancel_if_unpaid',
+      );
+      expect(
+        buildMultiServicePayload({ ...base, source: 'walk-in', charges: { requireDeposit: true, cancelIfUnpaid: false } }),
+      ).not.toHaveProperty('cancel_if_unpaid');
+    });
+
     it('never asks a walk-in for a deposit, whatever the toggle says', () => {
       // Walk-ins never collect deposits in any model, so there is no decision
       // to report and the field is left off the body entirely.

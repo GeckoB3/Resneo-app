@@ -414,6 +414,7 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
         {chrome}
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         <BookingFlowConfirm
+          timeZone={timeZone}
           source={source}
           onSourceChange={setSource}
           // A listed event books for the collective: the card line answers for the member hosting

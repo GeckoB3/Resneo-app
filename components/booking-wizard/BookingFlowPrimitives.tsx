@@ -29,6 +29,12 @@ import {
   staffCardHoldFeeLine,
   type StaffCreateCardOnFile,
 } from '@/lib/booking/card-hold';
+import {
+  staffDepositDeadlineText,
+  staffDepositOutcome,
+  staffDepositOutcomeFromServer,
+  type StaffDepositOutcome,
+} from '@/lib/booking/staff-deposit-deadline';
 import { formatPence } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
@@ -198,6 +204,8 @@ type BookingFlowConfirmProps = {
   collectiveForm?: boolean;
   bookingVenueId?: string | null;
   signedInVenueId?: string | null;
+  /** The business's time zone: when an unpaid deposit cancels the booking is read in it. */
+  timeZone?: string | null;
 };
 
 interface Confirmation {
@@ -215,6 +223,12 @@ interface Confirmation {
   /** Card on file (web card-on-file-plan §10); absent from older servers. */
   card_on_file?: StaffCreateCardOnFile | null;
   cancel_if_no_card?: boolean;
+  /**
+   * The deposit's outcome (web deposit-handling plan DH2, DH5): these flows offer no "Cancel if
+   * not paid" choice, so the server's default (on) applies; kept when the client cannot be reached
+   * or the start is under 2 hours away.
+   */
+  deposit_outcome?: StaffDepositOutcome | null;
   /** The client's email, else phone: where a card request went. */
   guest_contact?: string;
   compliance_warnings?: ComplianceBookingWarning[];
@@ -254,6 +268,7 @@ export function BookingFlowConfirm({
   collectiveForm = false,
   bookingVenueId = null,
   signedInVenueId = null,
+  timeZone = null,
 }: BookingFlowConfirmProps) {
   const { colors } = useTheme();
   const createBooking = useCreateBooking();
@@ -330,6 +345,20 @@ export function BookingFlowConfirm({
           card_hold_fee_pence: staffCardHold?.feePence ?? null,
           card_on_file: parseStaffCreateCardOnFile(response.card_on_file),
           cancel_if_no_card: Boolean(cardFields?.cancel_if_no_card),
+          deposit_outcome:
+            response.payment_url && !response.card_hold_requested && !response.card_on_file
+              ? staffDepositOutcomeFromServer(response, timeZone, paymentRequirement === 'full_payment' ? 'payment' : 'deposit') ??
+                staffDepositOutcome({
+                  cancelIfUnpaid: true,
+                  reachable: Boolean(guestContact || payload.guest_id),
+                  deadlineText: staffDepositDeadlineText({
+                    date: payload.booking_date,
+                    time: payload.booking_time,
+                    timeZone,
+                  }),
+                  word: paymentRequirement === 'full_payment' ? 'payment' : 'deposit',
+                })
+              : null,
           guest_contact: guestContact,
           payment_link_sent: response.payment_link_sent,
           walk_in: source === 'walk-in',
@@ -420,8 +449,8 @@ export function BookingFlowConfirm({
             <View style={[styles.depositNotice, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <Text variant="bodySmall" tone="brand">
                 {confirmation.deposit_amount_pence != null && confirmation.deposit_amount_pence > 0
-                  ? `Deposit required: ${money(confirmation.deposit_amount_pence)}`
-                  : 'Deposit requested'}
+                  ? `${confirmation.deposit_outcome?.word === 'payment' ? 'Payment' : 'Deposit'} required: ${money(confirmation.deposit_amount_pence)}`
+                  : `${confirmation.deposit_outcome?.word === 'payment' ? 'Payment' : 'Deposit'} requested`}
               </Text>
               {confirmation.payment_url ? (
                 <StaffPaymentLinkLines
@@ -429,6 +458,7 @@ export function BookingFlowConfirm({
                   paymentUrl={confirmation.payment_url}
                   linkSent={confirmation.payment_link_sent}
                   walkIn={Boolean(confirmation.walk_in)}
+                  deposit={confirmation.deposit_outcome ?? null}
                 />
               ) : null}
             </View>

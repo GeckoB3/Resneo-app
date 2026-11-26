@@ -22,9 +22,20 @@ describe('staffPaymentLinkLines', () => {
     ).toBe('If no card is added within 24 hours, the booking is cancelled.');
   });
 
-  it('a deposit link still says the 24-hour cancellation', () => {
-    expect(staffPaymentLinkLines({ cardHold: false, paymentUrl: 'https://x/l', linkSent: true, walkIn: false }).cancel).toBe(
-      'If deposit is not paid within 24 hours, the booking will be auto-cancelled.',
+  it('a deposit link says the real deadline, never "within 24 hours" (deposit-handling plan DH2)', () => {
+    const base = { cardHold: false, paymentUrl: 'https://x/l', linkSent: true, walkIn: false } as const;
+    expect(
+      staffPaymentLinkLines({ ...base, deposit: { kept: false, cancelOn: 'Wed 2 Dec, 13:00', word: 'deposit' } }).cancel,
+    ).toBe('If it is not paid by Wed 2 Dec, 13:00, the booking is cancelled.');
+    expect(staffPaymentLinkLines({ ...base, deposit: { kept: true, cancelOn: null, word: 'payment' } })).toEqual({
+      sent: 'A payment link has been sent to the client.',
+      cancel: 'The booking stays booked if the payment is not paid.',
+      showLink: false,
+    });
+    // Where the screen says it elsewhere, nothing is said here.
+    expect(staffPaymentLinkLines(base).cancel).toBeNull();
+    expect(staffPaymentLinkLines({ ...base, deposit: { kept: false, cancelOn: 'x', word: 'deposit' } }).cancel).not.toMatch(
+      /24 hours|auto-cancelled/,
     );
   });
 

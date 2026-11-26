@@ -146,6 +146,13 @@ export const queryKeys = {
       [...queryKeys.feesToCharge.all(), keyScope(accessToken)] as const,
   },
 
+  /** The Today screen's "waiting for payment" card (web Docs/deposit-handling-review-plan.md DH3). */
+  depositsWaiting: {
+    all: () => [...queryKeys.all, 'deposits-waiting'] as const,
+    list: (accessToken?: string | null) =>
+      [...queryKeys.depositsWaiting.all(), keyScope(accessToken)] as const,
+  },
+
   /** The bell's Bookings tab (web booking-activity plan, BA2). */
   bookingActivity: {
     all: () => [...queryKeys.all, 'booking-activity'] as const,

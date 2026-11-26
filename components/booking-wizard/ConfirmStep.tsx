@@ -47,6 +47,14 @@ import {
   staffCardHoldFeeLine,
   type StaffCreateCardOnFile,
 } from '@/lib/booking/card-hold';
+import {
+  staffDepositCancelOnLine,
+  staffDepositDeadlineText,
+  staffDepositKeptLine,
+  staffDepositOutcome,
+  staffDepositOutcomeFromServer,
+  type StaffDepositOutcome,
+} from '@/lib/booking/staff-deposit-deadline';
 import { formatPence } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { normalizePhone } from '@/lib/phone/normalize';
@@ -148,6 +156,8 @@ type ConfirmStepProps = {
    * knowing). Shown on the review and the confirmation.
    */
   bookedAtBusiness?: string | null;
+  /** The business's time zone: the deposit's "Cancel if not paid by ..." deadline is read in it. */
+  timeZone?: string | null;
 };
 
 interface BookingConfirmation {
@@ -175,6 +185,11 @@ interface BookingConfirmation {
   guest_id?: string;
   /** Staff ticked "Cancel if no card is added within 24 hours". */
   cancel_if_no_card?: boolean;
+  /**
+   * A staff deposit (web deposit-handling plan DH1, DH2): kept (Booked with it still due) or
+   * waiting until a deadline. Worked out at the create, as the web's confirmation does.
+   */
+  deposit_outcome?: StaffDepositOutcome | null;
   cancellation_notice_hours?: number;
   compliance_warnings?: ComplianceBookingWarning[];
   /** With the override: the engine's reasons, repeated from the 201. */
@@ -266,8 +281,13 @@ function BookingConfirmationView({
       })
     : null;
   // A walk-in with a card hold is booked straight away with the card request open (web QA BKG-A-F9).
-  const awaitingPayment =
-    !cardOnFile && Boolean(confirmation.payment_url) && !(cardHold && confirmation.walk_in);
+  // A deposit waits only when staff left "Cancel if not paid" on and the server could set a
+  // deadline; otherwise it is booked now with the deposit still due (deposit-handling plan DH1).
+  const depositOutcome = confirmation.deposit_outcome ?? null;
+  const depositWord = depositOutcome?.word ?? 'deposit';
+  const awaitingPayment = depositOutcome
+    ? !depositOutcome.kept
+    : !cardOnFile && Boolean(confirmation.payment_url) && !(cardHold && confirmation.walk_in);
   const linkedUrl = confirmation.linked_payment_url ?? null;
   const [copied, setCopied] = useState(false);
 
@@ -285,7 +305,7 @@ function BookingConfirmationView({
               : awaitingPayment
                 ? cardHold
                   ? CARD_STATE_WAITING
-                  : 'Waiting for the deposit'
+                  : `Waiting for the ${depositWord}`
                 : 'Booking confirmed'}
         </Text>
         <Text variant="bodyMedium" tone="muted">
@@ -296,12 +316,18 @@ function BookingConfirmationView({
                 ? 'The booking waits for the card, and is cancelled if none is added within 24 hours.'
                 : 'The appointment has been created successfully.'
               : awaitingPayment
-                ? `${cardHold ? 'The booking is waiting for the client to add a card.' : 'The booking stays pending until the deposit is paid.'}${
+                ? `${
+                    cardHold
+                      ? 'The booking is waiting for the client to add a card.'
+                      : `The booking stays pending until ${depositWord === 'payment' ? 'the payment is made' : 'the deposit is paid'}.`
+                  }${
                     confirmation.guest_contact
                       ? ` Then a confirmation will be sent to ${confirmation.guest_contact}.`
                       : ''
-                  }`
-                : 'The appointment has been created successfully.'}
+                  }${!cardHold && depositOutcome?.cancelOn ? ` ${staffDepositCancelOnLine(depositOutcome.cancelOn)}` : ''}`
+                : depositOutcome?.kept
+                  ? staffDepositKeptLine(depositWord)
+                  : 'The appointment has been created successfully.'}
         </Text>
       </View>
 
@@ -369,15 +395,17 @@ function BookingConfirmationView({
           <View style={[styles.depositNotice, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Text variant="bodySmall" tone="brand">
               {confirmation.deposit_amount_pence != null && confirmation.deposit_amount_pence > 0
-                ? `Deposit required: ${formatMoney(confirmation.deposit_amount_pence)}`
-                : 'Deposit requested'}
+                ? `${depositWord === 'payment' ? 'Payment' : 'Deposit'} required: ${formatMoney(confirmation.deposit_amount_pence)}`
+                : `${depositWord === 'payment' ? 'Payment' : 'Deposit'} requested`}
             </Text>
+            {/* What happens if it is not paid is said in the heading above, so not again here. */}
             {confirmation.payment_url ? (
               <StaffPaymentLinkLines
                 cardHold={false}
                 paymentUrl={confirmation.payment_url}
                 linkSent={confirmation.payment_link_sent}
                 walkIn={Boolean(confirmation.walk_in)}
+                depositWord={depositWord}
               />
             ) : null}
           </View>
@@ -440,6 +468,7 @@ export function ConfirmStep({
   collectiveForm = false,
   signedInVenueId = null,
   noCardVenueIds = [],
+  timeZone = null,
 }: ConfirmStepProps) {
   const { colors } = useTheme();
   // A picked client's phone and email read "Hidden" for someone whose contact switch is off; the
@@ -628,6 +657,32 @@ export function ConfirmStep({
     : staffCardHold
       ? staffCardHold.feePence
       : 0;
+  /**
+   * "Cancel if not paid by ..." under Require deposit (web deposit-handling plan DH1, DH2, DH5): on
+   * by default. The deadline is the earlier of 24 hours from now or 2 hours before the (first)
+   * start, in the business's time zone; under 2 hours to go there is no choice and the booking is
+   * kept. Not on a visit across businesses (its one checkout keeps its own rules), nor on a visit
+   * that also holds a card, whose deposit parts keep their old rule on the server.
+   */
+  const [cancelIfUnpaid, setCancelIfUnpaid] = useState(true);
+  const depositChoiceApplies = !byBusiness && !(isMultiService && chainCardHoldPence > 0);
+  const firstStart = isMultiService
+    ? [...multiServiceSegments!].map((s) => s.startTime.slice(0, 5)).sort()[0] ?? null
+    : slot.start_time;
+  const depositDeadlineText = staffDepositDeadlineText({ date, time: firstStart, timeZone });
+  const clientReachable = Boolean(guest.email.trim() || guest.phone.trim()) || pickedContactHidden;
+  const depositSent = hasDeposit && requireDeposit && source !== 'walk-in';
+  /** What the confirmation says about the deposit, worked out as the server works it out. */
+  const depositOutcomeNow = (): StaffDepositOutcome | null =>
+    depositChoiceApplies && depositSent
+      ? staffDepositOutcome({
+          cancelIfUnpaid,
+          reachable: clientReachable,
+          // Read again at the create: the form may have been open a while.
+          deadlineText: staffDepositDeadlineText({ date, time: firstStart, timeZone }),
+          word: chargeNoun,
+        })
+      : null;
   const spansPeople = isMultiService && chainSpansPeople(multiServiceSegments!);
   const peopleLabel = spansPeople
     ? joinNames([...new Set(multiServiceSegments!.map((s) => s.practitionerName).filter(Boolean))])
@@ -680,7 +735,7 @@ export function ConfirmStep({
     // single service only ever resolves to one of the two, but writing it as a
     // choice hid the second one from every caller that can carry both.
     ...(cardFields ?? {}),
-    ...(hasDeposit && requireDeposit && source !== 'walk-in' ? { require_deposit: true } : {}),
+    ...(depositSent ? { require_deposit: true, cancel_if_unpaid: cancelIfUnpaid } : {}),
     // Existing-contact / rebook → flag as a returning guest (web parity; metrics only).
     ...(returningGuest ? { returning_guest: true } : {}),
     // The picked client (web roles plan §5.6): joins the booking to them.
@@ -724,6 +779,7 @@ export function ConfirmStep({
           }
         : {
             requireDeposit,
+            ...(depositChoiceApplies && depositSent ? { cancelIfUnpaid } : {}),
             ...(cardFields
               ? {
                   requireCardHold: cardFields.require_card_hold,
@@ -877,6 +933,8 @@ export function ConfirmStep({
             card_on_file: parseStaffCreateCardOnFile(res.card_on_file),
             guest_id: typeof res.guest_id === 'string' && res.guest_id ? res.guest_id : undefined,
             cancel_if_no_card: Boolean(cardFields?.cancel_if_no_card),
+            deposit_outcome:
+              res.requires_deposit && res.payment_mode !== 'setup' && !res.card_on_file ? depositOutcomeNow() : null,
             payment_url: res.payment_mode === 'setup' || res.card_on_file ? res.payment_url : undefined,
             payment_link_sent: res.payment_link_sent,
             guest_contact: guest.email.trim() || guest.phone.trim() || undefined,
@@ -935,6 +993,12 @@ export function ConfirmStep({
           card_on_file: parseStaffCreateCardOnFile(response.card_on_file),
           guest_id: typeof response.guest_id === 'string' && response.guest_id ? response.guest_id : undefined,
           cancel_if_no_card: Boolean(cardFields?.cancel_if_no_card),
+          deposit_outcome:
+            response.payment_url && !response.card_hold_requested && !response.card_on_file
+              ? (depositChoiceApplies && depositSent
+                  ? staffDepositOutcomeFromServer(response, timeZone, chargeNoun)
+                  : null) ?? depositOutcomeNow()
+              : null,
           payment_link_sent: response.payment_link_sent,
           walk_in: source === 'walk-in',
           compliance_warnings: response.compliance_warnings,
@@ -1164,7 +1228,10 @@ export function ConfirmStep({
           onChange={onChangeRequireDeposit}
           chargeLabel={visitCharge.chargeLabel}
           amountPence={visitCharge.amountPence}
-          hasContact={Boolean(guest.email.trim() || guest.phone.trim()) || pickedContactHidden}
+          hasContact={clientReachable}
+          cancelIfUnpaid={cancelIfUnpaid}
+          onCancelIfUnpaidChange={depositChoiceApplies ? setCancelIfUnpaid : undefined}
+          cancelDeadlineText={depositDeadlineText}
         />
       ) : null}
 

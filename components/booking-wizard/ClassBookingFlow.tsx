@@ -366,6 +366,7 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
         {chrome}
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         <BookingFlowConfirm
+          timeZone={timeZone}
           source={source}
           onSourceChange={setSource}
           // A listed class books for the collective: the card line answers for the member hosting

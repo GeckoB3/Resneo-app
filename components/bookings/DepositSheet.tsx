@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
+import { ConfirmPanel } from '@/components/ui/ConfirmPanel';
 import { Input } from '@/components/ui/Input';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
@@ -25,9 +26,18 @@ import {
 } from '@/lib/booking/card-hold';
 import { hasSettleableDeposit } from '@/lib/booking/booking-staff-indicators';
 import { confirmWithoutCardUndoneMessage } from '@/lib/booking/card-list';
+import {
+  canKeepWithoutDeposit,
+  keepWithoutDepositLabel,
+  keepWithoutDepositQuestion,
+} from '@/lib/booking/deposit-owed-line';
 import { currencySymbol, formatPositivePence } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
-import { useBookingDeposit, type DepositAction } from '@/lib/queries/useBookingMutations';
+import {
+  useBookingDeposit,
+  useKeepWithoutDeposit,
+  type DepositAction,
+} from '@/lib/queries/useBookingMutations';
 import {
   useConfirmWithoutCard,
   useSendCardRequests,
@@ -52,6 +62,12 @@ export type DepositTarget = {
   visitId?: string | null;
   /** "Add card now" can open the desk screen (the booking has a client record of ours). */
   canAddCard?: boolean;
+  /** The booking's status: "Keep without deposit" is for a booking waiting (Pending) for it. */
+  bookingStatus?: string | null;
+  /** Part of a visit across businesses: that visit's own pay link and rules apply, so no Keep. */
+  linkedVisitId?: string | null;
+  /** What the owed deposit waits for and until when (web deposit-handling plan DH2). */
+  owedLine?: string | null;
 };
 
 type DepositSheetProps = {
@@ -109,6 +125,9 @@ export function DepositSheet({ target, onClose, onAddCard }: DepositSheetProps) 
   const [cardBusy, setCardBusy] = useState<'request' | 'confirm' | 'undo' | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [undo, setUndo] = useState<{ actionIds: string[]; until: number } | null>(null);
+  // "Keep without deposit" (DH4) asks first, inline: a second sheet over this one would not show on iOS.
+  const keepWithout = useKeepWithoutDeposit();
+  const [keepAsked, setKeepAsked] = useState(false);
 
   useEffect(() => {
     if (!target) {
@@ -129,6 +148,7 @@ export function DepositSheet({ target, onClose, onAddCard }: DepositSheetProps) 
     setCardBusy(null);
     setNotice(null);
     setUndo(null);
+    setKeepAsked(false);
     setAmountInput(target.cardHold?.feePence ? penceToPoundsInput(target.cardHold.feePence) : '');
   }, [target?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -270,8 +290,36 @@ export function DepositSheet({ target, onClose, onAddCard }: DepositSheetProps) 
     }
   }
 
+  /** Keep the booking without the deposit: the client is sent a confirmation saying it is still due. */
+  async function keepWithoutDeposit() {
+    if (!target) return;
+    setError(null);
+    try {
+      await keepWithout.mutateAsync({ bookingId: target.id });
+      hapticSuccess();
+      setKeepAsked(false);
+      onClose();
+    } catch (e) {
+      hapticWarning();
+      setKeepAsked(false);
+      setError(e instanceof ApiError ? e.message : 'Could not keep the booking. Please try again.');
+    }
+  }
+
   const amount = formatPositivePence(target?.amountPence);
   const hold = target?.cardHold ?? null;
+  const word: 'deposit' | 'payment' = target?.paidInFull ? 'payment' : 'deposit';
+  const showKeep =
+    !!target &&
+    canKeepWithoutDeposit({
+      status: target.bookingStatus,
+      deposit_status: target.status,
+      deposit_amount_pence: target.amountPence,
+      linked_visit_id: target.linkedVisitId ?? null,
+    });
+  const keepQuestion = target
+    ? keepWithoutDepositQuestion({ word, amountPence: target.amountPence, guestName: target.guestName })
+    : null;
 
   // §9.2 charge amount bounds: min 1 pence (the server's invalid_amount quotes
   // £0.01), max = the consented fee snapshot.
@@ -522,7 +570,23 @@ export function DepositSheet({ target, onClose, onAddCard }: DepositSheetProps) 
                 <Text variant="bodySmall" tone="muted">
                   {target.guestName}
                 </Text>
+                {target.owedLine ? (
+                  <Text variant="bodySmall" tone="secondary" testID="deposit-sheet-owed-line">
+                    {target.owedLine}
+                  </Text>
+                ) : null}
               </View>
+
+              {keepAsked && keepQuestion ? (
+                <ConfirmPanel
+                  title={keepQuestion.title}
+                  message={keepQuestion.message}
+                  confirmLabel={keepQuestion.confirmLabel}
+                  loading={keepWithout.isPending}
+                  onConfirm={() => void keepWithoutDeposit()}
+                  onCancel={() => setKeepAsked(false)}
+                />
+              ) : null}
 
               <View style={styles.buttons}>
                 {/*
@@ -555,8 +619,22 @@ export function DepositSheet({ target, onClose, onAddCard }: DepositSheetProps) 
                       disabled={pending !== null}
                       fullWidth
                     />
+                    {showKeep ? (
+                      <Button
+                        label={keepWithoutDepositLabel(word)}
+                        variant="secondary"
+                        onPress={() => {
+                          hapticWarning();
+                          setError(null);
+                          setKeepAsked(true);
+                        }}
+                        loading={keepWithout.isPending}
+                        disabled={pending !== null || keepWithout.isPending || keepAsked}
+                        fullWidth
+                      />
+                    ) : null}
                     <Button
-                      label="Waive deposit"
+                      label={word === 'payment' ? 'Waive payment' : 'Waive deposit'}
                       variant="ghost"
                       onPress={() => void run('waive')}
                       loading={pending === 'waive'}

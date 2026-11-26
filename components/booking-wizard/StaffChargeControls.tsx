@@ -31,6 +31,12 @@ import {
   staffGroupCardFoundLine,
   staffSendCardRequestLine,
 } from '@/lib/booking/card-hold';
+import {
+  staffCancelIfUnpaidHelp,
+  staffCancelIfUnpaidLabel,
+  staffDepositNoContactLine,
+  staffDepositTooCloseLine,
+} from '@/lib/booking/staff-deposit-deadline';
 import { formatPence } from '@/lib/format';
 import { hapticSelect } from '@/lib/haptics';
 import { fonts, radius, spacing } from '@/theme/index';
@@ -45,16 +51,19 @@ function CheckRow({
   accessibilityLabel,
   title,
   children,
+  testID,
 }: {
   checked: boolean;
   onToggle: () => void;
   accessibilityLabel: string;
   title: string;
   children?: React.ReactNode;
+  testID?: string;
 }) {
   const { colors } = useTheme();
   return (
     <Pressable
+      testID={testID}
       accessibilityRole="checkbox"
       accessibilityState={{ checked }}
       accessibilityLabel={accessibilityLabel}
@@ -102,6 +111,9 @@ export function StaffRequireChargeCheckbox({
   chargeLabel,
   amountPence,
   hasContact = true,
+  cancelIfUnpaid = true,
+  onCancelIfUnpaidChange,
+  cancelDeadlineText = null,
 }: {
   checked: boolean;
   onChange: (next: boolean) => void;
@@ -112,23 +124,57 @@ export function StaffRequireChargeCheckbox({
    * says to share the link instead of promising to send it (QA round 25 Nov 2026).
    */
   hasContact?: boolean;
+  /**
+   * "Cancel if not paid by ..." (web deposit-handling plan DH1): on by default. The choice is shown
+   * only when its setter is passed; a caller without it keeps the older single line.
+   */
+  cancelIfUnpaid?: boolean;
+  onCancelIfUnpaidChange?: (next: boolean) => void;
+  /** When the booking would be cancelled ("Wed 2 Dec, 13:00"); null when under 2 hours to go. */
+  cancelDeadlineText?: string | null;
 }) {
   const noun = chargeLabel === 'full_payment' ? 'payment' : 'deposit';
   const amount = amountPence > 0 ? formatMoney(amountPence) : null;
+  const offersChoice = checked && onCancelIfUnpaidChange != null;
+  const mainHelp = !checked
+    ? `Leave unchecked to confirm now and take the ${noun} in person.`
+    : !offersChoice
+      ? hasContact
+        ? `We will send a payment link and hold the booking until the ${noun} is paid.`
+        : `This client has no email or mobile, so share the payment link yourself once it is booked. The booking is held until the ${noun} is paid.`
+      : hasContact
+        ? 'We will send the client a payment link.'
+        : staffDepositNoContactLine(noun);
   return (
-    <CheckRow
-      checked={checked}
-      onToggle={() => onChange(!checked)}
-      accessibilityLabel={`Require ${noun}${amount ? ` ${amount}` : ''}`}
-      title={`Require ${noun}${amount ? ` (${amount})` : ''}`}>
-      <Text variant="caption" tone="muted">
-        {checked
-          ? hasContact
-            ? `We will send a payment link and hold the booking until the ${noun} is paid.`
-            : `This client has no email or mobile, so share the payment link yourself once it is booked. The booking is held until the ${noun} is paid.`
-          : `Leave unchecked to confirm now and take the ${noun} in person.`}
-      </Text>
-    </CheckRow>
+    <View style={styles.stack}>
+      <CheckRow
+        checked={checked}
+        onToggle={() => onChange(!checked)}
+        accessibilityLabel={`Require ${noun}${amount ? ` ${amount}` : ''}`}
+        title={`Require ${noun}${amount ? ` (${amount})` : ''}`}>
+        <Text variant="caption" tone="muted">
+          {mainHelp}
+        </Text>
+      </CheckRow>
+      {offersChoice && hasContact ? (
+        cancelDeadlineText ? (
+          <CheckRow
+            checked={cancelIfUnpaid}
+            onToggle={() => onCancelIfUnpaidChange(!cancelIfUnpaid)}
+            accessibilityLabel={staffCancelIfUnpaidLabel(cancelDeadlineText)}
+            title={staffCancelIfUnpaidLabel(cancelDeadlineText)}
+            testID="staff-cancel-if-unpaid">
+            <Text variant="caption" tone="muted">
+              {staffCancelIfUnpaidHelp(cancelIfUnpaid, noun)}
+            </Text>
+          </CheckRow>
+        ) : (
+          <Text variant="caption" tone="muted" testID="staff-cancel-if-unpaid-too-close">
+            {staffDepositTooCloseLine(noun)}
+          </Text>
+        )
+      ) : null}
+    </View>
   );
 }
 

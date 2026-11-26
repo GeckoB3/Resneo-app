@@ -52,6 +52,9 @@ export function invalidateBookingCaches(
   // Today's "Fees to charge" card: a charge, a waive or a status change can add a fee to it or
   // take one off.
   void queryClient.invalidateQueries({ queryKey: queryKeys.feesToCharge.all() });
+  // Today's "waiting for payment" card: a link sent, a deposit paid, waived or kept, or a status
+  // change moves a booking on or off it.
+  void queryClient.invalidateQueries({ queryKey: queryKeys.depositsWaiting.all() });
   // A moved/resized/cancelled booking changes which slots are free.
   invalidateAppointmentAvailability(queryClient);
 }
@@ -742,11 +745,13 @@ export function useBookingDeposit(bookingId: string) {
     mutationFn: async (input: {
       action: DepositAction;
       amount_pence?: number;
-    }): Promise<{ success: boolean }> => {
+    }): Promise<{ success: boolean; deposit_cancel_at?: string | null }> => {
       if (!accessToken) {
         throw new Error('Missing access token');
       }
-      return apiFetch<{ success: boolean }>(`/api/venue/bookings/${bookingId}/deposit`, {
+      // `send_payment_link` on a Pending booking also answers its new deadline (`deposit_cancel_at`,
+      // web deposit-handling plan DH2); older servers answer `{ success }` alone.
+      return apiFetch<{ success: boolean; deposit_cancel_at?: string | null }>(`/api/venue/bookings/${bookingId}/deposit`, {
         accessToken,
         method: 'POST',
         body: JSON.stringify(input),
@@ -783,6 +788,35 @@ export function useSendDepositPaymentLinkById() {
       });
     },
     onSuccess: (_data, input) => {
+      invalidateBookingCaches(queryClient, accessToken, input.bookingId);
+    },
+  });
+}
+
+/**
+ * "Keep without deposit" (web deposit-handling plan DH4, 26 Nov 2026): a staff booking waiting
+ * (Pending) for its deposit is kept booked even if the deposit is never paid. The accept-unpaid
+ * path, PATCH /api/venue/bookings/[id] `{ status: 'Booked', accept_unpaid: true }`, offered as a
+ * button: the server clears `deposit_cancel_at` and sends the client a confirmation that says the
+ * deposit is still due, with the payment link. The booking id rides the input, so one instance
+ * serves every row of the Today card.
+ */
+export function useKeepWithoutDeposit() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: { bookingId: string }): Promise<BookingDetail> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<BookingDetail>(`/api/venue/bookings/${input.bookingId}`, {
+        accessToken,
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'Booked', accept_unpaid: true }),
+      });
+    },
+    onSettled: (_data, _error, input) => {
       invalidateBookingCaches(queryClient, accessToken, input.bookingId);
     },
   });

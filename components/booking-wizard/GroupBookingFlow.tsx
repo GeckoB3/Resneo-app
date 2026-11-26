@@ -53,6 +53,12 @@ import { formatPence } from '@/lib/format';
 import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { normalizePhone } from '@/lib/phone/normalize';
 import { parseStaffCreateCardOnFile, staffCancelIfNoCardAllowed } from '@/lib/booking/card-hold';
+import {
+  staffDepositCancelOnLine,
+  staffDepositDeadlineText,
+  staffDepositKeptLine,
+  staffDepositOutcome,
+} from '@/lib/booking/staff-deposit-deadline';
 import { accessRefusalMessage } from '@/lib/roles/roles';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
 import { useCreateGroupBooking } from '@/lib/queries/useCreateGroupBooking';
@@ -239,6 +245,24 @@ export function GroupBookingFlow({
   const leadName = [organiser.first_name.trim(), organiser.last_name.trim()].filter(Boolean).join(' ');
   // Walk-ins never collect (spec 2.8), so there is no decision to offer them.
   const showChargeCheckbox = groupCharge.amountPence > 0 && source !== 'walk-in';
+  /**
+   * "Cancel if not paid by ..." (web deposit-handling plan DH1, DH2, DH5): on by default, from the
+   * group's first appointment. Not offered when the group also holds a card: the server keeps the
+   * old rule there.
+   */
+  const [cancelIfUnpaid, setCancelIfUnpaid] = useState(true);
+  const depositChoiceApplies = !showCardHoldToggle;
+  const firstPerson = useMemo(
+    () =>
+      [...people].sort((a, b) =>
+        `${a.bookingDate}T${a.bookingTime.slice(0, 5)}` < `${b.bookingDate}T${b.bookingTime.slice(0, 5)}` ? -1 : 1,
+      )[0] ?? null,
+    [people],
+  );
+  const depositDeadlineText = firstPerson
+    ? staffDepositDeadlineText({ date: firstPerson.bookingDate, time: firstPerson.bookingTime, timeZone })
+    : null;
+  const organiserReachable = Boolean(organiser.email.trim() || organiser.phone.trim() || organiser.guest_id);
 
   // Any at-home (`client_address`) attendee makes the organiser step collect a
   // visit address (web parity — the server marks it mandatory for those services).
@@ -402,6 +426,7 @@ export function GroupBookingFlow({
          */
         charges: {
           requireDeposit: showChargeCheckbox && requireDeposit,
+          ...(depositChoiceApplies && showChargeCheckbox && requireDeposit ? { cancelIfUnpaid } : {}),
           ...(cardFields
             ? {
                 requireCardHold: cardFields.require_card_hold,
@@ -440,6 +465,8 @@ export function GroupBookingFlow({
       collectClientAddress,
       showChargeCheckbox,
       requireDeposit,
+      depositChoiceApplies,
+      cancelIfUnpaid,
       cardFields,
     ],
   );
@@ -497,6 +524,24 @@ export function GroupBookingFlow({
             });
           } else if (cardLine) {
             toast.info(cardLine, { duration: 5000 });
+          } else if (depositChoiceApplies && showChargeCheckbox && requireDeposit && res.requires_deposit) {
+            // What happens if the deposit is not paid (deposit-handling plan DH1, DH2), said on the way.
+            const outcome = staffDepositOutcome({
+              cancelIfUnpaid,
+              reachable: organiserReachable,
+              deadlineText: firstPerson
+                ? staffDepositDeadlineText({ date: firstPerson.bookingDate, time: firstPerson.bookingTime, timeZone })
+                : null,
+              word: groupCharge.chargeLabel === 'full_payment' ? 'payment' : 'deposit',
+            });
+            toast.info(
+              outcome.kept
+                ? staffDepositKeptLine(outcome.word)
+                : `The booking stays pending until the ${outcome.word} is paid.${
+                    outcome.cancelOn ? ` ${staffDepositCancelOnLine(outcome.cancelOn)}` : ''
+                  }`,
+              { duration: 5000 },
+            );
           }
           if (primary) onCreated(primary);
         },
@@ -519,7 +564,22 @@ export function GroupBookingFlow({
         },
       });
     },
-    [createGroup, buildPayload, onCreated, source, people.length, toast],
+    [
+      createGroup,
+      buildPayload,
+      onCreated,
+      source,
+      people.length,
+      toast,
+      depositChoiceApplies,
+      showChargeCheckbox,
+      requireDeposit,
+      cancelIfUnpaid,
+      organiserReachable,
+      firstPerson,
+      timeZone,
+      groupCharge.chargeLabel,
+    ],
   );
 
   // ===================== render =====================
@@ -978,6 +1038,10 @@ export function GroupBookingFlow({
               onChange={setRequireDeposit}
               chargeLabel={groupCharge.chargeLabel}
               amountPence={groupCharge.amountPence}
+              hasContact={organiserReachable}
+              cancelIfUnpaid={cancelIfUnpaid}
+              onCancelIfUnpaidChange={depositChoiceApplies ? setCancelIfUnpaid : undefined}
+              cancelDeadlineText={depositDeadlineText}
             />
           ) : null}
 

@@ -123,6 +123,7 @@ import {
   hasSettleableDeposit,
   showDepositFailedPill,
 } from '@/lib/booking/booking-staff-indicators';
+import { owedDepositStatusLine } from '@/lib/booking/deposit-owed-line';
 import {
   resolveStaffBookingLocation,
   staffBookingLocationPillLabel,
@@ -1156,6 +1157,27 @@ export function BookingDetailContent({
         (hasSettleableDeposit(booking.deposit_status) || booking.deposit_status === 'Paid'));
   const showRefundBanner =
     !cardHoldState && isCancelled && (booking.deposit_amount_pence ?? 0) > 0;
+  /**
+   * What an owed deposit waits for, until when, and what happens then (web deposit-handling plan
+   * DH2): "Deposit £20.00 owed. Payment link sent today at 09:12. If it is not paid by tomorrow at
+   * 09:12, the booking is cancelled." A kept booking says it stays booked. Not for a card hold, whose
+   * own lines say it, nor a visit's part covered by the visit's one pay link.
+   */
+  const owedDepositLine = cardHoldState
+    ? null
+    : owedDepositStatusLine({
+        status: booking.status,
+        depositStatus: booking.deposit_status,
+        depositAmountPence: booking.deposit_amount_pence,
+        isFullPayment: paidInFull,
+        source: booking.source,
+        createdAt: booking.created_at,
+        linkedVisitId: booking.linked_visit_id,
+        communications: booking.communications ?? null,
+        coveredByVisitLink: Boolean(booking.visit_pay_link),
+        depositCancelAt: booking.deposit_cancel_at ?? null,
+        timeZone: venueTimeZone,
+      });
 
 
   // Attendance — mirrors the web pills/actions.
@@ -2124,6 +2146,11 @@ export function BookingDetailContent({
                 </Text>
               </View>
             ) : null}
+            {owedDepositLine ? (
+              <Text variant="caption" color={colors.warning} testID="deposit-owed-line">
+                {owedDepositLine}
+              </Text>
+            ) : null}
             {/* In-person payment state — neutral information, never a nag or a
                 required action (§3.4 rule 4). */}
             {paymentStateLabel &&
@@ -2179,6 +2206,9 @@ export function BookingDetailContent({
                     cardHold: cardHoldState,
                     visitId: booking.group_booking_id ?? booking.id,
                     canAddCard,
+                    bookingStatus: booking.status,
+                    linkedVisitId: booking.linked_visit_id ?? null,
+                    owedLine: owedDepositLine,
                   })
                 }
               />

@@ -265,6 +265,11 @@ export interface CreateMultiServicePayload {
   use_card_on_file?: boolean;
   /** "Cancel if no card is added within 24 hours" (§4.9). */
   cancel_if_no_card?: boolean;
+  /**
+   * "Cancel if not paid by ..." under Require deposit (web deposit-handling plan DH1). Omitted
+   * means on (an older app's meaning); false keeps the visit Booked with the deposit owed.
+   */
+  cancel_if_unpaid?: boolean;
   /** Staff "Override availability" (web #187): the chain is booked exactly as laid out. */
   override_availability?: boolean;
   client_address_line1?: string;
@@ -301,6 +306,8 @@ export interface CreateGroupPayload {
   require_card_hold?: boolean;
   use_card_on_file?: boolean;
   cancel_if_no_card?: boolean;
+  /** As `CreateMultiServicePayload.cancel_if_unpaid`. */
+  cancel_if_unpaid?: boolean;
   client_address_line1?: string;
   client_address_line2?: string;
   client_address_city?: string;
@@ -321,6 +328,11 @@ export interface StaffChargeDecision {
   useCardOnFile?: boolean;
   /** "Cancel if no card is added within 24 hours" (plan §4.9); never sent for a walk-in. */
   cancelIfNoCard?: boolean;
+  /**
+   * "Cancel if not paid by ..." (web deposit-handling plan DH1), sent with a required deposit only.
+   * Undefined sends nothing (the server's default, on).
+   */
+  cancelIfUnpaid?: boolean;
 }
 
 /**
@@ -347,6 +359,7 @@ function staffChargePayloadFields(
   | 'require_card_hold_by_venue'
   | 'use_card_on_file'
   | 'cancel_if_no_card'
+  | 'cancel_if_unpaid'
 > {
   if (!charges) return {};
   const byVenueDeposit = charges.requireDepositByVenue;
@@ -360,6 +373,9 @@ function staffChargePayloadFields(
     ...(byVenueHold && Object.keys(byVenueHold).length > 0 ? { require_card_hold_by_venue: byVenueHold } : {}),
     ...(charges.useCardOnFile === false ? { use_card_on_file: false } : {}),
     ...(charges.cancelIfNoCard && source !== 'walk-in' ? { cancel_if_no_card: true } : {}),
+    ...(charges.cancelIfUnpaid != null && charges.requireDeposit && source !== 'walk-in'
+      ? { cancel_if_unpaid: charges.cancelIfUnpaid }
+      : {}),
   };
 }
 

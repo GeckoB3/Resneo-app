@@ -51,6 +51,16 @@ const slot: AppointmentSlot = {
   price_pence: 2500,
 };
 
+/** The day before the 10:00 (BST) appointment, at 10:00: its deadline is 2 hours before it. */
+const NOW_MS = Date.parse('2026-09-30T09:00:00Z');
+let nowSpy: jest.SpyInstance | null = null;
+beforeEach(() => {
+  nowSpy = jest.spyOn(Date, 'now').mockReturnValue(NOW_MS);
+});
+afterEach(() => {
+  nowSpy?.mockRestore();
+});
+
 async function createWith(
   response: { payment_url?: string; card_hold_requested?: boolean },
   guest: { email: string; phone: string } = { email: 'jo@example.com', phone: '07700 900123' },
@@ -75,18 +85,106 @@ async function createWith(
   });
 }
 
+/** "Cancel if not paid by ..." under Require deposit (web deposit-handling plan DH1). */
+describe('ConfirmStep: Cancel if not paid', () => {
+  beforeEach(() => mockCreate.mockReset());
+
+  async function renderTicked() {
+    mockCreate.mockImplementation(
+      (_payload: unknown, options: { onSuccess: (res: Record<string, unknown>) => void }) =>
+        options.onSuccess({ booking_id: 'b1', payment_url: 'https://pay.example/abc' }),
+    );
+    await render(
+      <ConfirmStep
+        service={service}
+        date="2026-10-01"
+        slot={slot}
+        guest={{ first_name: 'Jo', last_name: 'Bloggs', email: 'jo@example.com', phone: '07700 900123' }}
+        source="phone"
+        requireDeposit
+        onChangeRequireDeposit={jest.fn()}
+        timeZone="Europe/London"
+        onSuccess={jest.fn()}
+      />,
+    );
+  }
+
+  it('is on by default with the deadline', async () => {
+    await renderTicked();
+    expect(screen.getByLabelText('Cancel if not paid by Thu 1 Oct, 08:00').props.accessibilityState).toEqual({ checked: true });
+  });
+
+  it('turned off, the create says so and the confirmation reads as confirmed', async () => {
+    await renderTicked();
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Cancel if not paid by Thu 1 Oct, 08:00'));
+    });
+    expect(screen.getByText('The booking is confirmed now and the deposit stays due.')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Create booking'));
+    });
+    expect(mockCreate.mock.calls[0]?.[0]).toMatchObject({ require_deposit: true, cancel_if_unpaid: false });
+    expect(screen.getByText('Booking confirmed')).toBeTruthy();
+    expect(
+      screen.getByText('The booking is confirmed, with the deposit still due. It stays booked if the deposit is not paid.'),
+    ).toBeTruthy();
+  });
+
+  it('sends no choice when no deposit is asked for', async () => {
+    mockCreate.mockImplementation(
+      (_payload: unknown, options: { onSuccess: (res: Record<string, unknown>) => void }) =>
+        options.onSuccess({ booking_id: 'b1' }),
+    );
+    await render(
+      <ConfirmStep
+        service={service}
+        date="2026-10-01"
+        slot={slot}
+        guest={{ first_name: 'Jo', last_name: 'Bloggs', email: 'jo@example.com', phone: '07700 900123' }}
+        source="phone"
+        requireDeposit={false}
+        onChangeRequireDeposit={jest.fn()}
+        onSuccess={jest.fn()}
+      />,
+    );
+    expect(screen.queryByText(/Cancel if not paid/)).toBeNull();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Create booking'));
+    });
+    expect(mockCreate.mock.calls[0]?.[0]).not.toHaveProperty('cancel_if_unpaid');
+  });
+});
+
 describe('ConfirmStep confirmation heading (web QA B-9)', () => {
   beforeEach(() => mockCreate.mockReset());
 
-  it('waits for the deposit when a payment link was sent', async () => {
+  it('waits for the deposit when a payment link was sent, naming the real deadline', async () => {
     await createWith({ payment_url: 'https://pay.example/abc' });
     expect(screen.getByText('Waiting for the deposit')).toBeTruthy();
     expect(
       screen.getByText(
-        'The booking stays pending until the deposit is paid. Then a confirmation will be sent to jo@example.com.',
+        'The booking stays pending until the deposit is paid. Then a confirmation will be sent to jo@example.com. If it is not paid by Thu 1 Oct, 08:00, the booking is cancelled.',
       ),
     ).toBeTruthy();
     expect(screen.queryByText('Booking confirmed')).toBeNull();
+    // Never the old "within 24 hours".
+    expect(screen.queryByText(/24 hours|auto-cancelled/)).toBeNull();
+    expect(mockCreate.mock.calls[0]?.[0]).toMatchObject({ require_deposit: true, cancel_if_unpaid: true });
+  });
+
+  it('a client with no email or mobile: the booking is confirmed with the deposit still due (DH5)', async () => {
+    await createWith({ payment_url: 'https://pay.example/abc' }, { email: '', phone: '' });
+    expect(screen.getByText('Booking confirmed')).toBeTruthy();
+    expect(
+      screen.getByText('The booking is confirmed, with the deposit still due. It stays booked if the deposit is not paid.'),
+    ).toBeTruthy();
+  });
+
+  it('under 2 hours to go: the booking is confirmed with the deposit still due', async () => {
+    nowSpy?.mockReturnValue(Date.parse('2026-10-01T07:30:00Z'));
+    await createWith({ payment_url: 'https://pay.example/abc' });
+    expect(screen.getByText('Booking confirmed')).toBeTruthy();
+    expect(screen.queryByText('Waiting for the deposit')).toBeNull();
   });
 
   it('an older server: waits for a card, naming the phone when there is no email', async () => {
