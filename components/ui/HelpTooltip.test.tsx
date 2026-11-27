@@ -7,7 +7,6 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 // Reanimated.useEvent (absent from the jest reanimated mock). Stub
 // gesture-handler so the detector is a passthrough and gestures are no-op builders.
 jest.mock('react-native-gesture-handler', () => {
-  const React = require('react');
   const chainable = () => {
     const g: Record<string, () => unknown> = {};
     const ret = () => g;

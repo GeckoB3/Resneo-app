@@ -627,6 +627,11 @@ export function GroupBookingFlow({
       timeZone,
       groupCharge.chargeLabel,
       quote,
+      groupCardHoldPence,
+      organiser.email,
+      organiser.first_name,
+      organiser.last_name,
+      organiser.phone,
     ],
   );
 

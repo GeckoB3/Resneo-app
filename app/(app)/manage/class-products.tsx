@@ -462,7 +462,7 @@ export default function ClassProductsScreen() {
 function CreditList({
   products,
   empty,
-  classTypeNames,
+  classTypeNames: _classTypeNames,
   archiving,
   onEdit,
   onArchive,

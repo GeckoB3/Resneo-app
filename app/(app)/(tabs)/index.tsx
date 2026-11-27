@@ -577,7 +577,7 @@ export default function CalendarScreen() {
   // not something to tell the guest about, and there is no follow-up prompt
   // here to decide otherwise.
   const undoReschedule = useCallback(
-    (previous: RescheduleTarget, options: { restoreLength: boolean }) => {
+    (previous: RescheduleTarget, _options: { restoreLength: boolean }) => {
       if (previous.visit) {
         /**
          * A visit goes back through the endpoint that moved it, so the undo is as
@@ -784,7 +784,7 @@ export default function CalendarScreen() {
     storedPrefs,
     persistPrefs,
     rosterCalendarIds,
-    practitionersQuery.isLoading,
+    practitionersQuery.isSuccess,
     hasDateDeepLink,
     ALL_CALENDARS,
   ]);

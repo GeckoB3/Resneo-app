@@ -507,7 +507,7 @@ export function AppointmentBlock({
   guestAttendanceConfirmedAt,
   height,
   widthPx,
-  laneIndex = 0,
+  laneIndex: _laneIndex = 0,
   laneCount = 1,
   onPress,
   onStatusChange,

@@ -460,7 +460,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
       : null
     : prefilledPractitionerId;
 
-  const addonGroups = selectedService?.addonGroups ?? [];
+  const addonGroups = useMemo(() => selectedService?.addonGroups ?? [], [selectedService]);
   const hasAddons = addonGroups.length > 0;
   const serviceVariants = selectedService?.variants ?? [];
   const hasVariants = serviceVariants.length > 0;

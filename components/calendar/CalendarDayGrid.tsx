@@ -689,7 +689,7 @@ export function CalendarDayGrid({
       positionedSessions: sessionItems,
       positionedScheduleBlocks: scheduleItems,
     };
-  }, [processingPatternFor, bounds, rawBlocks, rawTimeBlocks, rawSessions, rawScheduleBlocks, pxPerMinute, minBlockHeight, venueHours, calendarName]);
+  }, [processingPatternFor, bounds, bookings, rawBlocks, rawTimeBlocks, rawSessions, rawScheduleBlocks, pxPerMinute, minBlockHeight, venueHours, calendarName]);
 
   /**
    * A quick action on a bar writes that bar's booking (web #187: Start and

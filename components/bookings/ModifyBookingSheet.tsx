@@ -567,7 +567,6 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     offeredBy,
     practitioners,
     target?.practitionerId,
-    target?.ownerVenueId,
     diary,
   ]);
 

@@ -33,7 +33,6 @@ import {
   LINK_COUNT_SOFT_WARNING,
   PAST_LINK_STATUSES,
   type AccountLinkView,
-  type LinkGrant,
 } from '@/types/linked-venues';
 
 /** iOS drops a Modal presented while another is still sliding away, so the wizard goes first. */

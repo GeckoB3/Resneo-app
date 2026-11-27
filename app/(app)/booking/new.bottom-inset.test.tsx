@@ -17,7 +17,6 @@
  * @see components/ui/Screen.test.tsx — the other half of the contract.
  */
 import { render, screen } from '@testing-library/react-native';
-import { Text } from 'react-native';
 
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 
@@ -57,7 +56,6 @@ jest.mock('@/providers/VenueProvider', () => ({
 }));
 
 jest.mock('@/providers/LinkedVenueProvider', () => {
-  const React = require('react');
   return {
     useLinkedVenueContext: () => ({ ownerVenueId: null, ownerVenueName: null }),
     LinkedVenueContext: { Provider: ({ children }: { children: React.ReactNode }) => children },

@@ -91,6 +91,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       supabase = getSupabase();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Supabase is not configured.';
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot: the client could not be built at start-up
       setInitError(message);
       setIsLoading(false);
       return;

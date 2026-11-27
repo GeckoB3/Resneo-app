@@ -1,4 +1,3 @@
-import Constants from "expo-constants";
 import { SymbolView } from "expo-symbols";
 import * as WebBrowser from "expo-web-browser";
 import { useRouter, type Href } from "expo-router";

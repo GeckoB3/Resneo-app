@@ -46,7 +46,8 @@ export const ANALYTICS_EVENTS = {
 export type AnalyticsEvent = (typeof ANALYTICS_EVENTS)[keyof typeof ANALYTICS_EVENTS];
 
 let installed = false;
-let currentUserId: string | null = null;
+/** Kept for when a backend is wired (see `track`); written by `identify`, not read yet. */
+let _currentUserId: string | null = null;
 
 /** True once an analytics backend key is configured (currently always false). */
 export function isAnalyticsConfigured(): boolean {
@@ -71,7 +72,7 @@ export function track(event: AnalyticsEvent, props?: AnalyticsProps): void {
       // eslint-disable-next-line no-console
       console.log('[analytics]', event, props ?? '');
     }
-    // When a backend is wired: backend.capture(event, { ...props, userId: currentUserId }).
+    // When a backend is wired: backend.capture(event, { ...props, userId: _currentUserId }).
   } catch {
     // swallow — analytics is best-effort
   }
@@ -92,7 +93,7 @@ export function trackScreen(name: string, props?: AnalyticsProps): void {
 
 /** Associate subsequent events with a user (or null to clear on sign-out). */
 export function identify(userId: string | null, traits?: AnalyticsProps): void {
-  currentUserId = userId;
+  _currentUserId = userId;
   try {
     // When a backend is wired: userId ? backend.identify(userId, traits) : backend.reset().
     void traits;

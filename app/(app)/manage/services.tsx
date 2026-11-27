@@ -2270,7 +2270,8 @@ export default function ServicesScreen() {
       if (source === 'form') closeSheet();
       else toast.success('Calendar updated.');
     },
-    // `closeSheet` is a plain arrow over two setters — nothing to track.
+    // `closeSheet` is a plain arrow over two setters, so there is nothing to track (P5.5).
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- closeSheet only calls two state setters
     [removal, removalSource, toast],
   );
 
