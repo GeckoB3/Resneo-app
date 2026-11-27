@@ -324,7 +324,8 @@ export const appointmentServicesSchema = obj({
       is_active: bool.optional(),
       category_id: opt(str),
       variants: z.array(obj({ id: str, name: str })).optional(),
-      addon_groups: z.array(obj({ id: str, name: str })).optional(),
+      // Each group answers as { group: { id, name, ... }, addons: [...] } (loadAddonGroupsForServices).
+      addon_groups: z.array(obj({ group: obj({ id: str, name: str }), addons: z.array(obj({ id: str })).optional() })).optional(),
       processing_time_blocks: opt(z.array(obj({}))),
     }),
   ),
