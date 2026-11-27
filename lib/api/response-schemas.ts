@@ -248,7 +248,8 @@ const bookingListRow = obj({
   estimated_end_time: opt(str),
   booking_addon_labels: z.array(str).optional(),
   visit_service_names: z.array(str).optional(),
-  card_state: opt(obj({})),
+  // A word, not an object: protected, waiting, not_needed or charged (BookingCardState); null otherwise.
+  card_state: opt(z.enum(['protected', 'waiting', 'not_needed', 'charged'])),
 });
 
 export const bookingsListSchema = obj({ bookings: z.array(bookingListRow) });
