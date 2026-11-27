@@ -9,6 +9,7 @@
  * into a worse message.
  */
 import { getApiErrorMessage, zodDetailMessage } from '@/lib/api/client';
+import { FRIENDLY_REQUEST_FAILED, FRIENDLY_SERVER_ERROR } from '@/lib/api/friendly-errors';
 
 describe('zodDetailMessage', () => {
   it('names the first offending field, in readable words', () => {
@@ -125,8 +126,8 @@ describe('a refusal with a message and no error (web review 22 Nov 2026, APP-7)'
   });
 
   it('still falls back when there is nothing to say', () => {
-    expect(getApiErrorMessage({ code: 'X', message: '  ' }, 402)).toBe('Request failed (402)');
-    expect(getApiErrorMessage(null, 500)).toBe('Request failed (500)');
+    expect(getApiErrorMessage({ code: 'X', message: '  ' }, 402)).toBe(FRIENDLY_REQUEST_FAILED);
+    expect(getApiErrorMessage(null, 500)).toBe(FRIENDLY_SERVER_ERROR);
     expect(getApiErrorMessage({}, 403)).toBe('You do not have permission for this action.');
   });
 });

@@ -1,6 +1,13 @@
+import {
+  FRIENDLY_OFFLINE_ERROR,
+  FRIENDLY_REQUEST_FAILED,
+  FRIENDLY_SERVER_ERROR,
+  FRIENDLY_TIMEOUT_ERROR,
+} from '@/lib/api/friendly-errors';
 import { checkResponse } from '@/lib/api/response-schemas';
 import { isAppUpdateRequired, showAppUpdateRequired } from '@/lib/app-update/update-required-alert';
 import { getApiUrl } from '@/lib/env';
+import { captureException } from '@/lib/observability';
 import { clientBuild } from '@/lib/pos/client-build';
 import {
   chosenSitePending,
@@ -106,7 +113,15 @@ export function zodDetailMessage(details: unknown): string | null {
   return null;
 }
 
+/**
+ * The sentence to show for a failed answer (web codebase standards plan P4.8).
+ *
+ * A 4xx keeps the server's own words: those are written for people. A 5xx gets the plain
+ * server sentence whatever its body said ("Internal server error", a stack-trace line), and a
+ * 4xx with no message gets a plain sentence rather than "Request failed (404)".
+ */
 export function getApiErrorMessage(body: unknown, status: number): string {
+  if (status >= 500) return FRIENDLY_SERVER_ERROR;
   if (isApiErrorBody(body)) {
     // PATCH /api/venue while the bill locks the business (web ACC-F7 / X-F10): its name, contact
     // details and address still save, and the refusal says which settings are locked in words
@@ -144,7 +159,7 @@ export function getApiErrorMessage(body: unknown, status: number): string {
   if (status === 403) {
     return 'You do not have permission for this action.';
   }
-  return `Request failed (${status})`;
+  return FRIENDLY_REQUEST_FAILED;
 }
 
 export class ApiError extends Error {
@@ -152,6 +167,11 @@ export class ApiError extends Error {
     message: string,
     readonly status: number,
     readonly body?: ApiErrorBody | unknown,
+    /**
+     * Technical detail for logs and Sentry (the path, the status, what the server or the network
+     * actually said). Never shown: `message` is the sentence a person reads.
+     */
+    readonly detail?: string,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -382,26 +402,36 @@ function isAuthenticationLost(err: ApiError): boolean {
   return isApiErrorBody(body) && body.code === 'UNAUTHENTICATED';
 }
 
-function parseApiResponseBody(text: string, url: string): unknown {
+/**
+ * An answer the app could not read: the person sees the plain server sentence, and the detail
+ * (which URL, what came back, what to check) goes to Sentry and, in development, the console.
+ * Status 502 as before, so callers that branch on it are unchanged.
+ */
+function unreadableAnswer(detail: string, url: string, status: number): ApiError {
+  const path = url.split('?')[0] ?? url;
+  captureException(new Error(`API answer was not JSON: ${detail}`), { scope: 'api.unreadable-answer', path, status });
+  return new ApiError(FRIENDLY_SERVER_ERROR, 502, undefined, detail);
+}
+
+function parseApiResponseBody(text: string, url: string, status: number): unknown {
   if (!text) {
     return null;
   }
 
   const trimmed = text.trimStart();
+  const path = url.split('?')[0] ?? url;
   if (trimmed.startsWith('<')) {
-    throw new ApiError(
-      `Expected JSON from ${url} but received HTML. Check EXPO_PUBLIC_API_URL, Vercel Deployment Protection (disable for staging), or a login redirect.`,
-      502,
+    throw unreadableAnswer(
+      `Expected JSON from ${path} (${status}) but received HTML. Check EXPO_PUBLIC_API_URL, Vercel Deployment Protection (disable for staging), or a login redirect.`,
+      url,
+      status,
     );
   }
 
   try {
     return JSON.parse(text) as unknown;
   } catch {
-    throw new ApiError(
-      `Invalid JSON from ${url}. Response started with: ${trimmed.slice(0, 80)}`,
-      502,
-    );
+    throw unreadableAnswer(`Invalid JSON from ${path} (${status}). Response started with: ${trimmed.slice(0, 80)}`, url, status);
   }
 }
 
@@ -516,7 +546,7 @@ export async function apiFetch<T>(
       if (getSiteEpoch() !== startedEpoch) {
         throw siteSwitchedError();
       }
-      const data = parseApiResponseBody(text, url);
+      const data = parseApiResponseBody(text, url, response.status);
       warnOnResponseMismatch(init.method ?? 'GET', path, response.status, data);
 
       if (!response.ok) {
@@ -525,10 +555,12 @@ export async function apiFetch<T>(
         if (isAppUpdateRequired(response.status, data)) {
           showAppUpdateRequired(isApiErrorBody(data) ? data.error : null);
         }
+        const serverSaid = isApiErrorBody(data) ? data.error : null;
         throw new ApiError(
           getApiErrorMessage(data, response.status),
           response.status,
           data,
+          `${(init.method ?? 'GET').toUpperCase()} ${path.split('?')[0]} ${response.status}: ${serverSaid ?? 'no message'}`,
         );
       }
 
@@ -538,15 +570,21 @@ export async function apiFetch<T>(
       if (err instanceof ApiError) {
         throw err;
       }
+      const where = `${(init.method ?? 'GET').toUpperCase()} ${path.split('?')[0]}`;
       if (timedOut) {
-        throw new ApiError('Request timed out. Check your connection and try again.', 408);
+        throw new ApiError(FRIENDLY_TIMEOUT_ERROR, 408, undefined, `${where}: no answer within ${timeoutMs} ms`);
       }
       // Genuine caller cancellation — re-throw so React Query treats it as a
       // cancellation rather than a failure.
       if (callerSignal?.aborted) {
         throw err;
       }
-      throw new ApiError('Network request failed. Check your connection and try again.', 0);
+      throw new ApiError(
+        FRIENDLY_OFFLINE_ERROR,
+        0,
+        undefined,
+        `${where}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     } finally {
       clearTimeout(timeoutId);
     }

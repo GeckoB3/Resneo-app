@@ -5,7 +5,8 @@
  */
 import { useMemo } from 'react';
 
-import { ApiError, apiFetch, apiRawFetch, getApiErrorMessage, isApiErrorBody, refreshExpiredAccessToken } from '@/lib/api/client';
+import { ApiError, apiFetch, apiRawFetch, getApiErrorMessage, refreshExpiredAccessToken } from '@/lib/api/client';
+import { FRIENDLY_OFFLINE_ERROR } from '@/lib/api/friendly-errors';
 import { formDataFile } from '@/lib/api/form-data-file';
 import { EXECUTE_TIMEOUT_MS } from '@/lib/import/progress';
 import type {
@@ -154,7 +155,7 @@ async function fetchReportCsv(accessToken: string | null, sessionId: string): Pr
     try {
       res = await apiRawFetch(path, { headers: { Accept: 'text/csv', ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
     } catch {
-      throw new ApiError('Network request failed. Check your connection and try again.', 0);
+      throw new ApiError(FRIENDLY_OFFLINE_ERROR, 0);
     }
     const text = await res.text();
     if (!res.ok) {
@@ -164,7 +165,7 @@ async function fetchReportCsv(accessToken: string | null, sessionId: string): Pr
       } catch {
         body = null;
       }
-      throw new ApiError(isApiErrorBody(body) ? getApiErrorMessage(body, res.status) : `Request failed (${res.status})`, res.status, body);
+      throw new ApiError(getApiErrorMessage(body, res.status), res.status, body);
     }
     return text;
   };
