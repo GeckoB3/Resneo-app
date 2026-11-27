@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 
-import { MonthDatePicker } from '@/components/booking-wizard/MonthDatePicker';
 import {
   dedupeSlotsByStartTime,
   groupSlotsByPeriod,
@@ -20,7 +19,6 @@ import {
   type VisitEditService,
   type VisitEditTarget,
 } from '@/lib/booking/appointment-visit';
-import { MIN_CORE_DURATION_MINUTES } from '@/lib/booking/booking-core-duration';
 import { bookingModificationNotifyOutcome } from '@/lib/booking/modification-notify-result';
 import { explainModificationRefusal } from '@/lib/booking/modification-refusal';
 import {
@@ -74,6 +72,25 @@ import type {
 } from '@/types/appointment-catalog';
 import type { ProcessingTimeBlock } from '@/types/services-manage';
 import { serviceWithPersonAt } from '@/lib/venue/member-label';
+import {
+  addonExtraLabel,
+  addonRequirementLabel,
+  DURATION_STEP_MINUTES,
+  formatDuration,
+  MAX_DURATION_MINUTES,
+  MIN_DURATION_MINUTES,
+  stepStartMinutes,
+  VALIDATE_DEBOUNCE_MS,
+  type CheckState,
+  type Mode,
+  type VisitServiceLine,
+} from '@/lib/booking/modify-booking-form';
+import {
+  ModifyDateStep,
+  ModifyNotifyStep,
+  ModifyTimeStep,
+  ModifyVisitServiceStep,
+} from '@/components/bookings/modify/ModifyBookingSteps';
 
 export type ModifyBookingTarget = {
   id: string;
@@ -121,108 +138,12 @@ type ModifyBookingSheetProps = {
   onClose: () => void;
 };
 
-const MAX_MINUTES = 23 * 60 + 59;
-/**
- * Duration bounds. The floor is the ONE shared floor
- * ({@link MIN_CORE_DURATION_MINUTES}, 5) that the API, the calendar drag and the
- * reschedule sheet all use.
- *
- * It was 15 here, justified by the web modify form's `min={15}`. That input is
- * now `min={5}` too: web found eight places carrying their own 15 against an
- * engine floor of 5, so a 5 or 10 minute appointment "could be configured but
- * not booked, dragged but not saved". The last 15 in this app was here, and it
- * also gated the catalogue adoption below — a sub-15 service whose row had no
- * end time never resolved a duration at all, leaving Save disabled for good.
- */
-const MIN_DURATION_MINUTES = MIN_CORE_DURATION_MINUTES;
-const MAX_DURATION_MINUTES = 14 * 60;
-/** Web parity: the duration input steps in 5s. */
-const DURATION_STEP_MINUTES = 5;
-/** The by-hand start nudge steps in 5s too, onto a clean :00/:05/:10 grid. */
-const START_STEP_MINUTES = 5;
-const VALIDATE_DEBOUNCE_MS = 450;
-
-/**
- * Step the start time by whole 5-minute marks. A start seeded off-grid (a slot
- * at 14:02, an overrun) snaps to the next mark in the direction of travel rather
- * than carrying the offset forward, so the value always lands on :00/:05/:10.
- */
-function stepStartMinutes(current: number, direction: 1 | -1): number {
-  const stepped =
-    direction === 1
-      ? (Math.floor(current / START_STEP_MINUTES) + 1) * START_STEP_MINUTES
-      : (Math.ceil(current / START_STEP_MINUTES) - 1) * START_STEP_MINUTES;
-  return Math.min(MAX_MINUTES, Math.max(0, stepped));
-}
-
-/**
- * Which pane of the sheet is showing. The date/time pickers and the post-save
- * notify prompt are STEPS inside this sheet, not sheets of their own: opening a
- * second modal from a visible one is unreliable on iOS, and a month grid nested
- * in the form's ScrollView would put two same-axis scrollers on screen at once.
- */
-type Mode = 'form' | 'date' | 'time' | 'notify' | 'visitService';
-
-/** One line of a visit's service list, as the form holds it. */
-type VisitServiceLine = {
-  /** Stable across edits so React keys survive a swap. */
-  key: string;
-  /** The row this line keeps, or null for a service being added. */
-  bookingId: string | null;
-  serviceId: string;
-  variantId: string | null;
-  /**
-   * Who does a service being added (split-visit plan 8.8, G11). A kept line
-   * stays with its own person; see `visitServiceLinesRequest`.
-   */
-  calendarId?: string | null;
-};
-
 let visitLineSeq = 0;
 function nextVisitLineKey(): string {
   visitLineSeq += 1;
   return `visit-line-${visitLineSeq}`;
 }
 
-type CheckState =
-  | { state: 'idle' | 'checking' | 'unknown' }
-  /**
-   * `outsideHours`: the dry run passed only because of the hours override the
-   * sheet always sends (web #186), so the time sits outside the calendar's
-   * working or opening hours. Allowed, and said so.
-   */
-  | { state: 'valid'; outsideHours: boolean }
-  | { state: 'invalid'; reason: string };
-
-function formatDuration(total: number): string {
-  const h = Math.floor(total / 60);
-  const m = total % 60;
-  if (h === 0) return `${m} min`;
-  return m === 0 ? `${h}h` : `${h}h ${m}m`;
-}
-
-/** Short "+£X · +Ymin" badge for an add-on, or null when it adds nothing. */
-function addonExtraLabel(pricePence: number, durationMinutes: number): string | null {
-  const parts: string[] = [];
-  if (pricePence > 0) {
-    const formatted = formatPence(pricePence);
-    if (formatted) parts.push(`+${formatted}`);
-  }
-  if (durationMinutes > 0) parts.push(`+${durationMinutes} min`);
-  return parts.length ? parts.join(' · ') : null;
-}
-
-/** Per-group selection rule hint (mirrors the wizard's AddonsStep). */
-function addonRequirementLabel(group: AppointmentCatalogAddonGroup['group']): string | null {
-  const { selection_type, min_select, max_select } = group;
-  if (min_select > 0 && max_select != null && min_select === max_select) {
-    return `Choose ${min_select}`;
-  }
-  if (min_select > 0) return `Choose at least ${min_select}`;
-  if (selection_type === 'single') return 'Optional · choose one';
-  if (max_select != null) return `Optional · up to ${max_select}`;
-  return 'Optional';
-}
 
 /**
  * Full appointment modify — change service, variant, staff, date, time and
@@ -1939,31 +1860,15 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   // 90%-tall sheet for three buttons would be all empty space.
   if (target && seededId === target.id && mode === 'notify') {
     return (
-      <Sheet visible onClose={onClose}>
-        <Text variant="subheading">{isVisit ? 'Visit moved' : 'Booking moved'}</Text>
-        <Text variant="caption" tone="muted">
-          Let {target.guestName} know about the change?
-        </Text>
-        <View style={styles.noticeActions}>
-          <Button label={`Notify ${target.guestName}`} fullWidth onPress={handleNotify} />
-          <Button label="Don't notify" variant="secondary" fullWidth onPress={onClose} />
-          {/* No Undo once the SERVICES changed — see `savedServiceChange`. */}
-          {savedServiceChange ? (
-            <Text variant="caption" tone="muted">
-              This visit&rsquo;s services changed too, so there is nothing to undo in one step.
-              Reopen it to make further changes.
-            </Text>
-          ) : (
-            <Button
-              label="Undo change"
-              variant="ghost"
-              fullWidth
-              loading={undoing}
-              onPress={() => void handleUndo()}
-            />
-          )}
-        </View>
-      </Sheet>
+      <ModifyNotifyStep
+        target={target}
+        isVisit={isVisit}
+        onClose={onClose}
+        handleNotify={handleNotify}
+        savedServiceChange={savedServiceChange}
+        undoing={undoing}
+        handleUndo={handleUndo}
+      />
     );
   }
 
@@ -1972,186 +1877,56 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   // unreliable on iOS. The option list appears under the chosen service rather
   // than in a further step, for the same reason.
   if (target && seededId === target.id && mode === 'visitService') {
-    const picked = pickerServiceId ? services.find((s) => s.id === pickerServiceId) : null;
-    const pickedVariants = picked?.variants ?? [];
     return (
-      <Sheet visible fill onClose={onClose}>
-        <View style={styles.stepBody}>
-          <Text variant="heading">
-            {pickerLineIndex != null && pickerLineIndex >= 0 ? 'Change service' : 'Add a service'}
-          </Text>
-          <Text variant="bodySmall" tone="muted">
-            {pickerLineIndex != null && pickerLineIndex >= 0
-              ? 'The visit keeps this slot; only what happens in it changes.'
-              : 'Added to the end of the visit, which grows by its length.'}
-          </Text>
-
-          <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollBody}>
-            <View style={styles.fieldBlock}>
-              <Text variant="label" tone="secondary">
-                Service
-              </Text>
-              <View style={styles.chipWrap}>
-                {visitServiceOptions.map((svc) => (
-                  <Chip
-                    key={svc.id}
-                    label={svc.name}
-                    selected={svc.id === pickerServiceId}
-                    onPress={() => {
-                      hapticSelect();
-                      const variants = svc.variants ?? [];
-                      // Nothing to choose between: take it and go back.
-                      if (variants.length === 0) {
-                        commitServicePick(svc.id, null);
-                        return;
-                      }
-                      setPickerServiceId(svc.id);
-                    }}
-                  />
-                ))}
-              </View>
-            </View>
-
-            {picked && pickedVariants.length > 0 ? (
-              <View style={styles.fieldBlock}>
-                <Text variant="label" tone="secondary">
-                  Option
-                </Text>
-                <View style={styles.chipWrap}>
-                  {pickedVariants.map((v) => (
-                    <Chip
-                      key={v.id}
-                      label={`${v.name} (${v.duration_minutes}m)`}
-                      onPress={() => {
-                        hapticSelect();
-                        commitServicePick(picked.id, v.id);
-                      }}
-                    />
-                  ))}
-                </View>
-                <Text variant="caption" tone="muted">
-                  A service brings its own length with it, so swapping one does not keep a
-                  length set by hand.
-                </Text>
-              </View>
-            ) : null}
-          </ScrollView>
-
-          <View style={styles.actions}>
-            <Button
-              label="Cancel"
-              variant="secondary"
-              onPress={() => {
-                setPickerLineIndex(null);
-                setPickerServiceId(null);
-                setMode('form');
-              }}
-              style={styles.actionButton}
-            />
-          </View>
-        </View>
-      </Sheet>
+      <ModifyVisitServiceStep
+        pickerServiceId={pickerServiceId}
+        services={services}
+        pickerLineIndex={pickerLineIndex}
+        visitServiceOptions={visitServiceOptions}
+        commitServicePick={commitServicePick}
+        setPickerServiceId={setPickerServiceId}
+        setPickerLineIndex={setPickerLineIndex}
+        setMode={setMode}
+        onClose={onClose}
+      />
     );
   }
 
   // ---- Date step: the wizard's month calendar, reused whole -------------------
   if (target && seededId === target.id && mode === 'date') {
     return (
-      <Sheet visible fill onClose={onClose}>
-        {/* MonthDatePicker takes its gutter from its parent (in the wizard, a
-            padded Screen), so the date pane needs a padded wrapper of its own. */}
-        <View style={styles.pickerPane}>
-          <MonthDatePicker
-            title="Choose a date"
-            monthAnchor={monthAnchor || target.date}
-            onChangeMonth={setMonthAnchor}
-            today={today}
-            selectedDate={date}
-            onSelectDate={setDate}
-            // A visit gets no green markers: the month endpoint answers for ONE
-            // service and would mark days by whether that service fits, not the
-            // whole visit. `null` leaves every future date selectable and the
-            // visit's own check decides, which is the only thing that can.
-            availableDates={isVisit ? null : availableDates}
-            isLoading={isVisit ? false : monthQuery.isLoading}
-            timeZone={timeZone}
-            weekShortcuts
-            availabilityHint={
-              isVisit
-                ? 'Pick a day, then set the start time. The whole visit is checked against it.'
-                : 'Green dates can fit this appointment.'
-            }
-            // No slot list for a visit — see the availability query above.
-            onContinue={() => setMode(isVisit ? 'form' : 'time')}
-          />
-        </View>
-      </Sheet>
+      <ModifyDateStep
+        monthAnchor={monthAnchor}
+        target={target}
+        setMonthAnchor={setMonthAnchor}
+        today={today}
+        date={date}
+        setDate={setDate}
+        isVisit={isVisit}
+        availableDates={availableDates}
+        monthQuery={monthQuery}
+        timeZone={timeZone}
+        setMode={setMode}
+        onClose={onClose}
+      />
     );
   }
 
   // ---- Time step: free slots, grouped and marked ------------------------------
   if (target && seededId === target.id && mode === 'time') {
     return (
-      <Sheet visible fill onClose={onClose}>
-        <View style={styles.stepBody}>
-          <Text variant="heading">Choose a time</Text>
-          <Text variant="bodySmall" tone="muted">
-            {formatDayHeading(date)}
-            {effectiveDuration != null ? ` · ${formatDuration(effectiveDuration)}` : ''}
-          </Text>
-
-          <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollBody}>
-            {availability.isLoading ? (
-              <Text variant="bodySmall" tone="muted">
-                Loading free slots…
-              </Text>
-            ) : slotPeriods.length === 0 ? (
-              <Text variant="bodySmall" tone="muted">
-                No free slots on this day. Pick another date, or set the time by hand on the
-                previous screen.
-              </Text>
-            ) : (
-              slotPeriods.map((period) => (
-                <View key={period.title} style={styles.fieldBlock}>
-                  <Text variant="label" tone="secondary">
-                    {period.title}
-                  </Text>
-                  <View style={styles.chipWrap}>
-                    {period.slots.map((slot) => {
-                      const key = slot.start_time.slice(0, 5);
-                      // Web marks the booking's CURRENT slot so staff can find
-                      // their way back to it after browsing other times.
-                      const isOriginal = date === target.date && key === originalTime;
-                      return (
-                        <Chip
-                          key={`${slot.practitioner_id}-${slot.start_time}`}
-                          label={isOriginal ? `${key} · now` : key}
-                          selected={key === selectedTime}
-                          onPress={() => {
-                            hapticSelect();
-                            setMinutes(timeToMinutes(slot.start_time));
-                            setMode('form');
-                          }}
-                        />
-                      );
-                    })}
-                  </View>
-                </View>
-              ))
-            )}
-          </ScrollView>
-
-          <View style={styles.actions}>
-            <Button
-              label="Back"
-              variant="secondary"
-              onPress={() => setMode('date')}
-              style={styles.actionButton}
-            />
-            <Button label="Done" onPress={() => setMode('form')} style={styles.actionButton} />
-          </View>
-        </View>
-      </Sheet>
+      <ModifyTimeStep
+        date={date}
+        effectiveDuration={effectiveDuration}
+        availability={availability}
+        slotPeriods={slotPeriods}
+        target={target}
+        originalTime={originalTime}
+        selectedTime={selectedTime}
+        setMinutes={setMinutes}
+        setMode={setMode}
+        onClose={onClose}
+      />
     );
   }
 
@@ -2821,15 +2596,6 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingHorizontal: spacing.lg,
   },
-  stepBody: {
-    flex: 1,
-    gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-  },
-  pickerPane: {
-    flex: 1,
-    paddingHorizontal: spacing.lg,
-  },
   headerBlock: {
     gap: spacing.xs,
   },
@@ -2936,8 +2702,5 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     flex: 1,
-  },
-  noticeActions: {
-    gap: spacing.sm,
   },
 });

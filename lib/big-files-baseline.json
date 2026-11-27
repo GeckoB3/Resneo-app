@@ -1,8 +1,8 @@
 {
-  "app/(app)/manage/services.tsx": 4577,
-  "app/(app)/(tabs)/index.tsx": 4270,
-  "components/bookings/ModifyBookingSheet.tsx": 2945,
-  "components/bookings/BookingDetailContent.tsx": 2593,
+  "app/(app)/manage/services.tsx": 3619,
+  "app/(app)/(tabs)/index.tsx": 3160,
+  "components/bookings/ModifyBookingSheet.tsx": 2707,
+  "components/bookings/BookingDetailContent.tsx": 2199,
   "components/booking-wizard/ServiceBookingFlow.tsx": 2472,
   "components/services-setup/ServicesSetupSheet.tsx": 1851,
   "app/(app)/(tabs)/bookings.tsx": 1827,

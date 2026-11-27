@@ -10,15 +10,12 @@ import {
   View,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { FadeIn, FadeOut, runOnJS } from 'react-native-reanimated';
-import { getDateTimeFormat } from '@/lib/dates/formatters';
-import { useReduceMotion, motionSafe } from '@/lib/motion';
+import { runOnJS } from 'react-native-reanimated';
 import { SymbolView } from 'expo-symbols';
-import { format } from 'date-fns';
 
 import { useAcceptUnpaidGuard } from '@/components/bookings/AcceptUnpaidSheet';
 import { BookingDetailSheet } from '@/components/bookings/BookingDetailSheet';
-import { AllCalendarsDayGrid, type AllCalendarColumn } from '@/components/calendar/AllCalendarsDayGrid';
+import { AllCalendarsDayGrid } from '@/components/calendar/AllCalendarsDayGrid';
 import { BlockEditSheet, type BlockTarget } from '@/components/calendar/BlockEditSheet';
 import { CalendarDayGrid, CONFLICT_IGNORED_STATUSES } from '@/components/calendar/CalendarDayGrid';
 import { minutesToTime, timeToMinutes, type GridWindowOverride } from '@/components/calendar/grid-layout';
@@ -28,7 +25,6 @@ import { nextVisibleCalendars } from '@/lib/calendar/calendar-selection';
 import {
   diaryCalendarsForIdsKey,
   diaryColumnCalendarIdsKey,
-  diaryColumnLabel,
   diaryColumnTakesNewBookings,
   PAUSED_COLUMN_TOAST_MS,
   pausedColumnChangeRefusal,
@@ -38,18 +34,16 @@ import {
 import { venueDayHours } from '@/lib/calendar/venue-closures';
 import { buildCalendarClosureOverlays } from '@/lib/calendar/schedule-closures';
 import { calendarHours } from '@/lib/calendar/calendar-hours';
-import { bookingModificationNotifyOutcome } from '@/lib/booking/modification-notify-result';
 import { AmendHoursSheet, type AmendHoursTarget } from '@/components/calendar/AmendHoursSheet';
 import { calendarJumpForBooking } from '@/components/calendar/calendar-client-search';
 import { CalendarToolsSheet } from '@/components/calendar/CalendarToolsSheet';
 import { resolveColumnDayHours } from '@/lib/calendar/column-day-hours';
-import { calendarHasAvailableHoursOnDate } from '@/lib/calendar/calendar-has-hours-on-date';
 import { MonthGrid, type MonthDayDatum } from '@/components/calendar/MonthGrid';
 import { MonthPickerSheet } from '@/components/calendar/MonthPickerSheet';
 import { useSharedDiaryDate } from '@/lib/dates/shared-diary-date';
 import { useVenueToday } from '@/lib/dates/use-venue-today';
 import { type RescheduleTarget } from '@/components/calendar/RescheduleSheet';
-import { WeekGrid, type WeekDayColumn } from '@/components/calendar/WeekGrid';
+import { WeekGrid } from '@/components/calendar/WeekGrid';
 import { WeekMatrixGrid } from '@/components/calendar/WeekMatrixGrid';
 import { LinkedSlotSheet, type LinkedSlotTarget } from '@/components/linked/LinkedSlotSheet';
 import {
@@ -57,19 +51,12 @@ import {
   collectiveBookingTargetFor,
 } from '@/lib/linked/collective-booking-target';
 import { useStaffCollective } from '@/lib/queries/useStaffCollective';
-import { Button } from '@/components/ui/Button';
-import { Chip } from '@/components/ui/Chip';
-import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Fab } from '@/components/ui/Fab';
-import { IconButton } from '@/components/ui/IconButton';
-import { LiveDot } from '@/components/ui/LiveDot';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { Screen } from '@/components/ui/Screen';
-import { Segmented } from '@/components/ui/Segmented';
-import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError, apiFetch } from '@/lib/api/client';
 import { newBookingParams } from '@/lib/booking/new-booking-params';
@@ -82,15 +69,10 @@ import {
 import { guestNotifyPlanForChange } from '@/lib/booking/modification-notify';
 import { explainModificationRefusal } from '@/lib/booking/modification-refusal';
 import { visitOverlapNote, visitTwoPlacesNote } from '@/lib/booking/visit-overlaps';
-import { visitRestoreRequest, visitScheduleRequest } from '@/lib/booking/visit-schedule-request';
+import { visitScheduleRequest } from '@/lib/booking/visit-schedule-request';
 import { crossBusinessMoveRefusal } from '@/lib/calendar/visit-cross-business-move';
 import {
-  joinsPendingMoveNotice,
-  lengthChangeToastMessage,
-  mergeMoveNotice,
   SAME_COLUMN_VISIT_OVERLAP_NOTE,
-  type MoveNotice,
-  type MoveNoticeInput,
 } from '@/lib/calendar/move-notice';
 import {
   gridVisitSiblingRows,
@@ -100,20 +82,16 @@ import {
 } from '@/lib/calendar/visit-siblings';
 import { useVisitPartnerLines } from '@/lib/queries/useVisitPartnerLines';
 import {
-  cancelOriginalCopy,
-  collectiveMoveCopy,
   collectiveMoveDoneMessage,
-  crossVenueMoveCopy,
   crossVenueOriginalLabel,
   roundTimeToFiveMinutes,
   setPendingCrossVenueRebook,
   takeCrossVenueRebookIfCreated,
-  type CrossVenueMoveWords,
   type PendingCrossVenueRebook,
 } from '@/lib/calendar/cross-venue-rebook';
 import { writeRebookBootstrap } from '@/lib/rebook-bootstrap';
 import { accessRefusalMessage, linkedVenuesForDiary, ROLES_COPY } from '@/lib/roles/roles';
-import { diaryColumnFlags, diarySlotAnswer } from '@/lib/calendar/diary-view-only';
+import { diarySlotAnswer } from '@/lib/calendar/diary-view-only';
 import { newBookingActionLabel } from '@/lib/booking/terminology';
 import { isAppointmentFromVenue } from '@/lib/venue/venue-experience';
 import { hapticSelect, hapticSuccess } from '@/lib/haptics';
@@ -128,7 +106,6 @@ import {
   type DateRange,
 } from '@/lib/dates/venue-dates';
 import {
-  useNotifyBookingModification,
   useRescheduleBookingById,
   useUpdateBookingStatus,
 } from '@/lib/queries/useBookingMutations';
@@ -143,7 +120,6 @@ import {
   type CalendarGridSnapshot,
 } from '@/lib/queries/useCalendarQuickActions';
 import {
-  patternLookupFromLinkedServices,
   patternLookupFromManagedServices,
 } from '@/lib/calendar/processing-gaps';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
@@ -172,28 +148,20 @@ import { useTheme } from '@/theme/useTheme';
 import { LinkedBookingDetailSheet } from '@/components/linked/LinkedBookingDetailSheet';
 import { LinkedVenueCalendarGrid } from '@/components/linked/LinkedVenueCalendarGrid';
 import { LinkedVenueWeekGrid } from '@/components/linked/LinkedVenueWeekGrid';
-import { dedupeScheduleDTOs, toCalendarScheduleBlock } from '@/lib/calendar/schedule-block-view';
+import { dedupeScheduleDTOs } from '@/lib/calendar/schedule-block-view';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useMoveBookingToVenue } from '@/lib/queries/useMoveBookingToVenue';
 import {
   LINKED_MOVE_SAME_VENUE_ERROR,
   linkedBookingUsesExpandedDetail,
-  linkedBusyBlock,
   linkedColumnKey,
   linkedColumnPractitionerIdForPatch,
   linkedColumnUsesNativeGrid,
   linkedCreateNotGrantedMessage,
   linkedGridBooking,
-  linkedNameRepeatsVenue,
-  linkedScheduleBlocksForColumn,
   linkedSharedCalendars,
   linkedSwitcherEntries,
-  linkedSwitcherEntryCount,
-  linkedColumnClosureInputs,
-  linkedVenueColumns,
   narrowLinkedVenueToCalendar,
-  rangesToWorkingHours,
-  type LinkedVenueColumn,
 } from '@/lib/linked/linked-calendar-view';
 import type { LinkedBookingContext } from '@/lib/linked/linked-detail-policy';
 import {
@@ -205,22 +173,27 @@ import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
 import type { CalendarGridBooking, CalendarGridDay } from '@/types/calendar-grid';
 import type { Practitioner } from '@/types/practitioner';
 import type { CalendarTimeBlock } from '@/components/calendar/CalendarDayGrid';
-import type { CalendarScheduleBlock, ScheduleBlockDTO } from '@/types/schedule-blocks';
 import type { LinkedBooking, LinkedVenueCalendar } from '@/types/linked-venues';
 import type { BookingDetail } from '@/types/booking-detail';
 import type { GuestBookingHistoryRow } from '@/types/guest-detail';
-import { businessBesidePerson, showsLinkedPill } from '@/lib/venue/member-label';
-
-/** A row with no usable end reads as this long, as on the grids. */
-const DEFAULT_SERVICE_MINUTES = 30;
-
-type Scope = 'day' | 'week' | 'month';
-
-const SCOPE_OPTIONS: { value: Scope; label: string }[] = [
-  { value: 'day', label: 'Day' },
-  { value: 'week', label: 'Week' },
-  { value: 'month', label: 'Month' },
-];
+import { showsLinkedPill } from '@/lib/venue/member-label';
+import {
+  DEFAULT_SERVICE_MINUTES,
+  groupScheduleByCalendarDate,
+  isMovableBooking,
+  isWideDayViewport,
+  scheduleKey,
+  SWIPE_STEP_THRESHOLD,
+  type Scope,
+} from '@/lib/calendar/diary-screen';
+import { useNowMinutes } from '@/lib/calendar/use-now-minutes';
+import { useDiaryMoveNotice } from '@/lib/calendar/diary/useDiaryMoveNotice';
+import { DiaryAddSheet, type AddSheetTarget } from '@/components/calendar/diary/DiaryAddSheet';
+import { DiaryMoveNoticeSheet } from '@/components/calendar/diary/DiaryMoveNoticeSheet';
+import { DiaryCrossVenueSheets, type CrossVenueMoveState } from '@/components/calendar/diary/DiaryCrossVenueSheets';
+import { DiaryToolbar } from '@/components/calendar/diary/DiaryToolbar';
+import { useDiaryDayColumns } from '@/lib/calendar/diary/useDiaryDayColumns';
+import { useDiaryWeekData } from '@/lib/calendar/diary/useDiaryWeekData';
 
 /**
  * Active linked-venue sheet (view/edit/create a cross-venue booking). Carries
@@ -237,159 +210,6 @@ type LinkedSheet =
 // tab, not here. Do not re-add a CALENDAR_STATUS_FILTERS row to this page.
 
 /**
- * Statuses whose bookings may be hold-dragged / resized (web parity:
- * Pending|Booked|Confirmed|Seated — surfaced as "Started" in the UI). A
- * Completed/No-Show/Cancelled booking is never movable; the drag handlers
- * refuse it up front and the block's gesture is disabled to match.
- */
-const MOVABLE_BOOKING_STATUSES = new Set(['Pending', 'Booked', 'Confirmed', 'Seated']);
-
-/**
- * A grid booking is movable when its status is in the movable set and it is not
- * a resource booking. The calendar-grid payload doesn't type a `resource_id`
- * (resource bookings reach the grid as read-only schedule blocks, never as
- * draggable appointment bars), so the resource check is a defensive runtime
- * read that stays correct if the payload ever carries one.
- */
-function isMovableBooking(booking: CalendarGridBooking): boolean {
-  if (!MOVABLE_BOOKING_STATUSES.has(booking.status)) return false;
-  const resourceId = (booking as { resource_id?: string | null }).resource_id;
-  return resourceId == null;
-}
-
-/** Minimal horizontal-swipe distance (dp) to step a day/week — web parity feel. */
-const SWIPE_STEP_THRESHOLD = 56;
-
-/**
- * Viewport width (dp) at/above which the DAY view shows every practitioner's
- * column side-by-side (multi-calendar grid) instead of one practitioner at a
- * time. Tablets and landscape phones clear this; phone-portrait stays single.
- */
-const WIDE_DAY_MIN_WIDTH = 700;
-/**
- * Landscape phones can be narrower than a tablet but still wide enough for a few
- * columns: treat "landscape AND at least this wide" as a wide viewport too.
- */
-const WIDE_LANDSCAPE_MIN_WIDTH = 600;
-
-/** True on a tablet, or a landscape phone wide enough for multiple columns. */
-function isWideDayViewport(width: number, height: number): boolean {
-  return width >= WIDE_DAY_MIN_WIDTH || (width > height && width >= WIDE_LANDSCAPE_MIN_WIDTH);
-}
-
-// ---------------------------------------------------------------------------
-// Schedule feed -> calendar overlay blocks
-//
-// GET /api/venue/schedule returns a FLAT, venue-wide ScheduleBlockDTO[] for
-// CLASSES, EVENTS and RESOURCE bookings. This feed is DISJOINT from the grid's
-// `sessions`/event_sessions (the web draws the calendar's class/event capacity
-// blocks from THIS feed), so rendering both never double-counts.
-//
-// Class sessions arrive denormalised: one `ci-*` block per empty session AND
-// one `bk-*` block PER BOOKING for booked sessions (same as useClassSchedule's
-// dedupe). We collapse those to ONE block per class_instance so a busy class
-// doesn't stack N identical overlays. Events are already one row per event;
-// resource bookings are one row per booking (kept as-is).
-// ---------------------------------------------------------------------------
-
-// KIND_ACCENT / capacityLabelFor / toCalendarScheduleBlock / dedupeScheduleDTOs
-// live in lib/calendar/schedule-block-view.ts (shared with the linked grid).
-
-/** Stable map key for a calendar column + date. */
-function scheduleKey(calendarId: string, date: string): string {
-  return `${calendarId} ${date}`;
-}
-
-/**
- * Group blocks by `${calendarId} ${date}` (see {@link scheduleKey}) so each
- * calendar column on a given date gets its own normalized list. Class
- * instances are deduped first; events/resources pass through.
- *
- * Blocks with a null/missing `calendar_id` have no column to attach to (the web
- * only renders staff columns), so they're dropped here -- the key never matches
- * a real column. We count + log the omission (dev only) so it's visible during
- * the device-gated QA rather than silent.
- */
-function groupScheduleByCalendarDate(
-  blocks: ScheduleBlockDTO[],
-): Map<string, CalendarScheduleBlock[]> {
-  const map = new Map<string, CalendarScheduleBlock[]>();
-  let droppedNoColumn = 0;
-  for (const dto of dedupeScheduleDTOs(blocks)) {
-    if (!dto.calendar_id) {
-      // No staff column to attach to, so it can't render (matches the web,
-      // which only shows staff columns). Counted + logged below for device QA.
-      droppedNoColumn += 1;
-      continue;
-    }
-    const key = scheduleKey(dto.calendar_id, dto.date);
-    const list = map.get(key) ?? [];
-    list.push(toCalendarScheduleBlock(dto));
-    map.set(key, list);
-  }
-  if (droppedNoColumn > 0 && __DEV__) {
-    console.log(
-      `[calendar] skipped ${droppedNoColumn} schedule block(s) with no calendar_id (no column to render on).`,
-    );
-  }
-  return map;
-}
-
-/**
- * A YYYY-MM-DD calendar date as LOCAL noon. Parsing it as UTC noon and then
- * reading local weekday / day-number fields shifts a day at UTC+13 and +14,
- * which mislabelled the week header there.
- */
-function localNoon(date: string): Date {
-  const [y, m, d] = date.split('-').map(Number);
-  return new Date(y ?? 1970, (m ?? 1) - 1, d ?? 1, 12, 0, 0, 0);
-}
-
-/** Current wall-clock time (minutes since midnight) in the venue timezone. */
-function nowMinutesInTz(timeZone: string): number {
-  const parts = getDateTimeFormat('en-GB', {
-    timeZone,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(new Date());
-  const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
-  const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
-  return hour * 60 + minute;
-}
-
-/**
- * Live "minutes since midnight" in the venue timezone, re-evaluated every 60s
- * so the now-line advances. The interval only runs while `active` (the anchor
- * day is today) — off-today days never need a ticking clock. Returns null when
- * inactive so callers can hide the now-line.
- */
-function useNowMinutes(timeZone: string, active: boolean): number | null {
-  // A monotonically-increasing tick that re-evaluates the clock each minute.
-  // We derive `minutes` from this during render (not via setState) so the
-  // effect only owns the timer — never a synchronous state write.
-  const [tick, setTick] = useState(0);
-
-  useEffect(() => {
-    if (!active) return;
-    const id = setInterval(() => setTick((t) => t + 1), 60_000);
-    return () => clearInterval(id);
-  }, [active]);
-
-  return useMemo(() => {
-    if (!active) return null;
-    return nowMinutesInTz(timeZone);
-    // `tick` is an intentional dependency — it advances the clock each minute.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeZone, active, tick]);
-}
-
-/** What the add-action sheet was opened for. */
-type AddSheetTarget =
-  | { kind: 'fab' }
-  | { kind: 'slot'; time: string; practitionerId: string };
-
-/**
  * Calendar tab (default tab — `index` route). Day/Week/Month views of one
  * practitioner's schedule at a time, with switcher chips to move between
  * calendars, inline status actions, hold-drag move/resize, block
@@ -399,7 +219,6 @@ export default function CalendarScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ date?: string }>();
   const { colors } = useTheme();
-  const reduceMotion = useReduceMotion();
   const { venue, terminology, pricingTier, bookingModel, featureFlags } = useVenueContext();
   /**
    * Drives the create-button wording: appointment venues say "New booking",
@@ -550,167 +369,8 @@ export default function CalendarScreen() {
    * and the rest behind.
    */
   const visitScheduleById = useVisitScheduleById();
-  // Sends the deferred "booking changed" email when the user taps Notify.
-  const notifyModification = useNotifyBookingModification();
-
-  // After a drag move/resize, prompt to notify the guest (or undo) — the server
-  // notification is deferred so the staff member chooses. Null when not showing.
-  //
-  // `startMoved` is false for a pure resize AND for a cross-column reassign at
-  // the same time: in both the guest is still due when they were, so the notify
-  // offer is withheld (the email was skipped outright at commit) and only Undo
-  // is offered. `lengthChanged` says Undo has to put a length back; on a visit
-  // re-asserting one is not free (see `undoReschedule`).
-  //
-  // Keyed by VISIT (split-visit plan G7): a change to another service of the
-  // visit the open prompt stands for joins it, so the client gets one notice and
-  // Undo puts back every service it covers. See `lib/calendar/move-notice.ts`.
-  const [moveNotice, setMoveNotice] = useState<MoveNotice<RescheduleTarget> | null>(null);
-  /** The prompt as it stands, for a commit that lands after the render that started it. */
-  const moveNoticeRef = useRef<MoveNotice<RescheduleTarget> | null>(null);
-  useEffect(() => {
-    moveNoticeRef.current = moveNotice;
-  }, [moveNotice]);
-
-  // Restore a booking to its previous slot AND length. Sends the original end so
-  // the revert validates the true span, and SKIPS the email: an undone change is
-  // not something to tell the guest about, and there is no follow-up prompt
-  // here to decide otherwise.
-  const undoReschedule = useCallback(
-    (previous: RescheduleTarget, _options: { restoreLength: boolean }) => {
-      if (previous.visit) {
-        /**
-         * A visit goes back through the endpoint that moved it, so the undo is as
-         * all-or-nothing as the move was.
-         *
-         * A plain move is undone by shifting the visit back. A resize changed
-         * one service's length, and a shift cannot restore that, so every row is
-         * named with the slot and length it had (web #187's `services` mode).
-         */
-        visitScheduleById.mutate({
-          groupBookingId: previous.visit.groupBookingId,
-          // The calendar only ever moved the rows it could see (one day of the
-          // visit), so it puts back exactly those, each at the slot and length
-          // it had. No known-rows guard: the grid cannot know the other days.
-          ...visitRestoreRequest({
-            services: previous.visit.services,
-            date: previous.date,
-            practitionerId: previous.practitionerId,
-            guardKnownRows: false,
-          }),
-          allow_outside_hours: true,
-          // A SEPARATE gate from the one above: the server's break check has
-          // never been relaxed by `allow_outside_hours`, so without this a move
-          // the grid permits comes back 409 "Conflicts with a break" (R17-3).
-          allow_during_breaks: true,
-          allow_manual_overlap: true,
-          // Going back to where it was: an overlap it had then is not news (G13).
-          acknowledge_visit_overlap: true,
-          skip_booking_modification_guest_notification: true,
-        });
-        return;
-      }
-      const endTime =
-        previous.durationMinutes != null
-          ? `${minutesToTime(timeToMinutes(previous.time) + previous.durationMinutes)}:00`
-          : undefined;
-      rescheduleById.mutate({
-        bookingId: previous.id,
-        date: previous.date,
-        time: `${previous.time.slice(0, 5)}:00`,
-        ...(endTime ? { endTime } : {}),
-        // A cross-column move's Undo must also return the booking to its ORIGINAL
-        // column — restore the practitioner when one was captured (time-only moves
-        // leave it undefined, keeping the current practitioner).
-        ...(previous.practitionerId ? { practitionerId: previous.practitionerId } : {}),
-        skipGuestNotification: true,
-      });
-    },
-    [rescheduleById, visitScheduleById],
-  );
-
-  const closeMoveNotice = useCallback(() => {
-    moveNoticeRef.current = null;
-    setMoveNotice(null);
-  }, []);
-
-  /**
-   * Announce a committed drag. A move (or a reassign) opens the notify sheet,
-   * because the guest may need telling. A pure resize has nothing to ask: the
-   * guest is due when they were and the server sent no email, so a sheet with
-   * only Undo and Done just got in the way of the next drag. It gets a toast,
-   * keeping Undo as its action.
-   */
-  const raiseChangeNotice = useCallback(
-    (notice: MoveNoticeInput<RescheduleTarget>) => {
-      const pending = moveNoticeRef.current;
-      // A change to the visit the open prompt stands for joins it, a resize too,
-      // so Undo there covers it and the client hears once (G7).
-      if (notice.startMoved || notice.reassigned || joinsPendingMoveNotice(pending, notice)) {
-        const next = mergeMoveNotice(pending, notice);
-        moveNoticeRef.current = next;
-        setMoveNotice(next);
-        return;
-      }
-      const message = lengthChangeToastMessage(!!notice.previous.visit, notice.overlapNote);
-      const undo = {
-        actionLabel: 'Undo',
-        onAction: () => undoReschedule(notice.previous, { restoreLength: notice.lengthChanged }),
-      };
-      if (notice.overlapNote) toast.info(message, { ...undo, duration: 7000 });
-      else toast.success(message, undo);
-    },
-    [toast, undoReschedule],
-  );
-
-  const handleNotifyMove = useCallback(() => {
-    if (!moveNotice) return;
-    notifyModification.mutate(
-      { bookingId: moveNotice.bookingId },
-      {
-        // The route answers 200 even when it sends nothing (notifications off,
-        // no channel enabled, no contact details), so the toast reads the body
-        // rather than claiming the guest was told (web parity).
-        onSuccess: (result) => {
-          const outcome = bookingModificationNotifyOutcome(result);
-          if (outcome.sent) toast.success(outcome.message);
-          else toast.info(outcome.message);
-        },
-        onError: () => toast.error('Could not notify the client.'),
-      },
-    );
-    moveNoticeRef.current = null;
-    setMoveNotice(null);
-  }, [moveNotice, notifyModification, toast]);
-
-  const handleUndoMove = useCallback(() => {
-    if (!moveNotice) return;
-    // Every service the prompt stands for goes back to where it was before its
-    // first change (G7). Services of one visit go back in ONE request, so the
-    // undo is as all-or-nothing as each move was.
-    const { changes } = moveNotice;
-    const head = changes[0]!.previous;
-    const oneVisit =
-      head.visit != null &&
-      changes.every((c) => c.previous.visit?.groupBookingId === head.visit!.groupBookingId);
-    if (changes.length > 1 && oneVisit) {
-      undoReschedule(
-        {
-          ...head,
-          // Each row carries its own calendar, so no one calendar is named for all.
-          practitionerId: null,
-          visit: { ...head.visit!, services: changes.flatMap((c) => c.previous.visit!.services) },
-        },
-        { restoreLength: changes.some((c) => c.lengthChanged) },
-      );
-    } else {
-      for (const change of changes) {
-        undoReschedule(change.previous, { restoreLength: change.lengthChanged });
-      }
-    }
-    moveNoticeRef.current = null;
-    setMoveNotice(null);
-  }, [moveNotice, undoReschedule]);
+  const { moveNotice, closeMoveNotice, raiseChangeNotice, handleNotifyMove, handleUndoMove } =
+    useDiaryMoveNotice({ rescheduleById, visitScheduleById, toast });
 
   const week = useMemo(() => getCalendarWeekFromDate(anchor), [anchor]);
   const range = useMemo<DateRange>(() => {
@@ -935,24 +595,7 @@ export default function CalendarScreen() {
    * marks the pending record, and the tab offers to cancel the original when
    * it regains focus. See `lib/calendar/cross-venue-rebook.ts`.
    */
-  const [crossVenueMove, setCrossVenueMove] = useState<
-    | (CrossVenueMoveWords & {
-        booking: CalendarGridBooking;
-        /** The partner venue the dragged booking belongs to, or null for our own. */
-        sourceVenue: LinkedVenueCalendar | null;
-        sourceLinked: LinkedBooking | null;
-        targetColumnId: string;
-        /** The partner column dropped on, or null for one of our own. */
-        targetLinked: { venue: LinkedVenueCalendar; practitionerId: string | null } | null;
-        time: string;
-        /**
-         * Both venues are in our live collective and the drop names a calendar: the booking moves in
-         * one step (web D46, revised 2026-09-16) instead of being booked afresh.
-         */
-        collectiveMove: { targetCalendarId: string; targetVenueName: string } | null;
-      })
-    | null
-  >(null);
+  const [crossVenueMove, setCrossVenueMove] = useState<CrossVenueMoveState | null>(null);
   const moveToVenue = useMoveBookingToVenue();
   const [cancelOriginalPrompt, setCancelOriginalPrompt] = useState<PendingCrossVenueRebook | null>(null);
   const cancelOwnOriginal = useUpdateBookingStatus(cancelOriginalPrompt?.originalBookingId ?? '');
@@ -2723,200 +2366,24 @@ export default function CalendarScreen() {
   );
 
   // ---- Multi-calendar day view data ----
-  // One column per practitioner for the anchor date, sharing the time gutter.
-  // Assembled whenever the side-by-side grid will render (explicit "All" chip
-  // OR a wide viewport).
-  //
-  // The wide-day visible set spans BOTH own calendar ids and linked venue keys
-  // (`linked:<venueId>`); null = all. Resolve each axis from it, with a safety
-  // fallback to "all" if a (stale) filter would select nothing — so the grid is
-  // never blank. Phone single-pane day + week scope ignore the filter entirely.
-  const wideFilterActive = isWideDay && visibleIds != null;
-  const wideFilterSet = useMemo(() => new Set(visibleIds ?? []), [visibleIds]);
-
-  const dayOwnPractitioners = useMemo(
-    () => (wideFilterActive ? practitioners.filter((p) => wideFilterSet.has(p.id)) : practitioners),
-    [wideFilterActive, practitioners, wideFilterSet],
-  );
-
-  // Linked venues shown as columns: on a wide day filtered by the visible set;
-  // on a phone only when "All" (selectedId) is picked (existing behaviour).
-  // A linked column is visible under its own key or, from an older preference
-  // that toggled the partner as a whole, its venue-level key.
-  const linkedColumnVisible = useCallback(
-    (col: LinkedVenueColumn) =>
-      wideFilterSet.has(col.key) || wideFilterSet.has(linkedColumnKey(col.venue.venueId)),
-    [wideFilterSet],
-  );
-  const linkedVenuesForDay = useMemo(() => {
-    if (isWideDay) {
-      return wideFilterActive
-        ? linkedVenues.filter((v) => linkedVenueColumns(v, anchor).some(linkedColumnVisible))
-        : linkedVenues;
-    }
-    return isAllView ? linkedVenues : [];
-  }, [isWideDay, wideFilterActive, linkedColumnVisible, linkedVenues, isAllView, anchor]);
-
-  // If a (stale) filter resolves to zero columns, show everything instead.
-  const wideFilterEmpty =
-    wideFilterActive && dayOwnPractitioners.length + linkedVenuesForDay.length === 0;
-  const ownColumnsSource = wideFilterEmpty ? practitioners : dayOwnPractitioners;
-  const linkedColumnsSource = wideFilterEmpty ? linkedVenues : linkedVenuesForDay;
-
-  // "Only calendars working on the selected day" (web 2026-09-05). An own
-  // column answers from its rota-resolved hours minus leave and the venue's
-  // closures; a linked column from the weekly template its owner shares (not
-  // its leave or closures, which are not in the feed). It asks whether the
-  // column has hours to show, not whether it is busy, so block time does not
-  // count. Never a blank grid: if nobody works, every column stays.
-  // A phone's "All" view takes it too (The Beauty Parlour, 2026-11-18), with its chip beside "All".
-  const workingFilterOn = (isWideDay || isAllView) && workingHoursOnly;
-  // A linked venue becomes one column per calendar the partner shares, named
-  // after the calendar (web §8.2: "Jenny", not "light2"), each with its own
-  // template; see `linkedVenueColumns`.
-  const linkedSourceColumns = useMemo<LinkedVenueColumn[]>(() => {
-    const columns = linkedColumnsSource.flatMap((v) => linkedVenueColumns(v, anchor));
-    // The wide-day filter picks linked columns one calendar at a time.
-    return wideFilterActive && !wideFilterEmpty ? columns.filter(linkedColumnVisible) : columns;
-  }, [linkedColumnsSource, anchor, wideFilterActive, wideFilterEmpty, linkedColumnVisible]);
-  const { ownColumnsShown, linkedColumnsShown } = useMemo(() => {
-    if (!workingFilterOn) {
-      return { ownColumnsShown: ownColumnsSource, linkedColumnsShown: linkedSourceColumns };
-    }
-    const own = ownColumnsSource.filter((p) =>
-      calendarHasAvailableHoursOnDate({
-        calendarId: p.id,
-        row: p,
-        dateYmd: anchor,
-        leavePeriods,
-        openingHours,
-        venueWideBlocks,
-      }),
-    );
-    // A linked column answers from its own calendar's weekly template (the
-    // venue-level column from the venue's union).
-    const linked = linkedSourceColumns.filter((c) => c.openRanges.length > 0);
-    if (own.length + linked.length === 0) {
-      return { ownColumnsShown: ownColumnsSource, linkedColumnsShown: linkedSourceColumns };
-    }
-    return { ownColumnsShown: own, linkedColumnsShown: linked };
-  }, [
-    workingFilterOn,
-    ownColumnsSource,
-    linkedSourceColumns,
+  const { allColumnsForDay } = useDiaryDayColumns({
+    isWideDay,
+    visibleIds,
+    practitioners,
+    linkedVenues,
     anchor,
+    isAllView,
+    workingHoursOnly,
     leavePeriods,
     openingHours,
     venueWideBlocks,
-  ]);
-
-  const allCalendarsForDay = useMemo(() => {
-    if (!showAllCalendars) return [];
-    const venueHoursForDay = venueDayHours(openingHours, anchor, venueWideBlocks);
-    return ownColumnsShown.map((p) => {
-      const calendar = gridQuery.data?.calendars.find((c) => c.calendarId === p.id);
-      const calDay = calendar?.dates.find((d) => d.date === anchor) ?? null;
-      // A paused calendar, drawn for the bookings still on it (R44-3): marked,
-      // and no bar may be dropped on it. Its own bars still open and move away.
-      const paused = !diaryColumnTakesNewBookings(p);
-      // The feed carries the WEEKLY hours only; the column takes the resolved
-      // ones (amended hours, days off, schedule periods) so the day's bounds,
-      // the closed shading and the drag follow them. An amended day widens
-      // this column's venue window; the other columns keep the venue's.
-      const column = resolveColumnDayHours(p, anchor, venueHoursForDay);
-      return {
-        calendarId: p.id,
-        calendarName: p.name,
-        workingHours: column.workingHours ?? calDay?.workingHours ?? [],
-        bookings: calDay?.bookings ?? [],
-        sessions: calDay?.sessions ?? [],
-        timeBlocks: getDayBlocks(p.id, anchor, calDay),
-        // This practitioner's class/event/resource blocks for the anchor date.
-        scheduleBlocks: scheduleByCalendarDate.get(scheduleKey(p.id, anchor)) ?? [],
-        ...(column.amended ? { venueHours: column.venueHours } : {}),
-        ...(paused ? { badge: 'Paused', acceptsDrops: false } : {}),
-        // View only and Hidden (§5.11): someone else's column is look only for this person. Its
-        // bars open but take no quick actions, drag or resize, and nothing may be dropped on it.
-        ...diaryColumnFlags(diary, p.id),
-      };
-    });
-  }, [
-    diary,
     showAllCalendars,
-    ownColumnsShown,
-    gridQuery.data,
-    anchor,
+    gridQuery,
     getDayBlocks,
     scheduleByCalendarDate,
-    openingHours,
-    venueWideBlocks,
-  ]);
-
-  // Linked calendars as side-by-side columns in the SAME grid: one column per
-  // calendar the partner shares, headed with the calendar's name and the venue
-  // under it, appended after the own practitioners. Driven by
-  // `linkedColumnsSource`: on a wide day the multi-select subset, on a phone the
-  // explicit "All" view, otherwise none.
-  // Grant-gated like the linked day grid: time_only → grey "busy" overlays
-  // (no appointment bars), full_details → appointment bars + class/event blocks.
-  const linkedColumnsForDay = useMemo<AllCalendarColumn[]>(() => {
-    return linkedColumnsShown.map((col) => {
-      const v = col.venue;
-      const timeOnly = v.visibility === 'time_only';
-      // The partner's closures, resolved as its own diary resolves them (venue
-      // shut, calendar not working, both, leave), or its weekly template on an
-      // older feed. Shown on every grant, as on the web: a time-only link still
-      // learns when a calendar is unavailable.
-      const closures = linkedColumnClosureInputs(v, col, anchor);
-      return {
-        calendarId: col.key,
-        calendarName: col.name,
-        // The venue under the calendar's name, unless the calendar is named
-        // after the venue and the caption would only repeat it.
-        caption:
-          col.practitionerId && !linkedNameRepeatsVenue(col.name, v.venueName)
-            ? // "Aura Hair Studio" under "Jenny", not "Aura Hair Studio (Jenny)" (2026-11-22).
-              businessBesidePerson(col.name, v.venueName)
-            : undefined,
-        workingHours: closures.workingHours ?? rangesToWorkingHours(col.openRanges),
-        // The header names the calendar, so a bar keeps the bare service.
-        bookings: timeOnly
-          ? []
-          : col.bookings.map((b) =>
-              linkedGridBooking(b, v.practitioners, { practitionerInLabel: false }),
-            ),
-        sessions: [],
-        timeBlocks: [
-          ...closures.closureBlocks,
-          ...(timeOnly ? col.bookings.map((b) => linkedBusyBlock(b, v.venueName)) : []),
-        ],
-        scheduleBlocks: timeOnly ? [] : linkedScheduleBlocksForColumn(v, col, anchor),
-        // The partner's OWN hours drive its column's closure shading.
-        venueHours: closures.venueHours,
-        linked: true,
-        linkedClosures: closures.source,
-        // Drawn like an own column, marked by the small Linked pill next to
-        // the calendar's name (the owner wants no amber, 2026-09-06). A member
-        // of our collective is named like any member, with no pill (2026-11-22).
-        badge: showsLinkedPill(v.venueId, staffCollective?.member_venue_ids) ? 'Linked' : undefined,
-        // A link that shares full details and grants edits joins the
-        // interactive grid (web `linkedColumnUsesNativeGrid`): the same bars,
-        // tray, move and resize as our own columns, moving only among this
-        // partner's calendars (never onto the venue-level column, which names
-        // no calendar to reassign to).
-        editable: linkedColumnUsesNativeGrid(v),
-        moveGroup: col.practitionerId ? v.venueId : undefined,
-        // The partner's own service patterns draw its bars' gaps (R24-6).
-        processingPatternFor: patternLookupFromLinkedServices(v.services),
-      };
-    });
-  }, [linkedColumnsShown, anchor, staffCollective]);
-
-  // Own practitioner columns + linked venue columns, side by side in one grid.
-  const allColumnsForDay = useMemo(
-    () => [...allCalendarsForDay, ...linkedColumnsForDay],
-    [allCalendarsForDay, linkedColumnsForDay],
-  );
+    diary,
+    staffCollective,
+  });
 
   const handleAllBlockPress = useCallback(
     (bookingId: string) => {
@@ -2964,109 +2431,20 @@ export default function CalendarScreen() {
   );
 
   // ---- Week view data ----
-  // Seven day-columns for the SELECTED calendar (one practitioner's week).
-  const weekColumns = useMemo<WeekDayColumn[]>(() => {
-    if (scope !== 'week') return [];
-    const calendar = gridQuery.data?.calendars.find((c) => c.calendarId === effectiveId);
-    const byDate = new Map((calendar?.dates ?? []).map((d) => [d.date, d]));
-    return week.days.map((date) => {
-      const data = byDate.get(date) ?? null;
-      const d = localNoon(date);
-      const weekday = d.getDay();
-      const column = resolveColumnDayHours(
-        practitioners.find((p) => p.id === effectiveId),
-        date,
-        venueDayHours(openingHours, date, venueWideBlocks),
-      );
-      return {
-        date,
-        weekdayLabel: format(d, 'EEE'),
-        dayNumber: format(d, 'd'),
-        isToday: date === today,
-        isWeekend: weekday === 0 || weekday === 6,
-        workingHours: column.workingHours ?? data?.workingHours ?? [],
-        bookings: data?.bookings ?? [],
-        sessions: data?.sessions ?? [],
-        // The selected calendar's class/event/resource blocks for this day.
-        scheduleBlocks: effectiveId
-          ? scheduleByCalendarDate.get(scheduleKey(effectiveId, date)) ?? []
-          : [],
-        // Venue open/closed state for this day → "Closed" shading, widened to
-        // the calendar's amended hours on an amended day.
-        venueHours: column.venueHours,
-        // Time blocked by hand, so a day that looks free in this view really is (web parity).
-        manualBlocks: effectiveId ? getDayBlocks(effectiveId, date, data).filter((b) => b.isEditable) : [],
-        /**
-         * Closure bands only — not breaks, which stay a Day-view detail. "Who is off
-         * this week?" is the question the week view exists to answer, and a column
-         * that renders the same whether the person is working or on leave cannot
-         * answer it.
-         */
-        timeBlocks: effectiveId
-          ? buildCalendarClosureOverlays({
-              calendarId: effectiveId,
-              dateStr: date,
-              calendar: practitioners.find((p) => p.id === effectiveId),
-              leavePeriods,
-            })
-          : [],
-      };
-    });
-  }, [getDayBlocks, scope, gridQuery.data, effectiveId, week.days, today, scheduleByCalendarDate, openingHours, venueWideBlocks, practitioners, leavePeriods]);
-
-  // ---- Whole-team week matrix data (week-scope "All") ----
-  // Practitioner rows + 7 day-column headers. The cell counts are derived inside
-  // WeekMatrixGrid straight from gridQuery.data, so this only supplies labels.
-  const weekMatrixCalendars = useMemo(
-    () => [
-      // A paused calendar with bookings this week keeps its row: "Marcus (paused)".
-      ...practitioners.map((p) => ({ id: p.id, name: diaryColumnLabel(p) })),
-      /**
-       * Then every linked venue's calendars. The week matrix used to show our
-       * rows only, so a partner booking counted nowhere in week scope even though
-       * the day view draws that column (device test, 2026-09-12).
-       */
-      ...linkedVenues.flatMap((v) =>
-        v.practitioners.map((p) => ({
-          id: `${v.venueId}:${p.id}`,
-          name: p.name,
-          linked: true,
-          venueName: v.venueName,
-        })),
-      ),
-    ],
-    [practitioners, linkedVenues],
-  );
-
-  /** Linked bookings per `${venueId}:${calendarId}|${date}`, for the matrix cells. */
-  const weekMatrixLinkedCounts = useMemo(() => {
-    const map = new Map<string, number>();
-    if (scope !== 'week') return map;
-    for (const v of linkedVenues) {
-      for (const b of v.bookings) {
-        if (!b.bookingDate || b.status === 'No-Show') continue;
-        const calendarId = b.practitionerId ?? b.calendarId;
-        if (!calendarId) continue;
-        const key = `${v.venueId}:${calendarId}|${b.bookingDate}`;
-        map.set(key, (map.get(key) ?? 0) + 1);
-      }
-    }
-    return map;
-  }, [scope, linkedVenues]);
-  const weekMatrixDays = useMemo(() => {
-    if (scope !== 'week') return [];
-    return week.days.map((date) => {
-      const d = localNoon(date);
-      const weekday = d.getDay();
-      return {
-        date,
-        weekdayLabel: format(d, 'EEE'),
-        dayNumber: format(d, 'd'),
-        isToday: date === today,
-        isWeekend: weekday === 0 || weekday === 6,
-      };
-    });
-  }, [scope, week.days, today]);
+  const { weekColumns, weekMatrixCalendars, weekMatrixLinkedCounts, weekMatrixDays } = useDiaryWeekData({
+    scope,
+    week,
+    today,
+    effectiveId,
+    practitioners,
+    linkedVenues,
+    gridQuery,
+    getDayBlocks,
+    scheduleByCalendarDate,
+    openingHours,
+    venueWideBlocks,
+    leavePeriods,
+  });
 
   // Per-booking compliance flags for the anchor day — gated on the feature flag
   // so non-compliance venues never hit the endpoint. Covers EVERY calendar's
@@ -3233,57 +2611,7 @@ export default function CalendarScreen() {
 
   // ---- Add-action sheet (FAB + empty-slot tap) ----
 
-  const nowTime =
-    nowMinutes != null
-      ? `${String(Math.floor(nowMinutes / 60)).padStart(2, '0')}:${String(nowMinutes % 60).padStart(2, '0')}`
-      : '12:00';
-
   const closeAddSheet = useCallback(() => setAddSheetTarget(null), []);
-
-  const addSheetSlot = addSheetTarget?.kind === 'slot' ? addSheetTarget : null;
-  /**
-   * A slot on someone else's column, for a View only or Hidden person (§5.11). It opens only when
-   * the column hosts a resource (see `refusedOnOthersColumn`), and then offers just those.
-   */
-  const addSheetLookOnly = addSheetSlot != null && !diary.allows(addSheetSlot.practitionerId || null);
-  const addSheetCanBlock = addSheetSlot
-    ? blockableCalendars.some((c) => c.id === addSheetSlot.practitionerId)
-    : !linkedContextActive && blockableCalendars.length > 0;
-  // The collective this sheet's New and Walk-in book for, when one takes the
-  // booking (the same rule `collectiveParamsFor` applies), so the sheet can say
-  // so: from a partner's linked view the FAB is the only way to it.
-  const addSheetCollective = collectiveBookingTargetFor(
-    staffCollective,
-    venue?.id,
-    addSheetSlot?.practitionerId ?? null,
-  );
-
-  // Resources hosted on the tapped slot's calendar column → "Book <resource>"
-  // entries in the empty-slot menu (web parity: `resourcesHere`). Empty when the
-  // FAB opened the sheet, or when no resource is displayed on that column.
-  const slotResources = useMemo(
-    () =>
-      addSheetSlot
-        ? activeResources.filter((r) => r.display_on_calendar_id === addSheetSlot.practitionerId)
-        : [],
-    [addSheetSlot, activeResources],
-  );
-
-  // Route to the resource booking flow with the resource pre-selected and the
-  // tapped day prefilled (web parity: book a resource straight from the slot).
-  // The resource flow reads `?resourceId`/`?tab=resource`; the date primes the
-  // wizard's anchor day. (Exact slot time isn't a resource-flow param yet — the
-  // user picks the length+time on the resource's own availability grid.)
-  const bookResourceAtSlot = useCallback(
-    (resourceId: string) => {
-      closeAddSheet();
-      router.push({
-        pathname: '/booking/new',
-        params: { tab: 'resource', resourceId, date: anchor },
-      });
-    },
-    [closeAddSheet, router, anchor],
-  );
 
   return (
     <Screen padded={false} bottomInset={false}>
@@ -3313,264 +2641,44 @@ export default function CalendarScreen() {
         />
       ) : (
         <>
-          <View style={[styles.toolbar, { borderBottomColor: colors.border }]}>
-            <View style={styles.scopeRow}>
-              <View style={styles.scopeControl}>
-                <Segmented
-                  value={scope}
-                  onChange={(s) => {
-                    // Linked calendars support day + week; month is own-venue
-                    // only, so switching to month exits the linked context back
-                    // to the primary venue.
-                    if (isLinkedActive && s === 'month') clearOwnerVenue();
-                    setScope(s);
-                  }}
-                  options={SCOPE_OPTIONS}
-                />
-              </View>
-              {/* Realtime indicator — green live / amber reconnecting, hidden when
-                  idle (matches Resources/Contacts). Realtime invalidates the grid
-                  promptly; the 60s poll is the fallback. */}
-              <LiveDot state={liveState} />
-              {/* Compact day rows (web parity: the toolbar "Compact" toggle) —
-                  day scope only, like the web. Shown in the linked-venue context
-                  too: the linked grid is embedded and so cannot fit-to-screen,
-                  but `CalendarDayGrid` falls back to its floor scale there, which
-                  is still much tighter than the default. It used to be hidden,
-                  leaving no way to compact a linked venue's day. */}
-              {scope === 'day' ? (
-                <IconButton
-                  icon={{
-                    ios: 'rectangle.compress.vertical',
-                    android: 'compress',
-                    web: 'compress',
-                  }}
-                  accessibilityLabel="Compact day rows: fit the whole day on one screen"
-                  variant="bordered"
-                  active={compactDay}
-                  onPress={() => setCompactDay((c) => !c)}
-                />
-              ) : null}
-              {/* The month has no time column to hang the clock in, so it sits
-                  in the toolbar there — the web offers Amend hours in every
-                  view mode. Day and week carry it in the grid's own corner. */}
-              {scope === 'month' ? (
-                <IconButton
-                  icon={{ ios: 'clock', android: 'schedule', web: 'schedule' }}
-                  accessibilityLabel="Amend hours"
-                  variant="bordered"
-                  onPress={() => setAmendHoursTarget({ date: anchor })}
-                />
-              ) : null}
-              {/* Quick jump to the "Today" home (KPI / day-at-a-glance), distinct
-                  from the in-grid Today pill that re-anchors the diary to today. */}
-              <IconButton
-                icon={{ ios: 'sun.max', android: 'wb_sunny', web: 'wb_sunny' }}
-                accessibilityLabel="Open Today overview"
-                variant="bordered"
-                onPress={() => router.push('/today')}
-              />
-              {/* The web toolbar's contact search and colour key, behind one
-                  button so the phone row keeps room for Day / Week / Month. */}
-              <IconButton
-                icon={{ ios: 'ellipsis', android: 'more_horiz', web: 'more_horiz' }}
-                accessibilityLabel="More: search contacts, colour key"
-                variant="bordered"
-                onPress={() => setToolsOpen(true)}
-              />
-            </View>
-
-            <View style={styles.dateNav}>
-              <IconButton
-                icon={{ ios: 'chevron.left', android: 'chevron_left', web: 'chevron_left' }}
-                accessibilityLabel="Previous"
-                onPress={() => step(-1)}
-              />
-              {/* Label flexes, so the Today pill appearing never moves the arrows.
-                  Tapping it opens the month-picker sheet to jump to any date; the
-                  separate Today pill (shown when off-today) returns to today. */}
-              <Pressable
-                onPress={() => {
-                  hapticSelect();
-                  setMonthPickerOpen(true);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={label}
-                accessibilityHint="Pick a date to jump to"
-                style={({ pressed }) => [styles.dateLabel, { opacity: pressed ? 0.55 : 1 }]}>
-                <Text variant="heading" numberOfLines={1}>
-                  {label}
-                </Text>
-              </Pressable>
-              {!isToday ? (
-                <Animated.View
-                  entering={motionSafe(FadeIn.duration(160), reduceMotion)}
-                  exiting={motionSafe(FadeOut.duration(120), reduceMotion)}>
-                  <Pressable
-                    onPress={goToday}
-                    accessibilityRole="button"
-                    accessibilityLabel="Jump to today"
-                    style={({ pressed }) => [
-                      styles.todayPill,
-                      {
-                        borderColor: colors.border,
-                        backgroundColor: colors.surface,
-                        opacity: pressed ? 0.7 : 1,
-                      },
-                    ]}>
-                    <Text variant="label" color={colors.brand}>
-                      Today
-                    </Text>
-                  </Pressable>
-                </Animated.View>
-              ) : null}
-              <IconButton
-                icon={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
-                accessibilityLabel="Next"
-                onPress={() => step(1)}
-              />
-            </View>
-
-            {/* Calendar switcher. Phone single-pane day + week scope: single-
-                select (one calendar, or "All" → side-by-side day / week matrix).
-                Wide day viewport: a MULTI-SELECT filter over the side-by-side
-                columns (show one, a subset, or all). Linked-venue chips follow. */}
-            {showChips ? (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.chips}>
-                {isWideDay ? (
-                  // Wide DAY view: ONE multi-select column filter (web parity)
-                  // spanning OWN calendars AND linked venues — "All" plus a toggle
-                  // each. Any non-empty subset renders side-by-side; only the
-                  // selected columns show. Highlighted = visible (everything is
-                  // highlighted when no filter is active).
-                  <>
-                    <Chip
-                      label="All"
-                      count={totalDayCount}
-                      selected={visibleIds == null}
-                      onPress={selectAllCalendars}
-                    />
-                    {/* Only the columns with working hours on the selected date
-                        (web 2026-09-05's Filter menu toggle). */}
-                    <Chip
-                      label={anchor === today ? 'Working today' : 'Working this day'}
-                      selected={workingHoursOnly}
-                      onPress={() => {
-                        hapticSelect();
-                        setWorkingHoursOnly((value) => !value);
-                      }}
-                    />
-                    {practitioners.map((p) => (
-                      <Chip
-                        key={p.id}
-                        label={diaryColumnLabel(p)}
-                        count={perPractitionerCounts[p.id]}
-                        selected={visibleIds == null || visibleIds.includes(p.id)}
-                        onPress={() => toggleVisibleCalendar(p.id)}
-                      />
-                    ))}
-                    {linkedEntries.map((entry) => (
-                      <Chip
-                        key={entry.key}
-                        label={entry.label}
-                        count={linkedSwitcherEntryCount(entry, anchor)}
-                        selected={
-                          visibleIds == null ||
-                          visibleIds.includes(entry.key) ||
-                          visibleIds.includes(linkedColumnKey(entry.venue.venueId))
-                        }
-                        onPress={() => toggleVisibleCalendar(entry.key)}
-                      />
-                    ))}
-                  </>
-                ) : (
-                  <>
-                    {(scope === 'day' || scope === 'week') && practitioners.length > 1 ? (
-                      <Chip
-                        label="All"
-                        count={scope === 'day' ? totalDayCount : undefined}
-                        selected={!isLinkedActive && (isAllView || isWeekAllView)}
-                        onPress={() => {
-                          if (isLinkedActive || selectedId !== ALL_CALENDARS) {
-                            hapticSelect();
-                            clearOwnerVenue();
-                            setSelectedId(ALL_CALENDARS);
-                          }
-                        }}
-                      />
-                    ) : null}
-                    {/* Everyone side by side, less the people not down to work
-                        (the wide view's chip, on a phone's "All" day). */}
-                    {isAllView && !isLinkedActive ? (
-                      <Chip
-                        label={anchor === today ? 'Working today' : 'Working this day'}
-                        selected={workingHoursOnly}
-                        onPress={() => {
-                          hapticSelect();
-                          setWorkingHoursOnly((value) => !value);
-                        }}
-                      />
-                    ) : null}
-                    {practitioners.map((p) => (
-                      <Chip
-                        key={p.id}
-                        label={diaryColumnLabel(p)}
-                        count={scope === 'day' ? perPractitionerCounts[p.id] : undefined}
-                        selected={
-                          !isLinkedActive && !isAllView && !isWeekAllView && p.id === effectiveId
-                        }
-                        onPress={() => {
-                          if (isLinkedActive || isAllView || isWeekAllView || p.id !== effectiveId) {
-                            hapticSelect();
-                            clearOwnerVenue();
-                            setSelectedId(p.id);
-                          }
-                        }}
-                      />
-                    ))}
-                    {/* Linked calendars, one chip each like our own (web
-                        parity) — selecting one sets the linked context
-                        (ownerVenueId plus the calendar) and renders that
-                        calendar's day/week grid full-screen; a partner that
-                        lists no calendars is one chip for the whole venue. (On
-                        a wide day they instead appear as toggleable columns in
-                        the multi-select above.) */}
-                    {linkedEntries.map((entry) => {
-                      const active =
-                        ownerVenueId === entry.venue.venueId &&
-                        activeLinkedCalendarId === entry.practitionerId;
-                      return (
-                        <Chip
-                          key={entry.key}
-                          label={entry.label}
-                          count={
-                            scope === 'day' ? linkedSwitcherEntryCount(entry, anchor) : undefined
-                          }
-                          selected={active}
-                          onPress={() => {
-                            if (!active) {
-                              hapticSelect();
-                              setOwnerVenueId(
-                                entry.venue.venueId,
-                                entry.venue.venueName,
-                                entry.practitionerId,
-                              );
-                            }
-                          }}
-                        />
-                      );
-                    })}
-                  </>
-                )}
-              </ScrollView>
-            ) : null}
-
-            {/* No status-filter pill row here — intentionally omitted on the
-                calendar diary (status filtering lives on the Bookings tab). */}
-          </View>
+          <DiaryToolbar
+            scope={scope}
+            setScope={setScope}
+            isLinkedActive={isLinkedActive}
+            clearOwnerVenue={clearOwnerVenue}
+            liveState={liveState}
+            compactDay={compactDay}
+            setCompactDay={setCompactDay}
+            anchor={anchor}
+            today={today}
+            setAmendHoursTarget={setAmendHoursTarget}
+            setToolsOpen={setToolsOpen}
+            step={step}
+            setMonthPickerOpen={setMonthPickerOpen}
+            label={label}
+            isToday={isToday}
+            goToday={goToday}
+            showChips={showChips}
+            isWideDay={isWideDay}
+            totalDayCount={totalDayCount}
+            visibleIds={visibleIds}
+            selectAllCalendars={selectAllCalendars}
+            workingHoursOnly={workingHoursOnly}
+            setWorkingHoursOnly={setWorkingHoursOnly}
+            practitioners={practitioners}
+            perPractitionerCounts={perPractitionerCounts}
+            toggleVisibleCalendar={toggleVisibleCalendar}
+            linkedEntries={linkedEntries}
+            isAllView={isAllView}
+            isWeekAllView={isWeekAllView}
+            selectedId={selectedId}
+            ALL_CALENDARS={ALL_CALENDARS}
+            setSelectedId={setSelectedId}
+            effectiveId={effectiveId}
+            ownerVenueId={ownerVenueId}
+            activeLinkedCalendarId={activeLinkedCalendarId}
+            setOwnerVenueId={setOwnerVenueId}
+          />
 
           {/*
             R21-6 — the grid below is still the last good data; this says so rather
@@ -3868,115 +2976,23 @@ export default function CalendarScreen() {
       )}
 
       {/* Add-action sheet — replaces Alert menus (no-ops on web). */}
-      <Sheet visible={addSheetTarget !== null} onClose={closeAddSheet}>
-        <Text variant="subheading">
-          {addSheetSlot ? `Add at ${addSheetSlot.time}` : 'Add to calendar'}
-        </Text>
-        {/* Where the booking lands when a live collective takes it (web parity
-            with the linked slot sheet: the destination is said out loud). */}
-        {addSheetCollective ? (
-          <Text variant="caption" tone="muted" style={styles.addSheetSectionLabel}>
-            {`For ${addSheetCollective.name}: every member business's calendars and the combined services`}
-          </Text>
-        ) : null}
-        <View style={styles.addSheetActions}>
-          {addSheetLookOnly ? (
-            // View only and Hidden (§5.11): a slot on someone else's column books only its
-            // resources here, so say why New booking, Walk-in and Block time are missing.
-            <Text variant="bodySmall" tone="secondary">
-              {ROLES_COPY['diary.new']}
-            </Text>
-          ) : (
-            <>
-              <Button
-                label={newBookingActionLabel(terminology, isAppointmentVenue)}
-                variant="primary"
-                fullWidth
-                onPress={() => {
-                  const slot = addSheetSlot;
-                  closeAddSheet();
-                  router.push({
-                    pathname: '/booking/new',
-                    params: {
-                      // A live collective takes the booking (web 2026-09-04): New
-                      // and Walk-in open the form over the whole collective, a slot
-                      // on one of its calendars with that calendar preselected.
-                      ...collectiveParamsFor(slot?.practitionerId || null),
-                      ...newBookingParams({ date: anchor, slot }),
-                    },
-                  });
-                }}
-              />
-              {/* Walk-in — slot-aware: starts at the TAPPED slot time when a slot
-                  opened the sheet, else "now" (FAB). Web parity: the slot menu offers
-                  a Walk-in at that exact time, not the current time. */}
-              <Button
-                label="Walk-in"
-                variant="secondary"
-                fullWidth
-                onPress={() => {
-                  const slot = addSheetSlot;
-                  closeAddSheet();
-                  router.push({
-                    pathname: '/booking/new',
-                    params: {
-                      ...collectiveParamsFor(slot?.practitionerId || null),
-                      ...newBookingParams({
-                        date: anchor,
-                        slot,
-                        fallbackTime: nowTime,
-                        intent: 'walk-in',
-                      }),
-                    },
-                  });
-                }}
-              />
-              {/* Block time — on a slot, fills in its column and time; from the FAB,
-                  the sheet asks. Only where this person may block (the route refuses
-                  a calendar they do not manage), never on another venue's diary. */}
-              {addSheetCanBlock ? (
-                <Button
-                  label="Block time"
-                  variant="secondary"
-                  fullWidth
-                  onPress={() => {
-                    const slot = addSheetSlot;
-                    closeAddSheet();
-                    setBlockTarget({
-                      mode: 'create',
-                      practitionerId: slot?.practitionerId ?? effectiveId,
-                      date: anchor,
-                      startTime: slot?.time ?? null,
-                    });
-                  }}
-                />
-              ) : null}
-            </>
-          )}
-
-          {/* "Book <resource>" — one button per resource hosted on the tapped
-              column (web parity: `resourcesHere`). Routes to the resource flow
-              with the resource pre-selected and the day prefilled. */}
-          {slotResources.length > 0 ? (
-            <>
-              <Text variant="caption" tone="muted" style={styles.addSheetSectionLabel}>
-                Book a resource
-              </Text>
-              {slotResources.map((r) => (
-                <Button
-                  key={r.id}
-                  label={`Book ${r.name}`}
-                  variant="secondary"
-                  fullWidth
-                  onPress={() => bookResourceAtSlot(r.id)}
-                />
-              ))}
-            </>
-          ) : null}
-
-          <Button label="Cancel" variant="ghost" fullWidth onPress={closeAddSheet} />
-        </View>
-      </Sheet>
+      <DiaryAddSheet
+        addSheetTarget={addSheetTarget}
+        closeAddSheet={closeAddSheet}
+        nowMinutes={nowMinutes}
+        diary={diary}
+        blockableCalendars={blockableCalendars}
+        linkedContextActive={linkedContextActive}
+        staffCollective={staffCollective}
+        venue={venue}
+        activeResources={activeResources}
+        anchor={anchor}
+        terminology={terminology}
+        isAppointmentVenue={isAppointmentVenue}
+        collectiveParamsFor={collectiveParamsFor}
+        setBlockTarget={setBlockTarget}
+        effectiveId={effectiveId}
+      />
 
       {/* After a drag MOVE the guest notification is deferred, so prompt the
           staff member: notify the guest of the new time, skip, or undo.
@@ -3986,46 +3002,12 @@ export default function CalendarScreen() {
           email, so the notify offer is withheld and only Undo and Done remain.
           A pure RESIZE never opens this sheet: `raiseChangeNotice` gives it a
           toast with Undo instead. */}
-      <Sheet visible={moveNotice !== null} onClose={closeMoveNotice}>
-        <Text variant="subheading">
-          {/* A visit says so: what moved was several services, and Undo puts
-              all of them back. */}
-          {moveNotice?.previous.visit ? 'Service moved' : 'Booking moved'}
-        </Text>
-        <Text variant="caption" tone="muted">
-          {!moveNotice
-            ? ''
-            : moveNotice.startMoved
-              ? `Let ${moveNotice.guestName} know about the change?`
-              : `The start time has not changed, so ${moveNotice.guestName} has not been told.`}
-        </Text>
-        {moveNotice?.overlapNote ? (
-          <Text variant="caption" tone="danger" accessibilityRole="alert">
-            {moveNotice.overlapNote}
-          </Text>
-        ) : null}
-        <View style={styles.moveNoticeActions}>
-          {moveNotice?.startMoved ? (
-            <>
-              <Button
-                label={`Notify ${moveNotice.guestName}`}
-                fullWidth
-                onPress={handleNotifyMove}
-              />
-              <Button
-                label="Don't notify"
-                variant="secondary"
-                fullWidth
-                onPress={closeMoveNotice}
-              />
-            </>
-          ) : null}
-          <Button label="Undo change" variant="ghost" fullWidth onPress={handleUndoMove} />
-          {moveNotice && !moveNotice.startMoved ? (
-            <Button label="Done" variant="secondary" fullWidth onPress={closeMoveNotice} />
-          ) : null}
-        </View>
-      </Sheet>
+      <DiaryMoveNoticeSheet
+        moveNotice={moveNotice}
+        closeMoveNotice={closeMoveNotice}
+        handleNotifyMove={handleNotifyMove}
+        handleUndoMove={handleUndoMove}
+      />
 
       {/* Accepting a Pending booking from a block tray can trip the server's
           unpaid-deposit guard; this is the choice it offers. */}
@@ -4105,66 +3087,19 @@ export default function CalendarScreen() {
       {/* A drop on another account's calendar (web #190): explain, then offer
           to book the client afresh there and, once that is made, to cancel
           the original. Two sheets, never open together. */}
-      {crossVenueMove
-        ? (() => {
-            const target = crossVenueMove.collectiveMove;
-            if (target) {
-              const copy = collectiveMoveCopy({
-                targetCalendarName: crossVenueMove.targetCalendarName,
-                targetVenueName: target.targetVenueName,
-                ownVenueName: crossVenueMove.sourceVenueName ?? venue?.name ?? 'your business',
-                time: crossVenueMove.time,
-                visitServiceName:
-                  crossVenueMove.booking.group_booking_id && !crossVenueMove.booking.person_label
-                    ? (crossVenueMove.booking.serviceName ?? '')
-                    : null,
-              });
-              return (
-                <ConfirmSheet
-                  visible
-                  title={copy.title}
-                  message={copy.message}
-                  confirmLabel={copy.confirmLabel}
-                  cancelLabel="Not now"
-                  destructive={false}
-                  loading={moveToVenue.isPending}
-                  onConfirm={confirmCollectiveMove}
-                  onClose={() => setCrossVenueMove(null)}
-                />
-              );
-            }
-            const copy = crossVenueMoveCopy(crossVenueMove);
-            return (
-              <ConfirmSheet
-                visible
-                title={copy.title}
-                message={copy.message}
-                confirmLabel={copy.confirmLabel}
-                cancelLabel="Not now"
-                destructive={false}
-                onConfirm={() => void startCrossVenueRebook()}
-                onClose={() => setCrossVenueMove(null)}
-              />
-            );
-          })()
-        : null}
-      {cancelOriginalPrompt
-        ? (() => {
-            const copy = cancelOriginalCopy(cancelOriginalPrompt);
-            return (
-              <ConfirmSheet
-                visible
-                title={copy.title}
-                message={copy.message}
-                confirmLabel="Cancel the original"
-                cancelLabel="Keep both"
-                loading={cancelOwnOriginal.isPending || cancelLinkedOriginal.isPending}
-                onConfirm={cancelOriginalAfterRebook}
-                onClose={() => setCancelOriginalPrompt(null)}
-              />
-            );
-          })()
-        : null}
+      <DiaryCrossVenueSheets
+        crossVenueMove={crossVenueMove}
+        venue={venue}
+        moveToVenue={moveToVenue}
+        confirmCollectiveMove={confirmCollectiveMove}
+        setCrossVenueMove={setCrossVenueMove}
+        startCrossVenueRebook={startCrossVenueRebook}
+        cancelOriginalPrompt={cancelOriginalPrompt}
+        cancelOwnOriginal={cancelOwnOriginal}
+        cancelLinkedOriginal={cancelLinkedOriginal}
+        cancelOriginalAfterRebook={cancelOriginalAfterRebook}
+        setCancelOriginalPrompt={setCancelOriginalPrompt}
+      />
       </ErrorBoundary>
     </Screen>
   );
@@ -4186,12 +3121,6 @@ function ClosedDayBanner() {
 }
 
 const styles = StyleSheet.create({
-  toolbar: {
-    padding: spacing.base,
-    paddingBottom: spacing.md,
-    gap: spacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
   // R21-6 stale-data notice. Thin and in flow above the grid, so it costs the
   // calendar a line rather than covering it.
   staleBanner: {
@@ -4216,34 +3145,6 @@ const styles = StyleSheet.create({
     paddingBottom: spacing['3xl'],
     gap: spacing.lg,
   },
-  scopeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  scopeControl: {
-    flex: 1,
-  },
-  dateNav: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-  },
-  dateLabel: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  todayPill: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs + 1,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-  },
-  chips: {
-    gap: spacing.sm,
-    paddingRight: spacing.base,
-  },
   weekBody: {
     flex: 1,
   },
@@ -4254,16 +3155,5 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     borderRadius: radius.md,
     borderWidth: StyleSheet.hairlineWidth,
-  },
-  addSheetActions: {
-    gap: spacing.sm,
-    marginTop: spacing.md,
-  },
-  addSheetSectionLabel: {
-    marginTop: spacing.xs,
-  },
-  moveNoticeActions: {
-    gap: spacing.sm,
-    marginTop: spacing.sm,
   },
 });

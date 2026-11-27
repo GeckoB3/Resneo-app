@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Stack, router, useLocalSearchParams, type Href } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import * as WebBrowser from 'expo-web-browser';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
   Platform,
@@ -21,7 +21,6 @@ import {
 } from '@/components/manage/AddonGroupEditorSheet';
 import {
   AddonLinksEditor,
-  addonSelectionRuleLabel,
   type AddonLink,
 } from '@/components/manage/AddonLinksEditor';
 import {
@@ -62,7 +61,6 @@ import { AddFromVenueSheet } from '@/components/services/collective/AddFromVenue
 import { CalendarValuesStep } from '@/components/services/collective/CalendarValuesStep';
 import { CollectiveCalendarsSection } from '@/components/services/collective/CollectiveCalendarsSection';
 import { MemberServiceSheet } from '@/components/services/collective/MemberServiceSheet';
-import { OnPageControl } from '@/components/services/collective/OnPageControl';
 import { ServiceSaveSummary } from '@/components/services/collective/ServiceSaveSummary';
 import { ReleaseReviewCard } from '@/components/services/collective/ReleaseReviewCard';
 import { SuggestedServicesCard } from '@/components/services/collective/SuggestedServicesCard';
@@ -85,31 +83,23 @@ import {
   type ProcessingBlockDraft,
 } from '@/components/services/ProcessingTimeBlocksEditor';
 import { ChoiceRow } from '@/components/linked/setup/ChoiceRow';
-import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
 import { CollapsibleCard } from '@/components/ui/CollapsibleCard';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Input } from '@/components/ui/Input';
 import { Screen } from '@/components/ui/Screen';
 import { SearchBar } from '@/components/ui/SearchBar';
-import { Segmented } from '@/components/ui/Segmented';
 import { Sheet } from '@/components/ui/Sheet';
 import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
-import { visibleAddonLibrary } from '@/lib/addons/visible-addon-library';
 import { ApiError, isStaleResource } from '@/lib/api/client';
 import { appointmentCalendarsOf } from '@/lib/calendar/schedule-calendars';
 import { areaCopy, formatVenueList } from '@/lib/collective-area/copy';
 import { buildCollectiveTodos } from '@/lib/collective-area/model';
 import { offerDoneSummary } from '@/lib/collective-area/offer-summary';
 import {
-  collectiveBadge,
-  collectiveServiceLines,
-  collectiveStatusBadge,
   isManagedByHost,
-  isSwitchedOffOnPage,
   suggestActionFor,
   venueCollectiveOf,
 } from '@/lib/services/collective-service';
@@ -127,11 +117,8 @@ import {
   UNCATEGORISED_GROUP_LABEL,
 } from '@/lib/booking/service-categories';
 import {
-  CARD_HOLD_FEE_NOT_USED,
-  CARD_HOLD_PERCENT_HELPER,
   cardHoldFeePercentOf,
   cardHoldPercentExampleLine,
-  cardHoldPercentLabel,
   parseCardHoldPercentInput,
 } from '@/lib/booking/card-hold-fee';
 import {
@@ -143,7 +130,7 @@ import {
   sanitizeBookingStartTimes,
 } from '@/lib/appointments/booking-interval';
 import { getWebUrl } from '@/lib/env';
-import { currencySymbol, formatPence, formatPositivePence, parsePoundsToPence, penceToPoundsInput } from '@/lib/format';
+import { currencySymbol, parsePoundsToPence, penceToPoundsInput } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAddonGroups } from '@/lib/queries/useAddonGroups';
@@ -215,6 +202,20 @@ import type {
   ServicePaymentRequirement,
 } from '@/types/services-manage';
 import { personAtBusiness } from '@/lib/venue/member-label';
+import { AddonsTab } from '@/components/services/manage/AddonsTab';
+import { ServiceRow, type OfferCalendar } from '@/components/services/manage/ServiceRow';
+import {
+  COLOUR_OPTIONS,
+  DEFAULT_STAFF_MAY,
+  LOCATION_TYPE_LABELS,
+  processingFingerprint,
+  STAFF_MAY_FIELDS,
+  type CardHoldFeeMode,
+  type StaffMayState,
+} from '@/lib/services/service-form-options';
+import { ServiceBookingRulesSection } from '@/components/services/manage/ServiceBookingRulesSection';
+import { ServicePaymentSection } from '@/components/services/manage/ServicePaymentSection';
+import { ServiceStaffMaySection } from '@/components/services/manage/ServiceStaffMaySection';
 
 type EditTarget = {
   id: string;
@@ -230,628 +231,6 @@ const saveClock = () => Date.now();
 
 /** Time for one sheet to leave before the next is shown (iOS drops a sheet opened over a closing one). */
 const SHEET_HANDOFF_MS = 350;
-
-/** Web service colour presets (`APPOINTMENT_SERVICE_COLOUR_OPTIONS`). */
-const COLOUR_OPTIONS = [
-  '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6',
-  '#EC4899', '#06B6D4', '#84CC16', '#F97316', '#6366F1',
-];
-
-/**
- * The four payment options every venue can choose from (exact web copy). Card
- * hold (spec 6.2) is a standard option; it is no longer gated by a venue flag.
- */
-const PAYMENT_OPTIONS: { value: ServicePaymentRequirement; label: string; hint: string }[] = [
-  { value: 'none', label: 'No online payment', hint: 'Pay at the business or arrange separately' },
-  { value: 'deposit', label: 'Custom deposit', hint: 'Fixed amount paid online when booking' },
-  { value: 'full_payment', label: 'Pay in full online', hint: 'Full price taken at booking' },
-  {
-    value: 'card_hold',
-    label: 'Card hold',
-    hint: 'No payment is taken when the client books. Their card is stored securely and you can charge a no-show fee if they do not attend.',
-  },
-];
-
-/** Short label for a service's delivery location (collapsed-section summary). */
-const LOCATION_TYPE_LABELS: Record<ServiceLocationType, string> = {
-  business_venue: 'At your business',
-  client_address: "At the client's address",
-  online: 'Online',
-};
-
-/** A card hold's no-show fee: a fixed amount, or a percentage of the price (web 2026-11-25). */
-type CardHoldFeeMode = 'fixed' | 'percent';
-const CARD_HOLD_FEE_MODE_OPTIONS: { value: CardHoldFeeMode; label: string }[] = [
-  { value: 'fixed', label: 'Fixed amount' },
-  { value: 'percent', label: 'Percentage of the price' },
-];
-
-/** The seven staff_may_customize_* flags shown in admin-only form section. */
-const STAFF_MAY_FIELDS: { key: keyof StaffMayState; label: string }[] = [
-  { key: 'name', label: 'Display name' },
-  { key: 'description', label: 'Description' },
-  { key: 'duration', label: 'Duration' },
-  { key: 'buffer', label: 'Buffer time' },
-  { key: 'price', label: 'Price' },
-  { key: 'deposit', label: 'Deposit' },
-  { key: 'colour', label: 'Colour' },
-];
-
-type StaffMayState = {
-  name: boolean;
-  description: boolean;
-  duration: boolean;
-  buffer: boolean;
-  price: boolean;
-  deposit: boolean;
-  colour: boolean;
-};
-
-const DEFAULT_STAFF_MAY: StaffMayState = {
-  name: false,
-  description: false,
-  duration: false,
-  buffer: false,
-  price: false,
-  deposit: false,
-  colour: false,
-};
-
-/** Order-independent fingerprint of processing drafts, for change detection. */
-function processingFingerprint(drafts: ProcessingBlockDraft[]): string {
-  return JSON.stringify(
-    drafts
-      .map((d) => [Number(d.start) || 0, Number(d.duration) || 0])
-      .sort((a, b) => a[0]! - b[0]! || a[1]! - b[1]!),
-  );
-}
-
-// ---------------------------------------------------------------------------
-// ServiceRow
-// ---------------------------------------------------------------------------
-
-/** Per-calendar offer state for the non-admin "Offer on your calendars" toggles. */
-type OfferCalendar = { id: string; name: string; enabled: boolean };
-
-function ServiceRowBase({
-  service,
-  expanded,
-  isAdmin,
-  canManage,
-  offerCalendars,
-  canOverride,
-  togglingKey,
-  onToggle,
-  onEdit,
-  onDelete,
-  onToggleCalendar,
-  onOverride,
-  onMoveUp = null,
-  onMoveDown = null,
-  onView = null,
-  suggest = null,
-  reorderPending = false,
-  pageOn = null,
-  pageBusy = false,
-  onPageChange = null,
-  memberVenueNames,
-  onSwitchOn = null,
-  switchingOn = false,
-}: {
-  service: ManagedService;
-  expanded: boolean;
-  isAdmin: boolean;
-  /** Admin, or the non-admin creator of this service — may Edit/Delete it. */
-  canManage: boolean;
-  /**
-   * Non-admin self-service "Offer on your calendars" toggles (the staff
-   * member's managed calendars + whether each currently offers this service).
-   * Empty for admins (they manage links in the form's "Offered by" section).
-   */
-  offerCalendars: OfferCalendar[];
-  /** Non-admin may set per-calendar field overrides (service permits + offers). */
-  canOverride: boolean;
-  /** `${serviceId}:${calendarId}` currently saving a toggle, or null. */
-  togglingKey: string | null;
-  onToggle: (id: string) => void;
-  onEdit: (service: ManagedService) => void;
-  onDelete: (service: ManagedService) => void;
-  onToggleCalendar: (serviceId: string, calendarId: string, nextEnabled: boolean) => void;
-  onOverride: (service: ManagedService) => void;
-  /** Admin display-order controls; null at the list edges. */
-  onMoveUp?: (() => void) | null;
-  onMoveDown?: (() => void) | null;
-  /** A host's service at a member: opens the member's read-only view (web `MemberServiceView`). */
-  onView?: ((service: ManagedService) => void) | null;
-  /**
-   * A member's parked service (web "Suggest to {host}"): the button's words and what it does, or,
-   * once suggested and the host has not answered, only the words ("Suggested to {host}").
-   */
-  suggest?: { label: string; onPress: ((service: ManagedService) => void) | null } | null;
-  reorderPending?: boolean;
-  /** A host admin's own service: whether it is on the collective page. Null shows no control (CQ-10.2). */
-  pageOn?: boolean | null;
-  pageBusy?: boolean;
-  onPageChange?: ((service: ManagedService, next: boolean) => void) | null;
-  /** The other venues, for the host's switched-off line (CQ-13). */
-  memberVenueNames?: readonly string[];
-  /** A page service switched off at the host: switches it back on (CQ-13). */
-  onSwitchOn?: ((service: ManagedService) => void) | null;
-  switchingOn?: boolean;
-}) {
-  const { colors } = useTheme();
-  const price = formatPence(service.price_pence);
-  // Positive-only: non-deposit services now persist deposit_pence: 0 (web parity),
-  // so format with the zero-hiding helper to avoid a misleading "Deposit £0.00" row.
-  const deposit = formatPositivePence(service.deposit_pence);
-  const variants = service.variants ?? [];
-  const addonGroups = service.addon_groups ?? [];
-  // D5: for card-hold services the deposit column holds the no-show fee, unless the fee is a
-  // percentage of the price (web 2026-11-25), which reads "50% of the price".
-  const isCardHold = service.payment_requirement === 'card_hold';
-  const holdPercent = isCardHold ? cardHoldFeePercentOf(service) : null;
-  const holdFee = holdPercent != null ? cardHoldPercentLabel(holdPercent) : deposit;
-  const roleBadge = collectiveBadge(service);
-  const statusBadge = collectiveStatusBadge(service);
-  const collectiveLines = collectiveServiceLines(service, { memberVenueNames });
-
-  return (
-    <Card padded={false} style={styles.serviceCard} testID={`services-row-${service.id}`}>
-      <Pressable
-        onPress={() => onToggle(service.id)}
-        accessibilityRole="button"
-        style={({ pressed }) => [styles.serviceHeader, { opacity: pressed ? 0.55 : 1 }]}>
-        <View style={[styles.colourDot, { backgroundColor: service.colour ?? colors.brand }]} />
-        <View style={styles.serviceText}>
-          <Text variant="bodyMedium" numberOfLines={1}>
-            {service.name}
-          </Text>
-          {/* Price first, then the duration behind a clock glyph (web #184). */}
-          <View style={styles.serviceFacts}>
-            {price ? (
-              <Text variant="caption" tone="muted" numberOfLines={1}>
-                {price} ·{' '}
-              </Text>
-            ) : null}
-            <SymbolView
-              name={{ ios: 'clock', android: 'schedule', web: 'schedule' }}
-              tintColor={colors.textMuted}
-              size={12}
-              accessibilityLabel="Duration"
-            />
-            <Text variant="caption" tone="muted" numberOfLines={1} style={styles.serviceFactsText}>
-              {' '}
-              {service.duration_minutes} min
-              {variants.length ? ` · ${variants.length} option${variants.length === 1 ? '' : 's'}` : ''}
-              {addonGroups.length ? ` · ${addonGroups.length} add-on group${addonGroups.length === 1 ? '' : 's'}` : ''}
-            </Text>
-          </View>
-          {/* Badges sit on their own line so two of them never squeeze the name. */}
-          {service.is_active === false || roleBadge || statusBadge ? (
-            <View style={styles.serviceBadges}>
-              {service.is_active === false ? <Badge label="Inactive" tone="neutral" /> : null}
-              {roleBadge ? <Badge label={roleBadge.label} tone={roleBadge.tone} /> : null}
-              {statusBadge ? <Badge label={statusBadge.label} tone={statusBadge.tone} /> : null}
-            </View>
-          ) : null}
-        </View>
-        <Text variant="title" tone="muted">
-          {expanded ? '▾' : '›'}
-        </Text>
-      </Pressable>
-
-      {pageOn !== null ? (
-        <View style={styles.pageControl}>
-          <OnPageControl
-            on={pageOn}
-            busy={pageBusy}
-            label={`${areaCopy('svc.card.onPageSwitch', { collective: service.collective?.collective_name })}: ${service.name}`}
-            onChange={(next) => onPageChange?.(service, next)}
-          />
-        </View>
-      ) : null}
-
-      {expanded ? (
-        <View style={[styles.serviceBody, { borderTopColor: colors.border }]}>
-          {collectiveLines.map((line) => (
-            <Text key={line} variant="caption" tone="secondary">
-              {line}
-            </Text>
-          ))}
-          {onSwitchOn && isSwitchedOffOnPage(service) ? (
-            <View style={styles.editRow}>
-              <Button
-                label={areaCopy('ov.grid.row.turnOn')}
-                variant="secondary"
-                size="sm"
-                style={styles.editBtnFull}
-                loading={switchingOn}
-                onPress={() => onSwitchOn(service)}
-              />
-            </View>
-          ) : null}
-          {service.description?.trim() ? (
-            <Text variant="bodySmall" tone="secondary">
-              {service.description}
-            </Text>
-          ) : null}
-          <View style={styles.metaGrid}>
-            {isCardHold ? (
-              <Text variant="caption" tone="muted">
-                {holdPercent != null
-                  ? `Card hold: no-show fee ${cardHoldPercentLabel(holdPercent)}`
-                  : holdFee
-                    ? `Card hold: ${holdFee} no-show fee`
-                    : 'Card hold'}
-              </Text>
-            ) : deposit ? (
-              <Text variant="caption" tone="muted">Deposit {deposit}</Text>
-            ) : null}
-            {service.buffer_minutes ? (
-              <Text variant="caption" tone="muted">Buffer {service.buffer_minutes} min</Text>
-            ) : null}
-            {!isCardHold && service.payment_requirement && service.payment_requirement !== 'none' ? (
-              <Text variant="caption" tone="muted">
-                Payment: {service.payment_requirement.replace('_', ' ')}
-              </Text>
-            ) : null}
-            {service.cancellation_notice_hours != null ? (
-              <Text variant="caption" tone="muted">
-                Cancel notice {service.cancellation_notice_hours}h
-              </Text>
-            ) : null}
-            {service.custom_availability_enabled ? (
-              <Text variant="caption" tone="muted">Custom schedule</Text>
-            ) : null}
-          </View>
-
-          {variants.length > 0 ? (
-            <View style={styles.subList}>
-              <Text variant="overline" tone="muted">Options</Text>
-              {variants.map((variant) => {
-                const staffVariant = variant as typeof variant & { is_active?: boolean };
-                return (
-                  <Text key={variant.id} variant="bodySmall" tone="secondary">
-                    • {variant.name} ({variant.duration_minutes} min)
-                    {variant.price_pence != null ? ` · ${formatPence(variant.price_pence)}` : ''}
-                    {staffVariant.is_active === false ? ' (inactive)' : ''}
-                  </Text>
-                );
-              })}
-            </View>
-          ) : null}
-
-          {addonGroups.length > 0 ? (
-            <View style={styles.subList}>
-              <Text variant="overline" tone="muted">Add-on groups</Text>
-              {addonGroups.map((group) => (
-                <Text key={group.group.id} variant="bodySmall" tone="secondary">
-                  • {group.group.name} ({group.addons.length} add-on
-                  {group.addons.length === 1 ? '' : 's'})
-                </Text>
-              ))}
-            </View>
-          ) : null}
-
-          {/* Non-admin self-service: "Offer on your calendars" toggles (web
-              parity). Each toggle replaces the FULL service set for that one
-              calendar via PUT /api/venue/practitioner-services, scoped to
-              calendars the staff member manages — so the old re-link privilege
-              hole stays closed (admins still edit every link in the form). */}
-          {offerCalendars.length > 0 ? (
-            <View style={styles.offerBox}>
-              <Text variant="overline" tone="muted">
-                Offer on your calendars
-              </Text>
-              {offerCalendars.map((cal) => (
-                <View
-                  key={cal.id}
-                  style={[styles.offerRow, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-                  <Text variant="bodySmall" numberOfLines={1} style={styles.offerName}>
-                    {cal.name}
-                  </Text>
-                  <Switch
-                    value={cal.enabled}
-                    disabled={togglingKey === `${service.id}:${cal.id}`}
-                    onValueChange={(next) => onToggleCalendar(service.id, cal.id, next)}
-                    accessibilityLabel={`Offer ${service.name} on ${cal.name}`}
-                  />
-                </View>
-              ))}
-            </View>
-          ) : null}
-
-          {/* Per-calendar field overrides — non-admin, when the service permits
-              customisation and the staff member offers it. */}
-          {!isAdmin && canOverride ? (
-            <Button
-              label="Edit your settings"
-              variant="secondary"
-              size="sm"
-              onPress={() => onOverride(service)}
-            />
-          ) : null}
-
-          {/* Display order — admins reorder the venue's service list (web 2026-07:
-              the saved order drives the booking page and staff booking form). */}
-          {isAdmin && (onMoveUp || onMoveDown) ? (
-            <View style={styles.editRow}>
-              <Button
-                label="Move up"
-                variant="secondary"
-                size="sm"
-                style={styles.editBtnFull}
-                disabled={!onMoveUp || reorderPending}
-                onPress={() => onMoveUp?.()}
-              />
-              <Button
-                label="Move down"
-                variant="secondary"
-                size="sm"
-                style={styles.editBtnFull}
-                disabled={!onMoveDown || reorderPending}
-                onPress={() => onMoveDown?.()}
-              />
-            </View>
-          ) : null}
-
-          {/* A member asks its host to add a parked service (web "Suggest to {host}"). */}
-          {suggest ? (
-            suggest.onPress ? (
-              <View style={styles.editRow}>
-                <Button
-                  label={suggest.label}
-                  variant="secondary"
-                  size="sm"
-                  style={styles.editBtnFull}
-                  onPress={() => suggest.onPress?.(service)}
-                />
-              </View>
-            ) : (
-              <Text variant="caption" tone="secondary">
-                {suggest.label}
-              </Text>
-            )
-          ) : null}
-
-          {/* A service the host manages: look at it and choose this venue's calendars (web "View"). */}
-          {onView ? (
-            <View style={styles.editRow}>
-              <Button
-                label={areaCopy('svc.member.card.view')}
-                variant="secondary"
-                size="sm"
-                style={styles.editBtnFull}
-                onPress={() => onView(service)}
-              />
-            </View>
-          ) : null}
-
-          {/* Edit/Delete — admins, or the non-admin who created this service
-              (created_by_staff_id-scoped, matching the API's own enforcement). */}
-          {canManage ? (
-            <View style={styles.editRow}>
-              <Button label="Edit" variant="secondary" size="sm" style={styles.editBtnFull} onPress={() => onEdit(service)} />
-            </View>
-          ) : null}
-          {canManage ? (
-            <Button
-              label="Delete service"
-              variant="ghost"
-              size="sm"
-              onPress={() => onDelete(service)}
-            />
-          ) : null}
-        </View>
-      ) : null}
-    </Card>
-  );
-}
-
-/** Memoized so untouched rows don't re-render when another row expands/collapses. */
-const ServiceRow = memo(ServiceRowBase);
-
-// ---------------------------------------------------------------------------
-// Add-ons library tab
-// ---------------------------------------------------------------------------
-
-function AddonsTab({
-  isAdmin,
-  addonGroupsQuery,
-  includeInactive,
-  setIncludeInactive,
-  serviceNameById,
-  onPressService,
-  onEdit,
-  onCreate,
-}: {
-  isAdmin: boolean;
-  addonGroupsQuery: ReturnType<typeof useAddonGroups>;
-  includeInactive: boolean;
-  setIncludeInactive: (v: boolean) => void;
-  /** id → name for every managed service, to render "Used by" chips. */
-  serviceNameById: Map<string, string>;
-  /** Jump to a service from a "Used by" chip. */
-  onPressService: (serviceId: string) => void;
-  onEdit: (target: AddonGroupEditorTarget) => void;
-  onCreate: () => void;
-}) {
-  const { colors } = useTheme();
-  // The query always holds every group and option (see `useAddonGroups` below):
-  // the editor saves a group's options as the full set, so one it was never
-  // shown would be removed. The switch only filters what this list shows.
-  const allAddonsByGroup = addonGroupsQuery.data?.addons_by_group ?? {};
-  const { groups, addonsByGroup } = visibleAddonLibrary(
-    addonGroupsQuery.data?.groups ?? [],
-    allAddonsByGroup,
-    includeInactive,
-  );
-  const serviceLinks = addonGroupsQuery.data?.service_links ?? [];
-
-  /** Services linked to a group, named and sorted (web parity: usedByForGroup). */
-  const usedByForGroup = (groupId: string) => {
-    const ids = new Set<string>();
-    for (const link of serviceLinks) {
-      if (link.addon_group_id === groupId) {
-        const sid = link.service_item_id ?? link.appointment_service_id;
-        if (sid) ids.add(sid);
-      }
-    }
-    return [...ids]
-      .map((id) => ({ id, name: serviceNameById.get(id) ?? 'Unknown service' }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  };
-
-  if (addonGroupsQuery.isLoading) return <ListSkeleton />;
-  if (addonGroupsQuery.isError) {
-    return (
-      <View style={styles.stateWrap}>
-        <ErrorState
-          message={
-            addonGroupsQuery.error instanceof ApiError
-              ? addonGroupsQuery.error.message
-              : 'Could not load add-on groups.'
-          }
-          onRetry={() => void addonGroupsQuery.refetch()}
-        />
-      </View>
-    );
-  }
-
-  return (
-    <ScrollView
-      contentContainerStyle={styles.content}
-      refreshControl={
-        <RefreshControl
-          refreshing={addonGroupsQuery.isRefetching}
-          onRefresh={() => void addonGroupsQuery.refetch()}
-        />
-      }>
-      {isAdmin ? <Button label="New add-on group" onPress={onCreate} fullWidth /> : null}
-      <View style={styles.switchRow}>
-        <Text variant="bodySmall" tone="muted">
-          Show archived groups
-        </Text>
-        <Switch value={includeInactive} onValueChange={setIncludeInactive} />
-      </View>
-
-      {groups.length === 0 ? (
-        <EmptyState
-          title="No add-on groups"
-          message={
-            isAdmin
-              ? 'Create add-on groups to offer clients optional extras at booking.'
-              : 'No add-on groups have been created yet.'
-          }
-        />
-      ) : (
-        groups.map((group) => {
-          const addons = addonsByGroup[group.id] ?? [];
-          const usedBy = usedByForGroup(group.id);
-          return (
-            <Card key={group.id} padded={false} style={styles.serviceCard}>
-              <View style={styles.addonGroupRow}>
-                <View style={styles.serviceText}>
-                  <View style={styles.addonGroupNameRow}>
-                    <Text variant="bodyMedium" numberOfLines={1}>
-                      {group.name}
-                    </Text>
-                    {!group.is_active ? (
-                      <Badge label="Archived" tone="warning" />
-                    ) : null}
-                    {group.hidden_from_online ? (
-                      <Badge label="Hidden online" tone="neutral" />
-                    ) : null}
-                  </View>
-                  <Text variant="caption" tone="muted">
-                    {addonSelectionRuleLabel(group)} · {addons.length} option
-                    {addons.length === 1 ? '' : 's'}
-                  </Text>
-                  {group.prompt_to_client ? (
-                    <Text variant="caption" tone="muted" numberOfLines={1}>
-                      &quot;{group.prompt_to_client}&quot;
-                    </Text>
-                  ) : null}
-                </View>
-                {isAdmin ? (
-                  <Button
-                    label="Edit"
-                    variant="secondary"
-                    size="sm"
-                    onPress={() =>
-                      onEdit({
-                        mode: 'edit',
-                        group,
-                        // Every option, inactive ones included, whatever the list shows.
-                        addons: allAddonsByGroup[group.id] ?? [],
-                      })
-                    }
-                  />
-                ) : null}
-              </View>
-              {addons.length > 0 ? (
-                <View
-                  style={[
-                    styles.addonList,
-                    { borderTopColor: colors.border },
-                  ]}>
-                  {addons.map((addon) => (
-                    <Text key={addon.id} variant="bodySmall" tone="secondary">
-                      • {addon.name}
-                      {addon.additional_price_pence > 0
-                        ? ` +${formatPence(addon.additional_price_pence)}`
-                        : ''}
-                      {addon.additional_duration_minutes > 0
-                        ? ` +${addon.additional_duration_minutes}min`
-                        : ''}
-                      {!addon.is_active ? ' (inactive)' : ''}
-                    </Text>
-                  ))}
-                </View>
-              ) : null}
-              <View style={[styles.usedByWrap, { borderTopColor: colors.border }]}>
-                {usedBy.length > 0 ? (
-                  <>
-                    <Text variant="overline" tone="muted">
-                      Used by ({usedBy.length})
-                    </Text>
-                    <View style={styles.usedByChips}>
-                      {usedBy.map((svc) => (
-                        <Pressable
-                          key={svc.id}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Open service ${svc.name}`}
-                          hitSlop={6}
-                          onPress={() => onPressService(svc.id)}
-                          style={({ pressed }) => [
-                            styles.usedByChip,
-                            {
-                              borderColor: colors.border,
-                              backgroundColor: colors.surface,
-                              opacity: pressed ? 0.6 : 1,
-                            },
-                          ]}>
-                          <Text variant="caption" tone="secondary" numberOfLines={1}>
-                            {svc.name}
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                  </>
-                ) : (
-                  <Text variant="caption" tone="muted">
-                    Not linked to any services yet.
-                  </Text>
-                )}
-              </View>
-            </Card>
-          );
-        })
-      )}
-      <View style={styles.spacer} />
-    </ScrollView>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Main screen
@@ -3578,154 +2957,36 @@ export default function ServicesScreen() {
             ) : null}
 
             {/* Online payment */}
-            <Text variant="overline" tone="muted">Online payment</Text>
-            {PAYMENT_OPTIONS.map((option) => {
-              const selected = paymentReq === option.value;
-              return (
-                <Pressable
-                  key={option.value}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected }}
-                  onPress={() => setPaymentReq(option.value)}
-                  style={({ pressed }) => [
-                    styles.radioRow,
-                    {
-                      borderColor: selected ? colors.brand : colors.border,
-                      backgroundColor: selected ? colors.brandSubtle : colors.surface,
-                      opacity: pressed ? 0.7 : 1,
-                    },
-                  ]}>
-                  <View
-                    style={[
-                      styles.radioDot,
-                      { borderColor: selected ? colors.brand : colors.borderStrong },
-                    ]}>
-                    {selected ? (
-                      <View style={[styles.radioDotInner, { backgroundColor: colors.brand }]} />
-                    ) : null}
-                  </View>
-                  <View style={styles.radioText}>
-                    <Text variant="bodyMedium">{option.label}</Text>
-                    <Text variant="caption" tone="muted">{option.hint}</Text>
-                  </View>
-                </Pressable>
-              );
-            })}
-            {isCardHoldSelected ? (
-              <View style={styles.sectionStack} testID="services-hold-fee-mode">
-                <Text variant="label">No-show fee</Text>
-                <Segmented
-                  options={CARD_HOLD_FEE_MODE_OPTIONS}
-                  value={holdFeeMode}
-                  onChange={setHoldFeeMode}
-                  wrapLabels
-                />
-              </View>
-            ) : null}
-            {!usesVariants || paymentReq === 'deposit' || (isCardHoldSelected && !holdFeeIsPercent) ? (
-              <View style={styles.moneyRow}>
-                {!usesVariants ? (
-                  <View style={styles.moneyField}>
-                    <Input label={`Price (${currencySymbol()})`} value={price} onChangeText={setPrice} keyboardType="decimal-pad" />
-                  </View>
-                ) : null}
-                {paymentReq === 'deposit' || (isCardHoldSelected && !holdFeeIsPercent) ? (
-                  <View style={styles.moneyField}>
-                    <Input
-                      label={
-                        isCardHoldSelected
-                          ? usesVariants
-                            ? `Default no-show fee (${currencySymbol()})`
-                            : `No-show fee (${currencySymbol()})`
-                          : usesVariants
-                            ? `Default deposit (${currencySymbol()})`
-                            : `Deposit (${currencySymbol()})`
-                      }
-                      helper={
-                        isCardHoldSelected
-                          ? usesVariants
-                            ? `Used when an option leaves its fee blank. Must be at least ${currencySymbol()}1.`
-                            : `The no-show fee must be at least ${currencySymbol()}1.`
-                          : usesVariants
-                            ? 'Used when an option leaves its deposit blank.'
-                            : undefined
-                      }
-                      value={deposit}
-                      onChangeText={setDeposit}
-                      keyboardType="decimal-pad"
-                    />
-                  </View>
-                ) : null}
-              </View>
-            ) : null}
-            {holdFeeIsPercent ? (
-              <View style={styles.sectionStack}>
-                <Input
-                  label="No-show fee (%)"
-                  helper={CARD_HOLD_PERCENT_HELPER}
-                  value={holdFeePercent}
-                  onChangeText={setHoldFeePercent}
-                  keyboardType="number-pad"
-                  maxLength={3}
-                  testID="services-hold-fee-percent"
-                />
-                {holdPercentExample ? (
-                  <Text variant="caption" tone="secondary" testID="services-hold-fee-example">
-                    {holdPercentExample}
-                  </Text>
-                ) : null}
-              </View>
-            ) : null}
-            {usesVariants && paymentReq === 'full_payment' ? (
-              <Text variant="caption" tone="muted">
-                Each option offered to clients needs its own price. That&apos;s what they pay online.
-              </Text>
-            ) : null}
-
-            {/* Stripe-not-connected warning when an online payment is required (web parity). */}
-            {paymentReq !== 'none' && !stripeConnected ? (
-              <View style={[styles.stripeWarning, { backgroundColor: colors.warningSurface }]}>
-                <Text variant="caption" color={colors.warning}>
-                  Stripe is not connected. Connect your Stripe account in More, then Plan &amp; payments,
-                  before clients can pay online.
-                </Text>
-              </View>
-            ) : null}
+            <ServicePaymentSection
+              paymentReq={paymentReq}
+              setPaymentReq={setPaymentReq}
+              isCardHoldSelected={isCardHoldSelected}
+              holdFeeMode={holdFeeMode}
+              setHoldFeeMode={setHoldFeeMode}
+              usesVariants={usesVariants}
+              holdFeeIsPercent={holdFeeIsPercent}
+              price={price}
+              setPrice={setPrice}
+              deposit={deposit}
+              setDeposit={setDeposit}
+              holdFeePercent={holdFeePercent}
+              setHoldFeePercent={setHoldFeePercent}
+              holdPercentExample={holdPercentExample}
+              stripeConnected={stripeConnected}
+            />
 
             {/* Guest booking rules — collapsed; touched rarely after first setup. */}
-            <CollapsibleCard title="Client booking rules" summary={bookingRulesSummary}>
-              <View style={styles.sectionStack}>
-                <View style={styles.moneyRow}>
-                  <View style={styles.moneyField}>
-                    <Input
-                      label="Book ahead (days)"
-                      value={advanceDays}
-                      onChangeText={setAdvanceDays}
-                      keyboardType="number-pad"
-                    />
-                  </View>
-                  <View style={styles.moneyField}>
-                    <Input
-                      label="Min notice (hours)"
-                      value={noticeHours}
-                      onChangeText={setNoticeHours}
-                      keyboardType="number-pad"
-                    />
-                  </View>
-                </View>
-                <Input
-                  label="Cancellation notice (hours)"
-                  helper="Refund cut-off for deposits and online payments."
-                  value={cancelHours}
-                  onChangeText={setCancelHours}
-                  keyboardType="number-pad"
-                />
-                <View style={styles.switchRow}>
-                  <Text variant="bodyMedium">Allow same-day bookings</Text>
-                  <Switch value={sameDay} onValueChange={setSameDay} />
-                </View>
-              </View>
-            </CollapsibleCard>
+            <ServiceBookingRulesSection
+              bookingRulesSummary={bookingRulesSummary}
+              advanceDays={advanceDays}
+              setAdvanceDays={setAdvanceDays}
+              noticeHours={noticeHours}
+              setNoticeHours={setNoticeHours}
+              cancelHours={cancelHours}
+              setCancelHours={setCancelHours}
+              sameDay={sameDay}
+              setSameDay={setSameDay}
+            />
 
             {/* Colour */}
             <Text variant="overline" tone="muted">Calendar colour</Text>
@@ -3967,82 +3228,21 @@ export default function ServicesScreen() {
             {isAdmin ? (
               <>
                 {/* Staff override permissions */}
-                <CollapsibleCard title="Staff override permissions" summary={staffMaySummary}>
-                  <View style={styles.sectionStack}>
-                    {showMemberValues ? (
-                      <Text variant="label" tone="muted">
-                        {areaCopy('svc.form.staffMay.ownHeading')}
-                      </Text>
-                    ) : null}
-                    <Text variant="caption" tone="muted">
-                      {showMemberValues
-                        ? areaCopy(optionsLocked ? 'svc.form.staffMay.ownHelpOptions' : 'svc.form.staffMay.ownHelp')
-                        : 'Allow staff members with their own calendar to override these fields for their calendar only.'}
-                    </Text>
-                    {STAFF_MAY_FIELDS.map(({ key, label }) => (
-                      <View key={key} style={styles.switchRow}>
-                        {key === 'deposit' && holdFeeIsPercent ? (
-                          // A person's own fixed fee is not used with a percentage fee (web plan PF5).
-                          <View style={styles.staffMayLabel}>
-                            <Text variant="bodyMedium" tone={staffMayLocked(key) ? 'muted' : undefined}>
-                              {label}
-                            </Text>
-                            <Text variant="caption" tone="muted">
-                              {CARD_HOLD_FEE_NOT_USED}
-                            </Text>
-                          </View>
-                        ) : (
-                          <Text variant="bodyMedium" tone={staffMayLocked(key) ? 'muted' : undefined}>
-                            {label}
-                          </Text>
-                        )}
-                        <Switch
-                          // A locked box shows off, as the server stores it, and the save sends it off.
-                          value={staffMaySends(key)}
-                          disabled={staffMayLocked(key)}
-                          accessibilityLabel={`Staff may change: ${label}`}
-                          onValueChange={(v) =>
-                            setStaffMay((prev) => ({ ...prev, [key]: v }))
-                          }
-                        />
-                      </View>
-                    ))}
-                    {optionsLocked ? (
-                      <Text variant="caption" tone="muted">
-                        {areaCopy('svc.form.staffMay.optionsLocked')}
-                      </Text>
-                    ) : null}
-                    {nameLocked ? (
-                      <Text variant="caption" tone="muted">
-                        {areaCopy('svc.form.staffMay.nameLocked', {
-                          collective: editingService?.collective?.collective_name ?? serviceCollective?.name,
-                        })}
-                      </Text>
-                    ) : null}
-                    {showMemberValues ? (
-                      <View style={[styles.sectionStack, styles.memberValuesPart, { borderTopColor: colors.border }]}>
-                        <Text variant="label" tone="muted">
-                          {areaCopy('svc.form.memberValues.heading', { venueList: memberVenueWords })}
-                        </Text>
-                        <View style={styles.switchRow}>
-                          <Text variant="bodyMedium" style={styles.flexText}>
-                            {areaCopy(optionsLocked ? 'svc.form.memberValues.labelOptions' : 'svc.form.memberValues.label')}
-                          </Text>
-                          <Switch
-                            value={memberValuesAllowed}
-                            accessibilityLabel={areaCopy(
-                              optionsLocked ? 'svc.form.memberValues.labelOptions' : 'svc.form.memberValues.label',
-                            )}
-                            onValueChange={setMemberValuesAllowed}
-                          />
-                        </View>
-                        <Text variant="caption" tone="muted">
-                          {areaCopy(memberValuesAllowed ? 'svc.form.memberValues.open' : 'svc.form.memberValues.locked')}
-                        </Text>
-                      </View>
-                    ) : null}
-                  </View>
-                </CollapsibleCard>
+                <ServiceStaffMaySection
+                  staffMaySummary={staffMaySummary}
+                  showMemberValues={showMemberValues}
+                  optionsLocked={optionsLocked}
+                  holdFeeIsPercent={holdFeeIsPercent}
+                  staffMayLocked={staffMayLocked}
+                  staffMaySends={staffMaySends}
+                  setStaffMay={setStaffMay}
+                  nameLocked={nameLocked}
+                  editingService={editingService}
+                  serviceCollective={serviceCollective}
+                  memberVenueWords={memberVenueWords}
+                  memberValuesAllowed={memberValuesAllowed}
+                  setMemberValuesAllowed={setMemberValuesAllowed}
+                />
 
                 {/* Location / online-meeting */}
                 <CollapsibleCard title="Location" summary={locationSummary}>
@@ -4297,10 +3497,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
-  pageControl: {
-    paddingHorizontal: spacing.base,
-    paddingBottom: spacing.base,
-  },
   headerActions: {
     flexDirection: 'row',
     gap: spacing.sm,
@@ -4340,117 +3536,6 @@ const styles = StyleSheet.create({
   groupHeading: {
     marginTop: spacing.sm,
     marginBottom: spacing.xs,
-  },
-  serviceCard: {
-    overflow: 'hidden',
-  },
-  serviceHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    padding: spacing.base,
-  },
-  colourDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  serviceText: {
-    flex: 1,
-    minWidth: 0,
-    gap: 1,
-  },
-  serviceBadges: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-    marginTop: spacing.xs,
-  },
-  serviceFacts: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    minWidth: 0,
-  },
-  serviceFactsText: {
-    flexShrink: 1,
-  },
-  serviceBody: {
-    padding: spacing.base,
-    paddingTop: spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    gap: spacing.md,
-  },
-  metaGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.md,
-  },
-  subList: {
-    gap: spacing.xs,
-  },
-  editRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  editBtnFull: {
-    flex: 1,
-  },
-  // Non-admin "Offer on your calendars" toggles in the expanded row.
-  offerBox: {
-    gap: spacing.xs,
-  },
-  offerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.base,
-    minHeight: 48,
-  },
-  offerName: {
-    flex: 1,
-    minWidth: 0,
-  },
-  // Add-ons tab
-  addonGroupRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    padding: spacing.base,
-  },
-  addonGroupNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    flexWrap: 'wrap',
-  },
-  addonList: {
-    paddingHorizontal: spacing.base,
-    paddingBottom: spacing.base,
-    paddingTop: spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    gap: spacing.xs,
-  },
-  usedByWrap: {
-    paddingHorizontal: spacing.base,
-    paddingVertical: spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    gap: spacing.xs,
-  },
-  usedByChips: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  usedByChip: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs + 2,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    maxWidth: '100%',
   },
   spacer: {
     height: spacing.xl,
@@ -4499,46 +3584,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: spacing.xs,
   },
-  staffMayLabel: {
-    flex: 1,
-    gap: 2,
-    paddingRight: spacing.sm,
-  },
-  // The other venues' part of the overrides on a page service (web 2026-11-05).
-  memberValuesPart: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: spacing.md,
-  },
-  flexText: {
-    flex: 1,
-    paddingRight: spacing.md,
-  },
-  radioRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    padding: spacing.md,
-    borderRadius: radius.md,
-    borderWidth: 1,
-  },
-  radioDot: {
-    width: 20,
-    height: 20,
-    borderRadius: radius.full,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  radioDotInner: {
-    width: 10,
-    height: 10,
-    borderRadius: radius.full,
-  },
-  radioText: {
-    flex: 1,
-    minWidth: 0,
-    gap: 1,
-  },
   swatchRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -4569,9 +3614,5 @@ const styles = StyleSheet.create({
   },
   deleteSheet: {
     gap: spacing.md,
-  },
-  stripeWarning: {
-    borderRadius: radius.md,
-    padding: spacing.md,
   },
 });
