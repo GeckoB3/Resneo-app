@@ -72,6 +72,8 @@ import {
   appointmentWizardPhase,
 } from '@/lib/booking/appointment-wizard-phase';
 import { useAppointmentCatalog } from '@/lib/queries/useAppointmentCatalog';
+import { useBookingQuote } from '@/lib/queries/useBookingQuote';
+import { applyQuoteToSegments, visitQuoteItems, type BookingQuoteRequest } from '@/lib/booking/booking-quote';
 import { defaultPhoneCountryForVenueCurrency } from '@/lib/phone/e164';
 import { useBookingFormVenue } from '@/lib/queries/useBookingFormVenue';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
@@ -1432,6 +1434,34 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     [isCollective, multiServiceSegments, businessNameOf],
   );
 
+  /**
+   * The visit as the server books it (web codebase standards plan P4.2): each service's length,
+   * price and what it asks for online come from the quote, on the review and the confirm step.
+   * The chain is still laid out here (its starts are what the quote is asked about), and until the
+   * quote is here, or on a server without it, the segments keep the figures worked out above. A
+   * visit across businesses is not quoted.
+   */
+  const visitQuoteRequest: BookingQuoteRequest | null = useMemo(
+    () =>
+      multiServiceSegments && multiServiceSegments.length > 1 && selectedDate && !(visitParts && visitParts.length >= 2)
+        ? {
+            date: selectedDate,
+            mode: 'visit' as const,
+            source,
+            staff_charge: { require_deposit: requireDeposit && source !== 'walk-in' },
+            ...(ownerVenueId ? { owner_venue_id: ownerVenueId } : {}),
+            ...(availabilityOverride ? { override_availability: true } : {}),
+            items: visitQuoteItems(multiServiceSegments),
+          }
+        : null,
+    [multiServiceSegments, selectedDate, visitParts, source, requireDeposit, ownerVenueId, availabilityOverride],
+  );
+  const { quote: visitQuote } = useBookingQuote(visitQuoteRequest);
+  const quotedSegments = useMemo(
+    () => (multiServiceSegments ? applyQuoteToSegments(multiServiceSegments, visitQuote) : null),
+    [multiServiceSegments, visitQuote],
+  );
+
   // Apply rebook bootstrap on mount (after catalog loads).
   const rebookApplyRef = useRef(false);
   useEffect(() => {
@@ -2378,7 +2408,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
 
       {activeKey === 'multi_service' && multiServiceSegments && multiServiceSegments.length > 0 ? (
         <MultiServiceReviewStep
-          segments={multiServiceSegments}
+          segments={quotedSegments ?? multiServiceSegments}
           date={selectedDate}
           visitPractitioner={visitPractitioner}
           onChangeServices={changeServices}
@@ -2444,7 +2474,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           venueId={venueId}
           collectClientAddress={selectedService?.locationType === 'client_address'}
           multiServiceSegments={
-            multiServiceSegments && multiServiceSegments.length > 1 ? multiServiceSegments : null
+            quotedSegments && quotedSegments.length > 1 ? quotedSegments : null
           }
           overrideAvailability={availabilityOverride}
         />

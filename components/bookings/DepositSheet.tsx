@@ -26,11 +26,7 @@ import {
 } from '@/lib/booking/card-hold';
 import { hasSettleableDeposit } from '@/lib/booking/booking-staff-indicators';
 import { confirmWithoutCardUndoneMessage } from '@/lib/booking/card-list';
-import {
-  canKeepWithoutDeposit,
-  keepWithoutDepositLabel,
-  keepWithoutDepositQuestion,
-} from '@/lib/booking/deposit-owed-line';
+import { keepWithoutDepositView, type serverKeepFrom } from '@/lib/booking/server-deposit-fields';
 import { currencySymbol, formatPositivePence } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
@@ -68,6 +64,8 @@ export type DepositTarget = {
   linkedVisitId?: string | null;
   /** What the owed deposit waits for and until when (web deposit-handling plan DH2). */
   owedLine?: string | null;
+  /** The server's "Keep without deposit" answer and words (P4.3); absent from an older server. */
+  serverKeep?: ReturnType<typeof serverKeepFrom>;
 };
 
 type DepositSheetProps = {
@@ -309,17 +307,23 @@ export function DepositSheet({ target, onClose, onAddCard }: DepositSheetProps) 
   const amount = formatPositivePence(target?.amountPence);
   const hold = target?.cardHold ?? null;
   const word: 'deposit' | 'payment' = target?.paidInFull ? 'payment' : 'deposit';
-  const showKeep =
-    !!target &&
-    canKeepWithoutDeposit({
-      status: target.bookingStatus,
-      deposit_status: target.status,
-      deposit_amount_pence: target.amountPence,
-      linked_visit_id: target.linkedVisitId ?? null,
-    });
-  const keepQuestion = target
-    ? keepWithoutDepositQuestion({ word, amountPence: target.amountPence, guestName: target.guestName })
+  // "Keep without deposit": the server's answer and words when it sent them (web codebase standards
+  // plan P4.3), else worked out here for an older server.
+  const keepView = target
+    ? keepWithoutDepositView({
+        server: target.serverKeep,
+        local: {
+          status: target.bookingStatus,
+          depositStatus: target.status,
+          amountPence: target.amountPence,
+          linkedVisitId: target.linkedVisitId,
+          word,
+          guestName: target.guestName,
+        },
+      })
     : null;
+  const showKeep = Boolean(keepView?.show);
+  const keepQuestion = keepView?.question ?? null;
 
   // §9.2 charge amount bounds: min 1 pence (the server's invalid_amount quotes
   // £0.01), max = the consented fee snapshot.
@@ -621,7 +625,7 @@ export function DepositSheet({ target, onClose, onAddCard }: DepositSheetProps) 
                     />
                     {showKeep ? (
                       <Button
-                        label={keepWithoutDepositLabel(word)}
+                        label={keepView?.label ?? ''}
                         variant="secondary"
                         onPress={() => {
                           hapticWarning();

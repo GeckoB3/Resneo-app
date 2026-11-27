@@ -125,6 +125,71 @@ export const venueBookingCreateSchema = obj({
 /** POST /api/venue/bookings/walk-in: the new booking row. The app reads `booking_id ?? id`. */
 export const walkInCreateSchema = z.union([obj({ booking_id: str }), obj({ id: str })]);
 
+const chargeKind = z.enum(['none', 'deposit', 'full_payment', 'card_hold']);
+
+/**
+ * POST /api/venue/bookings/quote (plan P4.2): what a staff booking would come to. The app reads a
+ * quote only when `quote_version` is there, and its own rules otherwise.
+ */
+export const bookingQuoteSchema = obj({
+  quote_version: num,
+  mode: z.enum(['single', 'visit', 'group']),
+  cancellation_notice_hours: num,
+  card_payments_available: bool,
+  items: z.array(
+    obj({
+      index: num,
+      service_id: str,
+      calendar_id: str,
+      date: str,
+      start: str,
+      end: str,
+      duration_minutes: num,
+      buffer_minutes: num,
+      processing_tail_minutes: num,
+      estimated_end_time: strN,
+      processing_blocks: z.array(obj({ start_minute: num, duration_minutes: num })),
+      price: obj({ service_pence: numN, addons_pence: num, total_pence: num }),
+      charge: obj({
+        kind: chargeKind,
+        amount_pence: num,
+        card_hold_fee_pence: numN,
+        offered_kind: chargeKind,
+        offered_amount_pence: num,
+        card_hold_percent: numN,
+      }),
+    }),
+  ),
+  totals: obj({
+    price_pence: num,
+    duration_minutes: num,
+    starts_at: str,
+    ends_at: str,
+    charge_now_pence: num,
+    offered_charge_pence: num,
+    card_hold_fee_pence: num,
+  }),
+  deposit: obj({
+    required: bool,
+    amount_pence: num,
+    offered_amount_pence: num,
+    word: z.enum(['deposit', 'payment']),
+    cancel_choice: bool,
+    deadline_text: strN,
+    cancel_label: strN,
+    kept: bool.nullable(),
+    cancel_at: strN,
+    outcome_line: strN,
+  }),
+  card_hold: obj({
+    required: bool,
+    fee_pence: num,
+    consent_text: strN,
+    percent: numN,
+    percent_label: strN,
+  }),
+});
+
 // ---------------------------------------------------------------------------------------------
 // Bookings
 // ---------------------------------------------------------------------------------------------
@@ -163,6 +228,10 @@ export const bookingDetailSchema = obj({
   viewer_link: opt(obj({ venue_id: str, act: str, pii: bool })),
   payments: z.array(obj({})).optional(),
   can_delete: bool.optional(),
+  /** P4.3: the owed-deposit line and "Keep without deposit", from the server (absent on older ones). */
+  deposit_owed_line: opt(str),
+  can_keep_without_deposit: bool.optional(),
+  keep_without_deposit: opt(obj({ label: str, title: str, message: str, confirm_label: str })),
 });
 
 /** One row of GET /api/venue/bookings/list: the app's `BookingListRow`. */
@@ -519,6 +588,7 @@ export const RESPONSE_CONTRACTS: readonly ResponseContract[] = [
   contract('POST', '/api/booking/create-multi-service', groupedCreateSchema),
   contract('POST', '/api/venue/bookings', venueBookingCreateSchema),
   contract('POST', '/api/venue/bookings/walk-in', walkInCreateSchema),
+  contract('POST', '/api/venue/bookings/quote', bookingQuoteSchema),
   contract('GET', '/api/venue/bookings/[id]', bookingDetailSchema),
   contract('GET', '/api/venue/appointment-services', appointmentServicesSchema),
   contract('GET', '/api/venue/practitioners', practitionersSchema),

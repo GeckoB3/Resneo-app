@@ -25,6 +25,14 @@ jest.mock('@/lib/analytics', () => ({
 // (it has no confirmation screen of its own), so it needs the toast host.
 const mockToast = { success: jest.fn(), error: jest.fn(), info: jest.fn() };
 jest.mock('@/providers/ToastProvider', () => ({ useToast: () => mockToast }));
+// The server's quote (web P4.2): recorded here; the flow keeps its own figures without one.
+const mockQuoteRequests: unknown[] = [];
+jest.mock('@/lib/queries/useBookingQuote', () => ({
+  useBookingQuote: (request: unknown) => {
+    mockQuoteRequests.push(request);
+    return { quote: null, isLoading: false };
+  },
+}));
 
 import { GroupBookingFlow } from '@/components/booking-wizard/GroupBookingFlow';
 import type { AppointmentCatalogResponse } from '@/types/appointment-catalog';
@@ -89,6 +97,13 @@ describe('GroupBookingFlow', () => {
     await press(() => screen.getByText('Choose a service'));
     // Service step renders the catalog service.
     expect(screen.getByText('Massage')).toBeTruthy();
+  });
+
+  it('asks no quote before anyone is added', async () => {
+    mockQuoteRequests.length = 0;
+    await renderFlow();
+    expect(mockQuoteRequests.length).toBeGreaterThan(0);
+    expect(mockQuoteRequests.every((r) => r === null)).toBe(true);
   });
 
   it('can switch back to the single-booking flow', async () => {

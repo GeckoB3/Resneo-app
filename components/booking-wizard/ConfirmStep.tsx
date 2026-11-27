@@ -35,6 +35,14 @@ import {
 } from '@/lib/booking/appointment-online-charge';
 import { cardHoldFeeFor } from '@/lib/booking/card-hold-fee';
 import {
+  quoteClient,
+  quoteDepositOutcome,
+  quoteOfferedCharge,
+  visitQuoteItems,
+  type BookingQuoteRequest,
+} from '@/lib/booking/booking-quote';
+import { useBookingQuote } from '@/lib/queries/useBookingQuote';
+import {
   buildMultiServicePayload,
   chainTotalMinutes,
   chainTotalPence,
@@ -495,6 +503,13 @@ export function ConfirmStep({
   const [checkingCreate, setCheckingCreate] = useState(false);
   /** Resends of this Book press after a timeout; each press starts again at 0. */
   const resendsRef = useRef(0);
+  /**
+   * The card line (web card-on-file-plan §6.2), and "Cancel if not paid by ..." under Require
+   * deposit (web deposit-handling plan DH1): declared here because the server's quote is asked with
+   * them.
+   */
+  const [cardRequest, setCardRequest] = useState<StaffCardRequestState>(DEFAULT_STAFF_CARD_REQUEST);
+  const [cancelIfUnpaid, setCancelIfUnpaid] = useState(true);
 
   // For "Any available" rows the booking targets the slot's real practitioner.
   const practitionerId =
@@ -516,14 +531,54 @@ export function ConfirmStep({
   // Reading the option alone left a card-hold service with options showing no card
   // line at all (found on the phone 2026-11-18).
   const baseDeposit = (variant ? variant.deposit_pence : null) ?? service.depositPence;
+  /**
+   * The server's quote (web codebase standards plan P4.2): the times, prices, charges and deposit
+   * wording below come from it when it is here. Until then, and on a server without it, the local
+   * rules below stand, as they always have. A visit across businesses is not quoted (its one
+   * checkout keeps its own rules), so it keeps the local figures.
+   */
+  const acrossBusinesses = isMultiService && (businessParts?.length ?? 0) >= 2;
+  const quoteRequest: BookingQuoteRequest | null = acrossBusinesses
+    ? null
+    : {
+        date,
+        mode: isMultiService ? 'visit' : 'single',
+        source,
+        staff_charge: {
+          require_deposit: requireDepositProp && !noCardPayments && source !== 'walk-in',
+          require_card_hold: cardRequest.requestCard,
+          cancel_if_no_card: cardRequest.cancelIfNoCard,
+          cancel_if_unpaid: cancelIfUnpaid,
+        },
+        ...(ownerVenueId ? { owner_venue_id: ownerVenueId } : {}),
+        ...(overrideAvailability ? { override_availability: true } : {}),
+        client: quoteClient({ email: guest.email, phone: guest.phone, guest_id: guest.guest_id }),
+        items: isMultiService
+          ? visitQuoteItems(multiServiceSegments!)
+          : [
+              {
+                service_id: service.serviceId,
+                ...(variant ? { variant_id: variant.id } : {}),
+                calendar_id: practitionerId,
+                start: slot.start_time.slice(0, 5),
+                ...(durationOverride != null ? { custom_duration_minutes: durationOverride } : {}),
+                ...(addons.length ? { addon_ids: addons.map((a) => a.id) } : {}),
+              },
+            ],
+      };
+  const { quote } = useBookingQuote(quoteRequest);
   // A multi-service visit totals across all chained segments; a single booking
   // totals just this service (+ its add-ons).
-  const totalPrice = isMultiService
-    ? chainTotalPence(multiServiceSegments!)
-    : basePrice + addonsPrice;
-  const totalDuration = isMultiService
-    ? chainTotalMinutes(multiServiceSegments!)
-    : baseDuration + addonsDuration;
+  const totalPrice = quote
+    ? quote.totals.price_pence
+    : isMultiService
+      ? chainTotalPence(multiServiceSegments!)
+      : basePrice + addonsPrice;
+  const totalDuration = quote
+    ? quote.totals.duration_minutes
+    : isMultiService
+      ? chainTotalMinutes(multiServiceSegments!)
+      : baseDuration + addonsDuration;
   /**
    * What this booking asks for online, across the WHOLE visit.
    *
@@ -547,7 +602,9 @@ export function ConfirmStep({
     card_hold_fee_percent: service.cardHoldFeePercent,
   };
   const singleCharge = resolveAppointmentServiceOnlineCharge(singleChargeFields, addonsPrice);
-  const visitCharge = isMultiService
+  const visitCharge = quote
+    ? quoteOfferedCharge(quote)
+    : isMultiService
     ? resolveVisitChargeTotal(multiServiceSegments!)
     : {
         amountPence:
@@ -574,9 +631,15 @@ export function ConfirmStep({
   // standing, which meant a chain containing one card-hold service always held
   // a card and staff had no way to say otherwise.
   const chainCardHoldPence = isMultiService
-    ? resolveVisitCardHoldTotal(multiServiceSegments!)
+    ? quote
+      ? quote.card_hold.fee_pence
+      : resolveVisitCardHoldTotal(multiServiceSegments!)
     : 0;
-  const entityCardHold = isMultiService
+  const entityCardHold = quote
+    ? quote.card_hold.required && quote.card_hold.fee_pence > 0
+      ? { feePence: quote.card_hold.fee_pence }
+      : null
+    : isMultiService
     ? chainCardHoldPence > 0
       ? { feePence: chainCardHoldPence }
       : null
@@ -590,7 +653,6 @@ export function ConfirmStep({
    * card is added within 24 hours". Where the business cannot take card payments nothing is asked
    * for and the create says "no hold" outright.
    */
-  const [cardRequest, setCardRequest] = useState<StaffCardRequestState>(DEFAULT_STAFF_CARD_REQUEST);
   const [addCardOpen, setAddCardOpen] = useState(false);
   const byBusinessVisit = isMultiService && (businessParts?.length ?? 0) >= 2;
   // The collective form's `ownerVenueId` is the collective: looking the card up there was refused,
@@ -667,18 +729,21 @@ export function ConfirmStep({
    * kept. Not on a visit across businesses (its one checkout keeps its own rules), nor on a visit
    * that also holds a card, whose deposit parts keep their old rule on the server.
    */
-  const [cancelIfUnpaid, setCancelIfUnpaid] = useState(true);
   const depositChoiceApplies = !byBusiness && !(isMultiService && chainCardHoldPence > 0);
   const firstStart = isMultiService
     ? [...multiServiceSegments!].map((s) => s.startTime.slice(0, 5)).sort()[0] ?? null
     : slot.start_time;
-  const depositDeadlineText = staffDepositDeadlineText({ date, time: firstStart, timeZone });
+  // The server's deadline when quoted (null under 2 hours to go, as the local rule says).
+  const depositDeadlineText = quote
+    ? quote.deposit.deadline_text
+    : staffDepositDeadlineText({ date, time: firstStart, timeZone });
   const clientReachable = Boolean(guest.email.trim() || guest.phone.trim()) || pickedContactHidden;
   const depositSent = hasDeposit && requireDeposit && source !== 'walk-in';
-  /** What the confirmation says about the deposit, worked out as the server works it out. */
+  /** What the confirmation says about the deposit: the server's quote, else worked out as it works it out. */
   const depositOutcomeNow = (): StaffDepositOutcome | null =>
     depositChoiceApplies && depositSent
-      ? staffDepositOutcome({
+      ? (quote ? quoteDepositOutcome(quote) : null) ??
+        staffDepositOutcome({
           cancelIfUnpaid,
           reachable: clientReachable,
           // Read again at the create: the form may have been open a while.
@@ -1188,7 +1253,9 @@ export function ConfirmStep({
         {holdNowPence > 0 ? (
           <View style={styles.depositRow} testID="confirm-hold-now">
             <Text variant="caption" tone="muted">
-              No-show fee
+              {!byBusiness && quote?.card_hold.percent_label
+                ? `No-show fee (${quote.card_hold.percent_label})`
+                : 'No-show fee'}
             </Text>
             <Text variant="bodySmall">{formatMoney(holdNowPence)}</Text>
           </View>

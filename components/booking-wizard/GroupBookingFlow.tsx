@@ -62,6 +62,15 @@ import {
 import { accessRefusalMessage } from '@/lib/roles/roles';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
 import { useCreateGroupBooking } from '@/lib/queries/useCreateGroupBooking';
+import { useBookingQuote } from '@/lib/queries/useBookingQuote';
+import {
+  applyQuoteToGroupPeople,
+  groupQuoteItems,
+  quoteClient,
+  quoteDepositOutcome,
+  quoteOfferedCharge,
+  type BookingQuoteRequest,
+} from '@/lib/booking/booking-quote';
 import { useMonthAvailability } from '@/lib/queries/useMonthAvailability';
 import { useToast } from '@/providers/ToastProvider';
 import { spacing, radius } from '@/theme/index';
@@ -189,6 +198,40 @@ export function GroupBookingFlow({
   const [addCardOpen, setAddCardOpen] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [complianceError, setComplianceError] = useState<string | null>(null);
+  /**
+   * "Cancel if not paid by ..." (web deposit-handling plan DH1, DH2, DH5): on by default, from the
+   * group's first appointment. Not offered when the group also holds a card: the server keeps the
+   * old rule there.
+   */
+  const [cancelIfUnpaid, setCancelIfUnpaid] = useState(true);
+
+  /**
+   * The group as the server books it (web codebase standards plan P4.2): each person's length,
+   * price and charge, the deposit's deadline and the card hold's fee come from the quote. Until it
+   * is here, or on a server without it, the figures worked out when each person was added stand.
+   */
+  const groupQuoteRequest: BookingQuoteRequest | null = useMemo(
+    () =>
+      people.length > 0
+        ? {
+            date: people[0]!.bookingDate,
+            mode: 'group' as const,
+            source,
+            staff_charge: {
+              require_deposit: requireDeposit && source !== 'walk-in',
+              require_card_hold: cardRequest.requestCard,
+              cancel_if_no_card: cardRequest.cancelIfNoCard,
+              cancel_if_unpaid: cancelIfUnpaid,
+            },
+            ...(ownerVenueId ? { owner_venue_id: ownerVenueId } : {}),
+            client: quoteClient({ email: organiser.email, phone: organiser.phone, guest_id: organiser.guest_id }),
+            items: groupQuoteItems(people),
+          }
+        : null,
+    [people, source, requireDeposit, cardRequest, cancelIfUnpaid, ownerVenueId, organiser],
+  );
+  const { quote } = useBookingQuote(groupQuoteRequest);
+  const quotedPeople = useMemo(() => applyQuoteToGroupPeople(people, quote), [people, quote]);
 
   const servicePractitioners: AppointmentCatalogPractitioner[] = useMemo(() => {
     if (!draftService || !catalog) return [];
@@ -211,8 +254,14 @@ export function GroupBookingFlow({
    * than one replacing the other (§7.6's "never shown together" holds for a
    * single booking, where only one is ever non-zero).
    */
-  const groupCharge = useMemo(() => resolveVisitChargeTotal(people), [people]);
-  const groupCardHoldPence = useMemo(() => resolveVisitCardHoldTotal(people), [people]);
+  const groupCharge = useMemo(
+    () => (quote ? quoteOfferedCharge(quote) : resolveVisitChargeTotal(people)),
+    [people, quote],
+  );
+  const groupCardHoldPence = useMemo(
+    () => (quote ? quote.card_hold.fee_pence : resolveVisitCardHoldTotal(people)),
+    [people, quote],
+  );
   const showCardHoldToggle = groupCardHoldPence > 0;
   // A linked business's calendar: the card line answers for a booking there. In the collective form
   // `ownerVenueId` is the COLLECTIVE: the card was looked up there, "Add card now" was always
@@ -245,12 +294,6 @@ export function GroupBookingFlow({
   const leadName = [organiser.first_name.trim(), organiser.last_name.trim()].filter(Boolean).join(' ');
   // Walk-ins never collect (spec 2.8), so there is no decision to offer them.
   const showChargeCheckbox = groupCharge.amountPence > 0 && source !== 'walk-in';
-  /**
-   * "Cancel if not paid by ..." (web deposit-handling plan DH1, DH2, DH5): on by default, from the
-   * group's first appointment. Not offered when the group also holds a card: the server keeps the
-   * old rule there.
-   */
-  const [cancelIfUnpaid, setCancelIfUnpaid] = useState(true);
   const depositChoiceApplies = !showCardHoldToggle;
   const firstPerson = useMemo(
     () =>
@@ -259,9 +302,12 @@ export function GroupBookingFlow({
       )[0] ?? null,
     [people],
   );
-  const depositDeadlineText = firstPerson
-    ? staffDepositDeadlineText({ date: firstPerson.bookingDate, time: firstPerson.bookingTime, timeZone })
-    : null;
+  // The server's deadline when quoted (null under 2 hours to go, as the local rule says).
+  const depositDeadlineText = quote
+    ? quote.deposit.deadline_text
+    : firstPerson
+      ? staffDepositDeadlineText({ date: firstPerson.bookingDate, time: firstPerson.bookingTime, timeZone })
+      : null;
   const organiserReachable = Boolean(organiser.email.trim() || organiser.phone.trim() || organiser.guest_id);
 
   // Any at-home (`client_address`) attendee makes the organiser step collect a
@@ -525,8 +571,9 @@ export function GroupBookingFlow({
           } else if (cardLine) {
             toast.info(cardLine, { duration: 5000 });
           } else if (depositChoiceApplies && showChargeCheckbox && requireDeposit && res.requires_deposit) {
-            // What happens if the deposit is not paid (deposit-handling plan DH1, DH2), said on the way.
-            const outcome = staffDepositOutcome({
+            // What happens if the deposit is not paid (deposit-handling plan DH1, DH2), said on the way:
+            // the server's quote, else worked out as it works it out.
+            const outcome = (quote ? quoteDepositOutcome(quote) : null) ?? staffDepositOutcome({
               cancelIfUnpaid,
               reachable: organiserReachable,
               deadlineText: firstPerson
@@ -579,6 +626,7 @@ export function GroupBookingFlow({
       firstPerson,
       timeZone,
       groupCharge.chargeLabel,
+      quote,
     ],
   );
 
@@ -634,7 +682,7 @@ export function GroupBookingFlow({
 
   // ----- review (group home) -----
   if (step === 'review') {
-    const total = groupTotalPence(people);
+    const total = quote ? quote.totals.price_pence : groupTotalPence(people);
     return (
       <View style={styles.container}>
         {chrome}
@@ -654,7 +702,7 @@ export function GroupBookingFlow({
             </Card>
           ) : (
             <Card>
-              {people.map((p, index) => (
+              {quotedPeople.map((p, index) => (
                 <View
                   key={`${p.label}-${index}`}
                   style={[
@@ -947,7 +995,7 @@ export function GroupBookingFlow({
     const fullName = [organiser.first_name.trim(), organiser.last_name.trim()]
       .filter(Boolean)
       .join(' ');
-    const total = groupTotalPence(people);
+    const total = quote ? quote.totals.price_pence : groupTotalPence(people);
     return (
       <View style={styles.container}>
         {chrome}

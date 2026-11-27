@@ -124,6 +124,7 @@ import {
   showDepositFailedPill,
 } from '@/lib/booking/booking-staff-indicators';
 import { owedDepositStatusLine } from '@/lib/booking/deposit-owed-line';
+import { owedLineFrom, serverKeepFrom } from '@/lib/booking/server-deposit-fields';
 import {
   resolveStaffBookingLocation,
   staffBookingLocationPillLabel,
@@ -1161,11 +1162,12 @@ export function BookingDetailContent({
    * What an owed deposit waits for, until when, and what happens then (web deposit-handling plan
    * DH2): "Deposit £20.00 owed. Payment link sent today at 09:12. If it is not paid by tomorrow at
    * 09:12, the booking is cancelled." A kept booking says it stays booked. Not for a card hold, whose
-   * own lines say it, nor a visit's part covered by the visit's one pay link.
+   * own lines say it, nor a visit's part covered by the visit's one pay link. The server's line when
+   * it sends one (web codebase standards plan P4.3); worked out here only for an older server.
    */
   const owedDepositLine = cardHoldState
     ? null
-    : owedDepositStatusLine({
+    : owedLineFrom(booking, () => owedDepositStatusLine({
         status: booking.status,
         depositStatus: booking.deposit_status,
         depositAmountPence: booking.deposit_amount_pence,
@@ -1177,7 +1179,7 @@ export function BookingDetailContent({
         coveredByVisitLink: Boolean(booking.visit_pay_link),
         depositCancelAt: booking.deposit_cancel_at ?? null,
         timeZone: venueTimeZone,
-      });
+      }));
 
 
   // Attendance — mirrors the web pills/actions.
@@ -2209,6 +2211,7 @@ export function BookingDetailContent({
                     bookingStatus: booking.status,
                     linkedVisitId: booking.linked_visit_id ?? null,
                     owedLine: owedDepositLine,
+                    serverKeep: serverKeepFrom(booking),
                   })
                 }
               />

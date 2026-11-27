@@ -3,6 +3,10 @@
  * (web deposit-handling plan DH2, DH4, 26 Nov 2026). Mirrors web `owedDepositStatusLine` in
  * `src/app/dashboard/bookings/expanded-booking-money-lines.ts` and `canKeepWithoutDeposit` in
  * `src/components/booking/KeepWithoutDepositButton.tsx`. Pure, so each wording is unit-tested.
+ *
+ * Fallback for servers before quote_version 1: the booking detail now carries `deposit_owed_line`,
+ * `can_keep_without_deposit` and `keep_without_deposit` (web codebase standards plan P4.3), and the
+ * screens read those first (`server-deposit-fields.ts`). This file answers only when they are absent.
  */
 
 import { getDateTimeFormat } from '@/lib/dates/formatters';

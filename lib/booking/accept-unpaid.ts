@@ -17,6 +17,13 @@ import { formatPositivePence } from '@/lib/format';
  * is the OTHER choice, and it forgives the money.
  */
 
+/*
+ * Fallback for servers before quote_version 1: the 409 now carries `accept_unpaid` (`title`,
+ * `body`, `explainer`, web codebase standards plan P4.3), which the sheet shows first
+ * (`server-deposit-fields.ts`). The copy below answers only when it is absent. `depositUnpaid409`
+ * stays: it is how the 409 is recognised.
+ */
+
 /** The 409 body, in app-side casing. */
 export interface DepositUnpaidInfo {
   /** 'Pending' | 'Failed' — what the owing rows' deposit state is. */

@@ -12,12 +12,15 @@ import {
   depositUnpaid409,
   type DepositUnpaidInfo,
 } from '@/lib/booking/accept-unpaid';
+import { serverAcceptUnpaidCopy, type ServerAcceptUnpaidCopy } from '@/lib/booking/server-deposit-fields';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useSendDepositPaymentLinkById } from '@/lib/queries/useBookingMutations';
 import { spacing } from '@/theme/index';
 
 type AcceptUnpaidSheetProps = {
   info: DepositUnpaidInfo | null;
+  /** The server's words for the sheet (web P4.3); null from an older server, which the local copy covers. */
+  copy?: ServerAcceptUnpaidCopy | null;
   busy: boolean;
   linkSent: boolean;
   linkError: string | null;
@@ -33,6 +36,7 @@ type AcceptUnpaidSheetProps = {
  */
 export function AcceptUnpaidSheet({
   info,
+  copy = null,
   busy,
   linkSent,
   linkError,
@@ -47,16 +51,18 @@ export function AcceptUnpaidSheet({
           <Text variant="overline" tone="muted">
             Deposit
           </Text>
-          <Text variant="title">{ACCEPT_UNPAID_TITLE}</Text>
+          <Text variant="title">{copy?.title ?? ACCEPT_UNPAID_TITLE}</Text>
           <Text variant="bodySmall" tone="muted">
-            {info
-              ? acceptUnpaidBodyCopy(info)
-              : 'The payment for this booking has not been completed yet.'}
+            {copy
+              ? copy.body
+              : info
+                ? acceptUnpaidBodyCopy(info)
+                : 'The payment for this booking has not been completed yet.'}
           </Text>
         </View>
 
         <Text variant="bodySmall" tone="secondary">
-          {ACCEPT_UNPAID_EXPLAINER}
+          {copy?.explainer ?? ACCEPT_UNPAID_EXPLAINER}
         </Text>
 
         {linkSent ? (
@@ -117,6 +123,7 @@ export function useAcceptUnpaidGuard(): {
   const [state, setState] = useState<{
     bookingId: string;
     info: DepositUnpaidInfo;
+    copy: ServerAcceptUnpaidCopy | null;
     retry: () => void;
   } | null>(null);
   const [linkSent, setLinkSent] = useState(false);
@@ -136,7 +143,7 @@ export function useAcceptUnpaidGuard(): {
       hapticWarning();
       setLinkSent(false);
       setLinkError(null);
-      setState({ bookingId, info, retry });
+      setState({ bookingId, info, copy: serverAcceptUnpaidCopy(error instanceof ApiError ? error.body : null), retry });
       return true;
     },
     [],
@@ -176,6 +183,7 @@ export function useAcceptUnpaidGuard(): {
   const sheet = (
     <AcceptUnpaidSheet
       info={state?.info ?? null}
+      copy={state?.copy ?? null}
       busy={sendLink.isPending}
       linkSent={linkSent}
       linkError={linkError}

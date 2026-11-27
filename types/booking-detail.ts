@@ -188,6 +188,13 @@ export interface BookingDetail extends ContactsHiddenFlag {
    * kept and on bookings made before it; absent from older servers.
    */
   deposit_cancel_at?: string | null;
+  /**
+   * The owed-deposit line and "Keep without deposit", worked out by the server (web codebase
+   * standards plan P4.3). Absent from older servers: the app then works them out itself.
+   */
+  deposit_owed_line?: string | null;
+  can_keep_without_deposit?: boolean;
+  keep_without_deposit?: { label: string; title: string; message: string; confirm_label: string } | null;
   /** What a gift voucher paid of the deposit or payment online (web online voucher plan). */
   voucher_paid_pence?: number | null;
   area_name?: string | null;
