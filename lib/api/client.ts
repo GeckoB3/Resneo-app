@@ -1,3 +1,4 @@
+import { checkResponse } from '@/lib/api/response-schemas';
 import { isAppUpdateRequired, showAppUpdateRequired } from '@/lib/app-update/update-required-alert';
 import { getApiUrl } from '@/lib/env';
 import { clientBuild } from '@/lib/pos/client-build';
@@ -405,6 +406,35 @@ function parseApiResponseBody(text: string, url: string): unknown {
 }
 
 /**
+ * Whether answers are checked against the web's response schemas: in development and tests only,
+ * never in a store build (web codebase standards plan P4.5). Read per call, so a test can switch it.
+ */
+export function responseChecksEnabled(): boolean {
+  return (typeof __DEV__ !== 'undefined' && __DEV__) || process.env.NODE_ENV === 'test';
+}
+
+/**
+ * Check an answer against the web's schema for its method and path (`lib/api/response-schemas.ts`,
+ * copied from the web). A mismatch means the web and the app disagree about a field the app reads:
+ * it is logged as a warning naming the route and each zod issue, and never throws, so a screen in
+ * development behaves as it would in production.
+ */
+export function warnOnResponseMismatch(method: string, path: string, status: number, body: unknown): void {
+  if (!responseChecksEnabled()) return;
+  try {
+    const mismatch = checkResponse(method, path, status, body);
+    if (!mismatch) return;
+    console.warn(
+      `[api] ${method.toUpperCase()} ${mismatch.contract.path} answered ${status} in a shape the app does not expect ` +
+        `(lib/api/response-schemas.ts):\n  ${mismatch.issues.join('\n  ')}`,
+    );
+  } catch (err) {
+    // The check is a development aid: a fault in it must never fail the request.
+    console.warn('[api] response check failed', err);
+  }
+}
+
+/**
  * Fetch wrapper for ReserveNI /api routes.
  * Phase 1 will pass the Supabase access token as Bearer auth.
  */
@@ -487,6 +517,7 @@ export async function apiFetch<T>(
         throw siteSwitchedError();
       }
       const data = parseApiResponseBody(text, url);
+      warnOnResponseMismatch(init.method ?? 'GET', path, response.status, data);
 
       if (!response.ok) {
         // A write from a build below the server's write minimum (web P4.9): say so, with the
