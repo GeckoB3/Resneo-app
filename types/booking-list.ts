@@ -21,6 +21,8 @@ export interface BookingListRow {
   deposit_status: string | null;
   /** Deposit amount in pence from the DB row — lets the row show a formatted figure. */
   deposit_amount_pence?: number | null;
+  /** "payment" when that amount is the whole price, else "deposit"; absent from older servers. */
+  deposit_word?: 'payment' | 'deposit' | null;
   /** Group booking UUID — present for multi-guest visits. */
   group_booking_id?: string | null;
   /**
