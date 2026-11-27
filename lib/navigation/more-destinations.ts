@@ -117,7 +117,6 @@ export const SECONDARY_MODEL_ROWS: {
   { model: 'class_session', label: 'Classes', hint: 'Timetable & session rosters', appRoute: '/classes', webPath: '/dashboard/class-timetable', icon: { ios: 'figure.run', android: 'fitness_center', web: 'fitness_center' }, tile: TILE.emerald },
   { model: 'event_ticket', label: 'Events', hint: 'Events & attendee rosters', appRoute: '/events', webPath: '/dashboard/event-manager', icon: { ios: 'ticket.fill', android: 'confirmation_number', web: 'confirmation_number' }, tile: TILE.violet },
   { model: 'resource_booking', label: 'Resources', hint: 'Resource day view', appRoute: '/resources', webPath: '/dashboard/resource-timeline', icon: { ios: 'shippingbox.fill', android: 'inventory_2', web: 'inventory_2' }, tile: TILE.slate },
-  { model: 'table_reservation', label: 'Tables', hint: 'Table & floor plan setup', webPath: '/dashboard/tables', icon: { ios: 'fork.knife', android: 'restaurant', web: 'restaurant' }, tile: TILE.orange },
 ];
 
 /** Inputs the destinations builder reads. Derived from venue bootstrap + role. */
@@ -260,9 +259,9 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
   if (isSchedulingExperience) {
     list.push({ id: 'availability', label: 'Calendar availability', hint: 'Hours, breaks, closures & amended hours', icon: { ios: 'calendar', android: 'edit_calendar', web: 'edit_calendar' }, tile: TILE.sky, group: 'workspace', kind: 'route', target: '/availability', featured: true, keywords: ['time off', 'leave', 'closures', 'amended hours', 'breaks', 'calendars'] });
   }
-  // Waitlist — web shows it to table venues always, appointment/hybrid when the
-  // waitlist feature is enabled. (Screen degrades to an empty state otherwise.)
-  if (waitlistEnabled || hasModel('table_reservation')) {
+  // Waitlist: the appointment waitlist, when the feature is enabled (the table waitlist went
+  // with the restaurant product on 27 November 2026).
+  if (waitlistEnabled) {
     list.push({ id: 'waitlist', label: 'Waitlist', hint: 'Offer & confirm waiting clients', icon: { ios: 'hourglass', android: 'hourglass_empty', web: 'hourglass_empty' }, tile: TILE.teal, group: 'workspace', kind: 'route', target: '/waitlist', featured: true });
   }
   if (isAdmin) {

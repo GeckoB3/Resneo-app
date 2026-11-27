@@ -122,9 +122,6 @@ export const venueBookingCreateSchema = obj({
   ...staffCreateExtras,
 });
 
-/** POST /api/venue/bookings/walk-in: the new booking row. The app reads `booking_id ?? id`. */
-export const walkInCreateSchema = z.union([obj({ booking_id: str }), obj({ id: str })]);
-
 const chargeKind = z.enum(['none', 'deposit', 'full_payment', 'card_hold']);
 
 /**
@@ -581,13 +578,12 @@ const contract = (method: ContractMethod, path: string, success: z.ZodTypeAny, e
   error,
 });
 
-/** The five create routes, then the app's twenty most used routes (plan P4.5, in its order). */
+/** The create routes (the table walk-in went in P5.1 step 4), then the app's twenty most used routes (plan P4.5, in its order). */
 export const RESPONSE_CONTRACTS: readonly ResponseContract[] = [
   contract('POST', '/api/booking/create', bookingCreateSchema),
   contract('POST', '/api/booking/create-group', groupedCreateSchema),
   contract('POST', '/api/booking/create-multi-service', groupedCreateSchema),
   contract('POST', '/api/venue/bookings', venueBookingCreateSchema),
-  contract('POST', '/api/venue/bookings/walk-in', walkInCreateSchema),
   contract('POST', '/api/venue/bookings/quote', bookingQuoteSchema),
   contract('GET', '/api/venue/bookings/[id]', bookingDetailSchema),
   contract('GET', '/api/venue/appointment-services', appointmentServicesSchema),

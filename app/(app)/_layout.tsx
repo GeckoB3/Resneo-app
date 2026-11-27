@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AccountSuspended } from '@/components/auth/AccountSuspended';
+import { RestaurantRetired } from '@/components/auth/RestaurantRetired';
 import { StaffRequired } from '@/components/auth/StaffRequired';
 import { TapToPayIntroduction } from '@/components/payments/TapToPayIntroduction';
 import { CardCapabilityReporter } from '@/components/pos/CardCapabilityReporter';
@@ -16,6 +17,7 @@ import { useColorScheme } from '@/components/useColorScheme';
 import { useRole } from '@/lib/queries/useRole';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useVenue } from '@/lib/queries/useVenue';
+import { isRetiredRestaurantVenue } from '@/lib/venue/restaurant-retired';
 import { LiveViewerAccessProvider } from '@/providers/ViewerAccessProvider';
 import { darkColors, fonts, lightColors } from '@/theme/index';
 
@@ -76,6 +78,12 @@ export default function AppLayout() {
         retrying={venueQuery.isFetching}
       />
     );
+  }
+
+  // A venue still set up for the retired restaurant product (table bookings, 27 November 2026)
+  // sees a plain message, as on the web dashboard. Terminal like the gates above.
+  if (isRetiredRestaurantVenue(venueQuery.data)) {
+    return <RestaurantRetired venueName={venueQuery.data?.name ?? null} />;
   }
 
   // The transient staff check, by contrast, COVERS the Stack instead of replacing

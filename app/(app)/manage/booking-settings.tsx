@@ -136,7 +136,6 @@ const SECONDARY_MODELS: {
   { model: 'class_session', label: 'Classes', hint: 'Group sessions with attendee capacity' },
   { model: 'event_ticket', label: 'Events', hint: 'Ticketed one-off experiences' },
   { model: 'resource_booking', label: 'Resources', hint: 'Bookable rooms or equipment' },
-  { model: 'table_reservation', label: 'Tables', hint: 'Restaurant-style table bookings' },
 ];
 
 const MODEL_LABELS: Record<string, string> = {

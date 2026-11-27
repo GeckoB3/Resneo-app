@@ -60,15 +60,11 @@ describe('buildDestinations — model-link gating (web parity)', () => {
     expect(list).not.toContain('model-resource_booking');
   });
 
-  it('keeps the web-only Tables row a link-out (no appRoute) for table businesses', () => {
+  it('has no Tables row: the restaurant product was retired (27 November 2026)', () => {
     const dests = buildDestinations(
       ctx({ isAdmin: false, enabledModels: new Set<BookingModel>(['table_reservation']) }),
     );
-    const tables = dests.find((d) => d.id === 'model-table_reservation');
-    expect(tables).toBeTruthy();
-    expect(tables?.kind).toBe('web');
-    expect(tables?.external).toBe(true);
-    expect(tables?.target).toBe('/dashboard/tables');
+    expect(dests.find((d) => d.id === 'model-table_reservation')).toBeUndefined();
   });
 
   it('renders model rows identically for staff and admin (model-driven, not role-gated)', () => {
@@ -143,11 +139,11 @@ describe('buildDestinations — Waitlist & Calendar-availability eligibility', (
     expect(ids(ctx({ waitlistEnabled: true }))).toContain('waitlist');
   });
 
-  it('shows Waitlist for table-reservation businesses regardless of the flag', () => {
+  it('no longer shows Waitlist to a table business without the flag (table waitlist retired)', () => {
     const list = ids(
       ctx({ waitlistEnabled: false, enabledModels: new Set<BookingModel>(['table_reservation']) }),
     );
-    expect(list).toContain('waitlist');
+    expect(list).not.toContain('waitlist');
   });
 
   it('hides Waitlist for an appointment business with the feature off', () => {

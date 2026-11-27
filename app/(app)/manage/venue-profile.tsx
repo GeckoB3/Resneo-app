@@ -1,9 +1,7 @@
 import { Image } from 'expo-image';
 import { useLiveCollectiveSettings } from '@/lib/linked/useLiveCollectiveSettings';
 import { collectiveSettingsCopy } from '@/lib/linked/collective-settings-copy';
-import * as Linking from 'expo-linking';
 import { SymbolView } from 'expo-symbols';
-import * as WebBrowser from 'expo-web-browser';
 import { Stack, useRouter, type Href } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -28,7 +26,6 @@ import { Sheet } from '@/components/ui/Sheet';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
-import { getWebUrl } from '@/lib/env';
 import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { normalizePhone } from '@/lib/phone/normalize';
 import { buildAddress, buildingNameField, parseAddress } from '@/lib/venue/addressFormat';
@@ -41,7 +38,6 @@ import {
   useUploadVenueLogo,
   useUploadVenueCover,
 } from '@/lib/queries/useVenueImageUpload';
-import { useWebDashboardLink } from '@/lib/sites/useWebDashboardLink';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -62,15 +58,8 @@ const WEBSITE_ERROR_MESSAGE = 'Enter a valid web address (e.g. example.com or ht
 const SERVER_INVALID_WEBSITE = 'Invalid website URL';
 
 /** Web Profile-tab hand-offs (tools that still live on the web dashboard). */
-const WEB_TABLE_MGMT_PATH = '/dashboard/availability?tab=table';
 /** The in-app data import wizard (web parity with `/dashboard/import`). */
 const IMPORT_ROUTE = '/import' as Href;
-
-/** Resolve a staff-dashboard URL on the configured WEB origin (prod fallback). */
-function webDashboardUrl(path: string): string {
-  const base = getWebUrl();
-  return base ? `${base}${path}` : `https://app.resneo.com${path}`;
-}
 
 /**
  * Curated IANA zones — the fallback when `Intl.supportedValuesOf('timeZone')`
@@ -574,17 +563,6 @@ export default function VenueProfileScreen() {
     setTzPickerOpen(false);
   }, []);
 
-  // In-app browser tab on the configured web origin (system-browser fallback);
-  // inline error if neither opens — keeps the user inside the app. A dashboard
-  // path names this venue (`?site=`, web roles plan §6.2b).
-  const siteLink = useWebDashboardLink();
-  const openWeb = useCallback((path: string) => {
-    const url = webDashboardUrl(siteLink(path));
-    void WebBrowser.openBrowserAsync(url).catch(() =>
-      Linking.openURL(url).catch(() => setError(`Could not open the browser: ${url}`)),
-    );
-  }, [siteLink]);
-
   // ------------------------------------------------------------------
   // Image upload handlers
   // ------------------------------------------------------------------
@@ -947,25 +925,6 @@ export default function VenueProfileScreen() {
           <Text variant="caption" tone="muted" style={styles.webLink}>
             Brand colours, fonts, announcement, social links and public tabs.
           </Text>
-
-          {/* Table management — web Profile tab parity (restaurant venues; tool lives on the web) */}
-          {!isAppointments ? (
-            <>
-              <SectionHeader title="Table management & availability" />
-              <Pressable
-                onPress={() => openWeb(WEB_TABLE_MGMT_PATH)}
-                hitSlop={8}
-              >
-                <Text variant="bodySmall" tone="secondary">
-                  Floor plan, table combinations, legacy availability, and related deposit options
-                  are managed on the web dashboard under Dining Availability → Table Management.{' '}
-                  <Text variant="bodySmall" tone="brand">
-                    Open on the web →
-                  </Text>
-                </Text>
-              </Pressable>
-            </>
-          ) : null}
 
           {/* Data import (web Profile tab parity, admin-only): the in-app wizard. */}
           <SectionHeader title="Data import" />
