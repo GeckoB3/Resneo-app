@@ -15,6 +15,7 @@ import {
 } from '@/lib/booking/booking-status-visual';
 import {
   depositPillAppliesToStatus,
+  depositPillWord,
   showAttendanceConfirmedSupplementPill,
   showDepositFailedPill,
   showDepositPendingPill,
@@ -120,6 +121,7 @@ function BookingRowBase({
   // "Deposit due" — the money is not merely outstanding, an attempt failed.
   const showDepositFailed =
     !cardPill && showDepositFailedPill(booking) && depositPillAppliesToStatus(booking.status);
+  const depositWord = depositPillWord(booking);
 
   return (
     <PressableScale
@@ -215,17 +217,17 @@ function BookingRowBase({
         ) : showDepositFailed ? (
           <View
             style={[styles.depositPill, { backgroundColor: colors.dangerSurface }]}
-            accessibilityLabel="Deposit failed">
+            accessibilityLabel={`${depositWord} failed`}>
             <Text variant="caption" color={colors.danger} style={styles.supplementText}>
-              Deposit failed
+              {`${depositWord} failed`}
             </Text>
           </View>
         ) : showDepositPending ? (
           <View
             style={[styles.depositPill, { backgroundColor: colors.warningSurface }]}
-            accessibilityLabel="Deposit pending">
+            accessibilityLabel={`${depositWord} due`}>
             <Text variant="caption" color={colors.warning} style={styles.supplementText}>
-              Deposit due
+              {`${depositWord} due`}
             </Text>
           </View>
         ) : showDeposit ? (

@@ -34,6 +34,7 @@ import { Text } from '@/components/ui/Text';
 import { ANALYTICS_EVENTS, track } from '@/lib/analytics';
 import { ApiError } from '@/lib/api/client';
 import { addMinutesToTime } from '@/lib/booking/booking-format';
+import { groupChargeNowPence, groupReviewLines } from '@/lib/booking/review-lines';
 import type { ServicesLayout } from '@/lib/booking/service-categories';
 import {
   multiServiceSegmentCharge,
@@ -584,7 +585,7 @@ export function GroupBookingFlow({
             toast.info(
               outcome.kept
                 ? staffDepositKeptLine(outcome.word)
-                : `The booking stays pending until the ${outcome.word} is paid.${
+                : `The booking stays pending until ${outcome.word === 'payment' ? 'the payment is made' : 'the deposit is paid'}.${
                     outcome.cancelOn ? ` ${staffDepositCancelOnLine(outcome.cancelOn)}` : ''
                   }`,
               { duration: 5000 },
@@ -1001,6 +1002,15 @@ export function GroupBookingFlow({
       .filter(Boolean)
       .join(' ');
     const total = quote ? quote.totals.price_pence : groupTotalPence(people);
+    // Like the single Review: a Date row, "3:00pm" times, and no money line until Require deposit
+    // is ticked (live round 27 Nov 2026).
+    const reviewLines = groupReviewLines(people);
+    const chargeNowPence = groupChargeNowPence({
+      offeredPence: groupCharge.amountPence,
+      requireDeposit,
+      showChargeCheckbox,
+      quote,
+    });
     return (
       <View style={styles.container}>
         {chrome}
@@ -1014,6 +1024,11 @@ export function GroupBookingFlow({
             <Text variant="bodySmall" tone="muted">
               Organiser: {fullName || 'Not given'}
             </Text>
+            {reviewLines.dateLabel ? (
+              <Text variant="bodySmall" tone="muted" testID="group-review-date">
+                Date: {reviewLines.dateLabel}
+              </Text>
+            ) : null}
             <View style={styles.confirmList}>
               {people.map((p, index) => (
                 <View key={`${p.label}-${index}`} style={styles.confirmRow}>
@@ -1021,7 +1036,7 @@ export function GroupBookingFlow({
                     {p.label} · {p.serviceName}
                   </Text>
                   <Text variant="caption" tone="muted">
-                    {p.bookingTime.slice(0, 5)}
+                    {reviewLines.times[index]}
                   </Text>
                 </View>
               ))}
@@ -1036,12 +1051,12 @@ export function GroupBookingFlow({
             ) : null}
             {/* Money now and the no-show fee are separate lines: a group can owe
                 both, and nothing is collected at booking for a hold. */}
-            {groupCharge.amountPence > 0 ? (
-              <View style={styles.moneyRow}>
+            {chargeNowPence > 0 ? (
+              <View style={styles.moneyRow} testID="group-charge-now">
                 <Text variant="caption" tone="muted">
                   {groupCharge.chargeLabel === 'full_payment' ? 'Pay now' : 'Deposit'}
                 </Text>
-                <Text variant="bodySmall">{formatPence(groupCharge.amountPence)}</Text>
+                <Text variant="bodySmall">{formatPence(chargeNowPence)}</Text>
               </View>
             ) : null}
             {showCardHoldToggle ? (

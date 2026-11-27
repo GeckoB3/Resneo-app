@@ -13,6 +13,15 @@ export interface BookingStaffIndicatorInput {
   staff_attendance_confirmed_at?: string | null;
 }
 
+/**
+ * "Payment" when the money asked for is the whole price, else "Deposit": the list's pill reads
+ * "Payment due" on a pay-in-full booking, as its detail does (web live round 27 Nov 2026). From
+ * the list's `deposit_word`; an older server without it keeps "Deposit".
+ */
+export function depositPillWord(row: { deposit_word?: string | null }): 'Payment' | 'Deposit' {
+  return row.deposit_word === 'payment' ? 'Payment' : 'Deposit';
+}
+
 /** Outstanding deposit worth surfacing: status Pending and a positive amount. */
 export function showDepositPendingPill(row: BookingStaffIndicatorInput): boolean {
   // Card-hold states ('Card Held', 'Charged') intentionally do not show this pill: nothing is

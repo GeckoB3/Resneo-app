@@ -2,6 +2,7 @@ import {
   bookingPaidInFull,
   buildMoneyAtAGlance,
   depositBadge,
+  depositSummaryPart,
   MAX_IN_PERSON_PENCE,
   bookingPaymentStateLabel,
   buildPaymentHistory,
@@ -925,5 +926,15 @@ describe('a full payment is never called a deposit (owner, 26 Nov 2026)', () => 
     expect(bookingPaidInFull(deposit)).toBe(false);
     expect(depositRow(deposit)).toBe('Deposit paid');
     expect(depositRow({ ...deposit, voucher_paid_pence: 1000 })).toBe('Deposit paid (part gift voucher)');
+  });
+});
+
+describe('depositSummaryPart (live round 27 Nov 2026)', () => {
+  it('names the deposit, so its status never reads as the booking status', () => {
+    expect(depositSummaryPart({ status: 'Pending', hasAmount: true, paidInFull: false })).toBe('Deposit pending');
+    expect(depositSummaryPart({ status: 'Pending', hasAmount: true, paidInFull: true })).toBe('Payment pending');
+    expect(depositSummaryPart({ status: 'Paid', hasAmount: true, paidInFull: false })).toBe('Deposit paid');
+    expect(depositSummaryPart({ status: null, hasAmount: true, paidInFull: false })).toBe('Deposit');
+    expect(depositSummaryPart({ status: null, hasAmount: false, paidInFull: false })).toBeNull();
   });
 });

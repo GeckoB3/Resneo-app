@@ -7,6 +7,7 @@ import {
   keepWithoutDepositLabel,
   keepWithoutDepositQuestion,
   owedDepositStatusLine,
+  ownMessagesForOwedLine,
 } from '@/lib/booking/deposit-owed-line';
 
 const NOW = new Date('2026-12-01T10:00:00Z');
@@ -87,5 +88,25 @@ describe('Keep without deposit', () => {
     expect(keepWithoutDepositQuestion({ word: 'payment', amountPence: null, guestName: '' }).message).toBe(
       'The booking stays booked even if the payment is not paid. The client is sent a confirmation that says the payment is still due, with the payment link.',
     );
+  });
+});
+
+describe('ownMessagesForOwedLine (live round 27 Nov 2026)', () => {
+  const request = { message_type: 'deposit_request_sms', status: 'sent', created_at: '2026-12-01T09:12:00Z' };
+  const reminder = { message_type: 'booking_reminder_email', status: 'sent', created_at: '2026-12-01T09:00:00Z' };
+
+  it("a group part without the group's request says nothing about the link", () => {
+    const comms = ownMessagesForOwedLine([reminder], 'group-1');
+    expect(comms).toBeNull();
+    expect(owedDepositStatusLine({ ...base, communications: comms, depositCancelAt: null })).toBe(
+      'Deposit £20.00 owed. If it is not paid by tomorrow at 09:00, the booking is cancelled.',
+    );
+  });
+
+  it('keeps the messages of a booking on its own, and of the part that holds the request', () => {
+    expect(ownMessagesForOwedLine([reminder], null)).toEqual([reminder]);
+    expect(ownMessagesForOwedLine([request], 'group-1')).toEqual([request]);
+    expect(ownMessagesForOwedLine([{ ...request, status: 'failed' }], 'group-1')).toBeNull();
+    expect(ownMessagesForOwedLine(null, null)).toBeNull();
   });
 });

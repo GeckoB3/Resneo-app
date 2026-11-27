@@ -41,6 +41,7 @@ import {
   visitQuoteItems,
   type BookingQuoteRequest,
 } from '@/lib/booking/booking-quote';
+import { visitSegmentAddonLine } from '@/lib/booking/review-lines';
 import { useBookingQuote } from '@/lib/queries/useBookingQuote';
 import {
   buildMultiServicePayload,
@@ -1172,19 +1173,31 @@ export function ConfirmStep({
         </View>
         {isMultiService ? (
           <View style={[styles.addonsBlock, { borderTopColor: 'transparent', paddingTop: 0 }]}>
-            {multiServiceSegments!.map((seg, i) => (
-              <View key={`${seg.serviceId}-${i}`} style={styles.addonLine}>
-                <Text variant="bodySmall" style={styles.segmentName}>
-                  {formatSummaryTime(seg.startTime)} · {seg.serviceName}
-                  {spansPeople && seg.practitionerName ? ` with ${seg.practitionerName}` : ''}
-                </Text>
-                {seg.pricePence != null ? (
-                  <Text variant="bodySmall" tone="muted">
-                    {formatMoney(seg.pricePence)}
-                  </Text>
-                ) : null}
-              </View>
-            ))}
+            {multiServiceSegments!.map((seg, i) => {
+              // Its add-ons under it, as single Review shows them, so the lines add up (27 Nov 2026).
+              const addonLine = visitSegmentAddonLine(seg, i, quote);
+              return (
+                <View key={`${seg.serviceId}-${i}`}>
+                  <View style={styles.addonLine}>
+                    <Text variant="bodySmall" style={styles.segmentName}>
+                      {formatSummaryTime(seg.startTime)} · {seg.serviceName}
+                      {spansPeople && seg.practitionerName ? ` with ${seg.practitionerName}` : ''}
+                    </Text>
+                    {seg.pricePence != null ? (
+                      <Text variant="bodySmall" tone="muted">
+                        {formatMoney(seg.pricePence)}
+                      </Text>
+                    ) : null}
+                  </View>
+                  {addonLine ? (
+                    <View style={[styles.addonLine, styles.segmentAddon]} testID={`confirm-segment-addons-${i}`}>
+                      <Text variant="caption" tone="muted" style={styles.segmentName}>{`Add-ons: ${addonLine.label}`}</Text>
+                      {addonLine.pence > 0 ? <Text variant="caption" tone="muted">{`+${formatMoney(addonLine.pence)}`}</Text> : null}
+                    </View>
+                  ) : null}
+                </View>
+              );
+            })}
           </View>
         ) : null}
         {bookedAtBusiness ? (
@@ -1385,6 +1398,9 @@ const styles = StyleSheet.create({
   },
   segmentName: {
     flex: 1,
+  },
+  segmentAddon: {
+    paddingLeft: spacing.base,
   },
   businessCharges: {
     gap: spacing.sm,

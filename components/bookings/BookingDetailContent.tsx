@@ -51,6 +51,7 @@ import {
   buildPriceSummary,
   resolveBookingTotalPence,
   depositBadge,
+  depositSummaryPart,
   canTakeInPersonPayment,
   canRefundInPerson,
   isRecordedPayment,
@@ -118,7 +119,7 @@ import {
   hasSettleableDeposit,
   showDepositFailedPill,
 } from '@/lib/booking/booking-staff-indicators';
-import { owedDepositStatusLine } from '@/lib/booking/deposit-owed-line';
+import { owedDepositStatusLine, ownMessagesForOwedLine } from '@/lib/booking/deposit-owed-line';
 import { owedLineFrom, serverKeepFrom } from '@/lib/booking/server-deposit-fields';
 import {
   resolveStaffBookingLocation,
@@ -803,7 +804,7 @@ export function BookingDetailContent({
         source: booking.source,
         createdAt: booking.created_at,
         linkedVisitId: booking.linked_visit_id,
-        communications: booking.communications ?? null,
+        communications: ownMessagesForOwedLine(booking.communications, booking.group_booking_id),
         coveredByVisitLink: Boolean(booking.visit_pay_link),
         depositCancelAt: booking.deposit_cancel_at ?? null,
         timeZone: venueTimeZone,
@@ -1557,7 +1558,7 @@ export function BookingDetailContent({
           partyLabel,
           cardHoldState
             ? cardHoldState.pill?.label ?? 'Card'
-            : shownDepositStatus ?? (depositLabel ? (paidInFull ? 'Payment' : 'Deposit') : null),
+            : depositSummaryPart({ status: shownDepositStatus, hasAmount: Boolean(depositLabel), paidInFull }),
         ]
           .filter(Boolean)
           .join(' · ')}>

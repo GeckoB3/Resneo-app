@@ -81,6 +81,22 @@ export function bookingPaidInFull(booking: BookingDetail): boolean {
   return paid > 0 && total > 0 && paid >= total;
 }
 
+/**
+ * The deposit's part of the collapsed Details summary ("1 person · Deposit pending"). The bare
+ * status read as the booking's own: a kept booking said "Booked" in its header and "1 person ·
+ * Pending" here (web live round 27 Nov 2026). Null when there is nothing to say.
+ */
+export function depositSummaryPart(input: {
+  /** The deposit status worth showing (not "Not Required"), or null. */
+  status: string | null | undefined;
+  hasAmount: boolean;
+  paidInFull: boolean;
+}): string | null {
+  const word = input.paidInFull ? 'Payment' : 'Deposit';
+  if (input.status) return `${word} ${input.status.toLowerCase()}`;
+  return input.hasAmount ? word : null;
+}
+
 /** The tones the deposit badge uses; the same names as `Badge`'s. */
 export type DepositBadgeTone = 'warning' | 'success' | 'neutral' | 'accent';
 

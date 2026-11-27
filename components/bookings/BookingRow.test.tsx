@@ -66,6 +66,19 @@ describe('BookingRow deposit pill', () => {
     expect(screen.queryByText(`${amount} · Pending`)).toBeNull();
   });
 
+  it('says "Payment due" on a pay-in-full booking, as its detail does (live round 27 Nov 2026)', async () => {
+    await render(
+      <BookingRow
+        booking={bk({ id: 'p', status: 'Pending', deposit_status: 'Pending', deposit_amount_pence: 3500, deposit_word: 'payment' })}
+        isAppointment
+        onPress={() => {}}
+      />,
+    );
+    expect(screen.getByText('Payment due')).toBeTruthy();
+    expect(screen.getByLabelText('Payment due')).toBeTruthy();
+    expect(screen.queryByText('Deposit due')).toBeNull();
+  });
+
   it('shows "Deposit failed" and outranks the due pill', async () => {
     // R13-2: a booking whose payment bounced used to look identical in this
     // list to one with no deposit at all.

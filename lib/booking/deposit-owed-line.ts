@@ -14,6 +14,30 @@ import { formatPence } from '@/lib/format';
 
 const DEPOSIT_REQUEST_TYPES = new Set(['deposit_request', 'deposit_payment_request', 'deposit_payment_reminder']);
 
+/** A sent message that carried a payment link for the deposit (email or text, not failed). */
+export function isSentDepositRequest(c: { message_type: string; status: string }): boolean {
+  return (
+    DEPOSIT_REQUEST_TYPES.has(c.message_type.replace(/_(email|sms)$/i, '')) &&
+    c.status !== 'failed' &&
+    c.status !== 'bounced'
+  );
+}
+
+/**
+ * The messages this fallback may judge the link by. A visit's or a group's pay link goes out once,
+ * logged against its lead row, so another part holding a deposit has no request of its own (web
+ * live round 27 Nov 2026). Such a part says nothing about the link (null) rather than "No payment
+ * link has been sent yet". The server's `deposit_owed_line` reads the whole unit's messages.
+ */
+export function ownMessagesForOwedLine<C extends { message_type: string; status: string }>(
+  communications: C[] | null | undefined,
+  groupBookingId: string | null | undefined,
+): C[] | null {
+  if (!communications) return null;
+  if (!groupBookingId || communications.some(isSentDepositRequest)) return communications;
+  return null;
+}
+
 /** Bookings made before deadlines were stored are cancelled this long after they were made. */
 export const PHONE_DEPOSIT_TIMEOUT_HOURS = 24;
 
@@ -77,12 +101,7 @@ export function owedDepositStatusLine(input: {
   }
   if (input.communications) {
     const sent = input.communications
-      .filter(
-        (c) =>
-          DEPOSIT_REQUEST_TYPES.has(c.message_type.replace(/_(email|sms)$/i, '')) &&
-          c.status !== 'failed' &&
-          c.status !== 'bounced',
-      )
+      .filter(isSentDepositRequest)
       .slice()
       .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
     const when = sent ? relativeVenueTime(sent.created_at, input.timeZone, now) : null;

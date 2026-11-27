@@ -140,8 +140,8 @@ export function StaffRequireChargeCheckbox({
     ? `Leave unchecked to confirm now and take the ${noun} in person.`
     : !offersChoice
       ? hasContact
-        ? `We will send a payment link and hold the booking until the ${noun} is paid.`
-        : `This client has no email or mobile, so share the payment link yourself once it is booked. The booking is held until the ${noun} is paid.`
+        ? 'We will send a payment link and hold the booking until the client pays.'
+        : `This client has no email or mobile, so share the payment link yourself once it is booked. The booking is held until the client pays.`
       : hasContact
         ? 'We will send the client a payment link.'
         : staffDepositNoContactLine(noun);

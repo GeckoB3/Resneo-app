@@ -11,7 +11,7 @@ import { StaffRequireChargeCheckbox } from '@/components/booking-wizard/StaffCha
 describe('StaffRequireChargeCheckbox', () => {
   it('says the link is sent when the client can be reached', async () => {
     await render(<StaffRequireChargeCheckbox checked onChange={() => {}} chargeLabel="deposit" amountPence={2000} />);
-    expect(screen.getByText('We will send a payment link and hold the booking until the deposit is paid.')).toBeTruthy();
+    expect(screen.getByText('We will send a payment link and hold the booking until the client pays.')).toBeTruthy();
   });
 
   it('says to share the link when the client has no email or mobile', async () => {
@@ -38,7 +38,7 @@ describe('StaffRequireChargeCheckbox', () => {
     expect(screen.getByText('We will send the client a payment link.')).toBeTruthy();
     expect(screen.getByText('Cancel if not paid by Wed 2 Dec, 13:00')).toBeTruthy();
     expect(screen.getByLabelText('Cancel if not paid by Wed 2 Dec, 13:00').props.accessibilityState).toEqual({ checked: true });
-    expect(screen.getByText('The booking waits until the deposit is paid, and is cancelled if it is not.')).toBeTruthy();
+    expect(screen.getByText('The booking waits until the client pays, and is cancelled if they do not.')).toBeTruthy();
     fireEvent.press(screen.getByLabelText('Cancel if not paid by Wed 2 Dec, 13:00'));
     expect(onCancel).toHaveBeenCalledWith(false);
   });

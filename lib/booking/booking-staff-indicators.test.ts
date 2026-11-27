@@ -3,6 +3,7 @@ import {
   canShowConfirmStaffAttendanceConfirmationAction,
   canShowStaffAttendanceToggle,
   depositPillAppliesToStatus,
+  depositPillWord,
   hasSettleableDeposit,
   isAttendanceConfirmed,
   showAttendanceConfirmedSupplementPill,
@@ -232,5 +233,14 @@ describe('hasSettleableDeposit', () => {
     expect(hasSettleableDeposit(null)).toBe(false);
     expect(hasSettleableDeposit(undefined)).toBe(false);
     expect(hasSettleableDeposit('')).toBe(false);
+  });
+});
+
+describe('depositPillWord (live round 27 Nov 2026)', () => {
+  it('says Payment for a pay-in-full booking and Deposit otherwise, or from an older server', () => {
+    expect(depositPillWord({ deposit_word: 'payment' })).toBe('Payment');
+    expect(depositPillWord({ deposit_word: 'deposit' })).toBe('Deposit');
+    expect(depositPillWord({ deposit_word: null })).toBe('Deposit');
+    expect(depositPillWord({})).toBe('Deposit');
   });
 });

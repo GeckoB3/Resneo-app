@@ -236,11 +236,13 @@ function buildA11yLabel(cell: Date, datum: MonthDayDatum, total: number): string
     const linked = datum.linked > 0 ? `, ${datum.linked} linked` : '';
     return `${date}${status}${linked}`;
   }
+  // "1 appointment", not "1 appointments" (live round 27 Nov 2026).
+  const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
   const parts: string[] = [];
-  if (datum.appointments) parts.push(`${datum.appointments} appointments`);
-  if (datum.classes) parts.push(`${datum.classes} classes`);
-  if (datum.events) parts.push(`${datum.events} events`);
-  if (datum.resources) parts.push(`${datum.resources} resources`);
+  if (datum.appointments) parts.push(count(datum.appointments, 'appointment', 'appointments'));
+  if (datum.classes) parts.push(count(datum.classes, 'class', 'classes'));
+  if (datum.events) parts.push(count(datum.events, 'event', 'events'));
+  if (datum.resources) parts.push(count(datum.resources, 'resource', 'resources'));
   if (datum.linked) parts.push(`${datum.linked} linked`);
   return `${date}, ${parts.join(', ')}`;
 }

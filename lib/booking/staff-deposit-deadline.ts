@@ -107,7 +107,7 @@ export function staffCancelIfUnpaidLabel(deadlineText: string): string {
 /** The help under the choice, for each position. */
 export function staffCancelIfUnpaidHelp(on: boolean, word: 'deposit' | 'payment'): string {
   return on
-    ? `The booking waits until the ${word} is paid, and is cancelled if it is not.`
+    ? 'The booking waits until the client pays, and is cancelled if they do not.'
     : `The booking is confirmed now and the ${word} stays due.`;
 }
 

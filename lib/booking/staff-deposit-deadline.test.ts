@@ -98,13 +98,19 @@ describe('the words', () => {
     ];
     expect(lines).toEqual([
       'Cancel if not paid by Wed 2 Dec, 13:00',
-      'The booking waits until the deposit is paid, and is cancelled if it is not.',
+      'The booking waits until the client pays, and is cancelled if they do not.',
       'The booking is confirmed now and the payment stays due.',
       'The appointment is less than 2 hours away, so the booking is confirmed now and the deposit stays due.',
       "Cancel if not paid needs the client's email or mobile to send the link. Without them, the booking is confirmed now with the deposit still due, and you can share the payment link from the booking.",
       'The booking is confirmed, with the deposit still due. It stays booked if the deposit is not paid.',
     ]);
     for (const line of lines) expect(line).not.toContain('—');
+  });
+
+  it('a full payment waits until the client pays, never "until the payment is paid" (live round 27 Nov 2026)', () => {
+    const help = staffCancelIfUnpaidHelp(true, 'payment');
+    expect(help).toBe('The booking waits until the client pays, and is cancelled if they do not.');
+    expect(help).not.toContain('payment is paid');
   });
 });
 

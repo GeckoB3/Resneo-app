@@ -250,6 +250,8 @@ const bookingListRow = obj({
   visit_service_names: z.array(str).optional(),
   // A word, not an object: protected, waiting, not_needed or charged (BookingCardState); null otherwise.
   card_state: opt(z.enum(['protected', 'waiting', 'not_needed', 'charged'])),
+  // "payment" when the money asked for is the whole price, else "deposit"; null with no deposit.
+  deposit_word: opt(z.enum(['payment', 'deposit'])),
 });
 
 export const bookingsListSchema = obj({ bookings: z.array(bookingListRow) });

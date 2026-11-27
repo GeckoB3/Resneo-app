@@ -60,7 +60,7 @@ export function depositUnpaid409(error: unknown): DepositUnpaidInfo | null {
 export const ACCEPT_UNPAID_TITLE = 'Deposit not paid';
 
 export const ACCEPT_UNPAID_EXPLAINER =
-  'You can send the customer a new payment link, or accept the booking without payment and collect it later.';
+  'You can send the client a new payment link, or accept the booking without payment and collect it later.';
 
 /** What is actually owed, in the words the web dialog uses. */
 export function acceptUnpaidBodyCopy(info: DepositUnpaidInfo): string {

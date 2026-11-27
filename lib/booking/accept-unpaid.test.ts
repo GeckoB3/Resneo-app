@@ -1,5 +1,5 @@
 import { ApiError } from '@/lib/api/client';
-import { acceptUnpaidBodyCopy, depositUnpaid409 } from '@/lib/booking/accept-unpaid';
+import { ACCEPT_UNPAID_EXPLAINER, acceptUnpaidBodyCopy, depositUnpaid409 } from '@/lib/booking/accept-unpaid';
 
 function unpaid409(body: Record<string, unknown>): ApiError {
   return new ApiError('The deposit for this booking has not been paid.', 409, body);
@@ -80,5 +80,13 @@ describe('acceptUnpaidBodyCopy', () => {
     expect(
       acceptUnpaidBodyCopy({ depositStatus: null, depositAmountPence: 0, cardHoldFeePence: 0 }),
     ).toBe('The payment for this booking has not been completed yet.');
+  });
+});
+
+describe('ACCEPT_UNPAID_EXPLAINER', () => {
+  it('says client, as the rest of the app does (live round 27 Nov 2026)', () => {
+    expect(ACCEPT_UNPAID_EXPLAINER).toBe(
+      'You can send the client a new payment link, or accept the booking without payment and collect it later.',
+    );
   });
 });

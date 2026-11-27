@@ -112,7 +112,8 @@ describe('MonthGrid — render (dayData)', () => {
     // The busy day shows its count, not the status word.
     expect(screen.queryByText('Open')).toBeNull();
     // A11y label names the type rather than the ambiguous bare count.
-    expect(screen.getByLabelText('12 June, 1 appointments')).toBeTruthy();
+    // One appointment is singular (live round 27 Nov 2026).
+    expect(screen.getByLabelText('12 June, 1 appointment')).toBeTruthy();
   });
 
   it('builds a per-type accessibility summary for a busy day', async () => {
@@ -123,7 +124,7 @@ describe('MonthGrid — render (dayData)', () => {
       <MonthGrid anchor={anchor} today={today} dayData={dayData} onSelectDay={() => {}} />,
     );
     expect(
-      screen.getByLabelText('10 June, 2 appointments, 1 classes, 3 linked'),
+      screen.getByLabelText('10 June, 2 appointments, 1 class, 3 linked'),
     ).toBeTruthy();
   });
 });
